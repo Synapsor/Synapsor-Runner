@@ -223,7 +223,7 @@ export async function readTerminalTextWithEscape(
   prompt: string,
   input: ReadStream,
   output: WriteStream,
-  options: { defaultValue?: string } = {},
+  options: { defaultValue?: string; preserveWhitespace?: boolean } = {},
 ): Promise<string | undefined> {
   if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
     throw new Error("Interactive text input requires a real terminal.");
@@ -267,7 +267,7 @@ export async function readTerminalTextWithEscape(
     rl.once("SIGINT", onEnd);
     rl.once("close", onEnd);
     rl.question(questionPrompt, (value) => {
-      const submitted = value.trim();
+      const submitted = options.preserveWhitespace ? value : value.trim();
       // Only a submitted empty line can accept a default. Escape, EOF, Ctrl-C
       // and input errors settle through onEnd/finish(undefined), never here.
       finish(submitted === "" && options.defaultValue !== undefined ? options.defaultValue : submitted);

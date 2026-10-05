@@ -57,7 +57,8 @@ function parseCurrent(context: ActionWorkUnitContext, prepared: Prepared, args: 
   const report = parsePolicyCoverage(args, source, prepared, context.policySources?.operator_messages ?? [], context.policySources);
   if (!retention) return report;
   if (retention.previousReport.retained_duty_history?.length && !retention.lineage) changed();
-  const plan = prepareRetainedDutyReview(retention.previousReport, source, prepared, retention.lineage, retention.coverageAuthorityDigest);
+  const plan = prepareRetainedDutyReview(retention.previousReport, source, prepared, retention.lineage, retention.coverageAuthorityDigest,
+    undefined, {snapshots:context.policySources?.snapshots ?? []});
   return assembleRetainedDutyReview(report, plan, source, prepared, parse);
 }
 

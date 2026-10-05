@@ -5,6 +5,9 @@ export async function runRequiredAuthoringToolCall<T>(input: {
   question: string;
   toolName: string;
   onCorrection?: () => void;
+  /** A resumed multi-stage owner must durably reserve its one shared
+   * correction. No callback/dispatch follows a refusal or failed save. */
+  reserveCorrection?: () => Promise<boolean>;
 }): Promise<{ result: T; correction_used: boolean }> {
   try {
     return {
@@ -16,6 +19,7 @@ export async function runRequiredAuthoringToolCall<T>(input: {
       || !["ASK_REQUIRED_TOOL_NOT_CALLED", "ASK_PROVIDER_RESPONSE_INVALID", "ASK_TOOL_ARGUMENTS_INVALID"].includes(error.code)) {
       throw error;
     }
+    if (input.reserveCorrection && !await input.reserveCorrection()) throw error;
     input.onCorrection?.();
     return {
       result: await input.run([

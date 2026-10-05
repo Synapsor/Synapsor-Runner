@@ -6,6 +6,7 @@ import { readWorkloadAssistanceCheckpoint, parseReadWorkloadAssistanceCheckpoint
   type ReadWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceQuestion, type ReadReviewedClarificationReplacement } from "./read-workload-assistance-checkpoint.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { parseOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import {
   AskError,
   askToolSurfaceDigest,
@@ -93,6 +94,9 @@ export type ModelReadWorkloadInput = {
     request: ModelReadClarificationRequest,
     context?: { previous: ModelReadClarificationRequest & { answer: string } },
   ) => Promise<ModelReadClarificationDecision | undefined>;
+  /** Trusted host records only. The model receives current reference metadata,
+   * never authority to create or confirm the operator's actual answer. */
+  operatorQuestions?: () => readonly OperatorQuestion[];
   /** Local operator review, never a model decision. The proposed response is
    * checkpointed before this default-No review and is not yet current meaning. */
   clarificationReplacementHandler?: (input: {
@@ -266,7 +270,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         } };
       }
       try {
-        suppliedMeanings = parseOperatorReadMeanings(args.operator_meanings, activeNamingSources(), catalog, activeClarifiedTargets());
+        suppliedMeanings = parseOperatorReadMeanings(args.operator_meanings, activeNamingSources(), catalog, activeClarifiedTargets(), input.operatorQuestions?.());
         for (const meaning of suppliedMeanings) {
           const target = { resource: meaning.resource, ...(meaning.field ? { field: meaning.field } : {}) };
           currentMeaning(target);
@@ -646,7 +650,15 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       const result = await runAskProviderTurn({
         configuration,
         question: [...clarificationAnswers.map((line, index) => retiredIndices().has(index)
-          ? `Historical response ${index}, superseded by an explicit operator review; not current meaning: ${line}` : line), question].join("\n"),
+          ? `Historical response ${index}, superseded by an explicit operator review; not current meaning: ${line}` : line), question,
+          ...(input.operatorQuestions ? [
+            "Runner-confirmed answer references: " + JSON.stringify(input.operatorQuestions().map(parseOperatorQuestion)
+              .filter(q => q.kind === "attributed_meaning" && q.confirmation && activeClarifiedTargets().some(target =>
+                target.resource === q.target.resource && target.field === q.target.field && target.answer === q.raw_answer?.text))
+              .map(q => ({ resource: q.target.resource, ...(q.target.field ? { field: q.target.field } : {}),
+                answer_reference: { question_id: q.id, revision: q.revision, answer_id: q.raw_answer!.id } }))),
+            "For those current answers, submit their exact answer_reference instead of copying operator_quote. Runner owns the raw words and checks the association. Never invent a reference or use another target's answer."
+          ] : [])].join("\n"),
     history: modelAuthoringHistory(input.conversation, input),
         gateway: diagnosedGateway,
         tools,
@@ -1290,11 +1302,19 @@ function readWorkloadToolDefinition(resourceIds: string[]): AskToolDefinition {
             forbidden: { type: "array", minItems: 0, maxItems: 40, items: entrySchema },
             operator_meanings: {
               type: "array", maxItems: 40, items: {
-                type: "object", additionalProperties: false, required: ["resource", "operator_quote"],
+                type: "object", additionalProperties: false, required: ["resource"],
+                oneOf: [{ required: ["operator_quote"], not: { required: ["answer_reference"] } },
+                  { required: ["answer_reference"], not: { required: ["operator_quote"] } }],
                 properties: {
                   resource: { type: "string", enum: resourceIds },
                   field: { type: "string", minLength: 1, maxLength: 256 },
                   operator_quote: { type: "string", minLength: 1, maxLength: 1_000 },
+                  answer_reference: { type: "object", additionalProperties: false,
+                    required: ["question_id", "revision", "answer_id"], properties: {
+                      question_id: { type: "string", minLength: 36, maxLength: 36 },
+                      revision: { type: "integer", minimum: 1 },
+                      answer_id: { type: "string", minLength: 36, maxLength: 36 },
+                    } },
                 },
               },
             },
@@ -1454,18 +1474,31 @@ function parseOperatorReadMeanings(
   sources: readonly string[],
   catalog: ReturnType<typeof readWorkloadCatalog>,
   clarifications: readonly (ModelReadClarificationRequest & { answer: string })[],
+  questions: readonly OperatorQuestion[] = [],
 ): OperatorReadMeaning[] {
   if (value === undefined) return [];
   const fail = (detail = "Use an exact reviewed identifier and a verbatim operator explanation; otherwise ask for its meaning.",
     target?: { resource: string; field?: string }): never => { throw new ReadNamingEvidenceError(detail, target); };
   if (!Array.isArray(value) || value.length > 40) return fail();
   return value.map((entry) => {
-    if (!isRecord(entry) || Object.keys(entry).some((key) => !["resource", "field", "operator_quote"].includes(key))) return fail();
+    if (!isRecord(entry) || Object.keys(entry).some((key) => !["resource", "field", "operator_quote", "answer_reference"].includes(key))) return fail();
     const resource = catalog.resources.find((resource) => resource.id === entry.resource);
     if (!resource || (entry.field !== undefined && (typeof entry.field !== "string"
       || !resource.fields.some((field) => field.id === entry.field)))) return fail();
     const field = entry.field as string | undefined;
     const target = { resource: resource.id, ...(field !== undefined ? { field } : {}) };
+    if (entry.answer_reference !== undefined) {
+      const ref = entry.answer_reference;
+      if (entry.operator_quote !== undefined || !isRecord(ref)
+        || Object.keys(ref).some(key => !["question_id", "revision", "answer_id"].includes(key))) return fail("Supply one exact current answer reference; do not combine it with a model quotation.", target);
+      const q = questions.map(parseOperatorQuestion).find(q => q.id === ref.question_id);
+      if (!q || q.kind !== "attributed_meaning" || !q.confirmation || q.disposition
+        || q.revision !== ref.revision || q.raw_answer?.id !== ref.answer_id
+        || q.target.resource !== target.resource || q.target.field !== target.field
+        || !clarifications.some(answer => answer.resource === target.resource && answer.field === target.field
+          && answer.answer === q.raw_answer!.text)) return fail("The reference is not the current confirmed operator response for this exact question and target. Reuse Runner's supplied current reference; no words or permission were inferred.", target);
+      return { ...target, operator_quote: q.raw_answer!.text };
+    }
     const quote = entry.operator_quote;
     if (typeof quote !== "string" || !quote.trim() || quote.length > 1_000
       || ![...sources, ...clarifications.map((entry) => entry.answer)].some((source) => source.includes(quote))) {
@@ -1657,9 +1690,11 @@ function validateReadClarificationDecision(
   if (decision === undefined) throw new ReadWorkloadAssistancePausedError();
   if (!isRecord(decision) || !["answered", "declined"].includes(decision.state as string)) throw new Error("READ_WORKLOAD_CLARIFICATION_DECISION_INVALID: Use a canonical answer or deliberate decline; keep cancellation pending.");
   if (decision.state === "declined") return { state: "declined" };
+  boundedText(decision.answer, "clarification answer", 1_000);
+  if (typeof decision.answer !== "string" || decision.answer.length > 1_000) throw new Error("READ_WORKLOAD_TEXT_INVALID: The complete clarification answer exceeds 1,000 text units. No answer was shortened.");
   return {
     state: "answered",
-    answer: boundedText(decision.answer, "clarification answer", 1_000),
+    answer: decision.answer,
   };
 }
 

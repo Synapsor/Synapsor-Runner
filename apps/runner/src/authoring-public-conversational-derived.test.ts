@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
-import { createTaskContextMeter } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, createTaskContextMeter } from "@synapsor-runner/protocol";
 import { expect, it, vi } from "vitest";
 import { start } from "./guided-start.js";
 import { boundaryReviewCommand, loadBoundaryReviewContext } from "./boundary-commands.js";
@@ -39,10 +39,10 @@ const intentFor = (index: number) => `Action ${index}: workshop.adjust_card_${in
 const editRequest = `Revise workshop.adjust_card_${editIndex} ttl_seconds from 300 to 240; preserve every original exception, global responsibility, unit input bound, effect, and human approval requirement in the complete selected program.`;
 const removeRequest = "Remove workshop.adjust_card_50 from the selected program and explicitly withdraw its requested Action 50 source clause. Retain every other source clause, early exception and global responsibility.";
 
-async function runPublicConversational(testControl?: "no" | "escape" | "source_drift", inputBounds = false, interruption?: "edit_cancel" | "midpoint_cancel") {
+async function runPublicConversational(testControl?: "no" | "escape" | "source_drift", inputBounds = false, interruption?: "edit_cancel" | "midpoint_cancel", reopenInput = false, ordinaryTopReview = false) {
   const draftFor = (index:number) => { const draft=baseDraftFor(index); if(inputBounds)draft.inputs!.push({name:"operator_note",description:"The caller note required by the source.",type:{kind:"string",min_length:1,max_length:64,comparison:"exact"}}); return draft; };
   const agendaControl = testControl ?? process.env.OWNED_CONVERSATIONAL_AGENDA_CONTROL;
-  const evidence = interruption ? `${evidenceRoot}-${interruption}` : testControl ? `${evidenceRoot}-${testControl}` : inputBounds ? `${evidenceRoot}-input-bounds` : evidenceRoot;
+  const evidence = ordinaryTopReview ? `${evidenceRoot}-ordinary-input-review` : reopenInput ? `${evidenceRoot}-reopen-input` : interruption ? `${evidenceRoot}-${interruption}` : testControl ? `${evidenceRoot}-${testControl}` : inputBounds ? `${evidenceRoot}-input-bounds` : evidenceRoot;
   if (![13, 32, 50].includes(count)) throw new Error("A finite public count is required.");
   await fs.mkdir(evidence, { recursive: false });
   const root = existingProject ?? path.join(evidence, "project");
@@ -67,34 +67,53 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
   expect(boundedJob.length).toBeLessThan(4000);
   let transcript = "", requests = 0, coverageRequests = 0, stage = existingProject ? "resume_create" : "create", actionReplyIndex = new Map<string, number>();
   let publicationDeclined = false, midpointPaused = false, editInterrupted = false, editSaveDeclined = false;
+  let versionAnswerPending: { question_id: string; revision: number } | undefined;
+  const versionQuestion = "Do all your applications advance the card change counter every time they change a card?";
   const decisions: any[] = [], notices: any[] = [], bodies: any[] = [];
   let interrupt: (() => void) | undefined;
-  let answers = existingProject ? [] : [`/attach ${sourceFile}`, boundedJob, ...(inputBounds ? [Array.from({length:count},(_,i)=>String(i+1)).join(","),"operator_note","1..64","5"] : [])];
+  // The connected Source interpretation reads the same explicit line5 bounds;
+  // obsolete manual registration keys must not become a later writer answer.
+  let answers = existingProject ? [] : [`/attach ${sourceFile}`, boundedJob];
   const write = (text: string) => { transcript += text; appendFileSync(path.join(evidence, "live-transcript.txt"), text); };
   const fail = (message: string): never => { throw new Error(`${message}\nTRANSCRIPT TAIL\n${transcript.slice(-12000)}`); };
   const io: any = {
     write, writeChunk: write, columns: () => 110, isTerminal: () => false,
     onInterrupt: (handler: () => void) => { interrupt = handler; return () => { interrupt = undefined; }; }, close: () => { decisions.push({ kind: "chat_closed", stage }); }, setStatus: () => {}, clearStatus: () => {},
     review: async (title: string, lines: string[]) => { write(`\nREVIEW ${title}\n${lines.join("\n")}\n`); },
-    read: async (prompt: string) => { const answer = answers.shift(); decisions.push({ kind: "answer", prompt, answer, unresolved: answer === undefined }); if (answer === undefined) interrupt?.(); return answer; },
+    read: async (prompt: string) => {
+      if (versionAnswerPending) {
+        const saved = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+        const question = saved.operator_questions.find((q: any) => q.id === versionAnswerPending!.question_id);
+        expect(question).toMatchObject({ revision: versionAnswerPending.revision, kind: "writer_maintenance",
+          presentation: { text: versionQuestion }, target: { resource: "workshop.cards", field: "version" } });
+        expect(question.raw_answer).toBeUndefined();
+        expect(saved.owner_handoffs.find((h: any) => h.id === question.handoff_id)?.state).toBe("waiting");
+        versionAnswerPending = undefined;
+        decisions.push({ kind: "answer", prompt, answer: sourceLines[5], origin: "existing_source_line6", unresolved: false });
+        return sourceLines[5];
+      }
+      const answer = answers.shift(); decisions.push({ kind: "answer", prompt, answer, unresolved: answer === undefined }); if (answer === undefined) interrupt?.(); return answer;
+    },
     readConversation: async (prompt: string) => io.read(prompt),
     choose: async (choice: any) => {
       appendFileSync(path.join(evidence, "live-menus.jsonl"), `${JSON.stringify(choice)}\n`);
       const values = choice.options.map((o: any) => o.value);
       let selected: string | undefined;
-      if (choice.title === "START BOUNDARY DRAFTING") selected = stage === "create" ? "program" : ["edit_prepare", "remove_request"].includes(stage) ? "model" : stage === "remove_review" ? "review_rules" : "resume";
+      if (choice.title === "START BOUNDARY DRAFTING") selected = stage === "create" ? "program" : ["edit_prepare", "remove_request", "reopen_input"].includes(stage) ? "model" : ["remove_review", "reopen_input_review"].includes(stage) ? "review_rules" : "resume";
       else if (choice.title === "REVIEW DECLARED TEXT INPUT BOUNDS") {
         expect(choice.initialValue).toBe("pending"); selected = inputBounds ? "register" : "none"; // Exact DERIVED source meaning, supplied through public controls.
       }
       else if (choice.message === "Register another distinct input requirement?") { expect(choice.initialValue).toBe("no"); selected="no"; }
       else if (choice.message === "Save this exact attributed input-policy interpretation?") {
-        expect(choice.initialValue).toBe("no"); selected = "yes";
+        expect(choice.initialValue).toBe("no");
+        selected = "yes";
       }
+      else if (choice.title === "SAVED INPUT-POLICY DECISION") { expect(choice.initialValue).toBe("keep"); selected = "answer"; }
       else if (choice.title === "VERIFIED ACTION BOUNDARY") selected = stage === "remove_resume" && values.includes("activate") ? "activate" : "back";
       else if (choice.title === "SETUP NEEDS ATTENTION" && interruption) selected = "pause";
       else if (choice.title === "CLIENT FOR THIS JOB") selected = "later";
       else if (choice.title === "SEND ATTACHED RULES") { expect(choice.initialValue).toBe("cancel"); selected = "send"; }
-      else if (choice.title === "USE THE SAVED ATTACHMENT") selected = "continue";
+      else if (choice.title === "USE THE SAVED ATTACHMENT") selected = stage === "reopen_input" ? "review" : "continue";
       else if (choice.message === "Use this complete intended Action inventory?") {
         expect(choice.initialValue).toBe("no");
         for (let i = 1; i <= count; i++) expect(transcript).toContain(`workshop.adjust_card_${i}`);
@@ -115,7 +134,7 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
       }
       else if (choice.message === "Run a new bounded model review?") {
         expect(choice.initialValue).toBe("no"); expect(transcript).toContain("openai[owned-offline]");
-        expect(transcript).toContain("Maximum: three model response submissions"); expect(transcript).toContain("Review subject:"); selected = "yes";
+        expect(transcript).toContain("Maximum: three model response submissions"); expect(transcript).toContain("Review subject:"); selected = stage.startsWith("reopen_input") ? "no" : "yes";
       }
       else if (choice.title === "CLIENT INTEGRATION RESPONSIBILITIES" && values.includes("assign")) {
         expect(choice.initialValue).toBe("back"); expect(choice.message).toContain("remain unverified");
@@ -123,6 +142,14 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
       }
       else if (choice.message === "REVIEW CHANGED-RECORD PROTECTION" && values.includes("confirm")) {
         expect(choice.initialValue).toBe("pending"); expect(transcript).toContain("workshop.cards.version"); selected = "confirm";
+      }
+      else if (choice.message === "Record this planned counter maintenance for the current setup?") {
+        expect(choice.initialValue).toBe("no");
+        const shown = transcript.replace(/\s+/gu, " ");
+        expect(shown).toContain("Counter: workshop.cards.version."); expect(shown).toContain(sourceLines[5]);
+        expect(shown).toContain("Implementation remains unverified.");
+        expect(shown).toContain("It grants no Read or execution permission and changes no business rule.");
+        selected = "yes";
       }
       else if (values.includes("activate") && /(?:READ|ACCESS|BOUNDARY)/.test(choice.title)) { expect(choice.initialValue).toBe("finish"); selected = "activate"; }
       else if (values.includes("yes") && /Send this Boundary-authoring conversation|Allow the assistant to send|reviewed structural context|Allow the assistant to read|Allow the reviewed change requests|Activate verified Action Boundary|Activate.*local read-only/.test(choice.message)) {
@@ -150,6 +177,31 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
         : stage === "remove_request" ? { status: "planned", read_mode: "reuse", action_mode: "remove", action_outcome: "workshop.adjust_card_50", summary: "Withdraw only the explicitly removed Action 50; retain all outside responsibilities." }
         : { status: "planned", read_mode: "create", read_intent: "Read card labels and unit counts from workshop.cards.",
         action_mode: "create", action_strategy: "rule_derived", action_intent: intents[0], action_intents: intents, action_outcomes: Array.from({ length: count }, (_, i) => `workshop.adjust_card_${i + 1}`), summary: `Prepare the complete selected ${count}-Action program.` };
+    } else if (names.includes("runner__propose_operator_decision")) {
+      const question = lineJson(text, "Current question: ");
+      name = "runner__propose_operator_decision";
+      expect(question.target.outcomes).toEqual(Array.from({ length: count }, (_, i) => `workshop.adjust_card_${i + 1}`));
+      if (question.kind === "input_bounds") {
+        expect(question.source_binding).toBeDefined();
+        expect(question.source_reference).toBe(canonicalJsonDigest(question.source_binding));
+        for (const line of sourceLines) expect(text).toContain(line);
+        args = { question_id: question.question_id, revision: question.revision, source_reference: question.source_reference,
+          status: "proposal", disposition: "proposed", value: { kind: "input_bounds", requirements: inputBounds
+            ? [{ outcomes: question.target.outcomes, input: "operator_note", start: 5, end: 5, min_length: 1, max_length: 64 }] : [] } };
+      } else {
+        expect(question.kind).toBe("writer_maintenance");
+        expect(question.target).toMatchObject({ phase: "changed_record_protection", resource: "workshop.cards", field: "version" });
+        expect(question.evidence).toEqual([{ id: "version-structure", digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) }]);
+        if (question.answer_id === undefined) {
+          expect(question.raw_answer).toBeUndefined();
+          versionAnswerPending = { question_id: question.question_id, revision: question.revision };
+          args = { question_id: question.question_id, revision: question.revision, status: "needs_information", question: versionQuestion };
+        } else {
+          expect(question.raw_answer).toBe(sourceLines[5]); expect(question.answer_id).toEqual(expect.any(String));
+          args = { question_id: question.question_id, revision: question.revision, answer_id: question.answer_id,
+            status: "proposal", disposition: "proposed", value: { kind: "writer_maintenance", maintenance: "all_writers_increment" } };
+        }
+      }
     } else if (names.includes("runner__submit_read_workloads")) {
       name = "runner__submit_read_workloads";
       args = { allowed: [{ id: "card_labels_units", description: "Read card labels and requested unit counts.", plan: { kind: "rows", resource: "workshop.cards", select: ["label", "units"] } }], forbidden: [],
@@ -313,6 +365,43 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
     if(inputBounds)for(const entry of declinedDraft!.authority.rules) expect(entry.rule.inputs!.find(i=>i.name==='operator_note')!.type).toMatchObject({min_length:1,max_length:64});
     expect(publicationDeclined).toBe(true); expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
     await fs.writeFile(path.join(evidence, "declined-publication.json"), JSON.stringify({ digest: declinedDraft?.digest, count, active: false }, null, 2));
+    if (reopenInput) {
+      const beforeResume = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+      const beforeSources = await loadPolicySources(root, beforeResume.policy_source_session);
+      const replacement = path.join(root, "reopened-input-rules.txt");
+      // A new authentic attachment version with unchanged, explicit input facts.
+      // It must be freshly attributed against this Source; no old record rewrite.
+      await fs.writeFile(replacement, sourceText + "\nUpdated policy heading; the declared caller-note rules remain unchanged.");
+      const beforeRequests = requests, beforeCoverage = coverageRequests, beforeDecisions = decisions.length;
+      if (ordinaryTopReview) {
+        // Labelled fixture preparation through the real Source storage API.
+        // The actual public START Review must obtain fresh transfer consent and
+        // adopt input meaning through its own assisted default-No route.
+        const changed = structuredClone(beforeSources);
+        const next = policyTextSnapshot(Buffer.from(await fs.readFile(replacement)), "reopened-input-rules.txt", changed.snapshots.length + 1);
+        changed.snapshots.push(next); changed.active = next.version;
+        await savePolicySources(root, changed, { expectedDigest: canonicalJsonDigest(beforeSources) });
+        stage = "reopen_input_review"; answers = [];
+      } else { stage = "reopen_input"; answers = [`/attach ${replacement}`]; }
+      await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], inspection, outer, undefined, options);
+      const afterResume = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+      const afterSources = await loadPolicySources(root, afterResume.policy_source_session);
+      const current = afterSources.snapshots.find(source => source.version === afterSources.active)!;
+      expect(current.digest).not.toBe(beforeSources.snapshots.find(source => source.version === beforeSources.active)!.digest);
+      expect(decisions.slice(beforeDecisions).some(decision => decision.title === "REVIEW DECLARED TEXT INPUT BOUNDS"), transcript.slice(-12000)).toBe(false);
+      const added = afterSources.input_policy_reviews!.slice(beforeSources.input_policy_reviews!.length);
+      expect(added).toHaveLength(1);
+      expect(added[0]).toMatchObject({ source_digest: current.digest, decision: "confirmed", requirements: [{
+        input: "operator_note", min_length: 1, max_length: 64, start: 5, end: 5,
+      }], question_reference: expect.any(Object) });
+      expect(afterSources.snapshots.slice(0, beforeSources.snapshots.length)).toEqual(beforeSources.snapshots);
+      expect(afterSources.input_policy_reviews!.slice(0, beforeSources.input_policy_reviews!.length)).toEqual(beforeSources.input_policy_reviews);
+      expect(afterResume.generation_recovery.operations.slice(0, beforeResume.generation_recovery.operations.length)).toEqual(beforeResume.generation_recovery.operations);
+      expect(await listActionRuleAuthorityDrafts(root)).toEqual([declinedDraft]);
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      expect(requests).toBe(beforeRequests + 1); expect(coverageRequests).toBe(beforeCoverage);
+      return;
+    }
     stage = "publish_resume";
     result = await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], inspection, outer, undefined, options);
     const active = await loadActiveActionRuleAuthority(root);
@@ -410,6 +499,8 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
 it(`runs the public DERIVED ${count}-Action route with complete native refusal and reprepare`, () => runPublicConversational(), 120000);
 if (!process.env.OWNED_CONVERSATIONAL_AGENDA_CONTROL && !existingProject) {
   if(count===13)it("delivers a declared input-bound correction through public save, whole review and restart",()=>runPublicConversational(undefined,true),120000);
+  if(count===13)it("reopened saved Source review interprets known input facts without technical registration",()=>runPublicConversational(undefined,true,undefined,true),120000);
+  if(count===13)it("ordinary top-level saved Review interprets a changed Source without technical registration",()=>runPublicConversational(undefined,true,undefined,true,true),120000);
   it.each(["no", "escape", "source_drift"] as const)("keeps the real program entry unmutated on %s", control => runPublicConversational(control), 30000);
 }
 

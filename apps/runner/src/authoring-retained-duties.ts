@@ -1,10 +1,11 @@
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
-import type { ActionRuleCoverageLineage, ActionRuleProspectiveWithdrawal } from './action-rule-authority.js';
+import type { ActionRuleCoverageLineage, ActionRuleProspectiveWithdrawal, ActionRuleReviewSubject } from './action-rule-authority.js';
 import { proveExactActionWithdrawal } from './action-rule-withdrawal-proof.js';
 import { actionRuleModelDraftFromAuthority } from './action-rule-draft.js';
 import { explorationBoundaryCandidateDigest } from './auto-boundary.js';
 import { deferredReviewObligation, receiptConfigurationComponentOnly, isDeferredSourceReadback,
-  isDeferredSourceCounterMaintenance, type PolicyCoverage, type PolicyPassage, type PolicyTextSnapshot, type RetainedDutyHistory } from './authoring-policy-source.js';
+  isDeferredSourceCounterMaintenance, validStoredCoverage, counterSourceReviewContextDigest,
+  type CrossSourceCounterReview, type PolicyCoverage, type PolicyPassage, type PolicyTextSnapshot, type RetainedDutyHistory } from './authoring-policy-source.js';
 import type { CoverageFeedback } from './authoring-coverage-feedback.js';
 import { resolveSourceCounterObligation } from './authoring-counter-maintenance-review.js';
 import { assessReviewObligation } from './authoring-obligation-review.js';
@@ -69,7 +70,65 @@ export type RetainedDutyPlan = { retain: PolicyPassage[]; retire: Array<{ passag
   original_report_digest: string; original_report: PolicyCoverage; coverage_authority_digest: string;
   expected_continuing_paths?: string[] }>;
   pending?: Array<{ passage: PolicyPassage; basis?: ReturnType<typeof prospectiveBasis> | ReturnType<typeof removalBasis>;
-    record: Extract<RetainedDutyHistory, { disposition: 'pending_exact_withdrawal' }> }> };
+    record: Extract<RetainedDutyHistory, { disposition: 'pending_exact_withdrawal' }> }>;
+  counterHistory?: CrossSourceCounterReview[];
+  crossSource?: { base: Omit<CrossSourceCounterReview, 'mappings'>; originalDuties: PolicyPassage[]; preparedDigest: string } };
+
+/** Supplied only by host repository inspection. A saved report, field-name
+ * match or model response cannot construct this missing origin. */
+export type CounterSourceReviewContext = { snapshots: PolicyTextSnapshot[];
+  selected?: ActionRuleReviewSubject; readDigest?: string; authorityDigest?: string };
+
+function prepareCounterSourceTransition(previous: PolicyCoverage, source: PolicyTextSnapshot, draft: unknown,
+  coverageAuthority: string | undefined, context: CounterSourceReviewContext | undefined): NonNullable<RetainedDutyPlan['crossSource']> {
+  const fail = (): never => { throw new RetainedDutyApplicabilityError('/source', 'binding_changed'); };
+  const selected = context?.selected;
+  if (!context || !selected || !validStoredCoverage(previous, context.snapshots) || previous.retained_duty_history?.length
+    || !['active','disabled'].includes(selected.identity.location)
+    || selected.identity.location !== (selected.authority.state === 'disabled' ? 'disabled' : 'active')
+    || !/^sha256:[a-f0-9]{64}$/u.test(selected.identity.store) || !selected.identity.record || selected.identity.record.length > 128
+    || context.authorityDigest !== coverageAuthority
+    || coverageAuthority !== canonicalJsonDigest({read:context.readDigest,action:selected.authority.digest})) fail();
+  const oldSource = context!.snapshots.find(s => s.digest === previous.source_digest);
+  if (!oldSource || source.digest === oldSource.digest) fail();
+  try {
+    if (explorationBoundaryCandidateDigest(valueAt(draft,'/read') as Parameters<typeof explorationBoundaryCandidateDigest>[0]) !== context!.readDigest) fail();
+    const actions = selected!.authority.authority.rules.map(r => actionRuleModelDraftFromAuthority({authority:selected!.authority.authority,
+      outcome:r.rule.outcome,review:selected!.authority.reviews.find(v=>v.outcome===r.rule.outcome)!,preserveVerificationFields:true}));
+    if (canonicalJsonDigest(valueAt(draft,'/actions')) !== canonicalJsonDigest(actions)) fail();
+  } catch { fail(); }
+  const originalDuties = previous.passages.filter(carriedReviewDuty);
+  if (!originalDuties.length || originalDuties.length > 120 || new Set(originalDuties.map(dutyKey)).size !== originalDuties.length) fail();
+  for (const p of originalDuties) {
+    const match = counterPath.exec(p.source_counter_obligation?.path ?? '');
+    if (!match || !isDeferredSourceCounterMaintenance(p) || !deferredReviewObligation(p)) fail();
+    const outcome = match![1]!.replace(/~1/gu,'/').replace(/~0/gu,'~');
+    const rules = selected!.authority.authority.rules.filter(r=>r.rule.outcome===outcome);
+    if (rules.length !== 1) fail();
+    const rule = rules[0]!, effect = match![2] === undefined ? rule.effect_envelope : rule.effect_envelope.atomic_updates?.[Number(match![2])];
+    const evidence = valueAt(draft,p.source_counter_obligation!.path) as Record<string,unknown> | undefined;
+    if (!effect || effect.operation !== 'update' || effect.version_advance?.strategy !== 'integer_increment'
+      || effect.conflict_key !== effect.version_advance.column || evidence?.resource !== effect.target_resource
+      || evidence.field !== effect.version_advance.column || evidence.read_boundary_digest !== context!.readDigest
+      || rule.read_boundary_digest !== context!.readDigest
+      || evidence.generation_lock_fingerprint !== rule.verification_boundary.generation_lock_fingerprint
+      || evidence.generation_lock_fingerprint !== valueAt(draft,'/read/generation_lock_fingerprint')
+      || evidence.role_posture_fingerprint !== valueAt(draft,'/read/role_posture_fingerprint')) fail();
+    try {
+      const resolution = resolveSourceCounterObligation(p,oldSource!,draft);
+      if (!resolution || canonicalJsonDigest(resolution) !== canonicalJsonDigest(p.source_counter_resolution)
+        || canonicalJsonDigest(assessReviewObligation({...p,source_counter_resolution:resolution},oldSource!,draft) ?? null)
+          !== canonicalJsonDigest(p.obligation_assessment ?? null)) fail();
+    } catch { fail(); }
+  }
+  const unsigned = { origin:'HOST-COUNTER-SOURCE-REVIEW' as const, verified:false as const,
+    original_source_digest:previous.source_digest,current_source_digest:source.digest,
+    original_report:structuredClone(previous),original_report_digest:canonicalJsonDigest(previous),
+    selected:structuredClone(selected!.identity),selected_body_digest:canonicalJsonDigest(selected!.authority),
+    authority_digest:selected!.authority.digest,read_digest:context!.readDigest!,coverage_authority_digest:coverageAuthority! };
+  return {base:{...unsigned,context_digest:counterSourceReviewContextDigest(unsigned)},
+    originalDuties:structuredClone(originalDuties),preparedDigest:canonicalJsonDigest(draft)};
+}
 
 function prospectiveBasis(p: PolicyPassage, source: PolicyTextSnapshot, proof: ActionRuleProspectiveWithdrawal | undefined,
   coverageAuthority: string | undefined) {
@@ -99,7 +158,8 @@ function prospectiveBasis(p: PolicyPassage, source: PolicyTextSnapshot, proof: A
 /** Pointer availability only tells us whether to revalidate a current duty.
  * It never proves removal. This read-only assessment runs before episode consent. */
 export function prepareRetainedDutyReview(previous: PolicyCoverage | undefined, source: PolicyTextSnapshot, draft: unknown,
-  lineage?: ActionRuleCoverageLineage, coverageAuthority?: string, prospective?: ActionRuleProspectiveWithdrawal): RetainedDutyPlan {
+  lineage?: ActionRuleCoverageLineage, coverageAuthority?: string, prospective?: ActionRuleProspectiveWithdrawal,
+  counterContext?: CounterSourceReviewContext): RetainedDutyPlan {
   const plan: RetainedDutyPlan = { retain: [], retire: [], pending: [] };
   if (prospective) {
     const expected = prospective.candidate.authority.rules.map(r => actionRuleModelDraftFromAuthority({
@@ -112,9 +172,20 @@ export function prepareRetainedDutyReview(previous: PolicyCoverage | undefined, 
     } catch { throw new RetainedDutyApplicabilityError('/prospective_withdrawal','binding_changed'); }
   }
   if (!previous) return plan;
+  if (previous.cross_source_counter_reviews?.length) {
+    if (!counterContext || !validStoredCoverage(previous,counterContext.snapshots))
+      throw new RetainedDutyApplicabilityError('/history','binding_changed');
+    plan.counterHistory = structuredClone(previous.cross_source_counter_reviews);
+  }
   const prior = previous.passages.filter(carriedReviewDuty);
-  if (previous.source_digest !== source.digest && (prior.length || previous.retained_duty_history?.length))
-    throw new RetainedDutyApplicabilityError('/source', 'binding_changed');
+  if (previous.source_digest !== source.digest && previous.passages.some(p=>p.source_counter_obligation?.requirement==='independent_assurance'))
+    throw new RetainedDutyApplicabilityError('/source','binding_changed');
+  if (previous.source_digest !== source.digest && (prior.length || previous.retained_duty_history?.length || plan.counterHistory?.length)) {
+    if (prospective || lineage?.origins.some(origin=>origin.transitions.some(t=>t.removed_outcomes.length || t.introduced_outcomes.length)))
+      throw new RetainedDutyApplicabilityError('/source','binding_changed');
+    plan.crossSource = prepareCounterSourceTransition(previous,source,draft,coverageAuthority,counterContext);
+    return plan;
+  }
   for (const p of prior) {
     if (p.draft_paths.every(path => valueAt(draft, path) !== undefined)) {
       const outcome = counterPath.exec(p.source_counter_obligation?.path ?? '')?.[1]?.replace(/~1/gu, '/').replace(/~0/gu, '~');
@@ -195,6 +266,33 @@ export function prepareRetainedDutyReview(previous: PolicyCoverage | undefined, 
 
 export function assembleRetainedDutyReview(report: PolicyCoverage, plan: RetainedDutyPlan, source: PolicyTextSnapshot, draft: unknown,
   validate: (passages: PolicyPassage[]) => PolicyCoverage): PolicyCoverage {
+  const counterHistory = structuredClone(plan.counterHistory ?? []);
+  if (plan.crossSource) {
+    if (plan.crossSource.preparedDigest !== canonicalJsonDigest(draft) || report.source_digest !== source.digest
+      || plan.crossSource.base.current_source_digest !== source.digest)
+      throw new RetainedDutyApplicabilityError('/source','binding_changed');
+    const mappings = plan.crossSource.originalDuties.map(original => {
+      const candidates = report.passages.filter(p=>p.source_counter_obligation?.path===original.source_counter_obligation!.path);
+      const current = candidates[0];
+      if (candidates.length !== 1 || !isDeferredSourceCounterMaintenance(current!) || !deferredReviewObligation(current!)
+        || current!.source_counter_resolution?.source_digest !== source.digest
+        || current!.source_counter_resolution?.proof_digest !== original.source_counter_resolution!.proof_digest)
+        throw new RetainedDutyApplicabilityError(original.draft_paths[0]!,'retained_validation');
+      return {original_passage_digest:canonicalJsonDigest(original),current_passage:structuredClone(current!),
+        current_passage_digest:canonicalJsonDigest(current!)};
+    });
+    counterHistory.push({...structuredClone(plan.crossSource.base),mappings});
+    // The prepared commit validates the result again. Accept only the plain
+    // canonical review or this exact host-derived assembly; never strip or
+    // merge an arbitrary supplied audit to make it pass.
+    try {
+      const plain = validate(report.passages);
+      const expected = {...plain, cross_source_counter_reviews:counterHistory};
+      const supplied = canonicalJsonDigest(report);
+      if (supplied !== canonicalJsonDigest(plain) && supplied !== canonicalJsonDigest(expected)) throw new Error();
+    } catch { throw new RetainedDutyApplicabilityError('/source','retained_validation'); }
+  }
+  if (counterHistory.length > 120) throw new RetainedDutyApplicabilityError('/history','binding_changed');
   const missing = plan.retain.filter(p => !report.passages.some(current => dutyKey(current) === dutyKey(p)
     && Boolean(deferredReviewObligation(current))));
   let complete: PolicyCoverage;
@@ -254,6 +352,7 @@ export function assembleRetainedDutyReview(report: PolicyCoverage, plan: Retaine
   }
   if (history.length > 120) throw new RetainedDutyApplicabilityError('/history', 'binding_changed');
   return { ...complete, ...(history.length ? { retained_duty_history: history } : {}),
+    ...(counterHistory.length ? { cross_source_counter_reviews: counterHistory } : {}),
     ...(history.some(r => r.disposition==='pending_exact_withdrawal')
       ? {current_pending_retained_duties:[...new Set(applicable)]} : {}) };
 }

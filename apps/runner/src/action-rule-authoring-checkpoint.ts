@@ -1,3 +1,6 @@
+import { assertAuthoringGenerationAdmission } from "./authoring-generation-recovery.js";
+import { AskError } from "./model-provider-transport.js";
+import type { AskAuthoringEpisodeBudget } from "./model-ask.js";
 import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
@@ -66,11 +69,31 @@ export function parseReviewedActionVersionFields(value: unknown, maximum = 16): 
   return structuredClone(value) as ReviewedActionVersionField[];
 }
 
+/** Append-only accounting for one ordinary conversational producer turn.
+ * Completion fields are associations to actual B35 output, never self-proving
+ * consent. The coordinated host must verify them before closure or rollover. */
+export type ActionAuthoringLogicalTurn = {
+  id: string;
+  origin_context_digest: Digest;
+  iterations_used: number;
+  tool_calls_used: number;
+  used_version_corrections?: string[];
+  completed?: { kind: "ordinary_clarification" | "compiled_draft";
+    completion: AuthoringQuestionCompletion; material_digest: Digest };
+  legacy_start?: { checkpoint_digest: Digest; completion: AuthoringQuestionCompletion };
+};
+export type ActionAuthoringPendingVersion = {
+  turn_id: string; root_question_id: string; question_id: string; handoff_id: string;
+  resource: string; field: string; proof_digest: Digest;
+};
+
 export type ActionRuleAuthoringCheckpoint = {
   schema_version: "synapsor.action-authoring-checkpoint.v1";
   intent_digest: `sha256:${string}`;
   context_digest: `sha256:${string}`;
   components: Partial<Record<"verification" | "effect" | "rule" | "approval", Record<string, unknown>>>;
+  logical_turns?: ActionAuthoringLogicalTurn[];
+  pending_version?: ActionAuthoringPendingVersion;
   operator_messages?: string[];
   pending_question?: {
     question: string;
@@ -98,7 +121,7 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const record = value as Record<string, unknown>;
   if (record.schema_version !== "synapsor.action-authoring-checkpoint.v1"
-    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "pending_question", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "source_repair", "digest"].includes(key))
+    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "pending_question", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "source_repair", "logical_turns", "pending_version", "digest"].includes(key))
     || ![record.intent_digest, record.context_digest, record.digest].every((digest) => typeof digest === "string" && /^sha256:[a-f0-9]{64}$/u.test(digest))
     || !record.components || typeof record.components !== "object" || Array.isArray(record.components)) throw fail();
   if (record.operator_messages !== undefined && (!Array.isArray(record.operator_messages)
@@ -118,6 +141,52 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
         || typeof c.operation_id !== "string" || !/^[a-f0-9-]{36}$/u.test(c.operation_id)
         || ![c.request_digest,c.context_digest,c.response_digest].every(isDigest)) throw fail();
     }
+  }
+  if (record.logical_turns !== undefined) {
+    const turns = record.logical_turns;
+    const digest = (v: unknown) => typeof v === "string" && /^sha256:[a-f0-9]{64}$/u.test(v);
+    const uuid = (v: unknown) => typeof v === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(v);
+    const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+    const completion = (v: unknown) => object(v) && Object.keys(v).every(k => ["operation_id", "request_digest", "context_digest", "response_digest"].includes(k))
+      && uuid(v.operation_id) && [v.request_digest, v.context_digest, v.response_digest].every(digest);
+    if (!Array.isArray(turns) || !turns.length) throw fail();
+    const ids = new Set<string>();
+    for (let i = 0; i < turns.length; i += 1) {
+      const turn = turns[i];
+      if (!object(turn) || Object.keys(turn).some(k => !["id", "origin_context_digest", "iterations_used", "tool_calls_used", "used_version_corrections", "completed", "legacy_start"].includes(k))
+        || !uuid(turn.id) || ids.has(turn.id as string) || !digest(turn.origin_context_digest)
+        || !Number.isSafeInteger(turn.iterations_used) || (turn.iterations_used as number) < 0 || (turn.iterations_used as number) > 12
+        || !Number.isSafeInteger(turn.tool_calls_used) || (turn.tool_calls_used as number) < 0 || (turn.tool_calls_used as number) > 24) throw fail();
+      ids.add(turn.id as string);
+      if (turn.used_version_corrections !== undefined && (!Array.isArray(turn.used_version_corrections)
+        || !turn.used_version_corrections.length || turn.used_version_corrections.some(root => !uuid(root))
+        || new Set(turn.used_version_corrections).size !== turn.used_version_corrections.length)) throw fail();
+      if (turn.completed !== undefined) {
+        const c = turn.completed;
+        if (!object(c) || Object.keys(c).some(k => !["kind", "completion", "material_digest"].includes(k))
+          || !["ordinary_clarification", "compiled_draft"].includes(c.kind as string)
+          || !completion(c.completion) || !digest(c.material_digest)) throw fail();
+      } else if (i !== turns.length - 1) throw fail();
+      if (turn.legacy_start !== undefined) {
+        const legacy = turn.legacy_start;
+        if (i !== 0 || !object(legacy) || Object.keys(legacy).some(k => !["checkpoint_digest", "completion"].includes(k))
+          || !digest(legacy.checkpoint_digest) || !completion(legacy.completion)) throw fail();
+      }
+    }
+  }
+  if (record.pending_version !== undefined) {
+    const v = record.pending_version as ActionAuthoringPendingVersion;
+    const uuid = (v: unknown) => typeof v === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(v);
+    const tail = (record.logical_turns as ActionAuthoringLogicalTurn[] | undefined)?.at(-1);
+    if (!v || typeof v !== "object" || Array.isArray(v)
+      || Object.keys(v).some(k => !["turn_id", "root_question_id", "question_id", "handoff_id", "resource", "field", "proof_digest"].includes(k))
+      || ![v.turn_id, v.root_question_id, v.question_id].every(uuid)
+      || typeof v.handoff_id !== "string" || !v.handoff_id.trim() || v.handoff_id.length > 256
+      || typeof v.resource !== "string" || v.resource.length > 256 || !/^[A-Za-z_][A-Za-z0-9_.]*$/u.test(v.resource)
+      || typeof v.field !== "string" || v.field.length > 256 || !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(v.field)
+      || typeof v.proof_digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(v.proof_digest)
+      || !tail || tail.id !== v.turn_id || tail.completed
+      || !(record.pending_question as ActionRuleAuthoringCheckpoint["pending_question"])?.completion) throw fail();
   }
   if (record.reopened_draft !== undefined) {
     const selected = record.reopened_draft as ActionRuleAuthoringCheckpoint["reopened_draft"];
@@ -203,4 +272,90 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   const { digest, ...core } = record;
   if (canonicalJsonDigest(core) !== digest) throw fail();
   return structuredClone(record) as ActionRuleAuthoringCheckpoint;
+}
+
+/** Structural CAS transition guard. Genuine B35 completion, currentness and
+ * human INPUT acknowledgement are independently required by the host. */
+export function assertActionLogicalTurnJournalAdvance(previous: ActionRuleAuthoringCheckpoint | undefined,
+  next: ActionRuleAuthoringCheckpoint): void {
+  const fail = () => new Error("ACTION_AUTHORING_LOGICAL_TURN_STALE: Preserve the owning turn; its admissions or completion changed.");
+  const before = previous?.logical_turns, after = next.logical_turns;
+  if (!before) {
+    if (!after) return;
+    if (after.length !== 1 || after[0]!.completed || after[0]!.iterations_used !== 0 || after[0]!.tool_calls_used !== 0
+      || after[0]!.used_version_corrections) throw fail();
+    if (previous && after[0]!.legacy_start?.checkpoint_digest !== previous.digest) throw fail();
+    if (!previous && after[0]!.legacy_start) throw fail();
+    return;
+  }
+  if (!after || after.length < before.length || after.length > before.length + 1 || previous!.intent_digest !== next.intent_digest) throw fail();
+  for (let i = 0; i < before.length; i += 1) {
+    const old = before[i]!, current = after[i]!;
+    if (old.completed) { if (canonicalJsonDigest(old) !== canonicalJsonDigest(current)) throw fail(); continue; }
+    if (i !== before.length - 1 || current.id !== old.id || current.origin_context_digest !== old.origin_context_digest
+      || canonicalJsonDigest(current.legacy_start ?? null) !== canonicalJsonDigest(old.legacy_start ?? null)
+      || current.iterations_used < old.iterations_used || current.tool_calls_used < old.tool_calls_used) throw fail();
+    const roots = old.used_version_corrections ?? [], nextRoots = current.used_version_corrections ?? [];
+    if (nextRoots.length < roots.length || roots.some((root, index) => nextRoots[index] !== root)) throw fail();
+    if (after.length > before.length && !current.completed) throw fail();
+  }
+  if (after.length > before.length) {
+    const tail = after.at(-1)!;
+    if (tail.completed || tail.legacy_start || tail.iterations_used !== 0 || tail.tool_calls_used !== 0 || tail.used_version_corrections) throw fail();
+  }
+}
+
+/** Non-circular ordinary material association. Own journal/completion metadata
+ * is excluded; this digest alone is never proof that a response was consumed. */
+export function actionLogicalTurnMaterialDigest(checkpoint: ActionRuleAuthoringCheckpoint): Digest {
+  return canonicalJsonDigest({ intent_digest: checkpoint.intent_digest, context_digest: checkpoint.context_digest,
+    components: checkpoint.components, question: checkpoint.pending_question ? {
+      question: checkpoint.pending_question.question, operator_message: checkpoint.pending_question.operator_message,
+      policy_source_digest: checkpoint.pending_question.policy_source_digest ?? null } : null });
+}
+
+/** The host reads its exact current checkpoint and atomically saves against the
+ * supplied digest. This helper never infers admissions from transport rows. */
+export function actionLogicalTurnBudget(input: {
+  read(): ActionRuleAuthoringCheckpoint;
+  save(next: ActionRuleAuthoringCheckpoint, expectedDigest: Digest): Promise<void>;
+}): AskAuthoringEpisodeBudget & { reserveCorrection(rootQuestionId: string): Promise<boolean> } {
+  const tail = (checkpoint: ActionRuleAuthoringCheckpoint) => {
+    const current = checkpoint.logical_turns?.at(-1);
+    if (!current || current.completed) throw new AskError("ASK_ACTION_LOGICAL_TURN_PENDING", "The genuine owning Action turn is unavailable; preserve saved work.", 409);
+    return current;
+  };
+  const update = async (change: (turn: ActionAuthoringLogicalTurn, checkpoint: ActionRuleAuthoringCheckpoint) => boolean) => {
+    const previous = parseActionRuleAuthoringCheckpoint(input.read()), current = structuredClone(tail(previous));
+    if (!change(current, previous)) return false;
+    const { schema_version: _schema, digest: _digest, ...core } = previous;
+    const next = actionRuleAuthoringCheckpoint({ ...core, logical_turns: [...previous.logical_turns!.slice(0, -1), current] });
+    assertActionLogicalTurnJournalAdvance(previous, next);
+    await input.save(next, previous.digest);
+    return true;
+  };
+  return {
+    async admitIteration() {
+      assertAuthoringGenerationAdmission();
+      await update(turn => {
+        if (turn.iterations_used >= 12) throw new AskError("ASK_LOOP_LIMIT_EXCEEDED", "The saved Action logical turn has used its twelve model iterations. Preserve its pending work.", 422);
+        turn.iterations_used += 1; return true;
+      });
+    },
+    async reserveToolBatch(count) {
+      await update(turn => {
+        if (!Number.isSafeInteger(count) || count < 1 || count > 4 || turn.tool_calls_used + count > 24)
+          throw new AskError("ASK_TOOL_BUDGET_EXCEEDED", "The whole batch does not fit the saved Action logical turn. No callback was admitted.", 422);
+        turn.tool_calls_used += count; return true;
+      });
+    },
+    async reserveCorrection(rootQuestionId) {
+      return update((turn, checkpoint) => {
+        if (checkpoint.pending_version?.root_question_id !== rootQuestionId)
+          throw new AskError("ASK_ACTION_VERSION_QUESTION_STALE", "The correction does not belong to the current pending Version root.", 409);
+        if (turn.used_version_corrections?.includes(rootQuestionId)) return false;
+        turn.used_version_corrections = [...turn.used_version_corrections ?? [], rootQuestionId]; return true;
+      });
+    },
+  };
 }

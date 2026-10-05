@@ -5,6 +5,8 @@ import {newPolicySourceSession,policyTextSnapshot,savePolicySources,loadPolicySo
 import {makeSourceInputReview,sourceInputFidelity,assertSourceInputReviews,SourceInputFidelityError,assertInputFidelityRepair} from './authoring-input-policy.js';
 import {actionRuleDraftDiagnostics} from './action-rule-draft.js';
 import {reviewSourceInputPolicy} from './authoring-input-policy-operation.js';
+import {randomUUID} from 'node:crypto';
+import {createOperatorQuestion,proposeOperatorAnswer,confirmOperatorAnswer} from './authoring-operator-question.js';
 const store=canonicalJsonDigest('owned fixture store');
 const setup=()=>{
  const source=policyTextSnapshot(Buffer.from('The caller note must contain 1 through 64 UTF-16 units.\nNo normalization.'),'policy.txt');
@@ -15,6 +17,29 @@ const setup=()=>{
  return {source,session,r,action,run:()=>sourceInputFidelity(source,session,store,[action])};
 };
 describe('current attributed input policy fidelity',()=>{
+ it('binds assisted Source interpretation to exact adopted question without changing manual history',()=>{
+  const f=setup();
+  const source_binding={source_session:f.session.id,source_digest:f.source.digest as `sha256:${string}`,store_digest:store,
+   agenda_digest:canonicalJsonDigest({source_session:f.session.id,source_digest:f.source.digest,store_digest:store,outcomes:f.r.outcomes}),lines:f.source.lines};
+  const root=createOperatorQuestion({id:randomUUID(),revision:1,kind:'input_bounds',scope_digest:canonicalJsonDigest('fixture job'),
+   context_digest:canonicalJsonDigest('fixture current context'),target:{phase:'input-policy',outcomes:f.r.outcomes},source_binding,
+   material:['Required presence and string length are distinct.'],evidence:[{id:f.session.id,digest:f.source.digest as `sha256:${string}`}],
+   continuation:'input_policy_review',assistedLocalConsumer:true});
+  const proposed=proposeOperatorAnswer(root,{question_id:root.id,revision:root.revision,source_reference:canonicalJsonDigest(source_binding),
+   disposition:'proposed',value:{kind:'input_bounds',requirements:f.r.requirements}});
+  const confirmed=confirmOperatorAnswer(proposed);
+  const record=makeSourceInputReview({source:f.source,session:f.session,store,outcomes:f.r.outcomes,requirements:f.r.requirements,
+   actor:'fixture local operator',operatorQuestion:confirmed,questionRoot:confirmed} as any);
+  expect((record as any).question_reference).toMatchObject({id:confirmed.id,revision:1,digest:confirmed.digest,
+   proposal_digest:canonicalJsonDigest(confirmed.proposal),root_id:confirmed.id,root_digest:confirmed.digest,basis:'policy_source'});
+  expect(record.verified).toBe(false);expect(record.previous).toBe(f.r.digest);
+  expect(f.session.input_policy_reviews).toEqual([f.r]);expect(f.r).not.toHaveProperty('question_reference');
+  assertSourceInputReviews([f.r,record]);
+  for(const changed of [{operatorQuestion:proposed},{store:canonicalJsonDigest('other store')},
+    {requirements:[{...f.r.requirements[0]!,max_length:65}]},{outcomes:['warehouse.other']}])
+   expect(()=>makeSourceInputReview({source:f.source,session:f.session,store,outcomes:f.r.outcomes,requirements:f.r.requirements,
+    actor:'fixture local operator',operatorQuestion:confirmed,questionRoot:confirmed,...changed} as any)).toThrow();
+ });
  it('provides precise delivered model diagnostic; only equivalent compiled constraint clears it',()=>{
   const f=setup();const bad=f.run();expect(bad.findings[0]).toMatchObject({required:{min_length:1,max_length:64},established:{min_length:0,max_length:64},requirement_digest:f.r.digest});
   expect(actionRuleDraftDiagnostics(new SourceInputFidelityError(bad.findings))[0]).toMatchObject({code:'SOURCE_INPUT_CONSTRAINT_WEAKER',repair:'model',path:'draft.inputs.operator_note'});

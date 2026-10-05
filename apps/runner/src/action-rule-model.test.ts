@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { createOwnerHandoff, ownerHandoffCheckpoint } from "./authoring-owner-handoff.js";
+import { runOperatorQuestionModel } from "./authoring-operator-question-model.js";
+import { createOperatorQuestion, presentOperatorQuestion, captureOperatorAnswer } from "./authoring-operator-question.js";
 import {makeSourceInputReview,sourceInputFidelity} from "./authoring-input-policy.js";
 import {authoringDestination,newPolicySourceSession,policyTextSnapshot,recordReadInterpretation} from "./authoring-policy-source.js";
 import {buildActionAuthoringWorkUnitContract, validateActionWorkUnitAssessment, assertActionWorkUnitCorrection,
@@ -10,7 +14,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, prepareAuthoringManualRecovery,
   permitAuthoringManualRecovery, authoringTransportCheckpoint, validateAuthoringTransportState,
-  type AuthoringTransportState } from "./authoring-generation-recovery.js";
+  authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, readActionRuleAuthorityDraft, readActionRuleAuthorityRevisionBaseline, writeActionRuleAuthorityDraftIfCurrent } from "./action-rule-authority.js";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import type {
@@ -342,6 +346,200 @@ describe("conversational Action authoring tools", () => {
     body: { output: [{ type: "function_call", call_id: `call_${name}`, name: name.replaceAll(".", "__"), arguments: JSON.stringify(args) }] },
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
+
+  describe("mediated Version actual producer batch and owning checkpoint", () => {
+    function controlled(provider: "openai" | "openai_compatible" = "openai") {
+      const events: string[] = [], requests: unknown[] = [], queues: Array<ReturnType<typeof call> | ReturnType<typeof say>> = [];
+      let checkpoint: ActionRuleAuthoringCheckpoint | undefined, state: AuthoringTransportState | undefined;
+      let handoff: ReturnType<typeof createOwnerHandoff> | undefined, question: ReturnType<typeof createOperatorQuestion> | undefined;
+      const review = { resource: "billing.accounts", field: "version", maintenance: "all_writers_increment" as const,
+        proof_digest: canonicalJsonDigest("Controlled reviewed version fixture") };
+      const requestJson = vi.fn<NonNullable<AskProviderDependencies["requestJson"]>>(async request => {
+        events.push("request"); requests.push(request.body);
+        const next = queues.shift(); if (!next) throw new Error("Controlled finite provider queue exhausted");
+        if (provider === "openai_compatible") {
+          const output = next.body.output;
+          const calls = output.filter((item): item is { type: string; call_id: string; name: string; arguments: string } => item.type === "function_call");
+          if (calls.length) return { status: 200, body: { choices: [{ message: { role: "assistant", content: null,
+            tool_calls: calls.map(item => ({ id: item.call_id, type: "function", function: { name: item.name, arguments: item.arguments } })) } }] } };
+          const text = output.filter((item): item is { type: string; content: Array<{ type: string; text: string }> } => item.type === "message").flatMap(item => item.content).map(item => item.text).join("\n");
+          return { status: 200, body: { choices: [{ message: { role: "assistant", content: text } }] } };
+        }
+        return next;
+      });
+      const input = { ...requestInput(requestJson), session: { provider, model: "controlled-producer-model", dependencies: { requestJson },
+        ...(provider === "openai_compatible" ? { baseUrl: "http://127.0.0.1:11434/v1" } : {}) } };
+      const readCheckpoint = () => { if (!checkpoint) throw new Error("Expected actual checkpoint"); return checkpoint; };
+      const onCheckpoint: NonNullable<Parameters<typeof converseActionRuleDraft>[0]["onCheckpoint"]> = async (next, metadata) => {
+        if (metadata?.expected_checkpoint_digest !== checkpoint?.digest) throw new Error("ACTION_AUTHORING_LOGICAL_TURN_STALE");
+        if (metadata?.version_completion) {
+          if (!handoff || next.pending_version?.handoff_id !== handoff.id) throw new Error("Expected stable genuine handoff");
+          state = authoringQuestionCheckpoint(state, ownerHandoffCheckpoint(handoff));
+        } else if (next.pending_version) {
+          // Budget/UI writes must retain the stable version owner, not rebind
+          // the handoff to a changing whole-Action checkpoint digest.
+          expect(state!.operations.find(op => op.id === next.pending_question!.completion!.operation_id)?.question_handoff?.checkpoint_digest)
+            .toBe(handoff!.digest);
+        } else if (metadata?.ordinary_completion) {
+          expect(authoringQuestionSequenceCompletion([metadata.ordinary_completion.completion])).toEqual(metadata.ordinary_completion.completion);
+          if (next.pending_question) state = authoringQuestionCheckpoint(state, next);
+          else state = authoringTransportCheckpoint(state);
+        } else if (next.pending_question && !next.pending_version && !checkpoint?.pending_question) {
+          state = authoringQuestionCheckpoint(state, next);
+        } else if (checkpoint?.pending_question && !checkpoint.pending_version && !next.pending_question) {
+          state = authoringQuestionAnswerCheckpoint(state, checkpoint, next);
+        }
+        checkpoint = structuredClone(next); events.push("checkpoint");
+      };
+      const stageVersionQuestion: NonNullable<Parameters<typeof converseActionRuleDraft>[0]["stageVersionQuestion"]> = ({ context, resource, field }) => {
+        events.push("stage"); expect(resource).toBe(review.resource); expect(field).toBe(review.field);
+        return { ...context, review, question: "Do all applications changing an account advance this counter?" };
+      };
+      const boundary = vi.fn<NonNullable<Parameters<typeof converseActionRuleDraft>[0]["assertLogicalTurnBoundary"]>>(async ({ checkpoint: current, purpose }) => {
+        events.push(`boundary:${purpose}`);
+        const completion = current.logical_turns?.at(-1)?.completed?.completion;
+        if (completion) {
+          const op = state!.operations.find(item => item.id === completion.operation_id)!;
+          expect(op.state).toBe("checkpointed");
+          if (current.logical_turns!.at(-1)!.completed!.kind === "ordinary_clarification") {
+            expect(op.question_handoff!.answered!.answer).toBe(current.operator_messages!.at(-1));
+          }
+        }
+      });
+      const saveVersion: NonNullable<Parameters<typeof converseActionRuleDraft>[0]["reviewVersionQuestion"]> = async port => {
+        events.push("outside-question");
+        if (port.staged) {
+          expect(port.completion).toBeDefined();
+          expect(state!.operations.find(op => op.id === port.completion!.operation_id)!.state).toBe("handled");
+          handoff = createOwnerHandoff({ consumer: "version_maintenance", question: port.staged.question,
+            scope_digest: port.checkpoint().intent_digest, context_digest: port.checkpoint().context_digest, completion: port.completion! });
+          const q = presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(), revision: 1, handoff_id: handoff.id,
+            kind: "writer_maintenance", scope_digest: handoff.scope_digest, context_digest: handoff.context_digest,
+            target: { phase: "conflict counter", resource: review.resource, field: review.field, outcomes: ["billing.pause"] },
+            material: ["A planned maintenance assertion is not verified implementation or execution permission."], evidence: [], continuation: "version_mapping" }), port.staged.question);
+          question = q; expect(q.budget).toBeUndefined();
+          await port.savePendingVersion({ turn_id: port.checkpoint().logical_turns!.at(-1)!.id,
+            root_question_id: q.id, question_id: q.id, handoff_id: handoff.id, resource: review.resource, field: review.field,
+            proof_digest: review.proof_digest }, { question: port.staged.question, operator_message: input.intent, completion: port.completion! }, port.completion);
+        }
+        return undefined;
+      };
+      const tracked = <T>(operation: () => Promise<T>) => withAuthoringGenerationRecovery(async () => {
+        configureAuthoringGenerationRecovery({ available: () => true, read: () => state, write: async next => { state = structuredClone(next); },
+          current: async () => canonicalJsonDigest("Controlled owning Action context") });
+        return operation();
+      });
+      return { input, events, requestJson, queues, readCheckpoint, state: () => state, onCheckpoint, stageVersionQuestion,
+        saveVersion, boundary, review, tracked, question: () => question! };
+    }
+    it("consumes the actual Version batch before outside UI, preserving pending counters across restart", async () => {
+      const f = controlled(); f.queues.push(call("runner.review_version_field", { resource: f.review.resource, field: f.review.field }));
+      await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, onCheckpoint: f.onCheckpoint,
+        stageVersionQuestion: f.stageVersionQuestion, reviewVersionQuestion: f.saveVersion, assertLogicalTurnBoundary: f.boundary })))
+        .rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      const saved = JSON.parse(JSON.stringify(f.readCheckpoint())) as ActionRuleAuthoringCheckpoint;
+      expect(saved.logical_turns!.at(-1)).toMatchObject({ iterations_used: 1, tool_calls_used: 1 });
+      expect(saved.logical_turns!.at(-1)!.completed).toBeUndefined(); expect(saved.reviewed_version_fields).toBeUndefined();
+      expect(f.events.indexOf("stage")).toBeLessThan(f.events.indexOf("outside-question"));
+      const op = f.state()!.operations[0]!;
+      expect(op.state).toBe("checkpointed"); expect(op.question_handoff!.consumer).toBe("version_maintenance");
+      await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, checkpoint: saved, onCheckpoint: f.onCheckpoint,
+        stageVersionQuestion: f.stageVersionQuestion, reviewVersionQuestion: f.saveVersion, assertLogicalTurnBoundary: f.boundary })))
+        .rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      expect(f.requestJson).toHaveBeenCalledOnce(); expect(f.readCheckpoint()).toEqual(saved);
+    });
+    it("known later mutations in the same actual compatible batch are refused before outside UI", async () => {
+      const f = controlled("openai_compatible");
+      const version = call("runner.review_version_field", { resource: f.review.resource, field: f.review.field });
+      const later = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft")];
+      f.queues.push({ status: 200, body: { output: [...version.body.output, ...later.flatMap(item => item.body.output)] } });
+      await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, onCheckpoint: f.onCheckpoint,
+        stageVersionQuestion: f.stageVersionQuestion, reviewVersionQuestion: f.saveVersion, assertLogicalTurnBoundary: f.boundary })))
+        .rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      expect(f.requestJson).toHaveBeenCalledOnce(); expect(f.readCheckpoint().components).toEqual({});
+      expect(f.readCheckpoint().logical_turns!.at(-1)).toMatchObject({ iterations_used: 1, tool_calls_used: 4 });
+      expect(f.readCheckpoint().reviewed_version_fields).toBeUndefined(); expect(f.state()!.operations[0]!.state).toBe("checkpointed");
+    });
+    it("actual 11/23 producer batch and normal mapping consume the same final 12/24 allowance", async () => {
+      const f = controlled("openai_compatible");
+      const inspectBatch = (count: number) => ({ status: 200, body: { output: Array.from({ length: count }, (_, i) => ({ type: "function_call",
+        call_id: `inspect-${f.queues.length}-${i}`, name: "runner__inspect_action_draft", arguments: "{}" })) } });
+      for (let i = 0; i < 9; i += 1) f.queues.push(inspectBatch(2));
+      f.queues.push(inspectBatch(4), call("runner.review_version_field", { resource: f.review.resource, field: f.review.field }));
+      await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, onCheckpoint: f.onCheckpoint,
+        stageVersionQuestion: f.stageVersionQuestion, assertLogicalTurnBoundary: f.boundary,
+        reviewVersionQuestion: async port => {
+          await f.saveVersion(port);
+          expect(port.checkpoint().logical_turns!.at(-1)).toMatchObject({ iterations_used: 11, tool_calls_used: 23 });
+          const q = captureOperatorAnswer(f.question(), "All our applications advance it on each update.");
+          f.queues.push(call("runner.propose_operator_decision", { question_id: q.id, revision: q.revision, answer_id: q.raw_answer!.id,
+            status: "proposal", disposition: "proposed", value: { kind: "writer_maintenance", maintenance: "all_writers_increment" } }));
+          const mapped = await runOperatorQuestionModel({ question: q, stage: "answer-map", session: f.input.session,
+            episodeBudget: port.episodeBudget, reserveCorrection: () => port.reserveCorrection(q.id),
+            authorityGuard: expected => expected, env: {}, egressAcknowledged: true });
+          expect(mapped.state).toBe("proposed");
+          expect(port.checkpoint().logical_turns!.at(-1)).toMatchObject({ iterations_used: 12, tool_calls_used: 24 });
+          await expect(port.episodeBudget.admitIteration()).rejects.toMatchObject({ code: "ASK_LOOP_LIMIT_EXCEEDED" });
+          await expect(port.episodeBudget.reserveToolBatch(1)).rejects.toMatchObject({ code: "ASK_TOOL_BUDGET_EXCEEDED" });
+          await expect(port.reserveCorrection(randomUUID())).rejects.toMatchObject({ code: "ASK_ACTION_VERSION_QUESTION_STALE" });
+          expect(await port.reserveCorrection(q.id)).toBe(true); expect(await port.reserveCorrection(q.id)).toBe(false);
+          return undefined;
+        } }))).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      expect(f.requestJson).toHaveBeenCalledTimes(12); expect(f.readCheckpoint().logical_turns!.at(-1)!.completed).toBeUndefined();
+      expect(f.readCheckpoint().reviewed_version_fields).toBeUndefined(); expect(f.readCheckpoint().components).toEqual({});
+    });
+    it("allows genuine ordinary question, real INPUT acknowledgement and next ordinary turn", async () => {
+      const f = controlled(); f.queues.push(say("Who reviews valid exceptions?"), call("runner.review_version_field", { resource: f.review.resource, field: f.review.field }));
+      await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, onCheckpoint: f.onCheckpoint,
+        stageVersionQuestion: f.stageVersionQuestion, reviewVersionQuestion: f.saveVersion, assertLogicalTurnBoundary: f.boundary,
+        askClarification: async () => "One billing reviewer." }))).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      const turns = f.readCheckpoint().logical_turns!;
+      expect(turns).toHaveLength(2); expect(turns[0]!.completed?.kind).toBe("ordinary_clarification");
+      expect(turns[0]).toMatchObject({ iterations_used: 1, tool_calls_used: 0 });
+      expect(turns[1]).toMatchObject({ iterations_used: 1, tool_calls_used: 1 });
+      expect(f.boundary).toHaveBeenCalledOnce(); expect(f.readCheckpoint().operator_messages).toEqual(["One billing reviewer."]);
+      expect(f.state()!.operations[0]!.question_handoff!.answered!.answer).toBe("One billing reviewer.");
+    });
+    it.each([false, true])("exact saved Version proof is locally reused, while a changed proof mediates (changed=%s)", async changed => {
+      const f = controlled();
+      const reviewVersionField = vi.fn(async ({ context }: Parameters<NonNullable<Parameters<typeof converseActionRuleDraft>[0]["reviewVersionField"]>>[0]) => ({ ...context, review: f.review }));
+      f.queues.push(call("runner.review_version_field", { resource: f.review.resource, field: f.review.field }), say("Who reviews valid exceptions?"));
+      await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, onCheckpoint: f.onCheckpoint,
+        reviewVersionField, askClarification: async () => undefined }))).rejects.toThrow("CANCELLED");
+      const previous = f.readCheckpoint(); expect(previous.logical_turns).toBeUndefined();
+      const stage: NonNullable<Parameters<typeof converseActionRuleDraft>[0]["stageVersionQuestion"]> = args => {
+        const prepared = f.stageVersionQuestion(args);
+        return changed ? { ...prepared, review: { ...prepared.review, proof_digest: canonicalJsonDigest("Changed controlled proof") } } : prepared;
+      };
+      const resolver = vi.fn(f.saveVersion);
+      f.queues.push(call("runner.review_version_field", { resource: f.review.resource, field: f.review.field }));
+      if (!changed) f.queues.push(say("Does the operator have another requirement?"));
+      const running = f.tracked(() => converseActionRuleDraft({ ...f.input, checkpoint: previous, onCheckpoint: f.onCheckpoint,
+        reviewVersionField, stageVersionQuestion: stage, reviewVersionQuestion: resolver, assertLogicalTurnBoundary: f.boundary,
+        askClarification: async () => changed ? "One billing reviewer." : f.requestJson.mock.calls.length === 2 ? "One billing reviewer." : undefined }));
+      if (changed) await expect(running).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      else await expect(running).rejects.toThrow("CANCELLED");
+      expect(resolver).toHaveBeenCalledTimes(changed ? 1 : 0);
+      expect(f.readCheckpoint().logical_turns).toHaveLength(1);
+      expect(Boolean(f.readCheckpoint().pending_version)).toBe(changed);
+      if (!changed) expect(f.readCheckpoint().reviewed_version_fields).toEqual([f.review]);
+    });
+    it("unknown interrupted legacy counters cannot be guessed as a fresh allowance", async () => {
+      const f = controlled(), noCounter = actionRuleAuthoringCheckpoint({ intent_digest: canonicalJsonDigest(f.input.intent),
+        context_digest: canonicalJsonDigest({ catalog: f.input.builtCatalog.catalog, read: f.input.readBoundaryDigest, baseline: null }), components: {} });
+      await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, checkpoint: noCounter, onCheckpoint: f.onCheckpoint,
+        stageVersionQuestion: f.stageVersionQuestion, reviewVersionQuestion: f.saveVersion, assertLogicalTurnBoundary: f.boundary })))
+        .rejects.toThrow("LOGICAL_TURN_UNKNOWN");
+      expect(f.requestJson).not.toHaveBeenCalled(); expect(f.boundary).not.toHaveBeenCalled();
+    });
+    it("a failed initial journal CAS admits no provider call", async () => {
+      const f = controlled();
+      await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, onCheckpoint: async () => { throw new Error("CONTROLLED_CAS_LOST"); },
+        stageVersionQuestion: f.stageVersionQuestion, reviewVersionQuestion: f.saveVersion, assertLogicalTurnBoundary: f.boundary })))
+        .rejects.toThrow("CONTROLLED_CAS_LOST");
+      expect(f.requestJson).not.toHaveBeenCalled();
+    });
+  });
 
   describe("current work-unit contract", () => {
     const fixture = () => {

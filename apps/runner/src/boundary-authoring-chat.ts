@@ -53,7 +53,7 @@ export type BoundaryAuthoringChat = {
   streamRunner(title: string, lines?: string[], tone?: BoundaryAuthoringTone): Promise<void>;
   streamCheckpoint(title: string, lines?: string[], tone?: BoundaryAuthoringTone): Promise<void>;
   streamModel(lines: string[]): Promise<void>;
-  readOperator?(defaultValue?: string, assertAnswerCurrent?: () => Promise<void>, options?: { recordPolicyAnswer?: boolean }): Promise<string | undefined>;
+  readOperator?(defaultValue?: string, assertAnswerCurrent?: () => Promise<void>, options?: { recordPolicyAnswer?: boolean; preserveWhitespace?: boolean }): Promise<string | undefined>;
   rememberDetails(title: string, lines: string[]): void;
   showDetails(): void;
   providerStream(event: AskProviderStreamEvent): void;
@@ -870,17 +870,17 @@ export function createBoundaryAuthoringChat(input: {
       await streamRunner(runnerLines[0]!, runnerLines.slice(1));
     }
   };
-  const read = async (prompt: string, speaker: BoundaryAuthoringSpeaker = "runner", defaultValue?: string, recordPolicyAnswer = true) => {
+  const read = async (prompt: string, speaker: BoundaryAuthoringSpeaker = "runner", defaultValue?: string, recordPolicyAnswer = true, preserveWhitespace = false) => {
     writeRole(speaker, [prompt]);
     pendingConversationQuestion = { speaker, lines: [prompt] };
-    const answer = await readAnswer(defaultValue, recordPolicyAnswer);
+    const answer = await readAnswer(defaultValue, recordPolicyAnswer, undefined, true, preserveWhitespace);
     return answer === "" && defaultValue !== undefined ? defaultValue : answer;
   };
   let sourceCommandHandler: ((command: string, argument: string) => Promise<boolean | "reviewed">) | undefined;
   let sourceHasDraft: (() => boolean) | undefined;
   let completedSourceReviews = 0;
   let sourceAnswerRecorder: ((answer: string) => Promise<void>) | undefined;
-  const readAnswer = async (defaultValue?: string, recordPolicyAnswer = true, assertAnswerCurrent?: () => Promise<void>, recordSourceChangedAnswer = true) => {
+  const readAnswer = async (defaultValue?: string, recordPolicyAnswer = true, assertAnswerCurrent?: () => Promise<void>, recordSourceChangedAnswer = true, preserveWhitespace = false) => {
     finishLiveResponse();
     await livePending;
     io.clearStatus?.();
@@ -889,7 +889,7 @@ export function createBoundaryAuthoringChat(input: {
       assertNotCancelled();
       const prompt = `${theme.focus("you>")} ${defaultValue && !sourceChanged ? `${theme.dim(`[${defaultValue}]`)} ` : ""}`;
       const answer = io.readConversation
-        ? await io.readConversation(prompt)
+        ? await io.readConversation(prompt, preserveWhitespace ? { literal: true } : undefined)
         : io.readWithEscape
           ? await io.readWithEscape(prompt)
           : await io.read(prompt);
@@ -1234,10 +1234,10 @@ export function createBoundaryAuthoringChat(input: {
       const speaker = isModelQuestion(undefined, options?.context) ? "model" : "runner";
       if (speaker === "model") {
         await streamModel(modelQuestionTurn(prompt, options?.context?.[0], options?.context));
-        return readAnswer();
+        return readAnswer(undefined, options?.recordPolicyAnswer !== false, undefined, true, options?.preserveWhitespace === true);
       }
       await writeContext(options?.context);
-      return read(prompt.replace(/:\s*$/u, ""), speaker, options?.defaultValue, options?.recordPolicyAnswer);
+      return read(prompt.replace(/:\s*$/u, ""), speaker, options?.defaultValue, options?.recordPolicyAnswer, options?.preserveWhitespace);
     },
     chooseOption: async (title, choices, options) => {
       const permission = Boolean(options?.exactDetails) || /^(?:ACTIVATE|APPROVE|APPLY|GRANT)\b/iu.test(title.trim());
@@ -1385,7 +1385,7 @@ export function createBoundaryAuthoringChat(input: {
     streamCheckpoint,
     streamModel,
     readOperator: (defaultValue, assertAnswerCurrent, options) => readAnswer(defaultValue, options?.recordPolicyAnswer !== false,
-      assertAnswerCurrent, options?.recordPolicyAnswer !== false),
+      assertAnswerCurrent, options?.recordPolicyAnswer !== false, options?.preserveWhitespace === true),
     rememberDetails,
     showDetails,
     providerStream: (event) => {

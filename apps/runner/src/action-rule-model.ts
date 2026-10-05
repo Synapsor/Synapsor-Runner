@@ -1,9 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { assertInputFidelityRepair, SourceInputFidelityError, type InputFidelityFinding } from "./authoring-input-policy.js";
 import { buildActionAuthoringWorkUnitContract, pendingActionWorkUnitSourceReview, validateActionWorkUnitAssessment, assertActionWorkUnitCorrection,
   ActionWorkUnitFidelityError, ActionWorkUnitSourcePendingError, actionWorkUnitFidelityDiagnostics,
   type ActionWorkUnitContext, type ActionWorkUnitFidelityAssessment,
   type ActionWorkUnitSourceReview, type ActionWorkUnitSourceReviewStatus } from "./action-authoring-work-unit-contract.js";
-import { authoringManualProducerInput } from "./authoring-generation-recovery.js";
+import { authoringQuestionSequenceCompletion, type AuthoringQuestionCompletion, authoringManualProducerInput } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { historySelectorChanges, type HistorySelectorReview } from "./action-history-selector-review.js";
 import { Buffer } from "node:buffer";
@@ -18,7 +19,7 @@ import type {
 } from "@synapsor/spec";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
 import { actionRelationshipTools, inspectActionRelationships, actionRelationshipReviewDetails } from "./action-rule-relationship-review.js";
-import { actionRuleAuthoringCheckpoint, parseActionRuleAuthoringCheckpoint, type ActionRuleAuthoringCheckpoint, type ActionRuleSourceRepairCheckpoint } from "./action-rule-authoring-checkpoint.js";
+import { actionRuleAuthoringCheckpoint, parseActionRuleAuthoringCheckpoint, type ActionRuleAuthoringCheckpoint, type ActionRuleSourceRepairCheckpoint, type ActionAuthoringPendingVersion, type ActionAuthoringLogicalTurn, actionLogicalTurnBudget, actionLogicalTurnMaterialDigest, assertActionLogicalTurnJournalAdvance } from "./action-rule-authoring-checkpoint.js";
 import { checkpointPrivateCollectionPrerequisite, checkpointPrivateSourcePrerequisites } from "./action-rule-checkpoint-prerequisite.js";
 import { ACTION_RULE_SOURCE_CONSTRAINT_GUIDANCE } from "./action-rule-source-evidence.js";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
@@ -28,6 +29,7 @@ import {
   resolveAskProviderConfiguration,
   runAskProviderTurn,
   completedAuthoringQuestion,
+  type AskAuthoringEpisodeBudget,
   type AskProvider,
   type AskProviderDependencies,
   type AskToolDefinition,
@@ -254,7 +256,11 @@ export type ModelActionRuleDraftInput = {
   /** Reconstruct the original prepared report from the real retained Source
    * episode and current evidence. A checkpoint's own hashes are not proof. */
   revalidateSourceRepair?: (saved: ActionRuleSourceRepairCheckpoint, context: ActionWorkUnitContext) => Promise<Extract<ActionWorkUnitFidelityAssessment, { state: "representation_mismatch" }>>;
-  onCheckpoint?: (checkpoint: ActionRuleAuthoringCheckpoint) => Promise<void>;
+  onCheckpoint?: (checkpoint: ActionRuleAuthoringCheckpoint, metadata?: {
+    expected_checkpoint_digest?: `sha256:${string}`;
+    ordinary_completion?: NonNullable<ActionAuthoringLogicalTurn["completed"]>;
+    version_completion?: AuthoringQuestionCompletion;
+  }) => Promise<void>;
   onRelationshipReview?: (lines: string[]) => void;
   /** The enclosing policy review owns the next visible turn once compilation succeeds. */
   deferCompletionMessage?: boolean;
@@ -286,6 +292,24 @@ export type ModelActionRuleDraftInput = {
   }) => Promise<(ActionRuleModelPreparedContext & {
     review: import("./action-rule-authoring-checkpoint.js").ReviewedActionVersionField;
   }) | undefined>;
+  /** Pure preparation only: never UI, consent, persistence or adoption inside a callback. */
+  stageVersionQuestion?: (input: { context: ActionRuleModelPreparedContext; resource: string; field: string;
+    previousReview?: import("./action-rule-authoring-checkpoint.js").ReviewedActionVersionField }) =>
+    (ActionRuleModelPreparedContext & { review: import("./action-rule-authoring-checkpoint.js").ReviewedActionVersionField; question: string });
+  /** Runs only after genuine whole-batch consumption, or an exact saved Version
+   * handoff. Host ports retain raw/q history and stable B35 ownership. */
+  reviewVersionQuestion?: (input: { context: ActionRuleModelPreparedContext;
+    staged?: ActionRuleModelPreparedContext & { review: import("./action-rule-authoring-checkpoint.js").ReviewedActionVersionField; question: string };
+    completion?: AuthoringQuestionCompletion;
+    checkpoint(): ActionRuleAuthoringCheckpoint;
+    episodeBudget: AskAuthoringEpisodeBudget;
+    reserveCorrection(rootQuestionId: string): Promise<boolean>;
+    savePendingVersion(marker: ActionAuthoringPendingVersion, question: NonNullable<ActionRuleAuthoringCheckpoint["pending_question"]>, completion?: AuthoringQuestionCompletion): Promise<void>;
+  }) => Promise<(ActionRuleModelPreparedContext & { review: import("./action-rule-authoring-checkpoint.js").ReviewedActionVersionField }) | undefined>;
+  /** Real durable consumer/currentness verification. A closed journal entry
+   * alone must not admit a new ordinary turn or seed legacy counters. */
+  assertLogicalTurnBoundary?: (input: { checkpoint: ActionRuleAuthoringCheckpoint;
+    purpose: "ordinary_advance" | "legacy_start"; completion?: AuthoringQuestionCompletion }) => Promise<void>;
   askClarification?: (question: string) => Promise<string | undefined>;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
@@ -356,6 +380,11 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   const originalStatements = actionOperatorStatements(input);
   const operatorJob = input.operatorJob ? boundedText(input.operatorJob, "Operator job", 4_000) : originalStatements[0]!;
   const savedCheckpoint = input.checkpoint ? parseActionRuleAuthoringCheckpoint(input.checkpoint) : undefined;
+  const mediatedVersion = Boolean(input.stageVersionQuestion || input.reviewVersionQuestion);
+  if (mediatedVersion && (!input.stageVersionQuestion || !input.reviewVersionQuestion || !input.onCheckpoint || !input.assertLogicalTurnBoundary))
+    throw new Error("ACTION_VERSION_CONVERSATION_UNAVAILABLE: The owning checkpoint and currentness route are required before drafting.");
+  if (!mediatedVersion && savedCheckpoint?.pending_version)
+    throw new Error("ACTION_VERSION_CONVERSATION_UNAVAILABLE: Resume this pending Version question through its original supported route.");
   if (savedCheckpoint && savedCheckpoint.intent_digest !== canonicalJsonDigest(intent)) {
     throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: The saved components belong to another action. Resume the original job; no authority changed.");
   }
@@ -472,6 +501,12 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let workUnitSourceStatus = pendingActionWorkUnitSourceReview(workUnitContext());
   let checkpointNeedsRevalidation = false;
   let pendingQuestion = savedCheckpoint?.pending_question;
+  let pendingVersion = savedCheckpoint?.pending_version;
+  let logicalTurns = structuredClone(savedCheckpoint?.logical_turns);
+  let currentCheckpoint = savedCheckpoint;
+  let stagedVersion: ReturnType<NonNullable<ModelActionRuleDraftInput["stageVersionQuestion"]>> | undefined;
+  const ordinaryCompletions: AuthoringQuestionCompletion[] = [];
+  const legacyCompletion = savedCheckpoint?.pending_question?.completion;
   const policySourceDigest = () => input.session.conversation?.policySources?.snapshots.length
     ? canonicalJsonDigest(input.session.conversation.policySources) : undefined;
   if (input.checkpoint) {
@@ -510,24 +545,90 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     relationships: [...reviewedRelationships].sort(), sources: reviewedPrivateSources, versions: reviewedVersionFields, reopened: reopenedDraft ?? null });
   let savedProgressDigest = draftProgressDigest();
   let draftProgressRevision = 0;
-  const saveCheckpoint = async () => {
-    await input.onCheckpoint?.(actionRuleAuthoringCheckpoint({
-      intent_digest: canonicalJsonDigest(intent), context_digest: contextDigest(),
-      components: structuredClone(submissions) as ActionRuleAuthoringCheckpoint["components"],
-      ...(pendingQuestion ? {pending_question: pendingQuestion} : {}),
-      ...(operatorMessages.length ? { operator_messages: operatorMessages } : {}),
-      ...(reviewedRelationships.size ? { reviewed_relationships: [...reviewedRelationships].sort() } : {}),
-      ...(reviewedPrivateSources.length ? { reviewed_private_sources: reviewedPrivateSources } : {}),
-      ...(reviewedVersionFields.length ? { reviewed_version_fields: reviewedVersionFields } : {}),
-      ...(reopenedDraft ? { reopened_draft: reopenedDraft } : {}),
-      ...(sourceRepair ? { source_repair: sourceRepair } : {}),
-    }));
+  const checkpointSnapshot = () => actionRuleAuthoringCheckpoint({
+    intent_digest: canonicalJsonDigest(intent), context_digest: contextDigest(),
+    components: structuredClone(submissions) as ActionRuleAuthoringCheckpoint["components"],
+    ...(pendingQuestion ? { pending_question: pendingQuestion } : {}),
+    ...(pendingVersion ? { pending_version: pendingVersion } : {}),
+    ...(logicalTurns ? { logical_turns: logicalTurns } : {}),
+    ...(operatorMessages.length ? { operator_messages: operatorMessages } : {}),
+    ...(reviewedRelationships.size ? { reviewed_relationships: [...reviewedRelationships].sort() } : {}),
+    ...(reviewedPrivateSources.length ? { reviewed_private_sources: reviewedPrivateSources } : {}),
+    ...(reviewedVersionFields.length ? { reviewed_version_fields: reviewedVersionFields } : {}),
+    ...(reopenedDraft ? { reopened_draft: reopenedDraft } : {}), ...(sourceRepair ? { source_repair: sourceRepair } : {}),
+  });
+  const persistCheckpoint = async (checkpoint: ActionRuleAuthoringCheckpoint, expectedDigest = currentCheckpoint?.digest,
+    metadata?: Omit<NonNullable<Parameters<NonNullable<ModelActionRuleDraftInput["onCheckpoint"]>>[1]>, "expected_checkpoint_digest">) => {
+    if (mediatedVersion) assertActionLogicalTurnJournalAdvance(currentCheckpoint, checkpoint);
+    await input.onCheckpoint?.(checkpoint, { ...(expectedDigest ? { expected_checkpoint_digest: expectedDigest } : {}), ...metadata });
+    currentCheckpoint = checkpoint;
+    logicalTurns = structuredClone(checkpoint.logical_turns);
     const next = draftProgressDigest();
     if (next !== savedProgressDigest) { savedProgressDigest = next; draftProgressRevision += 1; }
   };
+  const saveCheckpoint = async (metadata?: Omit<NonNullable<Parameters<NonNullable<ModelActionRuleDraftInput["onCheckpoint"]>>[1]>, "expected_checkpoint_digest">) => {
+    await persistCheckpoint(checkpointSnapshot(), currentCheckpoint?.digest, metadata);
+  };
+  const owningBudget = actionLogicalTurnBudget({
+    read: () => { if (!currentCheckpoint) throw new Error("ACTION_LOGICAL_TURN_NOT_SAVED"); return currentCheckpoint; },
+    save: async (next, expectedDigest) => persistCheckpoint(next, expectedDigest),
+  });
+  const startOrdinaryTurn = async () => {
+    if (!mediatedVersion) return;
+    const tail = logicalTurns?.at(-1);
+    if (tail && !tail.completed) return;
+    if (currentCheckpoint) {
+      if (!tail && !legacyCompletion) throw new Error("ACTION_AUTHORING_LOGICAL_TURN_UNKNOWN: Saved interrupted work has no trustworthy owning counters. Preserve it for reconciliation.");
+      await input.assertLogicalTurnBoundary!({ checkpoint: currentCheckpoint, purpose: tail ? "ordinary_advance" : "legacy_start",
+        ...(!tail && legacyCompletion ? { completion: legacyCompletion } : {}) });
+    }
+    logicalTurns = [...logicalTurns ?? [], { id: randomUUID(), origin_context_digest: contextDigest(), iterations_used: 0, tool_calls_used: 0,
+      ...(!tail && currentCheckpoint && legacyCompletion ? { legacy_start: { checkpoint_digest: currentCheckpoint.digest, completion: legacyCompletion } } : {}) }];
+    await saveCheckpoint();
+  };
+  const completeOrdinaryTurn = async (kind: "ordinary_clarification" | "compiled_draft", result: AskTurnResult) => {
+    if (!mediatedVersion) return;
+    const last = completedAuthoringQuestion(result);
+    if (!last) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The ordinary Action turn has no genuine consumed completion.", 409);
+    const completion = authoringQuestionSequenceCompletion([...ordinaryCompletions, last]);
+    if (!completion) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The owning Action sequence cannot be acknowledged.", 409);
+    const material = checkpointSnapshot();
+    const closed = { kind, completion, material_digest: actionLogicalTurnMaterialDigest(material) };
+    logicalTurns = [...logicalTurns!.slice(0, -1), { ...logicalTurns!.at(-1)!, completed: closed }];
+    await saveCheckpoint({ ordinary_completion: closed });
+    ordinaryCompletions.length = 0;
+  };
+  const resolvePendingVersion = async (completion?: AuthoringQuestionCompletion) => {
+    if (!mediatedVersion || !input.reviewVersionQuestion) throw new Error("ACTION_VERSION_CONVERSATION_UNAVAILABLE");
+    const prepared = await input.reviewVersionQuestion({ context, ...(stagedVersion ? { staged: stagedVersion } : {}),
+      ...(completion ? { completion } : {}), checkpoint: () => { if (!currentCheckpoint) throw new Error("ACTION_LOGICAL_TURN_NOT_SAVED"); return currentCheckpoint; },
+      episodeBudget: owningBudget, reserveCorrection: owningBudget.reserveCorrection,
+      async savePendingVersion(marker, question, consumed) {
+        if (marker.turn_id !== logicalTurns?.at(-1)?.id || (pendingVersion && marker.root_question_id !== pendingVersion.root_question_id)
+          || !question.completion) throw new Error("ACTION_VERSION_QUESTION_STALE");
+        pendingVersion = structuredClone(marker); pendingQuestion = structuredClone(question);
+        await saveCheckpoint(consumed ? { version_completion: consumed } : undefined);
+      },
+    });
+    if (!pendingVersion || !currentCheckpoint?.pending_version || !pendingQuestion?.completion)
+      throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The consumed Version batch has no durable typed question handoff. Preserve the saved work; no continuation was admitted.", 409);
+    if (!prepared) throw new AskError("ASK_CANCELLED", "The saved Version question remains pending; Resume it through the same job.", 499);
+    const selected = stagedVersion?.review ?? pendingVersion;
+    if (!selected || prepared.review.resource !== selected.resource || prepared.review.field !== selected.field
+      || prepared.review.proof_digest !== selected.proof_digest
+      || canonicalJsonDigest(prepared.readBoundary) !== canonicalJsonDigest(context.readBoundary)
+      || prepared.readBoundaryDigest !== context.readBoundaryDigest) throw new Error("ACTION_VERSION_REVIEW_CHANGED");
+    serializeAuthoringCatalog(prepared.builtCatalog);
+    if (baseline) compileActionRuleModelDraft({ draft: baseline, ...prepared });
+    context = prepared;
+    const index = reviewedVersionFields.findIndex(review => review.resource === prepared.review.resource);
+    if (index < 0) reviewedVersionFields.push(prepared.review); else reviewedVersionFields[index] = prepared.review;
+    pendingQuestion = undefined; pendingVersion = undefined; stagedVersion = undefined;
+    await saveCheckpoint();
+  };
   const tools = ACTION_RULE_PHASES.map((phase) => conversationalPhaseTool(phase, input.session.provider === "openai_compatible", !!baseline || preparedDrafts.length > 0));
   tools.push(...actionRelationshipTools);
-  if (input.reviewVersionField) tools.push({ name: "runner.review_version_field", title: "Review an existing conflict counter",
+  if (input.reviewVersionField || input.stageVersionQuestion) tools.push({ name: "runner.review_version_field", title: "Review an existing conflict counter",
     description: "Use when the policy/source owner identifies an existing maintained integer conflict counter, including coded names or ambiguous candidates. Select the exact catalog resource and version_field_options field. Runner checks current structure and asks the operator to confirm all writers maintain it. This changes only disabled catalog mapping; never invent maintenance, expose a field, change rows, or activate authority. Ordinary integer business fields are not automatically counters.",
     input_schema: { type: "object", additionalProperties: false, required: ["resource", "field"], properties: {
       resource: { type: "string", maxLength: 256 }, field: { type: "string", maxLength: 256 },
@@ -604,10 +705,11 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     mode: "authoring", listTools: () => tools, async close() {},
     async callTool(name, args) {
       if (name === "runner.inspect_action_draft") return { ok: true, value: snapshot() };
+      if (stagedVersion || pendingVersion) return phaseRefusal("ACTION_VERSION_QUESTION_PENDING: The saved counter question is pending. Later mutations in this consumed batch are refused.");
       if (readOnlyRequest) return phaseRefusal("The operator's no-new-actions request is pending. No later component edit is accepted.");
       if (compiled) return phaseRefusal("The exact draft is ready for operator review. No later model edit is accepted in this turn.");
       try {
-        if (name === "runner.review_version_field" && input.reviewVersionField) {
+        if (name === "runner.review_version_field" && (input.reviewVersionField || input.stageVersionQuestion)) {
           if (!input.egressAcknowledged || Object.keys(args).some(key => !["resource", "field"].includes(key))
             || [args.resource, args.field].some(value => typeof value !== "string" || value.length > 256
               || !/^[A-Za-z_][A-Za-z0-9_.]*$/u.test(value))) return phaseRefusal("Select only the exact inspected resource and counter field. No row values or expressions are accepted.");
@@ -615,7 +717,24 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           const key = `${resource}.${field}`;
           if (declinedVersionFields.has(key)) return phaseRefusal("This counter review was declined. Keep the requirement pending; do not repeat the same confirmation.");
           const previousReview = reviewedVersionFields.find(review => review.resource === resource && review.field === field);
-          const prepared = await input.reviewVersionField({ context, resource, field, ...(previousReview ? { previousReview } : {}) });
+          if (input.stageVersionQuestion) {
+            const prepared = input.stageVersionQuestion({ context, resource, field, ...(previousReview ? { previousReview } : {}) });
+            if (typeof prepared.question !== "string" || !prepared.question.trim() || prepared.question.length > 20_000
+              || prepared.review.resource !== resource || prepared.review.field !== field
+              || canonicalJsonDigest(prepared.readBoundary) !== canonicalJsonDigest(context.readBoundary)
+              || prepared.readBoundaryDigest !== context.readBoundaryDigest) throw new Error("ACTION_VERSION_REVIEW_CHANGED");
+            serializeAuthoringCatalog(prepared.builtCatalog);
+            if (previousReview && canonicalJsonDigest(previousReview) === canonicalJsonDigest(prepared.review)) {
+              if (baseline) compileActionRuleModelDraft({ draft: baseline, ...prepared });
+              context = prepared;
+              await saveCheckpoint().catch(error => { infrastructureFailure = error; throw error; });
+              return { ok: true, value: { status: "counter_mapping_prepared", catalog: JSON.parse(serializeAuthoringCatalog(context.builtCatalog)),
+                review: prepared.review, authority_granted: false, source_database_changed: false } };
+            }
+            stagedVersion = prepared;
+            return { ok: true, value: { status: "counter_question_staged", authority_granted: false, source_database_changed: false } };
+          }
+          const prepared = await input.reviewVersionField!({ context, resource, field, ...(previousReview ? { previousReview } : {}) });
           if (!prepared) {
             declinedVersionFields.add(key);
             return { ok: true, value: { status: "counter_mapping_pending", authority_granted: false,
@@ -870,6 +989,10 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     }
     clarificationCount += 1;
   };
+  if (pendingVersion) {
+    operatorMessage = pendingQuestion!.operator_message;
+    await resolvePendingVersion();
+  }
   if (pendingQuestion) {
     operatorMessage = pendingQuestion.operator_message;
     while (pendingQuestion) await askPendingQuestion();
@@ -890,6 +1013,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       operatorMessage = origin.operator_message;
       if (program) program = {...program, resume_revision: origin.program_resume_revision!};
     }
+    await startOrdinaryTurn();
     if (sourceRepair && !sourceInvocationReserved) {
       if (!input.onCheckpoint) throw new Error("ACTION_SOURCE_REPAIR_NOT_SAVED: Preserve the original nomination; no correction was sent.");
       if (sourceRepair.corrections_used >= MAX_FINAL_COMPILER_REPAIRS) {
@@ -902,6 +1026,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       correctionUsed = true;
     }
     const result = await runAskProviderTurn({
+      ...(mediatedVersion ? { actionLogicalTurnBudget: owningBudget, stopAfterAuthoringToolBatch: () => Boolean(stagedVersion) } : {}),
       authoringInput: {consumer: "action_rule_components", operator_message: operatorMessage,
         ...(program ? {program_resume_revision: program.resume_revision as `sha256:${string}`} : {})},
       configuration, tools, gateway, authorityDigest,
@@ -942,6 +1067,13 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       conversationalAuthoring: true,
     });
     usage = mergeUsage(usage, result.usage);
+    if (stagedVersion) {
+      const completion = completedAuthoringQuestion(result);
+      if (!completion) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The staged Version question has no consumed batch completion.", 409);
+      ordinaryCompletions.push(completion);
+      await resolvePendingVersion(completion);
+      continue;
+    }
     const expressionRefusal = !compiled && diagnostics.some(item => item.code === "ACTION_RULE_EXPRESSION_KIND_INVALID");
     const response = [
       ...(expressionRefusal ? ["Runner validation: an invalid generated expression remains in the disabled draft. No valid expression was accepted; this does not establish a compiler capability limitation. Resume the saved draft to repair its representation and validate it. No authority or source data changed.", "Model response (not a compiler finding):"] : []),
@@ -953,7 +1085,9 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     };
     if (compiled || readOnlyRequest) rememberResponse();
     if (readOnlyRequest) throw new ActionAuthoringReadOnlyRequest(readOnlyRequest);
-    if (compiled) return {
+    if (compiled) {
+      await completeOrdinaryTurn("compiled_draft", result);
+      return {
       state: "ready", compiled, provider: input.session.provider, model: input.session.model,
       message: result.answer, correction_used: correctionUsed, clarification_count: clarificationCount,
       authority_granted: false, source_database_changed: false,
@@ -961,6 +1095,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       ...(usage ? { usage } : {}),
       ...(initial && baseline ? { revision: { outcome: baseline.outcome, changed_phases: ACTION_RULE_PHASES.filter((phase) => canonicalJsonDigest(initial![phase]) !== canonicalJsonDigest(submissions[phase])), ...(reopenedDraft ? { reopened_draft: reopenedDraft } : {}) } } : {}),
     };
+    }
     // A saved component followed by status prose is still the model's work,
     // not a request for an operator acknowledgement. Genuine questions retain
     // the ordinary chat path; ambiguous prose gets one bounded tool correction.
@@ -983,6 +1118,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       mechanicalResponseFeedback = progressOnly
         ? "The disabled components and reviewed relationships are retained. A progress statement does not need an operator answer. Continue through the drafting tools and validate the complete draft. If business meaning or a policy limit is genuinely missing, submit a clarification with that focused question. Never invent an answer or treat this continuation as approval."
         : runnerResolvedMechanicalGuidance(response);
+      const completion = completedAuthoringQuestion(result);
+      if (mediatedVersion && completion) ordinaryCompletions.push(completion);
       await saveCheckpoint();
       continue;
     }
@@ -995,7 +1132,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       ...(completedAuthoringQuestion(result) ? {completion: completedAuthoringQuestion(result)} : {})};
     // Commit the typed consumer handoff before waiting. Escape does not answer
     // the question and cannot turn an uncommitted response into a saved pause.
-    await saveCheckpoint();
+    if (mediatedVersion) await completeOrdinaryTurn("ordinary_clarification", result); else await saveCheckpoint();
     while (pendingQuestion) await askPendingQuestion();
   }
 }

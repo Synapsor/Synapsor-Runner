@@ -601,6 +601,14 @@ export function resolveAskProviderConfiguration(
   };
 }
 
+/** Optional host-owned allowance for ONE normal authoring episode spanning
+ * presentation, answer mapping and restart. Its persistence belongs to the
+ * existing coordinated authoring checkpoint, never to model arguments. */
+export type AskAuthoringEpisodeBudget = {
+  admitIteration(): Promise<void>;
+  reserveToolBatch(count: number): Promise<void>;
+};
+
 export async function runAskProviderTurn(input: {
   configuration: ResolvedAskProviderConfiguration;
   question: string;
@@ -618,10 +626,31 @@ export async function runAskProviderTurn(input: {
   allowToolFreeAuthoringResponse?: boolean;
   conversationalAuthoring?: boolean;
   authoringInput?: ProviderHttpInput["authoringInput"];
+  episodeBudget?: AskAuthoringEpisodeBudget;
+  /** Distinct host-owned Action logical turn (12/24), not a new 6/8 episode.
+   * The owning Action checkpoint supplies durable admission and currentness. */
+  actionLogicalTurnBudget?: AskAuthoringEpisodeBudget;
+  /** Host-only decision boundary. Checked after the entire known-result tool
+   * batch; the caller gates later batch mutations and performs UI after return. */
+  stopAfterAuthoringToolBatch?: () => boolean;
 }): Promise<AskTurnResult> {
+  if (input.stopAfterAuthoringToolBatch && (input.gateway.mode !== "authoring"
+    || input.tools.some(tool => !tool.name.startsWith("runner.")))) {
+    throw new AskError("ASK_AUTHORING_SURFACE_INVALID", "An authoring batch decision boundary requires an operator-only tool surface.", 400);
+  }
+  if (input.episodeBudget && (input.gateway.mode !== "authoring"
+    || input.conversationalAuthoring || input.tools.some(tool => !tool.name.startsWith("runner.")))) {
+    throw new AskError("ASK_AUTHORING_SURFACE_INVALID", "A saved normal authoring episode requires an operator-only tool surface.", 400);
+  }
   if (input.conversationalAuthoring && (input.gateway.mode !== "authoring" || input.tools.some((tool) => !tool.name.startsWith("runner.")))) {
     throw new AskError("ASK_AUTHORING_SURFACE_INVALID", "Conversational drafting requires an operator-only authoring tool surface.", 400);
   }
+  if (input.actionLogicalTurnBudget && (input.episodeBudget
+    || input.gateway.mode !== "authoring" || input.conversationalAuthoring !== true
+    || input.tools.length === 0 || input.tools.some(tool => !tool.name.startsWith("runner.")))) {
+    throw new AskError("ASK_AUTHORING_SURFACE_INVALID", "A saved Action logical turn requires conversational operator-only authoring and its own allowance.", 400);
+  }
+  const admissionBudget = input.actionLogicalTurnBudget ?? input.episodeBudget;
   if (input.allowToolFreeAuthoringResponse
     && (input.gateway.mode !== "authoring" || input.tools.length !== 0 || input.requiredInitialToolName)) {
     throw new AskError(
@@ -666,13 +695,23 @@ export async function runAskProviderTurn(input: {
     ? { ...input.dependencies.contextMeasurement, meter: input.dependencies.contextMeasurement.meter ?? createTaskContextMeter() }
     : undefined;
   const generationResults: ProviderHttpResult[] = [];
+  let reservedCallbacks = 0;
+  const reserveToolBatch = async (count: number) => {
+    if (!admissionBudget) return;
+    await checked(() => admissionBudget!.reserveToolBatch(count));
+    reservedCallbacks += count;
+  };
   let currentCallbackMayHaveRun = false;
   const requestJson: NonNullable<AskProviderDependencies["requestJson"]> = (requestInput) => checked(async () => {
     const preparedInput = { ...requestInput, signal, contextMeasurement,
       ...(input.authoringInput ? {authoringInput: input.authoringInput} : {}) };
     if (input.gateway.mode !== "authoring") return request(preparedInput);
     await authoringGenerationHandled(generationResults);
+    // A completed preceding callback remains historical progress. If the next
+    // known admission is refused, that does not make its handling uncertain.
+    // A failure above still retains the inspection fence.
     currentCallbackMayHaveRun = false;
+    if (admissionBudget) await checked(() => admissionBudget.admitIteration());
     const result = await recoverAuthoringGeneration(preparedInput, request);
     generationResults.push(result);
     return result;
@@ -684,7 +723,13 @@ export async function runAskProviderTurn(input: {
     get ownerSettingsOnly() { return input.gateway.ownerSettingsOnly; },
     listTools: () => input.gateway.listTools(),
     close: () => input.gateway.close(),
-    callTool: (name, args) => checked(() => {
+    callTool: (name, args) => checked(async () => {
+      // All model batches are reserved before their first callback. A host
+      // callback outside such a batch must still pass the same admission.
+      if (admissionBudget) {
+        if (reservedCallbacks === 0) await reserveToolBatch(1);
+        reservedCallbacks--;
+      }
       currentCallbackMayHaveRun = true;
       return input.gateway.callTool(name, args);
     }),
@@ -703,6 +748,7 @@ export async function runAskProviderTurn(input: {
         currentUtcDate,
         onProgress: input.dependencies?.onProgress,
         onStream: input.dependencies?.onStream,
+        reserveToolBatch,
       })
     : runOpenAiCompatibleTurn({
         ...input,
@@ -713,6 +759,7 @@ export async function runAskProviderTurn(input: {
         currentUtcDate,
         onProgress: input.dependencies?.onProgress,
         onStream: input.dependencies?.onStream,
+        reserveToolBatch,
       }));
   } catch (error) {
     if (input.gateway.mode === "authoring") {
@@ -1276,6 +1323,8 @@ async function runOpenAiCompatibleTurn(input: {
   completeAfterRequiredTool?: boolean;
   allowToolFreeAuthoringResponse?: boolean;
   conversationalAuthoring?: boolean;
+  stopAfterAuthoringToolBatch?: () => boolean;
+  reserveToolBatch: (count: number) => Promise<void>;
 }): Promise<AskTurnResult> {
   const messages: Array<Record<string, unknown>> = [
     { role: "system", content: input.providerSystemPrompt ?? askSystemPrompt() },
@@ -1639,6 +1688,7 @@ async function runOpenAiCompatibleTurn(input: {
     if (toolCalls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + toolCalls.length > (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_CALLS_PER_TURN : MAX_TOOL_CALLS_PER_TURN)) {
       throw new AskError("ASK_TOOL_BUDGET_EXCEEDED", "The provider requested more tools than the bounded Ask session permits.", 422);
     }
+    await input.reserveToolBatch(toolCalls.length);
     const compoundQuestions = input.configuration.provider === "openai_compatible"
       ? localCompoundAnalysisQuestions(input.question, toolCalls.length)
       : [];
@@ -1932,6 +1982,10 @@ async function runOpenAiCompatibleTurn(input: {
           messages.push({ role: "user", content: pendingSyntaxRepair.instruction });
         }
       }
+    }
+    if (input.stopAfterAuthoringToolBatch?.()) {
+      return rememberProviderHistory(completeAskResult(input.configuration,
+        "The authoring tool batch completed; local continuation is required.", traces, usage, "runner"), providerHistory);
     }
     if (input.completeAfterRequiredTool
       && input.requiredInitialToolName
@@ -2249,6 +2303,8 @@ async function runAnthropicTurn(input: {
   completeAfterRequiredTool?: boolean;
   allowToolFreeAuthoringResponse?: boolean;
   conversationalAuthoring?: boolean;
+  stopAfterAuthoringToolBatch?: () => boolean;
+  reserveToolBatch: (count: number) => Promise<void>;
 }): Promise<AskTurnResult> {
   const messages: Array<Record<string, unknown>> = [
     ...historyMessages(input.history),
@@ -2429,6 +2485,7 @@ async function runAnthropicTurn(input: {
     if (calls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + calls.length > (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_CALLS_PER_TURN : MAX_TOOL_CALLS_PER_TURN)) {
       throw new AskError("ASK_TOOL_BUDGET_EXCEEDED", "The provider requested more tools than the bounded Ask session permits.", 422);
     }
+    await input.reserveToolBatch(calls.length);
     const results: Array<Record<string, unknown>> = [];
     for (const call of calls) {
       if (input.authorityGuard) {
@@ -2507,6 +2564,10 @@ async function runAnthropicTurn(input: {
           results.push({ type: "text", text: pendingSyntaxRepair.instruction });
         }
       }
+    }
+    if (input.stopAfterAuthoringToolBatch?.()) {
+      return rememberProviderHistory(completeAskResult(input.configuration,
+        "The authoring tool batch completed; local continuation is required.", traces, usage, "runner"), providerHistory);
     }
     if (input.completeAfterRequiredTool
       && input.requiredInitialToolName

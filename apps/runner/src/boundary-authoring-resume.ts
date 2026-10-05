@@ -1,6 +1,7 @@
 import { assertAuthoringQuestionHandoff, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION } from "./authoring-program-capacity.js";
 import { ownerHandoffCheckpoint, parseOwnerHandoffs, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
+import { assertOperatorQuestionsAdvance, parseOperatorQuestions, type OperatorQuestion } from "./authoring-operator-question.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -179,6 +180,8 @@ export type BoundaryAuthoringResumeState = {
   conversation: AskHistoryTurn[];
   generation_recovery?: AuthoringTransportState;
   owner_handoffs?: AuthoringOwnerHandoff[];
+  /** Typed mediation staging, beside immutable B33/B35 handoff evidence. */
+  operator_questions?: OperatorQuestion[];
   /** Bounded producer state; current catalog, Source and decision applicability
    * are revalidated by the ordinary Read producer before continuation. */
   read_assistance?: ReadWorkloadAssistanceCheckpoint;
@@ -258,6 +261,7 @@ export function buildBoundaryAuthoringResumeState(input: {
   conversation?: readonly AskHistoryTurn[];
   generationRecovery?: AuthoringTransportState;
   ownerHandoffs?: AuthoringOwnerHandoff[];
+  operatorQuestions?: OperatorQuestion[];
   /** Omission retains the same job's checkpoint; null explicitly completes it. */
   readAssistanceCheckpoint?: ReadWorkloadAssistanceCheckpoint | null;
   policySourceSession?: string;
@@ -336,6 +340,9 @@ export function buildBoundaryAuthoringResumeState(input: {
     conversation,
     ...((input.generationRecovery ?? input.previous?.generation_recovery) ? { generation_recovery: structuredClone(input.generationRecovery ?? input.previous!.generation_recovery!) } : {}),
     ...((input.ownerHandoffs ?? input.previous?.owner_handoffs) ? { owner_handoffs: parseOwnerHandoffs(input.ownerHandoffs ?? input.previous!.owner_handoffs!) } : {}),
+    ...((input.operatorQuestions ?? input.previous?.operator_questions) ? { operator_questions: parseOperatorQuestions(
+      input.operatorQuestions ?? input.previous!.operator_questions!, parseOwnerHandoffs(input.ownerHandoffs ?? input.previous?.owner_handoffs ?? []),
+      input.generationRecovery ?? input.previous?.generation_recovery) } : {}),
     ...(readAssistance !== undefined && readAssistance !== null ? { read_assistance: parseReadWorkloadAssistanceCheckpoint(readAssistance) } : {}),
     ...(input.policySourceSession ? { policy_source_session: normalizeSourceSession(input.policySourceSession) } : {}),
     ...(input.readIntent
@@ -406,7 +413,10 @@ export async function writeBoundaryAuthoringResumeState(
   return withProjectAuthorityMutation(projectRootInput, async held => {
     // Legacy explicit replacement still serializes; public continuations must
     // supply the last acknowledged revision (null means the file was absent).
-    if (options) await compareResumeRevision(held.projectRoot, frozen.binding, expected!);
+    const previous = options ? await compareResumeRevision(held.projectRoot, frozen.binding, expected!) : undefined;
+    if (previous?.job_intent === frozen.job_intent && previous.binding.boundary_name === frozen.binding.boundary_name) {
+      assertOperatorQuestionsAdvance(previous.operator_questions ?? [], frozen.operator_questions ?? []);
+    }
     const filePath = resumePath(held.projectRoot);
     await writeAtomic(filePath, `${JSON.stringify(frozen, null, 2)}\n`);
     const saved = await readBoundaryAuthoringResumeState(held.projectRoot, frozen.binding);
@@ -512,7 +522,8 @@ export async function clearBoundaryAuthoringResumeState(projectRootInput: string
     if (state.schema_version === AUTHORING_PROGRAM_RESUME_VERSION
       || boundaryAuthoringActionIsUnfinished(state.action) || state.read_assistance || state.pending_job_revision || state.pending_read_revision
       || state.pending_action_addition || state.pending_action_revision || state.pending_action_removal
-      || state.reconciled_action_revisions?.length || state.pending_policy_review || state.completed_policy_reviews?.length) return false;
+      || state.reconciled_action_revisions?.length || state.pending_policy_review || state.completed_policy_reviews?.length
+      || state.operator_questions?.length) return false;
     await fs.rm(filePath, { force: true });
     return true;
   });
@@ -644,11 +655,22 @@ export function assertBoundaryAuthoringResumeState(
       assertAnsweredOwnerHandoff(value.generation_recovery as AuthoringTransportState | undefined, handoff);
     }
   }
+  if (value.operator_questions !== undefined) parseOperatorQuestions(value.operator_questions, parseOwnerHandoffs(value.owner_handoffs ?? []),
+    value.generation_recovery as AuthoringTransportState | undefined);
   assertReadAssistanceHandoff(value);
-  assertAuthoringQuestionHandoff(value.generation_recovery as AuthoringTransportState | undefined,
-    (value.action as BoundaryAuthoringResumeAction | undefined)?.checkpoint);
-  assertAuthoringQuestionHandoff(value.generation_recovery as AuthoringTransportState | undefined,
-    (value.pending_action_revision as BoundaryAuthoringActionRevision | undefined)?.checkpoint);
+  const checkpoints = [(value.action as BoundaryAuthoringResumeAction | undefined)?.checkpoint,
+    (value.pending_action_revision as BoundaryAuthoringActionRevision | undefined)?.checkpoint];
+  for (const checkpoint of checkpoints) assertActionVersionQuestionHandoff({
+    generation_recovery: value.generation_recovery as AuthoringTransportState | undefined,
+    operator_questions: value.operator_questions as OperatorQuestion[] | undefined,
+    owner_handoffs: parseOwnerHandoffs(value.owner_handoffs ?? []),
+  }, checkpoint);
+  for (const q of (value.operator_questions as OperatorQuestion[] | undefined) ?? []) {
+    if (q.kind === "writer_maintenance" && q.terminal_failure
+      && !checkpoints.some(checkpoint => checkpoint?.pending_version?.question_id === q.id)) {
+      throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The terminal Version question has no retained owning Action turn.");
+    }
+  }
   if (value.read_prerequisite_decisions !== undefined) parseReadPrerequisiteBusinessDecisions(value.read_prerequisite_decisions);
   if (value.pending_action_addition !== undefined) normalizeActionAddition(value.pending_action_addition, maximum);
   if (value.stage === "client_setup" && value.client_handoff === undefined) throw new Error("Client continuation requires its exact reviewed authority.");
@@ -658,6 +680,137 @@ export function assertBoundaryAuthoringResumeState(
   delete unsigned.revision_digest;
   if (canonicalJsonDigest(unsigned) !== value.revision_digest) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: the saved authoring state does not match its digest.");
+  }
+}
+
+/** A Version's structural concern, assisting presentation and raw answer are
+ * separate records. Budget saves never rebind its original B35 question to a
+ * mutable whole Action checkpoint. Ordinary clarification keeps its old guard. */
+export function actionVersionMaterialDigest(checkpoint: ActionRuleAuthoringCheckpoint, q: OperatorQuestion,
+  stage: "present" | "answer-map"): `sha256:${string}` {
+  const marker = checkpoint.pending_version;
+  if (!marker) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Version material has no owning staged Action.");
+  return canonicalJsonDigest({ consumer: "action_rule_components", kind: "version_interpretation", stage,
+    intent: checkpoint.intent_digest, context: checkpoint.context_digest, turn: marker.turn_id, root: marker.root_question_id,
+    active_question: marker.question_id, active_handoff: marker.handoff_id,
+    question: { id: q.id, revision: q.revision, handoff: q.handoff_id, scope: q.scope_digest, context: q.context_digest,
+      target: q.target, material: q.material, evidence: q.evidence },
+    target: { resource: marker.resource, field: marker.field, proof: marker.proof_digest },
+    presentation: q.presentation?.text ?? null,
+    raw: stage === "answer-map" ? q.raw_answer ?? null : null,
+    proposal: stage === "answer-map" ? q.proposal ?? null : null,
+  });
+}
+
+/** Resolve one exact semantic consumption, never a convenient historical
+ * response. The live producer minted this record at the artifact's Resume CAS;
+ * this is saved application provenance, not a second provider response hash. */
+export function resolveActionVersionConsumption(generation: AuthoringTransportState | undefined,
+  checkpoint: ActionRuleAuthoringCheckpoint, q: OperatorQuestion, stage: "present" | "answer-map") {
+  const material = actionVersionMaterialDigest(checkpoint, q, stage);
+  const matches = generation?.operations.filter(op =>
+    op.action_checkpoint?.consumer === "action_rule_components"
+    && op.action_checkpoint.kind === "version_interpretation"
+    && op.action_checkpoint.material_digest === material) ?? [];
+  const op = matches.length === 1 ? matches[0] : undefined;
+  if (!op || op.state !== "checkpointed" || op.checkpoint_seen !== true
+    || op.attempts.at(-1)?.outcome !== "response"
+    || !/^sha256:[a-f0-9]{64}$/u.test(op.request_digest)
+    || !/^sha256:[a-f0-9]{64}$/u.test(op.context_digest)
+    || !/^sha256:[a-f0-9]{64}$/u.test(op.action_checkpoint!.response_digest)) {
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The exact Version result has no unique consumed response. Preserve the saved job; no new opinion was authorized.");
+  }
+  return op;
+}
+
+export function assertActionVersionQuestionHandoff(value: {
+  generation_recovery?: AuthoringTransportState; operator_questions?: readonly OperatorQuestion[];
+  owner_handoffs?: readonly AuthoringOwnerHandoff[];
+}, checkpoint: ActionRuleAuthoringCheckpoint | undefined): void {
+  if (!checkpoint?.pending_version) {
+    assertAuthoringQuestionHandoff(value.generation_recovery, checkpoint);
+    return;
+  }
+  const fail = (): never => { throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The pending Version question lost its exact turn, target, proof or original consumed handoff."); };
+  const marker = checkpoint.pending_version, tail = checkpoint.logical_turns?.at(-1);
+  const questions = value.operator_questions ?? [], handoffs = value.owner_handoffs ?? [];
+  const q = questions.find(q => q.id === marker.question_id), root = questions.find(q => q.id === marker.root_question_id);
+  const h = q && handoffs.find(h => h.id === q.handoff_id), rootH = root && handoffs.find(h => h.id === root.handoff_id);
+  if (!tail || tail.id !== marker.turn_id || tail.completed || !q || !root || !h || !rootH
+    || q.kind !== "writer_maintenance" || root.kind !== "writer_maintenance" || q.budget || q.budget_owner_id || q.source_binding
+    || root.budget || root.budget_owner_id || root.source_binding || q.handoff_id !== marker.handoff_id
+    || q.target.resource !== marker.resource || q.target.field !== marker.field
+    || q.scope_digest !== root.scope_digest || q.context_digest !== root.context_digest
+    || canonicalJsonDigest(q.target) !== canonicalJsonDigest(root.target)
+    || canonicalJsonDigest(q.material) !== canonicalJsonDigest(root.material)
+    || canonicalJsonDigest(q.evidence) !== canonicalJsonDigest(root.evidence)
+    || !q.evidence.some(e => e.id === "version-structure" && e.digest === marker.proof_digest)
+    || h.consumer !== "version_maintenance" || h.scope_digest !== q.scope_digest || h.context_digest !== q.context_digest
+    || !rootH.completion || checkpoint.pending_question?.question !== rootH.question
+    || canonicalJsonDigest(checkpoint.pending_question?.completion ?? null) !== canonicalJsonDigest(rootH.completion)) fail();
+  // The enclosing owner inventory already verifies a waiting/answered B35
+  // handoff. Keep that exact original binding even after raw input is recorded.
+  const completion = rootH!.completion!, op = value.generation_recovery?.operations.find(op => op.id === completion.operation_id);
+  if (!op || op.state !== "checkpointed" || op.checkpoint_seen !== true
+    || op.request_digest !== completion.request_digest || op.context_digest !== completion.context_digest
+    || op.question_handoff?.consumer !== "version_maintenance" || op.question_handoff.checkpoint_digest !== rootH!.digest
+    || op.question_handoff.response_digest !== completion.response_digest
+    || op.question_handoff.question_digest !== canonicalJsonDigest(rootH!.question)) fail();
+  if (q!.id !== root!.id) {
+    const start = questions.indexOf(root!), end = questions.indexOf(q!);
+    const rootPresentation = root!.presentation;
+    if (start < 0 || end <= start || !rootPresentation) return fail();
+    const lineage = [root!, ...questions.slice(start + 1, end + 1).filter(record =>
+      record.kind === "writer_maintenance" && record.scope_digest === root!.scope_digest
+      && record.context_digest === root!.context_digest
+      && canonicalJsonDigest(record.target) === canonicalJsonDigest(root!.target))];
+    if (lineage.at(-1)?.id !== q!.id || lineage.length !== q!.revision - root!.revision + 1) fail();
+    for (let i = 1; i < lineage.length; i += 1) {
+      const previous = lineage[i - 1]!, child = lineage[i]!;
+      const oldH = handoffs.find(record => record.id === previous.handoff_id);
+      const childH = handoffs.find(record => record.id === child.handoff_id);
+      const raw = previous.raw_answer;
+      if (!oldH || !childH || !raw) return fail();
+      if (previous.terminal_failure || previous.confirmation || !previous.disposition
+        || child.revision !== previous.revision + 1 || child.presentation?.text !== rootPresentation.text
+        || canonicalJsonDigest(child.material) !== canonicalJsonDigest(root!.material)
+        || canonicalJsonDigest(child.evidence) !== canonicalJsonDigest(root!.evidence)
+        || raw.actor !== "local_installation_operator"
+        || childH.consumer !== "version_maintenance" || childH.scope_digest !== root!.scope_digest
+        || childH.context_digest !== root!.context_digest) fail();
+      if (!raw.text.trim()) {
+        // The actual new raw may already have answered this shared waiting h;
+        // the prior blank remains immutable evidence, never the new answer.
+        const answeredDescendants = lineage.slice(i).filter(record => record.handoff_id === childH.id
+          && record.raw_answer?.text.trim());
+        if (childH.id !== oldH.id || childH.state === "answered"
+          && (answeredDescendants.length !== 1 || childH.answer !== answeredDescendants[0]!.raw_answer!.text
+            || childH.actor !== answeredDescendants[0]!.raw_answer!.actor)) fail();
+      } else if (oldH.state !== "answered" || oldH.answer !== raw.text
+        || oldH.actor !== raw.actor || childH.id === oldH.id
+        || childH.completion || childH.question !== rootPresentation.text) fail();
+    }
+  }
+  if (q!.presentation) {
+    // Model-free replay belongs to the ORIGINAL presentation. The active child
+    // cannot relabel that response as its own presentation consumption.
+    const rootCheckpoint = { ...checkpoint, pending_version: { ...marker,
+      question_id: root!.id, handoff_id: root!.handoff_id! } };
+    resolveActionVersionConsumption(value.generation_recovery, rootCheckpoint, root!, "present");
+  }
+  if (q!.proposal) resolveActionVersionConsumption(value.generation_recovery, checkpoint, q!, "answer-map");
+  if (q!.terminal_failure) {
+    const c = q!.terminal_failure.completion;
+    const consumed = resolveActionVersionConsumption(value.generation_recovery, checkpoint, q!,
+      q!.terminal_failure.stage === "present" ? "present" : "answer-map");
+    if (!tail!.used_version_corrections?.includes(root!.id) || !consumed
+      || consumed.id !== c.operation_id || consumed.state !== "checkpointed" || consumed.request_digest !== c.request_digest
+      || consumed.context_digest !== c.context_digest || consumed.attempts.at(-1)?.outcome !== "response"
+      || consumed.action_checkpoint?.consumer !== "action_rule_components"
+      || consumed.action_checkpoint.kind !== "version_interpretation"
+      || consumed.action_checkpoint.response_digest !== c.response_digest
+      || consumed.action_checkpoint.material_digest !== actionVersionMaterialDigest(checkpoint, q!,
+        q!.terminal_failure.stage === "present" ? "present" : "answer-map")) fail();
   }
 }
 

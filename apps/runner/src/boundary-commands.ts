@@ -1,8 +1,16 @@
 import { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
 export { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
-import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, authoringActionCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
+import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, leaveOperatorQuestionPending,
+  operatorQuestionReadback, presentOperatorQuestion, proposeOperatorAnswer, reopenOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
+import { isUnknownReadMeaning } from "./read-meaning-evidence.js";
+import { randomUUID } from "node:crypto";
 import { reviewSourceInputPolicy } from "./authoring-input-policy-operation.js";
+import { reusableSourceInputConversationReview, runSourceInputConversation } from "./authoring-input-policy-conversation.js";
+import { runVersionConversation } from "./authoring-version-conversation.js";
+import { actionRuleAuthoringCheckpoint, actionLogicalTurnMaterialDigest, assertActionLogicalTurnJournalAdvance,
+  type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { sourceInputFidelity } from "./authoring-input-policy.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION, authoringProgramProgressLines } from "./authoring-program-capacity.js";
 import { scopedDisclosureStoreDigest } from "./authoring-scoped-disclosure.js";
@@ -205,9 +213,11 @@ import {
   type BoundaryAuthoringResumeRead,
   type BoundaryAuthoringResumeStage,
   type BoundaryAuthoringResumeState,
+  actionVersionMaterialDigest,
+  assertActionVersionQuestionHandoff,
 } from "./boundary-authoring-resume.js";
 import { reviewPrivateActionSourceForModel } from "./action-rule-source-consent.js";
-import { reviewActionVersionField } from "./action-rule-version-review.js";
+import { prepareActionVersionField, reviewActionVersionField } from "./action-rule-version-review.js";
 import {
   MAX_BOUNDARY_ACTION_INTENT_CHARACTERS,
   MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS,
@@ -253,6 +263,7 @@ import {
   generateModelActionRuleDraft,
   modelActionRuleRevisionFocus,
   type ModelActionRuleDraftResult,
+  type ModelActionRuleDraftInput,
 } from "./action-rule-model.js";
 import {
   buildActionRuleAuthorityDraft,
@@ -302,7 +313,7 @@ import {
   type ModelReadValueContextDecision,
   type ModelReadValueRequest,
 } from "./read-workload-model.js";
-import { ReadWorkloadAssistancePausedError, parseReadWorkloadAssistanceCheckpoint,
+import { ReadWorkloadAssistancePausedError, parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceCheckpoint,
   readWorkloadAssistanceDecisionAnswer, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import { ReadWorkloadDraftError, readWorkloadDiagnosticLines, type ReadWorkloadDiagnostic } from "./read-workload-diagnostics.js";
 import {
@@ -3292,9 +3303,22 @@ async function promptReadBoundaryClarification(input: {
   model: ActionModelSuggestionSession;
   request: ModelReadClarificationRequest;
   previous?: ModelReadClarificationRequest & { answer: string };
+  mediation?: {
+    read(): OperatorQuestion;
+    save(next: OperatorQuestion): Promise<void>;
+    accept(next: OperatorQuestion): Promise<void>;
+  };
 }): Promise<ModelReadClarificationDecision | undefined> {
   const exactTarget = `${input.request.resource}${input.request.field ? `.${input.request.field}` : ""}`;
-  const answer = await input.session.promptText(input.request.question, {
+  let question = input.mediation?.read();
+  if (question?.disposition && question.disposition !== "unknown") {
+    question = reopenOperatorQuestion(question); await input.mediation!.save(question);
+  }
+  if (question && !question.presentation) {
+    question = presentOperatorQuestion(question, input.request.question); await input.mediation!.save(question);
+  }
+  const answer = question?.raw_answer?.text ?? await input.session.promptText(question?.presentation?.text ?? input.request.question, {
+    preserveWhitespace: Boolean(input.mediation), recordPolicyAnswer: false,
     context: [
       "CLARIFY ONE REVIEWED NAME",
       ...(input.previous ? [
@@ -3310,12 +3334,49 @@ async function promptReadBoundaryClarification(input: {
       "Blank keeps this question unanswered unless you explicitly choose to decline. Escape or EOF leaves it saved and unanswered.",
     ],
   });
-  if (answer === undefined) return undefined;
-  if (answer.trim()) return { state: "answered", answer: answer.trim() };
+  if (answer === undefined) {
+    if (question) await input.mediation!.save(leaveOperatorQuestionPending(question, "cancelled"));
+    return undefined;
+  }
+  if (question && !question.raw_answer) {
+    question = captureOperatorAnswer(question, answer); await input.mediation!.save(question);
+  }
+  if (answer.trim()) {
+    if (question) {
+      if (answer.length > 1_000) {
+        await input.mediation!.save(leaveOperatorQuestionPending(question, "unknown"));
+        input.session.present?.("READ MEANING REMAINS PENDING", ["Your complete answer is saved. This Read mapping accepts at most 1,000 text units; no part was shortened or adopted. Resume to supply a shorter answer for this same question."], "warning");
+        return undefined;
+      }
+      if (isUnknownReadMeaning(answer)) {
+        await input.mediation!.save(leaveOperatorQuestionPending(question, "unknown"));
+        return { state: "answered", answer };
+      }
+      if (!question.proposal) {
+        question = proposeOperatorAnswer(question, { question_id: question.id, revision: question.revision,
+          answer_id: question.raw_answer!.id, disposition: "proposed", value: { kind: "attributed_meaning" } });
+        await input.mediation!.save(question);
+      }
+      // Later replacement uses its existing single old/new readback instead.
+      if (!input.previous) {
+        const confirmed = await input.session.confirm("Record these exact words as the meaning for this task?", {
+          defaultValue: false, context: operatorQuestionReadback(question),
+        });
+        if (confirmed !== true) {
+          await input.mediation!.save(leaveOperatorQuestionPending(question, confirmed === undefined ? "cancelled" : "declined"));
+          return undefined;
+        }
+        await input.mediation!.accept(question);
+      }
+      return { state: "answered", answer };
+    }
+    return { state: "answered", answer: answer.trim() };
+  }
   const decline = await input.session.confirm("Decline this Read question? No keeps it pending.", {
     defaultValue: false,
     context: ["This is a local decision, not business meaning or a model request. No keeps the exact saved question available to answer on Resume."],
   });
+  if (question) await input.mediation!.save(leaveOperatorQuestionPending(question, decline === true ? "declined" : decline === undefined ? "cancelled" : "unknown"));
   return decline === true ? { state: "declined" } : undefined;
 }
 
@@ -4405,6 +4466,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let activeResume = availableResume;
   let generationRecovery = availableResume?.generation_recovery;
   let ownerHandoffs = structuredClone(availableResume?.owner_handoffs ?? []);
+  let operatorQuestions = structuredClone(availableResume?.operator_questions ?? []);
   let readAssistanceCheckpoint = availableResume?.read_assistance;
   let resumeRead: BoundaryAuthoringResumeRead | undefined = availableResume?.read;
   let resumeReadIntent = availableResume?.read_intent;
@@ -4464,10 +4526,204 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if(!store)throw new Error('SOURCE_INPUT_REQUIREMENT_PENDING: Establish the current local project binding before reviewing input meaning.');
     return {context,store};
   };
-  const ensureInputPolicyAgenda = async () => {
-    const sources=authoringConversation?.policySources,outcomes=resumeAction?.intended_outcomes;
-    if(actionWorkflow!=='program'||!sources||!activePolicySource(sources)||!outcomes?.length)return;
+  const ensureInputPolicyAgenda = async (preserveCurrentReview = false, savedRoot?: OperatorQuestion) => {
+    const sources=authoringConversation?.policySources,outcomes=resumeAction?.intended_outcomes,source=activePolicySource(sources);
+    if(actionWorkflow!=='program'||!sources||!source||!outcomes?.length){
+      if(savedRoot)throw new PolicySourceChangedError();
+      return;
+    }
     const {store}=await inputPolicyContext();
+    if(savedRoot){
+      const binding=savedRoot.source_binding;
+      const currentRoot=operatorQuestions.find(q=>q.id===savedRoot.id);
+      if(!binding||!currentRoot||currentRoot.digest!==savedRoot.digest
+        ||binding.source_session!==sources.id||binding.source_digest!==source.digest||binding.lines!==source.lines
+        ||binding.store_digest!==store||canonicalJsonDigest(savedRoot.target.outcomes)!==canonicalJsonDigest(outcomes)
+        ||binding.agenda_digest!==canonicalJsonDigest({source_session:sources.id,source_digest:source.digest,store_digest:store,outcomes}))
+        throw new PolicySourceChangedError();
+    }
+    if(input.authoringChat&&selectedResumeModel){
+      const current=sources.input_policy_reviews?.at(-1);
+      const handoff=ownerHandoffs.at(-1);
+      const waitingForInput=handoff?.state==='waiting'&&handoff.consumer==='input_policy';
+      // Existing model-free attributed records retain their established route.
+      // This does not turn a pending assisted decision into a manual answer.
+      if(!waitingForInput&&!current?.question_reference&&current?.decision==='confirmed'&&current.source_session===sources.id
+        &&current.source_digest===source.digest&&current.store_digest===store&&outcomes.every(o=>current.outcomes.includes(o))){
+        await assertAuthoringResumeCurrent(undefined);return;
+      }
+      if(!waitingForInput&&preserveCurrentReview&&current?.question_reference&&current.decision==='confirmed'
+        &&current.source_session===sources.id&&current.source_digest===source.digest&&current.store_digest===store
+        &&canonicalJsonDigest(current.outcomes)===canonicalJsonDigest(outcomes)){
+        const root=operatorQuestions.find(q=>q.id===current.question_reference!.root_id);
+        if(!root)throw new PolicySourceChangedError();
+        const reusable=reusableSourceInputConversationReview({sources,store,outcomes,actor:localInteractiveActor(),
+          questions:{root,children:operatorQuestions.filter(q=>q.budget_owner_id===root.id)}});
+        if(reusable?.digest===current.digest){
+          await assertAuthoringResumeCurrent(undefined);
+          if(await policySourceSavedDigest(input.projectRoot,sources.id)!==canonicalJsonDigest(sources))throw new PolicySourceChangedError();
+          const fresh=await inputPolicyContext();
+          if(fresh.store!==store)throw new PolicySourceChangedError();
+          await inspectPolicyReviewSource(fresh.context.lock,input.schemaInspector);
+          return;
+        }
+      }
+      const agenda=canonicalJsonDigest({source_session:sources.id,source_digest:source.digest,store_digest:store,outcomes});
+      const stage=()=>activeResume?.stage??'action_drafting';
+      let root=savedRoot??operatorQuestions.find(q=>q.kind==='input_bounds'&&q.source_binding?.agenda_digest===agenda);
+      if(!root){
+        await mutateOwnerHandoff(async permit=>{
+          if(ownerHandoffs.at(-1)?.state==='waiting')throw new Error('AUTHORING_OWNER_QUESTION_PENDING: Inspect the saved question before reviewing another input decision.');
+          const contextDigest=await ownerQuestionContext(permit,'input_policy');
+          root=createOperatorQuestion({id:randomUUID(),revision:1,kind:'input_bounds',scope_digest:ownerQuestionScope(),context_digest:contextDigest,
+            target:{phase:'input_policy',outcomes},source_binding:{source_session:sources.id,source_digest:source.digest as `sha256:${string}`,
+              store_digest:store as `sha256:${string}`,agenda_digest:agenda,lines:source.lines},
+            material:['Review the text length requirements for this current Action inventory.',
+              'Required presence, nullability, spaces, allowed values and text length are separate. This records an unverified interpretation; it grants no permission.'],
+            evidence:[{id:sources.id,digest:source.digest as `sha256:${string}`},{id:'current-store',digest:store as `sha256:${string}`}],
+            continuation:'input_policy_review',assistedLocalConsumer:true});
+          operatorQuestions.push(root);
+          await persistAuthoringResume(stage(),permit);
+          if(resumePersistenceBlocked)throw checkpointSaveFailure('The pending input-policy interpretation');
+        });
+      }
+      const readQuestions=()=>{
+        const currentRoot=operatorQuestions.find(q=>q.id===root!.id);
+        if(!currentRoot)throw checkpointSaveFailure('The retained input-policy question');
+        return {root:currentRoot,children:operatorQuestions.filter(q=>q.budget_owner_id===currentRoot.id)};
+      };
+      const assertInputCurrent=async(permit?:ProjectAuthorityMutationPermit,recovery?:{mode:'completed_review'|'append_recovery';review:import('./authoring-input-policy.js').SourceInputPolicyReview;sourceBeforeAppend?:PolicySourceSession})=>{
+        await assertAuthoringResumeCurrent(undefined,false,permit);
+        let savedSources=sources;
+        if(recovery?.mode==='append_recovery'){
+          if(!recovery.sourceBeforeAppend||canonicalJsonDigest(recovery.sourceBeforeAppend)!==canonicalJsonDigest(sources))throw new PolicySourceChangedError();
+          const expected=structuredClone(recovery.sourceBeforeAppend);
+          expected.input_policy_reviews=[...(expected.input_policy_reviews??[]),recovery.review];
+          const actual=await loadPolicySources(input.projectRoot,sources.id);
+          if(canonicalJsonDigest(actual)!==canonicalJsonDigest(expected))throw new PolicySourceChangedError();
+          savedSources=actual;
+        }
+        if(await policySourceSavedDigest(input.projectRoot,sources.id)!==canonicalJsonDigest(savedSources))throw new PolicySourceChangedError();
+        const fresh=await inputPolicyContext();
+        if(fresh.store!==store||activePolicySource(sources)?.digest!==source.digest
+          ||canonicalJsonDigest(resumeAction?.intended_outcomes)!==canonicalJsonDigest(outcomes))throw new PolicySourceChangedError();
+        // Inspect the actual current reader; completed meaning follows its
+        // ordinary Source/store/agenda contract, not an old whole-session hash.
+        await inspectPolicyReviewSource(fresh.context.lock,input.schemaInspector);
+        if(recovery?.mode==='completed_review')return;
+        const current=readQuestions(),q=current.children.at(-1)??current.root;
+        if(q.scope_digest!==ownerQuestionScope()||q.context_digest!==await ownerQuestionContext(permit,'input_policy',recovery?.sourceBeforeAppend,savedSources))
+          throw new PolicySourceChangedError();
+      };
+      const result=await runSourceInputConversation({projectRoot:input.projectRoot,sources,session:selectedResumeModel,outcomes,store,
+        actor:localInteractiveActor(),egressAcknowledged:modelEgressAcknowledged,ports:{readQuestions,assertCurrent:assertInputCurrent,
+          saveQuestion:async(next,expected,options)=>mutateOwnerHandoff(async permit=>{
+            await assertInputCurrent(permit);
+            const old=operatorQuestions.find(q=>q.id===next.id);
+            if(!old||old.digest!==expected)throw new PolicySourceChangedError();
+            operatorQuestions[operatorQuestions.indexOf(old)]=next;
+            await persistAuthoringResume(stage(),permit);
+            if(resumePersistenceBlocked)throw checkpointSaveFailure('The exact input-policy question');
+          },options?.permit),
+          createMissingQuestion:async(currentRoot,text,completion,options)=>mutateOwnerHandoff(async permit=>{
+            await assertInputCurrent(permit);
+            const current=readQuestions();
+            if(current.root.digest!==options.expectedRootDigest||current.root.id!==currentRoot.id
+              ||ownerHandoffs.at(-1)?.state==='waiting')throw new PolicySourceChangedError();
+            const h=createOwnerHandoff({consumer:'input_policy',question:text,scope_digest:current.root.scope_digest,
+              context_digest:current.root.context_digest,completion});
+            generationRecovery=authoringQuestionCheckpoint(generationRecovery,ownerHandoffCheckpoint(h));
+            const q=presentOperatorQuestion(createOperatorQuestion({id:randomUUID(),revision:Math.max(current.root.revision,...current.children.map(c=>c.revision))+1,
+              handoff_id:h.id,kind:'input_bounds',scope_digest:h.scope_digest,context_digest:h.context_digest,target:current.root.target,
+              material:current.root.material,evidence:current.root.evidence,continuation:'input_policy_review',budget_owner_id:current.root.id}),text);
+            ownerHandoffs.push(h);operatorQuestions.push(q);
+            await persistAuthoringResume(stage(),permit);
+            if(resumePersistenceBlocked)throw checkpointSaveFailure('The missing input-policy question');
+          },options.permit),
+          recordRawAnswer:async(q,raw,expected,options)=>mutateOwnerHandoff(async permit=>{
+            await assertInputCurrent(permit);
+            const current=readQuestions().children.at(-1),h=ownerHandoffs.at(-1);
+            if(!current||!h||current.id!==q.id||current.digest!==expected||h.id!==q.handoff_id||h.state!=='waiting')throw new PolicySourceChangedError();
+            let captured=captureOperatorAnswer(current,raw);
+            if(!raw.trim())captured=leaveOperatorQuestionPending(captured,'unknown');
+            else{
+              const answered=answerOwnerHandoff(h,raw,h.context_digest);
+              if(h.completion)generationRecovery=authoringQuestionAnswerCheckpoint(generationRecovery,ownerHandoffCheckpoint(h),
+                {digest:canonicalJsonDigest(answered),operator_messages:[raw]});
+              ownerHandoffs[ownerHandoffs.length-1]=answered;
+              rememberModelAuthoringTurn(authoringConversation,h.question,raw);
+            }
+            operatorQuestions[operatorQuestions.indexOf(current)]=captured;
+            await persistAuthoringResume(stage(),permit);
+            if(resumePersistenceBlocked)throw checkpointSaveFailure('The exact raw input-policy answer');
+          },options?.permit),
+          acknowledge:async(_q,_record,staged,permit)=>mutateOwnerHandoff(async held=>{
+            Object.assign(sources,staged);
+            await assertInputCurrent(held,{mode:'completed_review',review:_record});
+            await persistAuthoringResume(stage(),held);
+            if(resumePersistenceBlocked)throw checkpointSaveFailure('The saved input-policy interpretation');
+          },permit),
+          resumePending:async(q,currentRoot)=>{
+            if(q.source_binding&&q.proposal?.disposition!=='proposed'){
+              input.authoringChat?.runner('INPUT POLICY STILL PENDING',[
+                'No complete interpretation or missing-business question is saved. Inspect or change the attached policy through its ordinary reviewed route.',
+                'Reopening does not invent an answer or renew the authoring allowance.']);
+              return 'keep';
+            }
+            await assertInputCurrent();
+            const choice=await input.session.chooseOption?.('SAVED INPUT-POLICY DECISION',[
+              {value:'keep',label:'Keep this decision pending'},
+              {value:'answer',label:q.source_binding?'Review the saved interpretation again':'Answer the saved question'},
+            ],{initialValue:'keep',reviewOnly:true,displayContext:true,context:[...q.material,
+              ...(q.presentation?[q.presentation.text]:[]),...(q.raw_answer?[`Previous answer (retained): ${JSON.stringify(q.raw_answer.text)}`]:[]),
+              'Earlier questions and answers stay recorded. This choice grants no permission and does not renew the allowance.']});
+            if(choice!=='answer')return 'keep';
+            return mutateOwnerHandoff(async permit=>{
+              await assertInputCurrent(permit);
+              const records=readQuestions(),latest=records.children.at(-1)??records.root;
+              if(latest.digest!==q.digest||records.root.digest!==currentRoot.digest||!q.disposition||q.confirmation)throw new PolicySourceChangedError();
+              if(!q.raw_answer){
+                const h=q.handoff_id&&ownerHandoffs.find(h=>h.id===q.handoff_id);
+                if(!q.source_binding&&(!h||h.state!=='waiting'||h.question!==q.presentation?.text))throw new PolicySourceChangedError();
+                operatorQuestions[operatorQuestions.findIndex(old=>old.id===q.id)]=reopenOperatorQuestion(q);
+                await persistAuthoringResume(stage(),permit);
+                if(resumePersistenceBlocked)throw checkpointSaveFailure('The reopened input-policy question');
+                return 'reopen' as const;
+              }
+              const oldH=ownerHandoffs.find(h=>h.id===q.handoff_id);
+              if(!oldH||!q.presentation||oldH.question!==q.presentation.text
+                ||oldH.state==='waiting'&&q.raw_answer.text.trim())throw new PolicySourceChangedError();
+              let h=oldH;
+              if(oldH.state==='answered'){
+                if(ownerHandoffs.at(-1)?.state==='waiting')throw new PolicySourceChangedError();
+                if(generationRecovery?.operations.some(op=>['in_flight','received','handled','unknown','partial'].includes(op.state)))
+                  throw new AskError('ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION','Inspect the unresolved generation before answering another question. No response was replayed.',409);
+                h=createOwnerHandoff({consumer:'input_policy',question:q.presentation.text,scope_digest:q.scope_digest,context_digest:q.context_digest});
+                ownerHandoffs.push(h);
+              }
+              const next=presentOperatorQuestion(createOperatorQuestion({id:randomUUID(),revision:q.revision+1,handoff_id:h.id,
+                kind:'input_bounds',scope_digest:q.scope_digest,context_digest:q.context_digest,target:q.target,material:q.material,
+                evidence:q.evidence,continuation:q.continuation,budget_owner_id:records.root.id}),q.presentation.text);
+              operatorQuestions.push(next);
+              await persistAuthoringResume(stage(),permit);
+              if(resumePersistenceBlocked)throw checkpointSaveFailure('The replacement input-policy answer question');
+              return 'replace' as const;
+            });
+          },
+          prompt:async(text,options)=>{
+            await assertInputCurrent();
+            if(input.authoringChat?.readOperator){
+              input.authoringChat.runner('Before you answer',readQuestions().root.material);
+              await input.authoringChat.streamModel(text.split(/\r?\n/u));
+              return (await input.authoringChat.readOperator(undefined,()=>assertInputCurrent(),{recordPolicyAnswer:false,...options}))??null;
+            }
+            return (await input.session.promptText(text,{context:readQuestions().root.material,recordPolicyAnswer:false,...options}))??null;
+          },
+          confirm:async(lines,options)=>(await input.session.confirm('Save this exact attributed input-policy interpretation?',{context:lines,...options}))??null,
+        }});
+      if(result.state==='pending')throw new Error('SOURCE_INPUT_REQUIREMENT_PENDING: The saved input-policy decision is still pending. Its question and actual answers remain saved; existing access and Actions are unchanged.');
+      return;
+    }
     await reviewSourceInputPolicy({projectRoot:input.projectRoot,sources,session:input.session,outcomes,store,actor:localInteractiveActor(),
       assertCurrent:async permit=>{await assertAuthoringResumeCurrent(undefined,true,permit);const fresh=await inputPolicyContext();if(fresh.store!==store)throw new PolicySourceChangedError();}});
   };
@@ -4513,6 +4769,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         conversation: authoringConversation?.turns,
         generationRecovery: authoringTransportCheckpoint(generationRecovery),
         ownerHandoffs,
+        operatorQuestions,
         readAssistanceCheckpoint: readAssistanceCheckpoint ?? null,
         ...(intendedClient ? { intendedClient } : {}),
         ...(authoringConversation?.policySources?.snapshots.length ? { policySourceSession: authoringConversation.policySources.id } : {}),
@@ -4578,14 +4835,18 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     model: selectedResumeModel && { provider: selectedResumeModel.provider, model: selectedResumeModel.model,
       destination: authoringDestination(selectedResumeModel) } });
   const ownerQuestionContext = async (permit?: ProjectAuthorityMutationPermit,
-    consumer?: AuthoringOwnerHandoff["consumer"]) => {
+    consumer?: AuthoringOwnerHandoff["consumer"], sourceContext?:PolicySourceSession, savedSourceContext?:PolicySourceSession) => {
     await assertAuthoringResumeCurrent(undefined, false, permit);
     const current = await loadBoundaryReviewContext(input.projectRoot);
     const sources = authoringConversation?.policySources;
-    if (sources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, sources.id) !== canonicalJsonDigest(sources)) {
+    if (sources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, sources.id) !== canonicalJsonDigest(savedSourceContext??sources)) {
       throw new PolicySourceChangedError();
     }
     const reader = await inspectPolicyReviewSource(current.lock, input.schemaInspector);
+    // A pending Input interpretation covers the saved program, including peer
+    // edits/removals that leave the attached Source and intended names unchanged.
+    const inputActions = consumer === "input_policy"
+      ? await readActionRuleAuthorityRevisionBaseline(input.projectRoot, permit) : undefined;
     // Policy clarification is bound to the complete saved program and freshly
     // inspected reader/Action posture. An old coverage result is not current
     // Source meaning after an Action, role or attachment change.
@@ -4599,24 +4860,27 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         action_role: action ? rolePostureFingerprint(action) : null };
     }
     return canonicalJsonDigest({ scope: ownerQuestionScope(), binding: boundaryAuthoringResumeBinding(current.bundle),
-      candidate: current.candidate, source: sources?.snapshots.length ? sources : null,
+      candidate: current.candidate, source: sources?.snapshots.length ? sourceContext??sources : null,
       reader_schema: schemaFingerprintForInspection(reader.inspection), reader_role: rolePostureFingerprint(reader.inspection),
+      ...(inputActions ? { input_actions: inputActions } : {}),
       ...(policyContext ? { policy: policyContext } : {}) });
   };
-  const mutateOwnerHandoff = async <T,>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>): Promise<T> => {
+  const mutateOwnerHandoff = async <T,>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>,parentPermit?:ProjectAuthorityMutationPermit): Promise<T> => {
     // Never retain this exclusion while a human or provider is outstanding.
     // A failed/uncertain save is inspected on disk on reopen; an in-memory
     // answer must not masquerade as an acknowledged saved decision.
     const beforeHandoffs = structuredClone(ownerHandoffs);
+    const beforeQuestions = structuredClone(operatorQuestions);
     const beforeRecovery = generationRecovery && structuredClone(generationRecovery);
     const beforeReadAssistance = readAssistanceCheckpoint && structuredClone(readAssistanceCheckpoint);
     const beforeRead = resumeRead && structuredClone(resumeRead);
     const beforeReadRevision = pendingReadRevisionState && structuredClone(pendingReadRevisionState);
     const beforeReadRequest = pendingReadRevision;
     const beforeTurns = authoringConversation && structuredClone(authoringConversation.turns);
-    try { return await withProjectAuthorityMutation(input.projectRoot, operation); }
+    try { return await withProjectAuthorityMutation(input.projectRoot, operation,{permit:parentPermit}); }
     catch (error) {
       ownerHandoffs = beforeHandoffs;
+      operatorQuestions = beforeQuestions;
       generationRecovery = beforeRecovery;
       readAssistanceCheckpoint = beforeReadAssistance;
       resumeRead = beforeRead;
@@ -4677,13 +4941,13 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       savedTransactionDecisionAvailable = Boolean(savedSources.source_transaction_reviews?.length);
     } catch { /* The ordinary saved Review reports an unavailable source. */ }
   }
-  const writeGenerationRecovery = async (state: AuthoringTransportState) => {
+  const writeGenerationRecovery = async (state: AuthoringTransportState, permit?: ProjectAuthorityMutationPermit) => {
     if (!activeResume || activeResume.revision_digest !== savedResumeRevision || resumePersistenceBlocked) throw checkpointSaveFailure("Transport history");
-    await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume);
+    await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
     const core = { ...activeResume, generation_recovery: structuredClone(state), updated_at: new Date().toISOString() };
     const {revision_digest: _old, ...unsigned} = core;
     const next = {...unsigned, revision_digest: canonicalJsonDigest(unsigned)};
-    await writeBoundaryAuthoringResumeState(input.projectRoot, next, {expectedRevisionDigest: savedResumeRevision});
+    await writeBoundaryAuthoringResumeState(input.projectRoot, next, {expectedRevisionDigest: savedResumeRevision, permit});
     activeResume = next; savedResumeRevision = next.revision_digest; generationRecovery = next.generation_recovery;
   };
   const reviewConnectionRecovery = async (title: string): Promise<boolean> => {
@@ -4826,6 +5090,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     const preselectedReview = savedReviewPreselection;
     savedReviewPreselection = undefined;
+    // Saved Review shares the same Source-bound interpretation as drafting.
+    // A replacement policy must not fall through to technical registration
+    // merely because an older input review remains in the saved history.
+    await ensureInputPolicyAgenda(true);
     const notice = await reviewSavedBoundaryPolicy({ projectRoot: input.projectRoot, session: input.session,
       resume: activeResume, sources: authoringConversation.policySources,
       modelSession: boundaryAuthoringModelSession({ ...selectedResumeModel, conversation: authoringConversation }, input.authoringChat),
@@ -4989,12 +5257,19 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     if (availableResume && !revalidateSavedJob && (selected === "review_disclosure" || selected === "review_rules" || selected === "review_transaction")) {
       const sources = availableResume.policy_source_session ? await loadPolicySources(input.projectRoot, availableResume.policy_source_session) : undefined;
+      // These local-only probes precede model selection/transfer consent. An
+      // existing assisted program agenda belongs to the shared conversation
+      // consumer, not the manual input-registration side effect of the probe.
+      const assistedInputPreflight = availableResume.action_workflow === "program"
+        && Boolean(sources?.input_policy_reviews?.some(review => review.question_reference)
+          || availableResume.operator_questions?.some(question => question.kind === "input_bounds" && question.source_binding));
       const pendingMeaning = sources?.scoped_disclosure_reviews?.length && [...new Map(sources.scoped_disclosure_reviews.map(r=>[r.id,r])).values()]
         .some(r=>r.fields.some(f=>f.decision!=='confirmed_non_sensitive'));
       if (sources && (selected === "review_disclosure" || selected === "review_rules" && pendingMeaning)) {
         const notice = await reviewSavedBoundaryPolicy({projectRoot:input.projectRoot,session:input.session,
           resume:availableResume,sources,request:"Review attached rules and unresolved decisions",selectCurrentContext:true,
-          localDisclosure:selected === "review_disclosure" ? "register_or_status" : "status",schemaInspector:input.schemaInspector,assertRunning});
+          localDisclosure:selected === "review_disclosure" ? "register_or_status" : "status",
+          deferAssistedInputPreflight:assistedInputPreflight,schemaInspector:input.schemaInspector,assertRunning});
         await input.authoringChat?.streamCheckpoint(notice.title,notice.lines,notice.tone === "warning" ? "warning" : "normal");
         return {...boundaryAssistResult(notice,false,false,true),navigation:"pause" as const};
       }
@@ -5002,12 +5277,16 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         const notice = await reviewSavedBoundaryPolicy({projectRoot:input.projectRoot,session:input.session,
           resume:availableResume,sources,request:"Review attached rules and unresolved decisions",selectCurrentContext:true,
           localTransactionOnly:true,revisitTransaction:selected === "review_transaction",
+          deferAssistedInputPreflight:assistedInputPreflight,
           schemaInspector:input.schemaInspector,assertRunning});
         if (selected === "review_transaction" || notice.localTransaction !== 'continue') {
           await input.authoringChat?.streamCheckpoint(notice.title,notice.lines,notice.tone === "warning" ? "warning" : "normal");
           return {...boundaryAssistResult(notice,false,false,true),navigation:"pause" as const};
         }
-        savedReviewPreselection = notice.reviewSelection;
+        // The assisted decision can legitimately save a new Source/Resume
+        // revision. Final Review must select that actual current subject; an
+        // older local-probe selection must not silently rebase across the save.
+        savedReviewPreselection = assistedInputPreflight ? undefined : notice.reviewSelection;
       }
     }
     if (selected === "advanced") {
@@ -5527,6 +5806,17 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         ? "Press W again, move to one mapping path, and press Enter."
         : "Press W again and enter a number from 1 through 5."],
     });
+  }
+  // An incidental Resume stage or separate edit cannot replace an unanswered
+  // Input decision with planning. Enter its existing current-context controller
+  // first; it retains the owning allowance and refuses stale bindings.
+  const savedInputRoot=operatorQuestions.filter(q=>q.kind==='input_bounds'&&q.source_binding).at(-1);
+  const savedInputDecision=savedInputRoot&&[savedInputRoot,...operatorQuestions.filter(q=>q.budget_owner_id===savedInputRoot.id)]
+    .sort((a,b)=>a.revision-b.revision).at(-1);
+  const pendingInputRoot=savedInputDecision&&!savedInputDecision.confirmation?savedInputRoot:undefined;
+  if (resumeSelected && (pendingInputRoot
+    || ownerHandoffs.at(-1)?.state === 'waiting' && ownerHandoffs.at(-1)?.consumer === 'input_policy')) {
+    await ensureInputPolicyAgenda(true,pendingInputRoot);
   }
   let context = await loadBoundaryReviewContext(input.projectRoot);
   let resumedCompletedRemoval = false;
@@ -6255,6 +6545,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       }
     }
   }
+  // A saved input question must be resolved before Resume reaches a Read or
+  // Action producer. Planning is skipped on this route; it cannot skip the
+  // unchanged input contract or replace its existing owning allowance.
+  if(resumePastPlanning)await ensureInputPolicyAgenda();
   await chooseUnspecifiedClient();
   const promptedActionIntents = resumeSelected && resumeAction?.closed_unchanged ? [] : retainedReadEdit && jobPlan?.state === "planned"
     ? jobPlan.action_intents ?? []
@@ -6407,6 +6701,265 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let semanticActionRevisionCatalog: ActionRuleCatalogV1 | undefined;
   let semanticActionAuthorityDraft: ActionRuleAuthorityDraftV1 | undefined;
   let semanticActionPublicationBaseline: ActionRuleAuthorityRevisionBaseline | undefined;
+  // These ports belong to the existing Action producer and Resume CAS. They
+  // neither hold the mutation permit across UI/egress nor create another pool.
+  const conversationalActionPorts = (settings: {
+    session: ActionModelSuggestionSession;
+    stage: BoundaryAuthoringResumeStage;
+    read(): ActionRuleAuthoringCheckpoint | undefined;
+    write(checkpoint: ActionRuleAuthoringCheckpoint | undefined): void;
+    freshness: Parameters<typeof assertBoundaryAuthoringResumeCurrent>[2];
+    inspection: SchemaInspection;
+    generationLock: GenerationLock;
+    onReviewed?(prepared: ReturnType<typeof prepareActionVersionField>): void;
+  }): Pick<ModelActionRuleDraftInput, "onCheckpoint" | "stageVersionQuestion" | "reviewVersionQuestion" | "assertLogicalTurnBoundary"> => {
+    let borrowedPermit: ProjectAuthorityMutationPermit | undefined;
+    const schema = schemaFingerprintForInspection(settings.inspection);
+    const role = rolePostureFingerprint(settings.inspection);
+    const stale = () => new AskError("ACTION_VERSION_QUESTION_STALE",
+      "The saved counter question or its source changed. Preserve this job and inspect the current setup; no answer or new generation was accepted.", 409);
+    const assertFresh = async (permit?: ProjectAuthorityMutationPermit) => {
+      assertRunning();
+      await assertAuthoringResumeCurrent(settings.freshness, true, permit);
+      const inspected = await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env);
+      if (schemaFingerprintForInspection(inspected) !== schema || rolePostureFingerprint(inspected) !== role) throw stale();
+      const fresh = await loadBoundaryReviewContext(input.projectRoot);
+      if (fresh.candidate.generation_lock_fingerprint !== canonicalJsonDigest(settings.generationLock)) throw stale();
+      if (authoringConversation?.policySources?.snapshots.length
+        && await policySourceSavedDigest(input.projectRoot, authoringConversation.policySources.id)
+          !== canonicalJsonDigest(authoringConversation.policySources)) throw new PolicySourceChangedError();
+    };
+    const coordinated = async <T,>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>): Promise<T> => {
+      const before = settings.read(), oldReviews = reviewedVersionFields, oldCatalog = semanticActionCatalog;
+      try {
+        return await mutateOwnerHandoff(async permit => {
+          await assertFresh(permit);
+          const previousPermit = borrowedPermit;
+          borrowedPermit = permit;
+          try { return await operation(permit); } finally { borrowedPermit = previousPermit; }
+        }, borrowedPermit);
+      } catch (error) {
+        settings.write(before);
+        reviewedVersionFields = oldReviews; semanticActionCatalog = oldCatalog;
+        // The enclosing owner mutation rolls back its pre-save transcript.
+        // A prohibited checkpoint save already discarded that unacknowledged
+        // material; do not resurrect it. Match this actual save failure, not
+        // sticky persistence flags from an earlier refusal or a CAS failure.
+        if (error instanceof Error && /^ACTION_CHECKPOINT_NOT_SAVED: The checkpoint could not be saved\. BOUNDARY_AUTHORING_RESUME_(?:PRIVATE_MATERIAL|TRUSTED_IDENTITY)_BLOCKED:/u.test(error.message)
+          && authoringConversation) {
+          authoringConversation.turns.splice(0, authoringConversation.turns.length,
+            ...structuredClone(activeResume?.conversation ?? []));
+        }
+        throw error;
+      }
+    };
+    const onCheckpoint: NonNullable<ModelActionRuleDraftInput["onCheckpoint"]> = async (next, metadata) => coordinated(async permit => {
+      const previous = settings.read();
+      if (metadata?.expected_checkpoint_digest && previous?.digest !== metadata.expected_checkpoint_digest) throw stale();
+      assertActionLogicalTurnJournalAdvance(previous, next);
+      if (metadata?.ordinary_completion) {
+        const closed = metadata.ordinary_completion;
+        if (next.pending_version || canonicalJsonDigest(next.logical_turns?.at(-1)?.completed ?? null) !== canonicalJsonDigest(closed)
+          || actionLogicalTurnMaterialDigest(next) !== closed.material_digest
+          || canonicalJsonDigest(authoringQuestionSequenceCompletion([closed.completion]) ?? null) !== canonicalJsonDigest(closed.completion)) throw stale();
+        if (closed.kind === "ordinary_clarification") {
+          if (!next.pending_question || canonicalJsonDigest(next.pending_question.completion ?? null) !== canonicalJsonDigest(closed.completion)) throw stale();
+          generationRecovery = authoringQuestionCheckpoint(generationRecovery, next);
+        } else {
+          if (next.pending_question || !generationRecovery) throw stale();
+          generationRecovery = authoringActionCheckpoint(generationRecovery, closed.completion,
+            { consumer: "action_rule_components", kind: "compiled_draft", material_digest: closed.material_digest });
+        }
+      } else if (next.pending_version) {
+        const q = operatorQuestions.find(q => q.id === next.pending_version!.question_id);
+        if (!q) throw stale();
+        if (metadata?.version_completion && (q.presentation || q.terminal_failure)) {
+          if (!generationRecovery) throw stale();
+          const phase = q.terminal_failure?.stage === "present" ? "present" : q.proposal || q.terminal_failure ? "answer-map" : "present";
+          generationRecovery = authoringActionCheckpoint(generationRecovery, metadata.version_completion,
+            { consumer: "action_rule_components", kind: "version_interpretation",
+              material_digest: actionVersionMaterialDigest(next, q, phase) });
+        }
+        assertActionVersionQuestionHandoff({ generation_recovery: generationRecovery,
+          owner_handoffs: ownerHandoffs, operator_questions: operatorQuestions }, next);
+      } else if (!previous?.pending_version) {
+        if (next.pending_question) {
+          if (!previous?.pending_question || canonicalJsonDigest(previous.pending_question) !== canonicalJsonDigest(next.pending_question))
+            generationRecovery = authoringQuestionCheckpoint(generationRecovery, next);
+        } else generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery, previous, next);
+      }
+      settings.write(next);
+      await persistAuthoringResume(settings.stage, permit);
+      if (resumePersistenceBlocked) throw checkpointSaveFailure("The checkpoint");
+    });
+    const stageVersionQuestion: NonNullable<ModelActionRuleDraftInput["stageVersionQuestion"]> = request => {
+      const prepared = prepareActionVersionField({ ...request, inspection: settings.inspection, generationLock: settings.generationLock });
+      return { ...prepared, question: "When any application changes one of these records, does it also advance the " +
+        request.resource + "." + request.field + " counter each time?" };
+    };
+    const reviewVersionQuestion: NonNullable<ModelActionRuleDraftInput["reviewVersionQuestion"]> = async request => {
+      await assertFresh();
+      const marker = request.checkpoint().pending_version;
+      const prepared = request.staged ?? (marker && stageVersionQuestion({ context: request.context,
+        resource: marker.resource, field: marker.field }));
+      if (!prepared) throw stale();
+      if (!marker) {
+        if (!request.completion) throw stale();
+        await coordinated(async permit => {
+          const cp = settings.read(), turn = cp?.logical_turns?.at(-1);
+          if (!turn || turn.completed || cp?.pending_version || ownerHandoffs.at(-1)?.state === "waiting") throw stale();
+          const h = createOwnerHandoff({ consumer: "version_maintenance", question: prepared.question,
+            scope_digest: ownerQuestionScope(), context_digest: await ownerQuestionContext(permit, "version_maintenance"),
+            completion: request.completion });
+          generationRecovery = authoringQuestionCheckpoint(generationRecovery, ownerHandoffCheckpoint(h));
+          const q = createOperatorQuestion({ id: randomUUID(), revision: 1, handoff_id: h.id, kind: "writer_maintenance",
+            scope_digest: h.scope_digest, context_digest: h.context_digest,
+            target: { phase: "changed_record_protection", resource: prepared.review.resource, field: prepared.review.field,
+              outcomes: pendingActionRevision ? [pendingActionRevision.outcome] : [...resumeAction?.intended_outcomes ?? []] },
+            material: ["This check prevents a prepared change from overwriting a record that another application has changed.",
+              "Your statement records planned, unverified counter maintenance. It grants no Read or execution permission."],
+            evidence: [{ id: "version-structure", digest: prepared.review.proof_digest }], continuation: "version_mapping" });
+          ownerHandoffs.push(h); operatorQuestions.push(q);
+          await request.savePendingVersion({ turn_id: turn.id, root_question_id: q.id, question_id: q.id,
+            handoff_id: h.id, resource: prepared.review.resource, field: prepared.review.field, proof_digest: prepared.review.proof_digest },
+            { question: h.question, operator_message: request.checkpoint().operator_messages?.at(-1) ??
+                (pendingActionRevision?.instruction ?? resumeAction?.checkpoint?.pending_question?.operator_message ?? resumeAction?.intent ?? jobIntent!),
+              ...(authoringConversation?.policySources?.snapshots.length ? { policy_source_digest: canonicalJsonDigest(authoringConversation.policySources) } : {}),
+              completion: request.completion }, request.completion);
+        });
+      }
+      const readQuestion = () => {
+        const current = settings.read()?.pending_version;
+        const q = current && operatorQuestions.find(q => q.id === current.question_id);
+        if (!current || !q) throw stale();
+        return q;
+      };
+      const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
+        await assertFresh(permit);
+        const cp = settings.read(), current = cp?.pending_version, q = readQuestion();
+        if (!cp || !current || current.resource !== prepared.review.resource || current.field !== prepared.review.field
+          || current.proof_digest !== prepared.review.proof_digest || q.scope_digest !== ownerQuestionScope()
+          || q.context_digest !== await ownerQuestionContext(permit, "version_maintenance")) throw stale();
+        const freshProof = prepareActionVersionField({ context: request.context, resource: current.resource,
+          field: current.field, inspection: settings.inspection, generationLock: settings.generationLock });
+        if (canonicalJsonDigest(freshProof.review) !== canonicalJsonDigest(prepared.review)) throw stale();
+        assertActionVersionQuestionHandoff({ generation_recovery: generationRecovery,
+          owner_handoffs: ownerHandoffs, operator_questions: operatorQuestions }, cp);
+      };
+      const persistQuestion = async (q: OperatorQuestion, expected: string, completion?: AuthoringOwnerHandoff["completion"]) =>
+        coordinated(async () => {
+          await assertCurrent(borrowedPermit);
+          const previous = readQuestion(), cp = settings.read()!;
+          if (previous.digest !== expected || previous.id !== q.id) throw stale();
+          operatorQuestions[operatorQuestions.indexOf(previous)] = q;
+          await request.savePendingVersion(cp.pending_version!, cp.pending_question!, completion);
+        });
+      const initial = readQuestion();
+      const result = await runVersionConversation({ binding: { ...prepared.review,
+        scope_digest: initial.scope_digest, context_digest: initial.context_digest, outcomes: initial.target.outcomes },
+        rootQuestionId: settings.read()!.pending_version!.root_question_id,
+        session: settings.session, actionLogicalTurnBudget: request.episodeBudget, reserveCorrection: request.reserveCorrection,
+        egressAcknowledged: true, env: process.env, signal: input.authoringChat?.signal,
+        ports: { readQuestion, assertCurrent: () => assertCurrent(),
+          saveQuestion: persistQuestion,
+          recordRawAnswer: (q, raw, expected) => coordinated(async () => {
+            await assertCurrent(borrowedPermit);
+            const previous = readQuestion(), cp = settings.read()!;
+            const h = ownerHandoffs.find(h => h.id === previous.handoff_id);
+            if (previous.digest !== expected || previous.id !== q.id || !h || h.state !== "waiting") throw stale();
+            const captured = captureOperatorAnswer(previous, raw);
+            if (raw.trim()) {
+              const answered = answerOwnerHandoff(h, raw, h.context_digest);
+              if (h.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
+                ownerHandoffCheckpoint(h), { digest: canonicalJsonDigest(answered), operator_messages: [raw] });
+              ownerHandoffs[ownerHandoffs.indexOf(h)] = answered;
+              rememberModelAuthoringTurn(authoringConversation, previous.presentation!.text, raw);
+            }
+            operatorQuestions[operatorQuestions.indexOf(previous)] = captured;
+            await request.savePendingVersion(cp.pending_version!, cp.pending_question!);
+            return captured;
+          }),
+          resumePending: async q => {
+            await assertCurrent();
+            const choice = await input.session.chooseOption?.("SAVED CHANGED-RECORD QUESTION", [
+              { value: "keep", label: "Keep this decision pending" },
+              { value: "answer", label: q.raw_answer ? "Answer again; keep the earlier answer" : "Answer the saved question" },
+            ], { initialValue: "keep", reviewOnly: true, context: [...q.material,
+              ...(q.presentation ? [q.presentation.text] : []), ...(q.raw_answer ? ["Your saved words:", q.raw_answer.text] : []),
+              "Earlier answers and the remaining allowance are retained. This choice changes no permissions."] });
+            if (choice !== "answer") return "keep";
+            if (!q.raw_answer) {
+              await persistQuestion(reopenOperatorQuestion(q), q.digest);
+              return "reopen";
+            }
+            return coordinated(async () => {
+              await assertCurrent(borrowedPermit);
+              const previous = readQuestion(), cp = settings.read()!;
+              const oldH = ownerHandoffs.find(h => h.id === previous.handoff_id);
+              if (previous.digest !== q.digest || previous.confirmation || previous.terminal_failure
+                || !previous.disposition || !previous.presentation || !oldH) throw stale();
+              let h = oldH;
+              if (previous.raw_answer!.text.trim()) {
+                if (oldH.state !== "answered" || oldH.answer !== previous.raw_answer!.text
+                  || oldH.actor !== previous.raw_answer!.actor || ownerHandoffs.at(-1)?.state === "waiting") throw stale();
+                h = createOwnerHandoff({ consumer: "version_maintenance", question: previous.presentation.text,
+                  scope_digest: previous.scope_digest, context_digest: previous.context_digest });
+                ownerHandoffs.push(h);
+              } else if (oldH.state !== "waiting") throw stale();
+              const next = presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(),
+                revision: previous.revision + 1, handoff_id: h.id, kind: "writer_maintenance",
+                scope_digest: previous.scope_digest, context_digest: previous.context_digest,
+                target: previous.target, material: previous.material, evidence: previous.evidence,
+                continuation: "version_mapping" }), previous.presentation.text);
+              operatorQuestions.push(next);
+              await request.savePendingVersion({ ...cp.pending_version!, question_id: next.id, handoff_id: h.id }, cp.pending_question!);
+              return "replace" as const;
+            });
+          },
+          prompt: async (text, options) => {
+            await assertCurrent(); await input.authoringChat!.streamModel([text]);
+            return input.authoringChat!.readOperator?.(undefined, () => assertCurrent(), { recordPolicyAnswer: false, ...options });
+          },
+          confirm: async (lines, options) => {
+            await assertCurrent();
+            return input.session.confirm("Record this planned counter maintenance for the current setup?", { ...options, context: lines });
+          },
+        } });
+      if (result.state !== "confirmed") return undefined;
+      await coordinated(async permit => {
+        await assertCurrent(permit);
+        if (readQuestion().digest !== result.question.digest || !result.question.confirmation) throw stale();
+        reviewedVersionFields = [...reviewedVersionFields.filter(r => r.resource !== prepared.review.resource), prepared.review];
+        settings.onReviewed?.(prepared);
+        await persistAuthoringResume(settings.stage, permit);
+        if (resumePersistenceBlocked) throw checkpointSaveFailure("The current changed-record protection review");
+      });
+      return prepared;
+    };
+    const assertLogicalTurnBoundary: NonNullable<ModelActionRuleDraftInput["assertLogicalTurnBoundary"]> = async request => {
+      await assertFresh();
+      if (settings.read()?.digest !== request.checkpoint.digest || request.checkpoint.pending_question
+        || request.checkpoint.pending_version) throw stale();
+      const closed = request.checkpoint.logical_turns?.at(-1)?.completed;
+      const c = request.purpose === "legacy_start" ? request.completion : closed?.completion;
+      const op = c && generationRecovery?.operations.find(op => op.id === c.operation_id);
+      if (!c || !op || op.state !== "checkpointed" || op.checkpoint_seen !== true
+        || op.request_digest !== c.request_digest || op.context_digest !== c.context_digest
+        || op.attempts.at(-1)?.outcome !== "response") throw stale();
+      if (closed?.kind === "compiled_draft") {
+        if (op.action_checkpoint?.kind !== "compiled_draft" || op.action_checkpoint.consumer !== "action_rule_components"
+          || op.action_checkpoint.response_digest !== c.response_digest
+          || op.action_checkpoint.material_digest !== closed.material_digest
+          || actionLogicalTurnMaterialDigest(request.checkpoint) !== closed.material_digest) throw stale();
+      } else {
+        const h = op.question_handoff, answer = request.checkpoint.operator_messages?.at(-1);
+        if (!h || h.consumer !== "action_rule_clarification" || h.response_digest !== c.response_digest
+          || !answer?.trim() || h.answered?.answer !== answer || h.answered.actor !== "local_installation_operator"
+          || h.answered.checkpoint_digest !== request.checkpoint.digest) throw stale();
+      }
+    };
+    return { onCheckpoint, stageVersionQuestion, reviewVersionQuestion, assertLogicalTurnBoundary };
+  };
   const plannedEditReadDigest = dependencyRecoveryEdit ? explorationBoundaryCandidateDigest(mappingBoundary)
     : pendingActionRevision?.preparation?.read_digest ?? availableResume?.pending_action_revision?.preparation?.read_digest;
   const saveSemanticActionDraft = async (draft: ActionRuleAuthorityDraftV1, expectedSource?: { id: string; digest: string; reader_schema: string; reader_role: string; action_schema: string; action_role: string }): Promise<void> => {
@@ -6586,6 +7139,13 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           assertRunning();
           if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
           await reloadReadReviewForModelRevision(input.projectRoot, context, currentAuthority);
+        },
+        onValidated: async (_result, permit) => {
+          // A committed canonical report acknowledges only this live response;
+          // unresolved client duties still prevent BUSINESS completion.
+          const checkpoint = authoringTransportCheckpoint(generationRecovery);
+          if (checkpoint && canonicalJsonDigest(checkpoint) !== canonicalJsonDigest(generationRecovery))
+            await writeGenerationRecovery(checkpoint, permit);
         }, progress: runWithProgress, state, force });
       policyAttemptKey = state.attemptKey;
       policyReport = state.report;
@@ -6958,7 +7518,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           await assertAnswerCurrent();
           if (options?.context?.length) input.authoringChat!.runner("Before you answer", options.context);
           await input.authoringChat!.streamModel(question.split(/\r?\n/u));
-          return input.authoringChat!.readOperator!(undefined, assertAnswerCurrent, { recordPolicyAnswer: false });
+          return input.authoringChat!.readOperator!(undefined, assertAnswerCurrent, { recordPolicyAnswer: false,
+            preserveWhitespace: options?.preserveWhitespace });
         } } : input.session;
     const persistReadAssistance = async (checkpoint: ReadWorkloadAssistanceCheckpoint | undefined,
       currentBoundary: ExplorationBoundaryDraft,
@@ -7002,25 +7563,81 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             }
             ownerHandoffs.push(next);
           }
+          if (q.kind === "clarification" && !operatorQuestions.some(record => record.handoff_id === ownerHandoffs.at(-1)!.id)) {
+            const h = ownerHandoffs.at(-1)!;
+            operatorQuestions.push(createOperatorQuestion({ id: h.id, revision: 1, handoff_id: h.id,
+              kind: "attributed_meaning", scope_digest: h.scope_digest, context_digest: h.context_digest,
+              target: { phase: "read_mapping", resource: q.request.resource, ...(q.request.field ? { field: q.request.field } : {}), outcomes: [] },
+              material: [`This meaning is for ${q.request.resource}${q.request.field ? ` / ${q.request.field}` : ""} in this task only.`,
+                "It is a statement of business meaning, not private sample data, a database guarantee, or permission to read or change data."],
+              evidence: [{ id: "current-read-candidate", digest: current.bundle.candidate_digest },
+                { id: "current-source-and-permissions", digest: currentContext }], continuation: "read_mapping" }));
+          }
         } else {
-          if (!sameQuestion || last?.state !== "waiting" || last.scope_digest !== ownerQuestionScope()
+          const acknowledged = sameQuestion && last?.state === "answered" && q.kind === "clarification"
+            && operatorQuestions.some(record => record.handoff_id === last.id && record.confirmation
+              && record.raw_answer?.text === readWorkloadAssistanceDecisionAnswer(q));
+          if (!sameQuestion || !last || !acknowledged && last.state !== "waiting" || last.scope_digest !== ownerQuestionScope()
             || last.context_digest !== currentContext && !(q.kind === "relationship"
               && reviewedRelationshipAnswer?.id === last.id && reviewedRelationshipAnswer.digest === last.digest
               && reviewedRelationshipAnswer.context === currentContext)) {
             throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: Source, permissions or the exact Read question changed. Its answer was not accepted.");
           }
           const answer = readWorkloadAssistanceDecisionAnswer(q);
-          const next = answerOwnerHandoff(last, answer, currentContext);
-          if (last.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
-            ownerHandoffCheckpoint(last), { digest: canonicalJsonDigest(next), operator_messages: [answer] });
-          ownerHandoffs[ownerHandoffs.length - 1] = next;
-          rememberModelAuthoringTurn(authoringConversation, last.question, answer);
+          if (!acknowledged) {
+            const next = answerOwnerHandoff(last, answer, currentContext);
+            if (last.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
+              ownerHandoffCheckpoint(last), { digest: canonicalJsonDigest(next), operator_messages: [answer] });
+            ownerHandoffs[ownerHandoffs.length - 1] = next;
+            rememberModelAuthoringTurn(authoringConversation, last.question, answer);
+          }
           reviewedRelationshipAnswer = undefined;
         }
         readAssistanceCheckpoint = checked;
       }
       await persistAuthoringResume("read_mapping", permit);
       if (resumePersistenceBlocked) throw checkpointSaveFailure("The Read assistance checkpoint");
+    });
+    const currentReadQuestion = () => {
+      const h = ownerHandoffs.at(-1);
+      const q = [...operatorQuestions].reverse().find(record => record.handoff_id === h?.id && record.kind === "attributed_meaning");
+      if (!q || !h || h.state !== "waiting") throw checkpointSaveFailure("The exact saved Read question");
+      return q;
+    };
+    const saveReadQuestion = async (next: OperatorQuestion) => mutateOwnerHandoff(async permit => {
+      const current = currentReadQuestion();
+      await assertAuthoringResumeCurrent(undefined, false, permit);
+      if (current.id !== next.id || current.context_digest !== await ownerQuestionContext(permit)
+        || current.scope_digest !== ownerQuestionScope()) throw new PolicySourceChangedError();
+      operatorQuestions[operatorQuestions.indexOf(current)] = next;
+      await persistAuthoringResume("read_mapping", permit);
+      if (resumePersistenceBlocked) throw checkpointSaveFailure("The exact Read question evidence");
+    });
+    const acceptReadQuestion = async (shown: OperatorQuestion) => mutateOwnerHandoff(async permit => {
+      await assertAuthoringResumeCurrent(undefined, false, permit);
+      const current = currentReadQuestion(), h = ownerHandoffs.at(-1)!, checkpoint = readAssistanceCheckpoint;
+      const contextDigest = await ownerQuestionContext(permit);
+      if (current.digest !== shown.digest || h.state !== "waiting" || current.context_digest !== contextDigest
+        || current.scope_digest !== ownerQuestionScope() || !current.raw_answer || !checkpoint
+        || checkpoint.stage !== "waiting" || checkpoint.pending_question.kind !== "clarification"
+        || checkpoint.pending_question.request.resource !== current.target.resource
+        || checkpoint.pending_question.request.field !== current.target.field
+        || checkpoint.pending_question.question !== current.presentation?.text) throw new PolicySourceChangedError();
+      const raw = current.raw_answer.text;
+      const adopted = confirmOperatorAnswer(current);
+      const answered = answerOwnerHandoff(h, raw, contextDigest);
+      const { digest: _old, schema_version: _version, ...body } = checkpoint;
+      readAssistanceCheckpoint = readWorkloadAssistanceCheckpoint({ ...body, stage: "decided",
+        pending_question: { ...checkpoint.pending_question, decision: { state: "answered", answer: raw },
+          ...(checkpoint.pending_question.replacement ? { replacement: { ...checkpoint.pending_question.replacement,
+            proposed_answer: raw, confirmed: true } } : {}) } });
+      if (h.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
+        ownerHandoffCheckpoint(h), { digest: canonicalJsonDigest(answered), operator_messages: [raw] });
+      ownerHandoffs[ownerHandoffs.length - 1] = answered;
+      operatorQuestions[operatorQuestions.indexOf(current)] = adopted;
+      rememberModelAuthoringTurn(authoringConversation, h.question, raw);
+      await persistAuthoringResume("read_mapping", permit);
+      if (resumePersistenceBlocked) throw checkpointSaveFailure("The confirmed Read meaning");
     });
     const prepareRequestedRelationship = async (request: { resource: string }, currentBoundary: ExplorationBoundaryDraft) => {
       pendingReadRelationship = { resource: request.resource };
@@ -7104,7 +7721,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             deferNarration: Boolean(input.authoringChat),
             egressAcknowledged: true,
             ...(input.authoringChat ? { ...(readAssistanceCheckpoint ? { resumeCheckpoint: readAssistanceCheckpoint } : {}),
-              onCheckpoint: persistReadAssistance } : {}),
+              onCheckpoint: persistReadAssistance, operatorQuestions: () => operatorQuestions } : {}),
             relationshipReviewHandler: prepareRequestedRelationship,
             valueRequestHandler: (request) => promptReadBoundaryValueContext({
               session: readAssistanceSession,
@@ -7126,16 +7743,50 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               const confirmed = await input.session.confirm("Use this new answer as the current interpretation?", { defaultValue: false,
                 context: [`Earlier question: ${previous.question}`, `Earlier answer: ${previous.answer}`,
                   `Follow-up question: ${request.question}`, `Proposed answer: ${answer}`,
+                  ...operatorQuestionReadback(currentReadQuestion()),
                   "Yes replaces only this interpretation. Both exact responses stay in history and count against the same question allowance.",
                   "No or cancel keeps the proposal pending and the earlier interpretation current. Resume reopens this review without another answer or model request."] });
               await assertCurrent();
+              if (confirmed === true) await acceptReadQuestion(currentReadQuestion());
               return confirmed === true;
             } } : {}),
             clarificationHandler: async (request, clarificationContext) => {
+              if (input.authoringChat) {
+                const saved = currentReadQuestion();
+                if (saved.raw_answer && (saved.disposition === "unknown" || !saved.raw_answer.text.trim())) {
+                  // Resume of an unanswered blank re-presents the saved question
+                  // locally. A second pending menu must not obstruct that existing
+                  // route. Preserve the blank as history rather than overwriting it.
+                  const blankWaiting = !saved.raw_answer.text.trim() && !saved.confirmation
+                    && readAssistanceCheckpoint?.stage === "waiting"
+                    && readAssistanceCheckpoint.pending_question.kind === "clarification"
+                    && !readAssistanceCheckpoint.pending_question.decision;
+                  if (!blankWaiting) {
+                    const choice = await readAssistanceSession.chooseOption?.("SAVED MEANING IS STILL PENDING", [
+                      { value: "pending", label: "Keep this meaning pending [recommended]", detail: "The earlier response stays saved; no meaning or model request is inferred." },
+                      { value: "answer", label: "Answer this same business question", detail: "Retain the earlier response and record a new answer for explicit review." },
+                    ], { initialValue: "pending", context: [saved.presentation?.text ?? request.question,
+                      `Earlier response: ${saved.raw_answer.text}`, "A new response uses the same existing Read clarification allowance."] });
+                    if (choice !== "answer") return undefined;
+                  }
+                  await mutateOwnerHandoff(async permit => {
+                    await assertAuthoringResumeCurrent(undefined, false, permit);
+                    if (currentReadQuestion().digest !== saved.digest || saved.context_digest !== await ownerQuestionContext(permit)
+                      || saved.scope_digest !== ownerQuestionScope()) throw new PolicySourceChangedError();
+                    operatorQuestions.push(createOperatorQuestion({ id: randomUUID(), revision: saved.revision + 1,
+                      handoff_id: saved.handoff_id, kind: saved.kind, scope_digest: saved.scope_digest,
+                      context_digest: saved.context_digest, target: saved.target, material: saved.material,
+                      evidence: saved.evidence, continuation: saved.continuation }));
+                    await persistAuthoringResume("read_mapping", permit);
+                    if (resumePersistenceBlocked) throw checkpointSaveFailure("The new response to the retained Read question");
+                  });
+                }
+              }
               const decision = await promptReadBoundaryClarification({
                 session: readAssistanceSession,
                 model: mappingSession,
                 request,
+                ...(input.authoringChat ? { mediation: { read: currentReadQuestion, save: saveReadQuestion, accept: acceptReadQuestion } } : {}),
                 ...(clarificationContext ? { previous: clarificationContext.previous } : {}),
               });
               if (decision?.state === "answered" && !input.authoringChat) {
@@ -7571,6 +8222,23 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             throw new Error("ACTION_AUTHORING_QUESTION_STALE: Source structure or access changed while answering. The saved question remains pending; review the current context before continuing.");
           }
         };
+        const versionPorts = input.authoringChat ? conversationalActionPorts({
+          session: ruleSession, stage: "action_drafting", freshness: actionFreshness,
+          inspection: actionInspection!,
+          generationLock: await loadGenerationLockSnapshot(input.projectRoot, mappingBoundary.generation_lock_fingerprint),
+          read: () => {
+            const cp = preserveProgramRevisionAgenda ? pendingActionRevision?.checkpoint : resumeAction?.checkpoint;
+            const producerIntent = jointApprovalRepair
+              ? "Revise only approval.shared_limits to preserve the original job's joint automatic-approval allowances across its actions. Keep every other component and policy setting unchanged."
+              : semanticIntent;
+            return cp?.intent_digest === canonicalJsonDigest(producerIntent.trim()) ? cp : undefined;
+          },
+          write: checkpoint => {
+            if (preserveProgramRevisionAgenda) pendingActionRevision = { ...pendingActionRevision!, checkpoint };
+            else resumeAction = { ...resumeAction, intent: actionIntents[0]!, intents: actionIntents, strategy: "rule_derived", checkpoint };
+          },
+          onReviewed: prepared => { semanticActionCatalog = prepared.builtCatalog; },
+        }) : undefined;
         while (!semanticActionModelResult) {
           let failure: BoundaryModelDraftFailure | undefined;
           try {
@@ -7641,6 +8309,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                   : {}),
                 egressAcknowledged: true,
                 env: process.env,
+                ...(versionPorts ?? {}),
                 ...(authoringConversation?.policySources?.input_policy_reviews?.length ? { assessInputFidelity: assessInputPolicyDraft } : {}),
                 reviewHistorySelectors: request => reviewHistorySelectorChange(request, input.session, async () => {
                   await assertAuthoringResumeCurrent(actionFreshness, true);
@@ -9758,6 +10427,15 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       if (resumePersistenceBlocked) throw checkpointSaveFailure("The edit request");
       const sourceRepair = activePolicySource(authoringConversation?.policySources) || pendingActionRevision?.checkpoint?.source_repair
         ? await prepareActionSourceRepair(before.draft, entry.catalog) : undefined;
+      const versionPorts = conversationalActionPorts({
+        session: modelAssistSession!, stage: "authority_review",
+        inspection: actionInspection!,
+        generationLock: await loadGenerationLockSnapshot(input.projectRoot, context.candidate.generation_lock_fingerprint),
+        freshness: { revision: { outcome: before.rule.outcome, instruction,
+          ...(operatorStatements ? { operator_statements: operatorStatements } : {}), baseline_digest: canonicalJsonDigest(before.draft) } },
+        read: () => pendingActionRevision?.checkpoint,
+        write: checkpoint => { pendingActionRevision = { ...pendingActionRevision!, checkpoint }; },
+      });
       const revised = await runWithProgress("Reconciling this action with your saved rules", () => (input.modelActionRuleGenerator ?? generateModelActionRuleDraft)({
         session: modelAssistSession!, intent: pendingActionRevision!.instruction, existingDraft: before.draft,
         ...(pendingActionRevision!.operator_statements ? { operatorStatements: pendingActionRevision!.operator_statements } : {}),
@@ -9829,6 +10507,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           }
           return answer;
         },
+        ...versionPorts,
       }));
       if (revised.compiled.rule.outcome !== before.rule.outcome) throw new Error("The revision must preserve this exact outcome. No duplicate or active authority was changed.");
       if (semanticActionPolicyDigest(before.draft) === semanticActionPolicyDigest(revised.compiled.draft)) {
@@ -11704,6 +12383,9 @@ async function reviewSavedBoundaryPolicyInner(input: {
   modelSession?: ActionModelSuggestionSession;
   localDisclosure?: "register_or_status" | "status";
   localTransactionOnly?: boolean;
+  /** Local-only probes may defer an assisted Input agenda to its selected-model
+   * conversation. This never skips Input validation in the final Review. */
+  deferAssistedInputPreflight?: boolean;
   /** Explicit model-free revisit; ordinary Review never repeatedly asks an
    * already confirmed source-meaning question. */
   revisitTransaction?: boolean;
@@ -11833,7 +12515,8 @@ async function reviewSavedBoundaryPolicyInner(input: {
       authoringSession: { provider: input.modelSession?.provider ?? resume.model.provider, model: input.modelSession?.model ?? resume.model.name },
       operatorClarifications: resume.conversation.filter(turn => turn.kind === "clarification"
         && input.sources.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) });
-    if(input.sources.input_policy_reviews?.length){
+    if(input.sources.input_policy_reviews?.length
+      && !(input.deferAssistedInputPreflight && (input.localDisclosure || input.localTransactionOnly))){
       const inputStore=scopedDisclosureStoreDigest(undefined,context.bundle.mutation_bindings.authoring);
       if(!inputStore)throw new Error('SOURCE_INPUT_REQUIREMENT_PENDING: Current source/project binding unavailable.');
       await reviewSourceInputPolicy({projectRoot:input.projectRoot,sources:input.sources,session:input.session,

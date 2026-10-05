@@ -12,6 +12,22 @@ import {
 } from "./terminal-prompt.js";
 
 describe("terminal text input lifecycle", () => {
+  it("preserves exact submitted operator evidence only when explicitly requested", () => {
+    const script = `
+      import { PassThrough } from 'node:stream';
+      import { readTerminalTextWithEscape } from './apps/runner/src/terminal-prompt.ts';
+      const input = new PassThrough(); const output = new PassThrough(); output.resume();
+      Object.assign(input, {isTTY:true,isRaw:false,setRawMode(value){this.isRaw=value;}});
+      Object.assign(output,{isTTY:true,columns:100,rows:30});
+      const pending=readTerminalTextWithEscape('Meaning',input,output,{preserveWhitespace:true});
+      input.write('  Waiting 😀  \\r');
+      console.log(JSON.stringify({answer:await pending})); input.pause();
+    `;
+    const result = execFileSync(process.execPath, ["--import", "tsx", "--input-type", "module", "--eval", script], {
+      cwd: new URL("../../../", import.meta.url), env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10000,
+    });
+    expect(JSON.parse(result).answer).toBe("  Waiting 😀  ");
+  });
   // A child isolates uncaught readline errors, so a crashed adapter cannot
   // look like a fulfilled cancellation. This is a real readline component
   // check; installed OS-PTY controls separately cover actual terminal devices.

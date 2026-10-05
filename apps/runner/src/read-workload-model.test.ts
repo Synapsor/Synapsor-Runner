@@ -4,6 +4,9 @@ import type { AddressInfo } from "node:net";
 import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringTransportCheckpoint, configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import { describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
+import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, presentOperatorQuestion,
+  proposeOperatorAnswer, type OperatorQuestion } from "./authoring-operator-question.js";
 import {
   DEFAULT_REVIEWED_EXPLORATION_BUDGETS,
   type ExplorationBoundaryDraft,
@@ -872,6 +875,48 @@ describe("model-assisted Read workload mapping", () => {
       dependencies: { requestJson }, clarificationHandler }).catch(() => undefined);
     expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({ resource: "public.tbl_7", field: "col_2" }));
   });
+
+  it.each(["valid", "wrong_revision", "foreign_answer", "wrong_target"])(
+    "uses an exact host answer reference without asking the model to copy raw words (%s)", async variant => {
+      const boundary = opaqueGeneratedBoundary(); boundary.pack.resources[0]!.label = "Orders";
+      const raw = "  Order lifecycle status — 😀 e\u0301. \t ";
+      let saved: OperatorQuestion | undefined;
+      const bodies: string[] = [];
+      const requestJson = vi.fn(async (request) => {
+        bodies.push(JSON.stringify(request.body));
+        const args = !saved ? { clarification_request: { resource: "public.tbl_7", field: "col_2",
+          reason: "Its task meaning is missing.", question: "What does this order stage mean for your task?" } }
+          : { allowed: [{ id: "orders", description: "Read order lifecycle",
+              plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
+            operator_meanings: [{ resource: "public.tbl_7", field: "col_2", answer_reference: {
+              question_id: saved.id, revision: variant === "wrong_revision" ? 2 : saved.revision,
+              answer_id: variant === "foreign_answer" ? randomUUID() : saved.raw_answer!.id } }] };
+        return { status: 200, body: { output: [{ type: "function_call", call_id: `local-${bodies.length}`,
+          name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } };
+      });
+      const clarificationHandler = vi.fn(async (request) => {
+        const q = createOperatorQuestion({ id: randomUUID(), revision: 1, handoff_id: randomUUID(),
+          kind: "attributed_meaning", scope_digest: canonicalJsonDigest("job"), context_digest: canonicalJsonDigest("current"),
+          target: { phase: "read_mapping", resource: request.resource,
+            field: variant === "wrong_target" ? "id" : request.field, outcomes: [] },
+          material: ["Only this task; no authority."], evidence: [], continuation: "read_mapping" });
+        const captured = captureOperatorAnswer(presentOperatorQuestion(q, request.question), raw);
+        saved = confirmOperatorAnswer(proposeOperatorAnswer(captured, { question_id: q.id, revision: 1,
+          answer_id: captured.raw_answer!.id, disposition: "proposed", value: { kind: "attributed_meaning" } }));
+        return { state: "answered" as const, answer: raw };
+      });
+      const input = { name: "host_answer_reference", allowedQuestions: ["Read my order lifecycle"], provider: "openai" as const,
+        model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
+        env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler,
+        operatorQuestions: () => saved ? [saved] : [] };
+      if (variant === "valid") {
+        const result = await generateModelReadWorkload(input);
+        expect(result.analysis.status).toBe("ready"); expect(requestJson).toHaveBeenCalledTimes(2);
+        expect(bodies[1]).toContain(saved!.raw_answer!.id);
+        expect(saved!.raw_answer!.text).toBe(raw);
+      } else await expect(generateModelReadWorkload(input)).rejects.toThrow();
+      expect(clarificationHandler).toHaveBeenCalledOnce();
+    });
 
   it.each(["col_2 means the order lifecycle status", "Order lifecycle status"])(
     "accepts verbatim naming evidence from the answered clarification: %s", async (answer) => {

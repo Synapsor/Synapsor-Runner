@@ -1,15 +1,33 @@
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import type { ActionRuleBooleanExpressionV1, ActionRuleInputSpecV1 } from '@synapsor/spec';
 import type { PolicySourceSession, PolicyTextSnapshot } from './authoring-policy-source.js';
+import {parseOperatorQuestion,type OperatorQuestion} from './authoring-operator-question.js';
 
 import { assertSourceInputReviews, type SourceInputRequirement, type SourceInputPolicyReview, type InputFidelityFinding } from './authoring-input-policy-records.js';
-export { assertSourceInputReviews, type SourceInputRequirement, type SourceInputPolicyReview, type InputFidelityFinding } from './authoring-input-policy-records.js';
+export { assertSourceInputReviews, assertSourceInputRequirements, type SourceInputRequirement, type SourceInputPolicyReview, type InputFidelityFinding } from './authoring-input-policy-records.js';
 
-export function makeSourceInputReview(input:{source:PolicyTextSnapshot;session:PolicySourceSession;store:string;outcomes:string[];requirements:SourceInputRequirement[];actor:string;decision?:'confirmed'|'deferred'}):SourceInputPolicyReview {
+export function makeSourceInputReview(input:{source:PolicyTextSnapshot;session:PolicySourceSession;store:string;outcomes:string[];requirements:SourceInputRequirement[];actor:string;decision?:'confirmed'|'deferred';operatorQuestion?:OperatorQuestion;questionRoot?:OperatorQuestion}):SourceInputPolicyReview {
+  let question_reference:SourceInputPolicyReview['question_reference'];
+  if(input.operatorQuestion||input.questionRoot){
+    const q=input.operatorQuestion&&parseOperatorQuestion(input.operatorQuestion),root=input.questionRoot&&parseOperatorQuestion(input.questionRoot);
+    const s=root?.source_binding,agenda=canonicalJsonDigest({source_session:input.session.id,source_digest:input.source.digest,store_digest:input.store,outcomes:input.outcomes});
+    if(!q||!root||q.kind!=='input_bounds'||!q.confirmation||q.disposition||q.proposal?.value?.kind!=='input_bounds'
+      ||!s||s.source_session!==input.session.id||s.source_digest!==input.source.digest||s.store_digest!==input.store||s.lines!==input.source.lines||s.agenda_digest!==agenda
+      ||canonicalJsonDigest(q.target)!==canonicalJsonDigest(root.target)||q.scope_digest!==root.scope_digest||q.context_digest!==root.context_digest
+      ||canonicalJsonDigest(q.evidence)!==canonicalJsonDigest(root.evidence)||canonicalJsonDigest(q.target.outcomes)!==canonicalJsonDigest(input.outcomes)
+      ||canonicalJsonDigest(q.proposal.value.requirements)!==canonicalJsonDigest(input.requirements)
+      ||q.source_binding!==undefined&&(q.id!==root.id||q.digest!==root.digest)
+      ||q.source_binding===undefined&&(q.budget_owner_id!==root.id||!q.handoff_id||!q.raw_answer?.text.trim()||root.confirmation)
+      ||input.decision==='deferred')throw new Error('SOURCE_INPUT_REVIEW_INVALID: The exact adopted input interpretation is not applicable to this Source, store and agenda.');
+    question_reference={id:q.id,revision:q.revision,digest:q.digest,proposal_digest:canonicalJsonDigest(q.proposal),
+      root_id:root.id,root_digest:root.digest,basis:q.source_binding?'policy_source':'operator_answer',
+      ...(!q.source_binding?{answer_id:q.raw_answer!.id}:{})};
+  }
   const body={origin:'OPERATOR-SOURCE-INPUT-REVIEW' as const,source_session:input.session.id,source_digest:input.source.digest,
     store_digest:input.store,outcomes:[...input.outcomes],agenda_digest:canonicalJsonDigest({source_session:input.session.id,source_digest:input.source.digest,store_digest:input.store,outcomes:input.outcomes}),requirements:structuredClone(input.requirements),decision:input.decision??'confirmed',
-    actor:input.actor,reviewed_at:new Date().toISOString(),verified:false as const,previous:input.session.input_policy_reviews?.at(-1)?.digest??null};
-  if(body.requirements.some(q=>q.end>input.source.lines))throw new Error('SOURCE_INPUT_REVIEW_INVALID: The source range is not current.');
+    actor:input.actor,reviewed_at:new Date().toISOString(),verified:false as const,previous:input.session.input_policy_reviews?.at(-1)?.digest??null,
+    ...(question_reference?{question_reference}:{})};
+  if(body.requirements.some(q=>q.end!==undefined&&q.end>input.source.lines))throw new Error('SOURCE_INPUT_REVIEW_INVALID: The source range is not current.');
   const result={...body,digest:canonicalJsonDigest(body)};assertSourceInputReviews([...(input.session.input_policy_reviews??[]),result]);return result;
 }
 export class SourceInputFidelityError extends Error {
@@ -64,7 +82,7 @@ export function sourceInputFidelity(source:PolicyTextSnapshot,session:Pick<Polic
       continue;
     }
     const record=old.at(-1)!;assessed.add(record.digest);
-    if(record.source_session!==session.id||record.source_digest!==source.digest||record.store_digest!==store||record.decision!=='confirmed'||record.requirements.some(q=>q.end>source.lines)){
+    if(record.source_session!==session.id||record.source_digest!==source.digest||record.store_digest!==store||record.decision!=='confirmed'||record.requirements.some(q=>q.end!==undefined&&q.end>source.lines)){
       findings.push({code:'SOURCE_INPUT_REQUIREMENT_PENDING',path:'draft.inputs',outcome:action.outcome,input:'',source_digest:source.digest,repair:'Review the exact current source/input interpretation locally; prior meaning is history, not a model-correctable fact.'});continue;
     }
     for(const q of record.requirements.filter(q=>q.outcomes.includes(action.outcome))){

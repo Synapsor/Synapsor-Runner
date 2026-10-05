@@ -3,8 +3,12 @@ import dns from "node:dns/promises";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { coverageToolDeclarationIssue } from './authoring-coverage-tool-profile.js';
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery,
+  authoringQuestionCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import {
   AskError,
+  completedAuthoringQuestion,
   askToolSurfaceDigest,
   resolveAskMaxOutputTokens,
   resolveAskProviderConfiguration,
@@ -9192,3 +9196,271 @@ function testGateway(
     },
   };
 }
+
+describe("host-owned authoring whole-batch stop", () => {
+  // A finite controlled version-question batch. The gateway owns the staged
+  // question and refuses later mutations; the adapter only consumes and stops.
+  function fixture(provider: "openai_compatible" | "anthropic" | "openai") {
+    const definitions: AskToolDefinition[] = ["review_version_field", "submit_effect_envelope_draft"].map(name => ({
+      name: `runner.${name}`, description: "Controlled disabled authoring operation",
+      input_schema: { type: "object", properties: {}, additionalProperties: false },
+    }));
+    const authorityDigest = askToolSurfaceDigest(definitions);
+    const configuration = resolveAskProviderConfiguration({ provider, model: "controlled-batch-model",
+      api_key: "controlled-dummy-key", egress_acknowledged: true, authority_digest: authorityDigest,
+      ...(provider === "openai_compatible" ? { base_url: "http://127.0.0.1:11434/v1" } : {}) }, {}, new Date());
+    const controller = new AbortController(), events: string[] = [];
+    let staged = false, state: AuthoringTransportState | undefined;
+    const names = provider === "openai" ? definitions.slice(0, 1) : definitions;
+    const batch = { status: 200, body: provider === "anthropic"
+      ? { content: names.map((tool, index) => ({ type: "tool_use", id: `call_${index}`,
+        name: tool.name.replaceAll(".", "__"), input: {} })), stop_reason: "tool_use" }
+      : provider === "openai" ? { status: "completed", output: names.map((tool, index) => ({ type: "function_call",
+        call_id: `call_${index}`, name: tool.name.replaceAll(".", "__"), arguments: "{}" })) }
+      : { choices: [{ message: { role: "assistant", content: null,
+        tool_calls: names.map((tool, index) => ({ id: `call_${index}`, type: "function",
+          function: { name: tool.name.replaceAll(".", "__"), arguments: "{}" } })) } }] } };
+    const text = { status: 200, body: provider === "anthropic"
+      ? { content: [{ type: "text", text: "Ordinary final response." }], stop_reason: "end_turn" }
+      : provider === "openai" ? { status: "completed", output: [{ type: "message", role: "assistant",
+        content: [{ type: "output_text", text: "Ordinary final response." }] }] }
+      : { choices: [{ message: { role: "assistant", content: "Ordinary final response." } }] } };
+    let requestCount = 0;
+    const requestJson = vi.fn<NonNullable<AskProviderDependencies["requestJson"]>>(async () => {
+      events.push("request"); return ++requestCount === 1 ? batch : text;
+    });
+    const callTool = vi.fn(async (name: string): Promise<AskToolCallResult> => {
+      events.push(`callback:${name}`);
+      if (name === definitions[0]!.name) {
+        staged = true; return { ok: true, value: { status: "version_question_pending", authority_granted: false } };
+      }
+      return { ok: false, value: { code: "ACTION_VERSION_QUESTION_PENDING", message: "The saved counter question is pending." },
+        error_code: "ACTION_VERSION_QUESTION_PENDING" };
+    });
+    const stop = vi.fn(() => { events.push("stop-check"); return staged; });
+    const gateway: AskToolGateway = { mode: "authoring", listTools: () => definitions,
+      callTool, close: async () => undefined };
+    const input = { configuration, tools: definitions, authorityDigest, gateway,
+      question: "Prepare the disabled Action; ask about the counter when needed.", history: [],
+      signal: controller.signal, conversationalAuthoring: true, dependencies: { requestJson },
+      stopAfterAuthoringToolBatch: stop };
+    const tracked = <T>(run: () => Promise<T>) => withAuthoringGenerationRecovery(async () => {
+      configureAuthoringGenerationRecovery({ read: () => state,
+        write: async next => { state = structuredClone(next); }, available: () => true,
+        current: async () => canonicalJsonDigest("controlled current authoring context") });
+      return run();
+    });
+    return { input, names, events, stop, callTool, requestJson, controller, batch, text,
+      tracked, state: () => state };
+  }
+
+  it.each(["openai_compatible", "anthropic", "openai"] as const)(
+    "%s consumes all known results before stopping and binds the genuine completion", async provider => {
+      const f = fixture(provider);
+      await f.tracked(async () => {
+        const result = await runAskProviderTurn(f.input);
+        expect(f.callTool).toHaveBeenCalledTimes(f.names.length);
+        expect(f.stop).toHaveBeenCalledOnce();
+        expect(f.requestJson).toHaveBeenCalledOnce();
+        expect(f.events).toEqual(["request", ...f.names.map(tool => `callback:${tool.name}`), "stop-check"]);
+        expect(result.tool_calls).toHaveLength(f.names.length);
+        if (f.names.length === 2) expect(result.tool_calls[1]).toMatchObject({ status: "refused", error_code: "ACTION_VERSION_QUESTION_PENDING" });
+        const completion = completedAuthoringQuestion(result);
+        expect(completion).toBeDefined();
+        expect(f.state()?.operations).toHaveLength(1);
+        expect(f.state()?.operations[0]?.state).toBe("handled");
+        const checkpoint = { digest: canonicalJsonDigest("actual pending typed version checkpoint"), consumer: "version_maintenance" as const,
+          pending_question: { question: "Do all applications changing a record advance its counter?", completion } };
+        const saved = authoringQuestionCheckpoint(f.state(), checkpoint);
+        expect(saved?.operations[0]).toMatchObject({ state: "checkpointed", checkpoint_seen: true,
+          question_handoff: { consumer: "version_maintenance", question_digest: canonicalJsonDigest(checkpoint.pending_question.question) } });
+      });
+    });
+
+  it.each(["openai_compatible", "anthropic"] as const)("%s false or absent hook retains ordinary final generation", async provider => {
+    for (const enabled of [false, true]) {
+      const f = fixture(provider);
+      f.stop.mockImplementation(() => false);
+      const result = await f.tracked(() => runAskProviderTurn({ ...f.input,
+        stopAfterAuthoringToolBatch: enabled ? f.stop : undefined }));
+      expect(result.answer).toBe("Ordinary final response.");
+      expect(f.requestJson).toHaveBeenCalledTimes(2);
+      expect(f.stop).toHaveBeenCalledTimes(enabled ? 1 : 0);
+      expect(completedAuthoringQuestion(result)).toBeDefined();
+    }
+  });
+
+  it.each(["runtime", "unspecified", "authoring-public-tools"] as const)(
+    "rejects a stop hook on %s before request or callback", async mode => {
+      const f = fixture("openai_compatible");
+      const publicSurface = mode === "authoring-public-tools";
+      const definitions = publicSurface ? tools : f.input.tools;
+      await expect(runAskProviderTurn({ ...f.input, conversationalAuthoring: false, tools: definitions,
+        gateway: { ...f.input.gateway, mode: publicSurface ? "authoring" : mode === "runtime" ? "runtime" : undefined,
+          listTools: () => definitions } })).rejects.toMatchObject({ code: "ASK_AUTHORING_SURFACE_INVALID" });
+      expect(f.requestJson).not.toHaveBeenCalled(); expect(f.callTool).not.toHaveBeenCalled(); expect(f.stop).not.toHaveBeenCalled();
+    });
+
+  it.each(["openai_compatible", "anthropic"] as const)("%s callback uncertainty cannot yield a healthy stop", async provider => {
+    const f = fixture(provider);
+    f.callTool.mockImplementationOnce(async () => ({ ok: true, value: { status: "pending" } }))
+      .mockImplementationOnce(async () => { throw new Error("controlled callback acknowledgement lost"); });
+    await expect(f.tracked(() => runAskProviderTurn(f.input))).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
+    expect(f.requestJson).toHaveBeenCalledOnce(); expect(f.callTool).toHaveBeenCalledTimes(2);
+    expect(f.stop).not.toHaveBeenCalled(); expect(f.state()?.operations[0]?.state).toBe("partial");
+    expect(f.state()?.operations[0]?.question_handoff).toBeUndefined();
+  });
+
+  it.each(["openai_compatible", "anthropic"] as const)("%s cancellation after a callback prevents stop/completion", async provider => {
+    const f = fixture(provider);
+    f.callTool.mockImplementationOnce(async () => { f.controller.abort(); return { ok: true, value: { status: "pending" } }; });
+    await expect(f.tracked(() => runAskProviderTurn(f.input))).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    expect(f.callTool).toHaveBeenCalledOnce(); expect(f.requestJson).toHaveBeenCalledOnce();
+    expect(f.stop).not.toHaveBeenCalled(); expect(f.state()?.operations[0]?.state).toBe("partial");
+    expect(f.state()?.operations[0]?.question_handoff).toBeUndefined();
+  });
+
+  it("a failed provider transfer cannot invoke the stop hook or callbacks", async () => {
+    const f = fixture("openai_compatible");
+    f.requestJson.mockRejectedValueOnce(new AskError("ASK_PROVIDER_RESPONSE_INCOMPLETE", "Controlled interrupted transfer.", 502));
+    await expect(f.tracked(() => runAskProviderTurn(f.input))).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
+    expect(f.requestJson).toHaveBeenCalledOnce(); expect(f.callTool).not.toHaveBeenCalled(); expect(f.stop).not.toHaveBeenCalled();
+    expect(f.state()?.operations[0]?.question_handoff).toBeUndefined();
+  });
+
+  it("a throwing host predicate runs only after the batch and retains the inspection fence", async () => {
+    const f = fixture("openai_compatible");
+    f.stop.mockImplementation(() => { throw new Error("controlled host check failed"); });
+    await expect(f.tracked(() => runAskProviderTurn(f.input))).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
+    expect(f.callTool).toHaveBeenCalledTimes(2); expect(f.requestJson).toHaveBeenCalledOnce(); expect(f.stop).toHaveBeenCalledOnce();
+    expect(f.state()?.operations[0]?.state).toBe("partial"); expect(f.state()?.operations[0]?.question_handoff).toBeUndefined();
+  });
+
+  it("whole-batch budget refusal precedes callbacks and cannot invoke the stop hook", async () => {
+    const f = fixture("openai_compatible"), admitIteration = vi.fn(async () => undefined);
+    const reserveToolBatch = vi.fn(async () => { throw new AskError("ASK_TOOL_BUDGET_EXCEEDED", "Controlled remaining allowance cannot fund this batch.", 422); });
+    await expect(f.tracked(() => runAskProviderTurn({ ...f.input, conversationalAuthoring: false,
+      episodeBudget: { admitIteration, reserveToolBatch } }))).rejects.toMatchObject({ code: "ASK_TOOL_BUDGET_EXCEEDED" });
+    expect(admitIteration).toHaveBeenCalledOnce(); expect(reserveToolBatch).toHaveBeenCalledWith(2);
+    expect(f.requestJson).toHaveBeenCalledOnce(); expect(f.callTool).not.toHaveBeenCalled(); expect(f.stop).not.toHaveBeenCalled();
+    expect(f.state()?.operations[0]?.question_handoff).toBeUndefined();
+  });
+
+  it("tool-free final text does not trigger a pending-tool batch hook", async () => {
+    const f = fixture("openai_compatible"); f.requestJson.mockResolvedValue(f.text); f.stop.mockImplementation(() => true);
+    const result = await f.tracked(() => runAskProviderTurn(f.input));
+    expect(result.answer).toBe("Ordinary final response."); expect(f.requestJson).toHaveBeenCalledOnce();
+    expect(f.stop).not.toHaveBeenCalled(); expect(f.callTool).not.toHaveBeenCalled();
+    expect(completedAuthoringQuestion(result)).toBeDefined();
+  });
+
+  it.each(["openai_compatible", "anthropic"] as const)("%s retains required-initial-tool forcing at the host boundary", async provider => {
+    const f = fixture(provider);
+    f.requestJson.mockImplementationOnce(async request => {
+      expect(JSON.stringify(request.body.tool_choice)).toContain("runner__review_version_field");
+      return provider === "anthropic"
+        ? { status: 200, body: { content: [{ type: "tool_use", id: "required_version", name: "runner__review_version_field", input: {} }], stop_reason: "tool_use" } }
+        : openAiToolCall("required_version", "runner__review_version_field", {});
+    });
+    const result = await f.tracked(() => runAskProviderTurn({ ...f.input,
+      requiredInitialToolName: "runner.review_version_field", completeAfterRequiredTool: true }));
+    expect(f.requestJson).toHaveBeenCalledOnce(); expect(f.callTool).toHaveBeenCalledOnce(); expect(f.stop).toHaveBeenCalledOnce();
+    expect(result.tool_calls).toHaveLength(1); expect(completedAuthoringQuestion(result)).toBeDefined();
+  });
+
+  it.each(["openai_compatible", "anthropic"] as const)("%s discards a late provider batch on cancellation", async provider => {
+    const f = fixture(provider);
+    let release!: () => void, enter!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { enter = resolve; });
+    f.requestJson.mockImplementationOnce(async () => { enter(); await held; return f.batch; });
+    const running = f.tracked(() => runAskProviderTurn(f.input));
+    const refused = expect(running).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    await entered; f.controller.abort(); release(); await refused;
+    expect(f.requestJson).toHaveBeenCalledOnce(); expect(f.callTool).not.toHaveBeenCalled(); expect(f.stop).not.toHaveBeenCalled();
+    expect(f.state()?.operations[0]?.question_handoff).toBeUndefined();
+  });
+
+  it("cancellation from the whole-batch boundary never mints a healthy completion", async () => {
+    const f = fixture("openai_compatible");
+    f.stop.mockImplementation(() => { f.controller.abort(); return true; });
+    await expect(f.tracked(() => runAskProviderTurn(f.input))).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    expect(f.callTool).toHaveBeenCalledTimes(2); expect(f.stop).toHaveBeenCalledOnce(); expect(f.requestJson).toHaveBeenCalledOnce();
+    expect(f.state()?.operations[0]?.state).toBe("partial"); expect(f.state()?.operations[0]?.question_handoff).toBeUndefined();
+  });
+
+  describe("Action logical-turn live bridge", () => {
+    it.each(["runtime", "nonconversational", "public", "empty", "two-pools"] as const)("refuses %s before admission or delivery", async kind => {
+      const f = fixture("openai_compatible");
+      const admitIteration = vi.fn(async () => undefined), reserveToolBatch = vi.fn(async () => undefined);
+      const budget = { admitIteration, reserveToolBatch };
+      const definitions = kind === "public" ? tools : kind === "empty" ? [] : f.input.tools;
+      await expect(runAskProviderTurn({ ...f.input, tools: definitions,
+        stopAfterAuthoringToolBatch: undefined,
+        gateway: { ...f.input.gateway, mode: kind === "runtime" ? "runtime" : "authoring", listTools: () => definitions },
+        conversationalAuthoring: kind !== "nonconversational", actionLogicalTurnBudget: budget,
+        ...(kind === "two-pools" ? { episodeBudget: budget } : {}) })).rejects.toMatchObject({ code: "ASK_AUTHORING_SURFACE_INVALID" });
+      expect(admitIteration).not.toHaveBeenCalled(); expect(reserveToolBatch).not.toHaveBeenCalled();
+      expect(f.requestJson).not.toHaveBeenCalled(); expect(f.callTool).not.toHaveBeenCalled();
+    });
+    it.each(["openai_compatible", "anthropic", "openai"] as const)("%s reserves the owning whole batch before callbacks", async provider => {
+      const f = fixture(provider), counts = { iterations: 0, callbacks: 0 };
+      const budget = { admitIteration: vi.fn(async () => { counts.iterations += 1; }),
+        reserveToolBatch: vi.fn(async (count: number) => { counts.callbacks += count; }) };
+      const result = await f.tracked(() => runAskProviderTurn({ ...f.input, actionLogicalTurnBudget: budget }));
+      expect(counts).toEqual({ iterations: 1, callbacks: f.names.length });
+      expect(budget.reserveToolBatch).toHaveBeenCalledWith(f.names.length);
+      expect(completedAuthoringQuestion(result)).toBeDefined(); expect(f.requestJson).toHaveBeenCalledOnce();
+    });
+    it("retains one owning counter across multiple physical invocations without resetting", async () => {
+      const f = fixture("openai_compatible"), counts = { iterations: 10, callbacks: 20 };
+      const budget = { admitIteration: vi.fn(async () => {
+        if (counts.iterations >= 12) throw new AskError("ASK_LOOP_LIMIT_EXCEEDED", "Owning turn exhausted.", 422);
+        counts.iterations += 1;
+      }), reserveToolBatch: vi.fn(async (count: number) => {
+        if (counts.callbacks + count > 24) throw new AskError("ASK_TOOL_BUDGET_EXCEEDED", "Owning batch exhausted.", 422);
+        counts.callbacks += count;
+      }) };
+      f.requestJson.mockResolvedValue(f.batch);
+      await f.tracked(async () => {
+        await runAskProviderTurn({ ...f.input, actionLogicalTurnBudget: budget });
+        await runAskProviderTurn({ ...f.input, actionLogicalTurnBudget: budget });
+        await expect(runAskProviderTurn({ ...f.input, actionLogicalTurnBudget: budget })).rejects.toMatchObject({ code: "ASK_LOOP_LIMIT_EXCEEDED" });
+      });
+      expect(counts).toEqual({ iterations: 12, callbacks: 24 }); expect(f.requestJson).toHaveBeenCalledTimes(2);
+      expect(f.callTool).toHaveBeenCalledTimes(4);
+    });
+    it("whole-batch denial prevents every callback without a second request", async () => {
+      const f = fixture("openai_compatible");
+      const budget = { admitIteration: vi.fn(async () => undefined), reserveToolBatch: vi.fn(async () => {
+        throw new AskError("ASK_TOOL_BUDGET_EXCEEDED", "Only one callback remains.", 422);
+      }) };
+      await expect(f.tracked(() => runAskProviderTurn({ ...f.input, actionLogicalTurnBudget: budget })))
+        .rejects.toMatchObject({ code: "ASK_TOOL_BUDGET_EXCEEDED" });
+      expect(f.requestJson).toHaveBeenCalledOnce(); expect(f.callTool).not.toHaveBeenCalled(); expect(f.stop).not.toHaveBeenCalled();
+    });
+    it.each(["before", "after"] as const)("cancellation %s attempted admission prevents upstream", async phase => {
+      const f = fixture("openai_compatible"), admitIteration = vi.fn(async () => { f.controller.abort(); });
+      if (phase === "before") f.controller.abort();
+      await expect(f.tracked(() => runAskProviderTurn({ ...f.input,
+        actionLogicalTurnBudget: { admitIteration, reserveToolBatch: vi.fn(async () => undefined) } })))
+        .rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      expect(admitIteration).toHaveBeenCalledTimes(phase === "before" ? 0 : 1);
+      expect(f.requestJson).not.toHaveBeenCalled(); expect(f.callTool).not.toHaveBeenCalled();
+    });
+    it("an admission CAS refusal prevents upstream and callbacks", async () => {
+      const f = fixture("openai_compatible"), budget = { admitIteration: vi.fn(async () => {
+        throw new AskError("ACTION_AUTHORING_LOGICAL_TURN_STALE", "Competing save changed the baseline.", 409);
+      }), reserveToolBatch: vi.fn(async () => undefined) };
+      await expect(f.tracked(() => runAskProviderTurn({ ...f.input, actionLogicalTurnBudget: budget })))
+        .rejects.toMatchObject({ code: "ACTION_AUTHORING_LOGICAL_TURN_STALE" });
+      expect(f.requestJson).not.toHaveBeenCalled(); expect(f.callTool).not.toHaveBeenCalled();
+    });
+    it("the existing normal episode pool still refuses conversational authoring", async () => {
+      const f = fixture("openai_compatible"), budget = { admitIteration: vi.fn(async () => undefined), reserveToolBatch: vi.fn(async () => undefined) };
+      await expect(f.tracked(() => runAskProviderTurn({ ...f.input, episodeBudget: budget })))
+        .rejects.toMatchObject({ code: "ASK_AUTHORING_SURFACE_INVALID" });
+      expect(f.requestJson).not.toHaveBeenCalled(); expect(budget.admitIteration).not.toHaveBeenCalled();
+    });
+  });
+});

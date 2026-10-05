@@ -268,7 +268,7 @@ export type BoundaryReviewInteractiveSession = {
     options?: BoundaryChoicePromptOptions,
   ): Promise<string | undefined>;
   // Structured local record fields can opt out of general policy clarification history.
-  promptText(prompt: string, options?: BoundaryPromptOptions & { defaultValue?: string; recordPolicyAnswer?: boolean }): Promise<string | undefined>;
+  promptText(prompt: string, options?: BoundaryPromptOptions & { defaultValue?: string; recordPolicyAnswer?: boolean; preserveWhitespace?: boolean }): Promise<string | undefined>;
   confirm(
     prompt: string,
     options?: BoundaryPromptOptions & { defaultValue?: boolean },
@@ -505,7 +505,7 @@ export function createBoundaryReviewInteractiveSession(
         ),
         input,
         output,
-        { defaultValue: options.defaultValue },
+        { defaultValue: options.defaultValue, preserveWhitespace: options.preserveWhitespace },
       ),
     ),
     confirm: (prompt, options = {}) => withAlternateTerminalScreen(output, () => {

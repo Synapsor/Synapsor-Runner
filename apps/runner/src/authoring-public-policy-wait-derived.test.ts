@@ -29,7 +29,7 @@ const jsonLine=(text:string,prefix:string):any=>{
 };
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
 
-async function publicPolicyWait(control:Control) {
+async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=false) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),`owned-public-policy-wait-${control}-`));
   const resumeFile=path.join(root,".synapsor/boundary-authoring/resume.json");
   const inspection=ownedProgramInspection();
@@ -46,7 +46,7 @@ async function publicPolicyWait(control:Control) {
   const sourceFile=path.join(root,"derived-policy-wait-rules.txt");await fs.writeFile(sourceFile,initialLines.join("\n"));
   let stage:"initial"|"question"|"restart"|"explicit_review"="initial",transcript="",requests=0,actionPhase=0,questionNarrations=0;
   let sourceId:string|undefined,questionReads=0,clarifyChosen=false,injected=false,expectedWaiting:any,competingSaved:any,baseline:any;
-  let clientDutyPrompts=0;
+  let clientDutyPrompts=0,versionAnswerPending=false,liveCoverageBefore:any;
   let nestedEntered=false,nestedReads=0,nestedDeclines=0,nestedStartRequests=0,nestedAuthorityBefore:any,cachedActivationAttempts=0;
   const nestedControl=control.startsWith("nested_");
   const replacementFile=path.join(root,"replacement-policy-review.txt");
@@ -73,6 +73,7 @@ async function publicPolicyWait(control:Control) {
     }
   };
   const read=async()=>{
+    if(versionAnswerPending) {versionAnswerPending=false;return lines[4];}
     if(stage==="initial") {
       if(nestedControl && nestedEntered && nestedReads++===0)return `/attach ${replacementFile}`;
       return answers.shift();
@@ -122,6 +123,7 @@ async function publicPolicyWait(control:Control) {
       }
       else if(choice.message==="Use this complete intended Action inventory?") {expect(choice.initialValue).toBe("no");selected="yes";}
       else if(choice.message==="REVIEW CHANGED-RECORD PROTECTION") {expect(choice.initialValue).toBe("pending");expect(transcript).toContain("studio.parcels.version");selected="confirm";}
+      else if(choice.message==="Record this planned counter maintenance for the current setup?") {expect(choice.initialValue).toBe("no");expect(transcript.replace(/\s+/gu," ")).toContain(lines[4]);selected="yes";}
       else if(choice.title==="REVIEW DECLARED TEXT INPUT BOUNDS")selected="none";
       else if(choice.message==="Save this exact attributed input-policy interpretation?") {expect(choice.initialValue).toBe("no");selected="yes";}
       else if(choice.message==="Run a new bounded model review?") {
@@ -130,6 +132,7 @@ async function publicPolicyWait(control:Control) {
       }
       else if(choice.title==="CLIENT INTEGRATION RESPONSIBILITIES") {
         expect(choice.initialValue).toBe("back");clientDutyPrompts++;
+        if(requireSavedCoverageCheckpoint)liveCoverageBefore=structuredClone((await readResume()).generation_recovery);
         if(control==="client_keep" || control==="client_cancel") {
           if(clientDutyPrompts>1)fail("The same client-duty prompt repeated after the operator's pending/cancel choice.");
           selected=control==="client_keep" ? "back" : undefined;
@@ -150,10 +153,28 @@ async function publicPolicyWait(control:Control) {
   const requestJson=async(request:any)=>{
     if(++requests>60)fail("Finite local ordinary response bound exceeded.");
     const body=request.body,text=strings(body).join("\n"),names=(body.tools??[]).map((tool:any)=>tool.name??tool.function?.name);
-    responses.push({stage,names,bytes:Buffer.byteLength(JSON.stringify(body)),request:requests});
+    responses.push({stage,names,bytes:Buffer.byteLength(JSON.stringify(body)),request:requests,...(names.includes("runner__propose_operator_decision") ? {current_operator_question:jsonLine(text,"Current question: "),decision_tool:body.tools[0]} : {})});
     let name:string|undefined,args:any,narration:string|undefined;
     if(names.includes("runner__plan_boundary_job")) {expect(stage).toBe("initial");name="runner__plan_boundary_job";
       args={status:"planned",read_mode:"reuse",action_mode:"create",action_strategy:"rule_derived",action_intent:intent,summary:"Prepare the requested one-Action disabled proposal."};
+    } else if(names.includes("runner__propose_operator_decision")) {
+      // Fixture delivery for the actual connected Version conversation. The
+      // existing Source-owner operating fact remains unverified and is given
+      // only at the real raw-answer prompt, followed by explicit confirmation.
+      const current=jsonLine(text,"Current question: ");
+      expect(current.kind).toBe("writer_maintenance");
+      expect(current.target).toEqual({phase:"changed_record_protection",resource:"studio.parcels",field:"version",outcomes:[]});
+      expect(current.evidence).toEqual([{id:"version-structure",digest:expect.stringMatching(/^sha256:[a-f0-9]{64}$/)}]);
+      name="runner__propose_operator_decision";
+      if(current.answer_id===undefined) {
+        expect(current.raw_answer).toBeUndefined();versionAnswerPending=true;
+        args={question_id:current.question_id,revision:current.revision,status:"needs_information",
+          question:"Do all your applications advance the parcel change counter every time they change a parcel?"};
+      } else {
+        expect(current.raw_answer).toBe(lines[4]);expect(current.answer_id).toEqual(expect.any(String));
+        args={question_id:current.question_id,revision:current.revision,answer_id:current.answer_id,status:"proposal",disposition:"proposed",
+          value:{kind:"writer_maintenance",maintenance:"all_writers_increment"}};
+      }
     } else if(names.includes("runner__submit_read_workloads")) {name="runner__submit_read_workloads";
       args={allowed:[{id:"parcel_labels_units",description:"Read parcel labels and units.",plan:{kind:"rows",resource:"studio.parcels",select:["label","units"]}}],forbidden:[],
         operator_meanings:[{resource:"studio.parcels",operator_quote:"studio.parcels is the parcel register"},{resource:"studio.parcels",field:"label",operator_quote:"studio.parcels.label is the public parcel name"},{resource:"studio.parcels",field:"units",operator_quote:"studio.parcels.units is the unit count"}]};
@@ -226,7 +247,7 @@ async function publicPolicyWait(control:Control) {
     await start(["--project-root",root,"--from-env","OWNED_POLICY_WAIT_READ_URL","--schema","studio","--cli"],{interactive:true,schemaInspector:inspect,
       runBoundaryReview:(args,inspector)=>boundaryReviewCommand(args,inspector,outer,undefined,options)});
     const initiallySaved=await readResume();sourceId=initiallySaved.policy_source_session;
-    expect((await listActionRuleAuthorityDrafts(root))[0],transcript).toBeDefined();
+    expect((await listActionRuleAuthorityDrafts(root))[0],transcript+"\nDIAGNOSTIC_REQUESTS_MENUS_FAILURES="+JSON.stringify({responses,menus,failures})).toBeDefined();
     if(control==="nested_transfer_cancel") {
       expect(nestedEntered,transcript).toBe(true);expect(nestedDeclines).toBe(0);
       expect(requests,transcript).toBe(nestedStartRequests);
@@ -291,6 +312,18 @@ async function publicPolicyWait(control:Control) {
       expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
       expect(transcript).toContain(control==="client_keep" ? "Client responsibilities remain pending" : "Boundary conversation paused");
       expect(transcript).toContain("Resume");
+      if(requireSavedCoverageCheckpoint) {
+        // The real producer consumed a complete valid report and the guarded
+        // Source save succeeded. Cancellation grants nothing, but it must not
+        // leave that newly owned, already-saved response uncertain on restart.
+        expect(responses.at(-1)!.names).toEqual(["runner__review_policy_coverage"]);
+        expect(liveCoverageBefore.operations.at(-1)).toMatchObject({state:"handled"});
+        const current=initiallySaved.generation_recovery!.operations;
+        expect(current.slice(0,-1)).toEqual(liveCoverageBefore.operations.slice(0,-1));
+        expect(current.at(-1)!.id).toBe(liveCoverageBefore.operations.at(-1).id);
+        expect(current.at(-1)!.attempts).toEqual(liveCoverageBefore.operations.at(-1).attempts);
+        expect(current.at(-1)).toMatchObject({state:"checkpointed",checkpoint_seen:true});
+      }
       return {origin:"IMPLEMENTER_DERIVED_PUBLIC_CLIENT_DUTY",control,requests,questionNarrations,questionReads,activation:false,provider_calls:0};
     }
     const originalSource=await loadPolicySources(root,sourceId!),changedSource=structuredClone(originalSource);
@@ -350,6 +383,10 @@ it.each(["client_keep","client_cancel"] as const)(
   "public start/CLI retains pending client duties and leaves the review without a prompt loop: %s",async control=>{
     const result=await publicPolicyWait(control);expect(result.provider_calls).toBe(0);
   },30_000);
+
+it("public guided client cancellation checkpoints only its newly consumed and guarded-saved coverage reply",async()=>{
+  const result=await publicPolicyWait("client_cancel",true);expect(result.provider_calls).toBe(0);
+},30_000);
 
 // Added regression; prior controls and their expectations stay intact.
 it("public nested saved Review pauses before the outer stale checkpoint after attachment replacement",async()=>{

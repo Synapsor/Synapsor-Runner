@@ -5682,6 +5682,312 @@ describe("boundary operator-plane CLI", () => {
     } finally { await fixture.dispose(); }
   }, 20_000);
 
+  it.each(["confirmed", "declined", "EOF", "map-terminal"] as const)(
+    "public Version conversation saves exact owner evidence and restarts without another opinion (%s)", async posture => {
+      const fixture = await staleSemanticRevalidationFixture({ atomicUpdates: true });
+      const { root } = fixture;
+      const file = path.join(root, ".synapsor/boundary-authoring/resume.json");
+      const wording = "Does every application changing a visit advance this counter each time?";
+      const raw = "  Yes — every visit writer advances it, including café updates.\t ";
+      const ordinaryQuestion = "Which existing business reviewer will review this new follow-up?";
+      let runNumber = 1, physical = 0, versionPrompts = 0, ordinaryPrompts = 0;
+      const read = async () => JSON.parse(await fs.readFile(file, "utf8"));
+      const prompt = vi.fn(async (_default?: string, assertCurrent?: () => Promise<void>, options?: unknown) => {
+        await assertCurrent?.();
+        const saved = await read(), marker = saved.action.checkpoint.pending_version;
+        if (!marker) {
+          ordinaryPrompts++;
+          const checkpoint = saved.action.checkpoint, pending = checkpoint.pending_question;
+          expect(pending.question).toBe(ordinaryQuestion);
+          const completion = pending.completion;
+          const operation = saved.generation_recovery.operations.find((op: any) => op.id === completion.operation_id);
+          expect(operation).toMatchObject({ state: "checkpointed", checkpoint_seen: true,
+            request_digest: completion.request_digest, context_digest: completion.context_digest,
+            question_handoff: { consumer: "action_rule_clarification", question: ordinaryQuestion,
+              checkpoint_digest: checkpoint.digest, question_digest: canonicalJsonDigest(ordinaryQuestion),
+              response_digest: completion.response_digest } });
+          expect(operation.question_handoff.answered).toBeUndefined();
+          return undefined;
+        }
+        versionPrompts++;
+        expect(options).toMatchObject({ recordPolicyAnswer: false, preserveWhitespace: true });
+        const q = saved.operator_questions.find((q: any) => q.id === marker.question_id);
+        expect(q.presentation.text).toBe(wording);
+        expect(saved.generation_recovery.operations.filter((op: any) => op.action_checkpoint?.kind === "version_interpretation")).toHaveLength(1);
+        return posture === "EOF" ? undefined : raw;
+      });
+      const choose = fixture.session.chooseOption!;
+      fixture.session.chooseOption = async (title, choices, options) => {
+        if (title === "SETUP NEEDS ATTENTION" || title === "SAVED CHANGED-RECORD QUESTION") return title.startsWith("SAVED") ? "keep" : "pause";
+        return choose(title, choices, options);
+      };
+      const originalConfirm = fixture.session.confirm;
+      fixture.session.confirm = async (title, options) => {
+        if (title !== "Record this planned counter maintenance for the current setup?") return originalConfirm(title, options);
+        expect(options?.defaultValue).toBe(false);
+        expect(options?.context).toContain(raw);
+        expect(options?.context?.join(" ")).toContain("Implementation remains unverified");
+        expect((await read()).operator_questions.at(-1).confirmation).toBeUndefined();
+        return posture === "confirmed";
+      };
+      fixture.session.promptText = async text => { expect(text).toBe(ordinaryQuestion); return undefined; };
+      const requestJson = vi.fn(async (request: any) => {
+        physical++;
+        const names = request.body.tools?.map((tool: any) => tool.name) ?? [];
+        if (names.includes("runner__propose_operator_decision")) {
+          const saved = await read(), marker = saved.action.checkpoint.pending_version;
+          const q = saved.operator_questions.find((q: any) => q.id === marker.question_id);
+          const args = !q.presentation ? { question_id: q.id, revision: q.revision, status: "needs_information", question: wording }
+            : { question_id: q.id, revision: q.revision, status: "proposal",
+              answer_id: posture === "map-terminal" ? crypto.randomUUID() : q.raw_answer.id,
+              disposition: "proposed", value: { kind: "writer_maintenance", maintenance: "all_writers_increment" } };
+          return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
+            name: "runner__propose_operator_decision", arguments: JSON.stringify(args) }] } };
+        }
+        if (physical === 1) return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
+          name: "runner__review_version_field", arguments: JSON.stringify({ resource: "public.service_visits", field: "c09" }) }] } };
+        return { status: 200, body: { status: "completed", output: [{ type: "message",
+          content: [{ type: "output_text", text: ordinaryQuestion }] }] } };
+      });
+      const generator = vi.fn(generateModelActionRuleDraft);
+      const run = () => fixture.run(generator, async () => fixture.inspection, {
+        modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "inert-public-version-key", dependencies: { requestJson } },
+        boundaryAuthoringChatFactory: () => ({ ...testBoundaryAuthoringChat(fixture.session), readOperator: prompt }),
+      });
+      try {
+        await fixture.writeResume(["maintenance.complete_visit", "maintenance.close_visit"],
+          ["Keep first rule.", "Keep second rule.", "Prepare one additional follow-up, with its business reviewer still pending."]);
+        await expect(run()).resolves.toBe(0);
+        const saved = await read(), q = saved.operator_questions.at(-1);
+        expect(physical).toBe(posture === "EOF" ? 2 : posture === "declined" ? 3 : 4);
+        expect(q.raw_answer?.text).toBe(posture === "EOF" ? undefined : raw);
+        expect(q.confirmation?.decision).toBe(posture === "confirmed" ? "new_attributed_decision" : undefined);
+        if (posture === "confirmed") {
+          expect(saved.reviewed_version_fields).toEqual([expect.objectContaining({ resource: "public.service_visits", field: "c09" })]);
+          expect(saved.action.checkpoint.pending_version).toBeUndefined();
+          expect(saved.action.checkpoint.pending_question.question).toBe(ordinaryQuestion);
+        } else {
+          expect(saved.reviewed_version_fields).toBeUndefined();
+          expect(saved.action.checkpoint.pending_version.question_id).toBe(q.id);
+          if (posture === "map-terminal") {
+            expect(q.terminal_failure.stage).toBe("answer-map");
+            expect(saved.action.checkpoint.logical_turns.at(-1).used_version_corrections).toEqual([q.id]);
+          } else expect(q.disposition).toBe(posture === "EOF" ? "cancelled" : "declined");
+        }
+        const counters = structuredClone(saved.action.checkpoint.logical_turns), generation = structuredClone(saved.generation_recovery);
+        const beforeRequests = physical, beforeVersionPrompts = versionPrompts;
+        expect(versionPrompts).toBe(1);
+        expect(ordinaryPrompts).toBe(posture === "confirmed" ? 1 : 0);
+        runNumber++;
+        await expect(run()).resolves.toBe(0);
+        const restarted = await read();
+        expect(physical).toBe(beforeRequests);
+        expect(versionPrompts).toBe(beforeVersionPrompts);
+        expect(ordinaryPrompts).toBe(posture === "confirmed" ? 2 : 0);
+        expect(prompt).toHaveBeenCalledTimes(versionPrompts + ordinaryPrompts);
+        expect(prompt.mock.results.every(result => result.type === "return")).toBe(true);
+        await expect(Promise.all(prompt.mock.results.map(result => result.value))).resolves.toEqual(
+          posture === "confirmed" ? [raw, undefined, undefined] : [posture === "EOF" ? undefined : raw]);
+        expect(restarted.action.checkpoint.logical_turns).toEqual(counters);
+        expect(restarted.generation_recovery).toEqual(generation);
+        expect(restarted.operator_questions).toEqual(saved.operator_questions);
+        await fixture.expectRetained(["maintenance.complete_visit", "maintenance.close_visit"]);
+        expect(runNumber).toBe(2);
+      } finally { await fixture.dispose(); }
+    }, 30_000);
+
+  it.each(["blank", "answered"] as const)("public Version answer replacement preserves the owning turn and original evidence (%s)", async posture => {
+    const fixture = await staleSemanticRevalidationFixture({ atomicUpdates: true });
+    const file = path.join(fixture.root, ".synapsor/boundary-authoring/resume.json");
+    const read = async () => JSON.parse(await fs.readFile(file, "utf8"));
+    const wording = "Do all applications updating these visits advance their change counter?";
+    const firstRaw = posture === "blank" ? "  \t " : "Our visit services advance that counter for each change.";
+    const replacement = "  Yes — every outside writer advances it, including café imports.\t ";
+    const ordinaryQuestion = "Which existing reviewer handles this additional business action?";
+    let phase: "first" | "keep" | "replace" | "ordinary" = "first", physical = 0, versionPrompts = 0, ordinaryPrompts = 0;
+    const prompt = vi.fn(async (_default?: string, assertCurrent?: () => Promise<void>, options?: unknown) => {
+      await assertCurrent?.();
+      const saved = await read(), checkpoint = saved.action.checkpoint, marker = checkpoint.pending_version;
+      if (!marker) {
+        ordinaryPrompts++;
+        const pending = checkpoint.pending_question, completion = pending.completion;
+        expect(pending.question).toBe(ordinaryQuestion);
+        const operation = saved.generation_recovery.operations.find((op: any) => op.id === completion.operation_id);
+        expect(operation).toMatchObject({ state: "checkpointed", checkpoint_seen: true,
+          request_digest: completion.request_digest, context_digest: completion.context_digest,
+          question_handoff: { consumer: "action_rule_clarification", question: ordinaryQuestion,
+            checkpoint_digest: checkpoint.digest, question_digest: canonicalJsonDigest(ordinaryQuestion),
+            response_digest: completion.response_digest } });
+        expect(operation.question_handoff.answered).toBeUndefined();
+        return undefined;
+      }
+      versionPrompts++;
+      expect(options).toMatchObject({ recordPolicyAnswer: false, preserveWhitespace: true });
+      const q = saved.operator_questions.find((q: any) => q.id === marker.question_id);
+      expect(q.presentation.text).toBe(wording);
+      expect(saved.generation_recovery.operations.filter((op: any) => op.action_checkpoint?.kind === "version_interpretation"
+        && op.action_checkpoint.material_digest === saved.generation_recovery.operations.find((op: any) =>
+          op.action_checkpoint?.kind === "version_interpretation").action_checkpoint.material_digest)).toHaveLength(1);
+      return phase === "first" ? firstRaw : replacement;
+    });
+    const choose = fixture.session.chooseOption!;
+    fixture.session.chooseOption = async (title, choices, options) => {
+      if (title === "SETUP NEEDS ATTENTION") return "pause";
+      if (title === "SAVED CHANGED-RECORD QUESTION") {
+        expect(options?.initialValue).toBe("keep");
+        expect(options?.context).toContain(firstRaw);
+        return phase === "replace" ? "answer" : "keep";
+      }
+      return choose(title, choices, options);
+    };
+    const confirm = fixture.session.confirm;
+    fixture.session.confirm = async (title, options) => {
+      if (title !== "Record this planned counter maintenance for the current setup?") return confirm(title, options);
+      expect(options?.defaultValue).toBe(false);
+      expect(options?.context).toContain(phase === "first" ? firstRaw : replacement);
+      expect(options?.context?.join(" ")).toContain("Implementation remains unverified");
+      return phase === "replace";
+    };
+    const requestJson = vi.fn(async (request: any) => {
+      physical++;
+      const names = request.body.tools?.map((tool: any) => tool.name) ?? [];
+      if (names.includes("runner__propose_operator_decision")) {
+        const saved = await read(), marker = saved.action.checkpoint.pending_version;
+        const q = saved.operator_questions.find((q: any) => q.id === marker.question_id);
+        const args = !q.presentation ? { question_id: q.id, revision: q.revision, status: "needs_information", question: wording }
+          : { question_id: q.id, revision: q.revision, status: "proposal", answer_id: q.raw_answer.id,
+            disposition: "proposed", value: { kind: "writer_maintenance", maintenance: "all_writers_increment" } };
+        return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
+          name: "runner__propose_operator_decision", arguments: JSON.stringify(args) }] } };
+      }
+      if (physical === 1) return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
+        name: "runner__review_version_field", arguments: JSON.stringify({ resource: "public.service_visits", field: "c09" }) }] } };
+      return { status: 200, body: { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: ordinaryQuestion }] }] } };
+    });
+    const run = () => fixture.run(generateModelActionRuleDraft, async () => fixture.inspection, {
+      modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "inert-public-version-key", dependencies: { requestJson } },
+      boundaryAuthoringChatFactory: () => ({ ...testBoundaryAuthoringChat(fixture.session), readOperator: prompt }),
+    });
+    try {
+      await fixture.writeResume(["maintenance.complete_visit", "maintenance.close_visit"],
+        ["Keep first rule.", "Keep second rule.", "Prepare one additional follow-up with its business reviewer pending."]);
+      await expect(run()).resolves.toBe(0);
+      const original = await read(), rootQuestion = original.operator_questions.at(-1), rootMarker = original.action.checkpoint.pending_version;
+      expect(rootQuestion.raw_answer.text).toBe(firstRaw);
+      expect(rootQuestion.disposition).toBe(posture === "blank" ? "unknown" : "declined");
+      expect(rootQuestion.confirmation).toBeUndefined();
+      expect(physical).toBe(posture === "blank" ? 2 : 3);
+      phase = "keep";
+      await expect(run()).resolves.toBe(0);
+      const { updated_at: _originalTime, revision_digest: _originalRevision, ...originalMaterial } = original;
+      const { updated_at: _keepTime, revision_digest: _keepRevision, ...keptMaterial } = await read();
+      expect(keptMaterial).toEqual(originalMaterial);
+      expect(physical).toBe(posture === "blank" ? 2 : 3);
+      expect(versionPrompts).toBe(1);
+      phase = "replace";
+      await expect(run()).resolves.toBe(0);
+      const saved = await read(), child = saved.operator_questions.at(-1);
+      expect(saved.operator_questions).toHaveLength(2);
+      expect(saved.operator_questions[0]).toEqual(rootQuestion);
+      expect(child).toMatchObject({ revision: rootQuestion.revision + 1, presentation: { text: rootQuestion.presentation.text },
+        raw_answer: { text: replacement, actor: "local_installation_operator" },
+        confirmation: { decision: "new_attributed_decision" } });
+      expect(child.id).not.toBe(rootQuestion.id);
+      expect(child.handoff_id === rootQuestion.handoff_id).toBe(posture === "blank");
+      expect(saved.action.checkpoint.logical_turns[0].id).toBe(rootMarker.turn_id);
+      expect(saved.generation_recovery.operations.filter((op: any) => op.action_checkpoint?.kind === "version_interpretation")).toHaveLength(posture === "blank" ? 2 : 3);
+      const expectedOldOperations = structuredClone(original.generation_recovery.operations);
+      if (posture === "blank") {
+        const sharedHandoff = saved.owner_handoffs.find((h: any) => h.id === rootQuestion.handoff_id);
+        expect(sharedHandoff).toMatchObject({ state: "answered", answer: replacement, actor: "local_installation_operator" });
+        const expected = expectedOldOperations.find((op: any) => op.id === sharedHandoff.completion.operation_id);
+        const actual = saved.generation_recovery.operations.find((op: any) => op.id === sharedHandoff.completion.operation_id);
+        expect(Number.isFinite(Date.parse(actual.question_handoff.answered.recorded_at))).toBe(true);
+        expected.question_handoff.answered = { answer: replacement, actor: "local_installation_operator",
+          checkpoint_digest: canonicalJsonDigest(sharedHandoff), recorded_at: actual.question_handoff.answered.recorded_at };
+      }
+      expect(saved.generation_recovery.operations.slice(0, original.generation_recovery.operations.length)).toEqual(expectedOldOperations);
+      expect(saved.reviewed_version_fields).toEqual([expect.objectContaining({ resource: "public.service_visits", field: "c09", maintenance: "all_writers_increment" })]);
+      expect(saved.action.checkpoint.pending_version).toBeUndefined();
+      expect(saved.action.checkpoint.pending_question.question).toBe(ordinaryQuestion);
+      expect(physical).toBe(posture === "blank" ? 4 : 5);
+      expect(versionPrompts).toBe(2); expect(ordinaryPrompts).toBe(1);
+      phase = "ordinary";
+      const requests = physical, counters = structuredClone(saved.action.checkpoint.logical_turns);
+      await expect(run()).resolves.toBe(0);
+      const restarted = await read();
+      expect(physical).toBe(requests); expect(versionPrompts).toBe(2); expect(ordinaryPrompts).toBe(2);
+      expect(restarted.generation_recovery).toEqual(saved.generation_recovery);
+      expect(restarted.operator_questions).toEqual(saved.operator_questions);
+      expect(restarted.action.checkpoint.logical_turns).toEqual(counters);
+      await expect(Promise.all(prompt.mock.results.map(result => result.value))).resolves.toEqual([firstRaw, replacement, undefined, undefined]);
+      await fixture.expectRetained(["maintenance.complete_visit", "maintenance.close_visit"]);
+    } finally { await fixture.dispose(); }
+  }, 30_000);
+
+  it("Q07 preserves a role-only compound answer and reopens its genuinely missing reviewer count without replay or new authority", async () => {
+    const fixture = await staleSemanticRevalidationFixture();
+    const compound = "Who reviews the new follow-up, and how many distinct reviewers must agree?";
+    const roleOnly = "The maintenance reviewer handles this new follow-up.";
+    const countQuestion = "How many distinct maintenance reviewers must agree to the new follow-up?";
+    const countAnswer = "Two distinct maintenance reviewers must agree.";
+    const nextQuestion = "What business change should this new follow-up propose?";
+    let sends = 0, answerCount = false;
+    const prompts: string[] = [];
+    const read = async () => JSON.parse(await fs.readFile(path.join(fixture.root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+    try {
+      await fixture.writeResume(["maintenance.complete_visit", "maintenance.close_visit"], [
+        "Keep first rule.", "Keep second rule.",
+        "A new follow-up requires human approval, but its reviewer role and distinct reviewer count have not yet been supplied.",
+      ]);
+      fixture.session.promptText = async question => {
+        prompts.push(question);
+        if (question === compound) return roleOnly;
+        if (question === countQuestion) return answerCount ? countAnswer : undefined;
+        expect(question).toBe(nextQuestion); return undefined;
+      };
+      const generator = async (input: Parameters<typeof generateModelActionRuleDraft>[0]) => generateModelActionRuleDraft({ ...input,
+        session: { ...input.session, dependencies: { requestJson: async request => {
+          sends++;
+          if (sends > 1) expect(JSON.stringify(request.body)).toContain(roleOnly);
+          if (sends === 3) expect(JSON.stringify(request.body)).toContain(countAnswer);
+          if (sends > 3) throw new Error("TEST_LOCAL_Q07_EXTRA_GENERATION_REFUSED");
+          return { status: 200, body: { status: "completed", output: [{ type: "message", content: [{
+            type: "output_text", text: sends === 1 ? compound : sends === 2 ? countQuestion : nextQuestion,
+          }] }] } };
+        } } },
+      });
+
+      await expect(fixture.run(generator)).resolves.toBe(0);
+      expect(sends).toBe(2); expect(prompts).toEqual([compound, countQuestion]);
+      const partial = await read(), oldOperations = structuredClone(partial.generation_recovery.operations);
+      expect(partial.action.checkpoint.pending_question.question).toBe(countQuestion);
+      expect(oldOperations).toHaveLength(2);
+      expect(oldOperations[0].question_handoff.answered.answer).toBe(roleOnly);
+      expect(oldOperations[1].question_handoff.answered).toBeUndefined();
+      expect(partial.action.completed_outcomes).toEqual(["maintenance.complete_visit", "maintenance.close_visit"]);
+      await fixture.expectRetained(["maintenance.complete_visit", "maintenance.close_visit"]);
+
+      await expect(fixture.run(generator)).resolves.toBe(0);
+      expect(sends).toBe(2); expect((await read()).generation_recovery.operations).toEqual(oldOperations);
+      expect(prompts).toEqual([compound, countQuestion, countQuestion]);
+
+      answerCount = true;
+      await expect(fixture.run(generator)).resolves.toBe(0);
+      expect(sends).toBe(3); expect(prompts).toEqual([compound, countQuestion, countQuestion, countQuestion, nextQuestion]);
+      const saved = await read();
+      expect(saved.generation_recovery.operations[0]).toEqual(oldOperations[0]);
+      expect(saved.generation_recovery.operations[1]).toMatchObject({
+        state: "checkpointed", question_handoff: { question: countQuestion,
+          answered: { answer: countAnswer, actor: "local_installation_operator" } },
+      });
+      expect(saved.action.checkpoint.pending_question.question).toBe(nextQuestion);
+      expect(saved.action.completed_outcomes).toEqual(["maintenance.complete_visit", "maintenance.close_visit"]);
+      expect(saved.authority_granted).toBe(false); expect(saved.source_database_changed).toBe(false);
+      await fixture.expectRetained(["maintenance.complete_visit", "maintenance.close_visit"]);
+    } finally { await fixture.dispose(); }
+  }, 30_000);
+
   it("B33 commits a new question after ordinary stale-job revalidation and redisplays it locally", async () => {
     const fixture=await staleSemanticRevalidationFixture();
     const question="Which maintenance role reviews otherwise valid follow-ups?";
@@ -6404,7 +6710,19 @@ describe("boundary operator-plane CLI", () => {
       });
       await writeBoundaryAuthoringResumeState(root, original);
       await boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection, session, undefined, {
-        startWithAgentJob: true, modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "offline-test" },
+        startWithAgentJob: true, modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "offline-test", dependencies: {
+          // This fixture supplies only the existing no-range interpretation.
+          // The planner has its own responder below; no default network adapter
+          // is permitted for the assisted input-review integration path.
+          requestJson: async request => {
+            const tool=(request.body as any).tools?.find((t:any)=>t.name==='runner__propose_operator_decision');
+            if(!tool)throw new Error('Unexpected controlled input-review request');
+            const properties=tool.parameters.oneOf[0].properties;
+            return {status:200,body:{output:[{type:'function_call',call_id:'controlled_input_review',name:tool.name,
+              arguments:JSON.stringify({question_id:properties.question_id.enum[0],revision:properties.revision.enum[0],
+                source_reference:properties.source_reference.enum[0],status:'proposal',disposition:'proposed',value:{kind:'input_bounds',requirements:[]}})}]}};
+          },
+        } },
         modelBoundaryJobPlanner: input => planModelBoundaryJob({ ...input, session: { ...input.session, dependencies: {
           requestJson: async request => {
             requests.push(request.body);
@@ -17871,9 +18189,27 @@ describe("public saved-job connection recovery control", () => {
         expect(declinePrompts).toBe(1);
         expect(final.value.owner_handoffs?.at(-1)?.state).toBe("waiting");
         expect(final.value.generation_recovery?.operations.at(-1)?.question_handoff?.answered).not.toBe(true);
+        const blankEvidence = final.value.operator_questions!.at(-1)!;
+        expect(blankEvidence.raw_answer?.text).toBe("  ");
+        expect(blankEvidence.confirmation).toBeUndefined();
         answerAfterBlank = true; await run();
         expect(requestJson).toHaveBeenCalledTimes(2); expect(sawAnswer).toBe(true);
         expect(declinePrompts).toBe(1);
+        const reopenedAnswer = await readBoundaryAuthoringResumeState(f.root,
+          boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle));
+        expect(reopenedAnswer.status).toBe("ready");
+        if (reopenedAnswer.status !== "ready") throw new Error("Resumed blank answer history was lost.");
+        const questions = reopenedAnswer.value.operator_questions!;
+        expect(questions.find(q => q.id === blankEvidence.id)).toEqual(blankEvidence);
+        const accepted = questions.at(-1)!;
+        expect(accepted.id).not.toBe(blankEvidence.id);
+        expect(accepted.revision).toBe(blankEvidence.revision + 1);
+        expect(accepted.raw_answer?.id).not.toBe(blankEvidence.raw_answer!.id);
+        expect(accepted.raw_answer?.text).toBe("The scheduled or completed stage of the selected visit.");
+        expect(accepted.confirmation?.decision).toBe("new_attributed_decision");
+        expect(accepted.handoff_id).toBe(blankEvidence.handoff_id);
+        expect(accepted.target).toEqual(blankEvidence.target);
+        expect(accepted.context_digest).toBe(blankEvidence.context_digest);
       }
       if (mode.startsWith("decline")) expect(declinePrompts).toBe(1);
       expect(noAction).not.toHaveBeenCalled();
@@ -18177,4 +18513,96 @@ describe("public saved-job connection recovery control", () => {
       expect(await readActionRuleAuthorityDraft(f.root,"reviewed_staging_rules")).toEqual(authority);
     } finally {await f.dispose();}
   });
+});
+
+// Q04/Q08 actual public Version controller controls; independent652 oracle.
+// Empty length is separate from requiredness/nullability; no private Source effects.
+describe("owner Q04/Q08 Version wording versus host readback", () => {
+  it.each(["q04-no", "q04-yes", "q08-no"] as const)("exposes actual writer assurance before explicit consent: %s", async mode => {
+    const f = await staleSemanticRevalidationFixture({ atomicUpdates: true });
+    const file = path.join(f.root, ".synapsor/boundary-authoring/resume.json");
+    const read = async () => JSON.parse(await fs.readFile(file, "utf8"));
+    const q08 = mode === "q08-no", yes = mode === "q04-yes";
+    const wording = q08 ? "Does every application advance this counter on each record update?"
+      : "Does your client advance this counter when it changes a record?";
+    const raw = q08 ? "I do not know whether all other writers advance this counter. Leave that assurance pending."
+      : "  Yes — every visit writer advances it, including café updates.\t ";
+    const explanation = q08 ? "The operator cannot confirm that all applications maintain the counter."
+      : "Every application must advance the counter on each update.";
+    const ordinary = "Which existing business reviewer will review this new follow-up?";
+    let calls = 0, prompts = 0, confirmations = 0;
+    const presented: string[] = [];
+    const oldChoose = f.session.chooseOption!, oldConfirm = f.session.confirm;
+    f.session.chooseOption = async (title, choices, options) => title === "SAVED CHANGED-RECORD QUESTION"
+      ? "keep" : title === "SETUP NEEDS ATTENTION" ? "pause" : oldChoose(title, choices, options);
+    f.session.confirm = async (title, options) => {
+      if (title !== "Record this planned counter maintenance for the current setup?") return oldConfirm(title, options);
+      confirmations++;
+      expect(options?.defaultValue).toBe(false);
+      expect(options?.context).toContain("Your exact words:");
+      expect(options?.context).toContain(raw);
+      expect(options?.context).toContain("Counter: public.service_visits.c09.");
+      expect(options?.context).toContain("Runner understood: every application that changes one of these records advances this counter on each update.");
+      expect(options?.context?.join(" ")).toContain("Implementation remains unverified");
+      const s = await read();
+      expect(s.operator_questions.at(-1).proposal.value).toEqual({ kind: "writer_maintenance", maintenance: "all_writers_increment" });
+      expect(s.operator_questions.at(-1).confirmation).toBeUndefined();
+      expect(s.reviewed_version_fields).toBeUndefined();
+      return yes;
+    };
+    const prompt = async (_default?: string, current?: () => Promise<void>) => {
+      await current?.(); const s = await read(), marker = s.action.checkpoint.pending_version;
+      if (!marker) { expect(s.action.checkpoint.pending_question.question).toBe(ordinary); return undefined; }
+      prompts++;
+      expect(s.operator_questions.find((q: any) => q.id === marker.question_id).presentation.text).toBe(wording);
+      expect(presented).toContain(wording);
+      return raw;
+    };
+    const requestJson = vi.fn(async (request: any) => {
+      calls++;
+      const names = request.body.tools?.map((tool: any) => tool.name) ?? [];
+      if (names.includes("runner__propose_operator_decision")) {
+        const s = await read(), q = s.operator_questions.find((q: any) => q.id === s.action.checkpoint.pending_version.question_id);
+        const args = !q.presentation ? { question_id: q.id, revision: q.revision, status: "needs_information", question: wording }
+          : { question_id: q.id, revision: q.revision, status: "proposal", answer_id: q.raw_answer.id,
+            disposition: "proposed", value: { kind: "writer_maintenance", maintenance: "all_writers_increment" } };
+        return { status: 200, body: { status: "completed", output: [
+          ...(q.presentation ? [{ type: "message", content: [{ type: "output_text", text: explanation }] }] : []),
+          { type: "function_call", call_id: crypto.randomUUID(), name: "runner__propose_operator_decision", arguments: JSON.stringify(args) }] } };
+      }
+      if (calls === 1) return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
+        name: "runner__review_version_field", arguments: JSON.stringify({ resource: "public.service_visits", field: "c09" }) }] } };
+      return { status: 200, body: { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: ordinary }] }] } };
+    });
+    const run = () => f.run(generateModelActionRuleDraft, async () => f.inspection, {
+      modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "inert-version-wording-control", dependencies: { requestJson } },
+      boundaryAuthoringChatFactory: () => ({ ...testBoundaryAuthoringChat(f.session), readOperator: prompt,
+        streamModel: vi.fn(async (lines: string[]) => { presented.push(...lines); }) }),
+    });
+    try {
+      await f.writeResume(["maintenance.complete_visit", "maintenance.close_visit"],
+        ["Keep first rule.", "Keep second rule.", "Prepare one new follow-up with its business reviewer still pending."]);
+      const authority = await readActionRuleAuthorityDraft(f.root, "reviewed_staging_rules"), schema = canonicalJsonDigest(f.inspection);
+      expect(await run()).toBe(0);
+      const s = await read(), q = s.operator_questions.at(-1);
+      expect(q.raw_answer.text).toBe(raw); expect(q.presentation.text).toBe(wording);
+      expect(q.proposal.value).toEqual({ kind: "writer_maintenance", maintenance: "all_writers_increment" });
+      expect(confirmations).toBe(1); expect(prompts).toBe(1); expect(calls).toBe(yes ? 4 : 3);
+      if (yes) {
+        expect(q.confirmation.decision).toBe("new_attributed_decision");
+        expect(s.reviewed_version_fields).toEqual([expect.objectContaining({ resource: "public.service_visits", field: "c09" })]);
+        expect(s.action.checkpoint.pending_question.question).toBe(ordinary);
+      } else {
+        expect(q.confirmation).toBeUndefined(); expect(q.disposition).toBe("declined");
+        expect(s.reviewed_version_fields).toBeUndefined(); expect(s.action.checkpoint.pending_version.question_id).toBe(q.id);
+      }
+      expect(await readActionRuleAuthorityDraft(f.root, "reviewed_staging_rules")).toEqual(authority);
+      expect(canonicalJsonDigest(f.inspection)).toBe(schema);
+      const beforeCalls = calls, oldTurns = structuredClone(s.action.checkpoint.logical_turns), oldGeneration = structuredClone(s.generation_recovery);
+      expect(await run()).toBe(0); const reopened = await read();
+      expect(calls).toBe(beforeCalls); expect(prompts).toBe(1); expect(confirmations).toBe(1);
+      expect(reopened.action.checkpoint.logical_turns).toEqual(oldTurns); expect(reopened.generation_recovery).toEqual(oldGeneration);
+      expect(await readActionRuleAuthorityDraft(f.root, "reviewed_staging_rules")).toEqual(authority);
+    } finally { await f.dispose(); }
+  }, 30000);
 });

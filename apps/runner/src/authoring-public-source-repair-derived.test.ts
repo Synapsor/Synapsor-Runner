@@ -50,6 +50,8 @@ async function publicSourceRepair(control: Control) {
   const repairInstruction = "Revise only the current disabled studio.pack_parcel_1 eligibility rule to follow attached Source line 2: retain available=true and remove the contradictory available=false condition. Preserve Read unchanged, every other Action declaration, and the separate unfinished studio.pack_parcel_2 request in the complete agenda. Do not activate or execute anything.";
   let stage: "initial" | "review" | "repair" | "restart" = "initial", transcript = "", requests = 0, repairRequests = 0;
   let initialActionPhase = 0, repairActionPhase = 0, resolved = false, injected = false;
+  let versionAnswerPending: { question_id: string; revision: number } | undefined;
+  const versionQuestion = "Do all your applications advance the parcel change counter every time they change a parcel?";
   let sourceId: string | undefined, competingSaved: any;
   const responses: any[] = [], menus: any[] = [], reports: any[] = [];
   let interrupt: (() => void) | undefined;
@@ -73,7 +75,19 @@ async function publicSourceRepair(control: Control) {
     write, writeChunk: write, columns: () => 110, isTerminal: () => false, setStatus: () => {}, clearStatus: () => {}, close: () => {},
     onInterrupt: (handler: () => void) => { interrupt = handler; return () => { interrupt = undefined; }; },
     review: async (title: string, content: string[]) => { write(`\n${title}\n${content.join("\n")}\n`); },
-    read: async () => { const answer = answers.shift(); if (answer === undefined) interrupt?.(); return answer; },
+    read: async () => {
+      if (versionAnswerPending) {
+        const saved = JSON.parse(await fs.readFile(resumeFile, "utf8"));
+        const question = saved.operator_questions.find((q: any) => q.id === versionAnswerPending!.question_id);
+        expect(question).toMatchObject({ revision: versionAnswerPending.revision, kind: "writer_maintenance",
+          presentation: { text: versionQuestion }, target: { resource: "studio.parcels", field: "version" } });
+        expect(question.raw_answer).toBeUndefined();
+        expect(saved.owner_handoffs.find((h: any) => h.id === question.handoff_id)?.state).toBe("waiting");
+        versionAnswerPending = undefined;
+        return lines[5];
+      }
+      const answer = answers.shift(); if (answer === undefined) interrupt?.(); return answer;
+    },
     readConversation: async () => io.read(),
     choose: async (choice: any) => {
       const values = choice.options.map((entry: any) => entry.value);
@@ -88,6 +102,12 @@ async function publicSourceRepair(control: Control) {
         expect(transcript).toContain("studio.pack_parcel_1"); expect(transcript).toContain("studio.pack_parcel_2");
       } else if (choice.message === "REVIEW CHANGED-RECORD PROTECTION") {
         expect(choice.initialValue).toBe("pending"); expect(transcript).toContain("studio.parcels.version"); selected = "confirm";
+      } else if (choice.message === "Record this planned counter maintenance for the current setup?") {
+        expect(choice.initialValue).toBe("no");
+        const shown = transcript.replace(/\s+/gu, " ");
+        expect(shown).toContain("Counter: studio.parcels.version."); expect(shown).toContain(lines[5]);
+        expect(shown).toContain("Implementation remains unverified.");
+        expect(shown).toContain("It grants no Read or execution permission and changes no business rule."); selected = "yes";
       } else if (choice.title === "REVIEW DECLARED TEXT INPUT BOUNDS") selected = "none";
       else if (choice.message === "Save this exact attributed input-policy interpretation?") { expect(choice.initialValue).toBe("no"); selected = "yes"; }
       else if (choice.message === "Run a new bounded model review?") { expect(choice.initialValue).toBe("no"); selected = "yes"; }
@@ -123,6 +143,32 @@ async function publicSourceRepair(control: Control) {
         : { status: "planned", read_mode: "reuse", action_mode: "revise", action_strategy: "rule_derived",
           action_outcome: "studio.pack_parcel_1", action_intent: repairInstruction,
           summary: "Prepare one disabled eligibility edit; preserve Read and the full unfinished agenda." };
+    } else if (names.includes("runner__propose_operator_decision")) {
+      const question = jsonLine(text, "Current question: ");
+      expect(question.target.outcomes).toEqual(["studio.pack_parcel_1", "studio.pack_parcel_2"]);
+      name = "runner__propose_operator_decision";
+      if (question.kind === "input_bounds") {
+        // Same numeric units policy: there is no string-length duty.
+        expect(question.source_binding).toBeDefined();
+        expect(question.source_reference).toBe(canonicalJsonDigest(question.source_binding));
+        for (const line of lines) expect(text).toContain(line);
+        args = { question_id: question.question_id, revision: question.revision,
+          source_reference: question.source_reference, status: "proposal", disposition: "proposed",
+          value: { kind: "input_bounds", requirements: [] } };
+      } else {
+        expect(question.kind).toBe("writer_maintenance");
+        expect(question.target).toMatchObject({ phase: "changed_record_protection", resource: "studio.parcels", field: "version" });
+        expect(question.evidence).toEqual([{ id: "version-structure", digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) }]);
+        if (question.answer_id === undefined) {
+          expect(question.raw_answer).toBeUndefined();
+          versionAnswerPending = { question_id: question.question_id, revision: question.revision };
+          args = { question_id: question.question_id, revision: question.revision, status: "needs_information", question: versionQuestion };
+        } else {
+          expect(question.raw_answer).toBe(lines[5]); expect(question.answer_id).toEqual(expect.any(String));
+          args = { question_id: question.question_id, revision: question.revision, answer_id: question.answer_id,
+            status: "proposal", disposition: "proposed", value: { kind: "writer_maintenance", maintenance: "all_writers_increment" } };
+        }
+      }
     } else if (names.includes("runner__submit_read_workloads")) {
       name = "runner__submit_read_workloads";
       args = { allowed: [{ id: "parcel_labels_units", description: "Read parcel labels and units.", plan: { kind: "rows", resource: "studio.parcels", select: ["label", "units"] } }], forbidden: [],
@@ -137,7 +183,7 @@ async function publicSourceRepair(control: Control) {
         repairRequests++;
         expect(text).toContain("correction_nomination");
         if (control === "outside_scope_same_source" && scopeRefusals.length) return nativeAuthoringRefusal(request);
-        if (control === "pause_restart") answer = "Should I repair only the exact nominated eligibility condition?";
+        if (control === "pause_restart" || control === "outside_scope" && scopeRefusals.length) answer = "Should I repair only the exact nominated eligibility condition?";
       }
       if (!answer) {
         const draft = stage === "initial" ? parentDraft() : correctedDraft();
@@ -252,7 +298,7 @@ async function publicSourceRepair(control: Control) {
     // is on disk, and BEFORE the next coordinated writer acquires its scope.
     // The original mutex, Source/resume APIs and guards still run unchanged.
     if (control === "source_drift" || control === "competing_resume") vi.spyOn(mutation, "withProjectAuthorityMutation").mockImplementation(async (projectRoot: string, operation: any, config?: any) => {
-      if (!injected && stage !== "initial" && sourceId) {
+      if (!config?.permit && !injected && stage !== "initial" && sourceId) {
         const saved = await loadPolicySources(root, sourceId);
         if (saved.coverage?.passages.some(p => p.start === 2 && p.disposition === "implemented") && reports.some(report => !report.conflict)) {
           injected = true;

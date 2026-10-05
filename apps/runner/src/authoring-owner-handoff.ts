@@ -7,7 +7,7 @@ import type { AuthoringQuestionCompletion } from "./authoring-generation-recover
  * generation ledger in the same coordinated resume write. */
 export type AuthoringOwnerHandoff = {
   id: string;
-  consumer: "planning" | "read_clarification" | "read_value_context" | "read_revision_instruction" | "read_revision_clarification" | "policy_clarification";
+  consumer: "planning" | "read_clarification" | "read_value_context" | "read_revision_instruction" | "read_revision_clarification" | "policy_clarification" | "input_policy" | "version_maintenance";
   scope_digest: `sha256:${string}`;
   context_digest: `sha256:${string}`;
   question: string;
@@ -41,7 +41,9 @@ export function createOwnerHandoff(input: Pick<AuthoringOwnerHandoff,
 export function answerOwnerHandoff(record: AuthoringOwnerHandoff, answer: string,
   context: `sha256:${string}`): AuthoringOwnerHandoff {
   if (record.state !== "waiting") throw invalid();
-  const result = { ...record, state: "answered" as const, answer: answer.trim(),
+  // Keep the trusted input as evidence. Consumers may interpret it later, but
+  // neither interpretation nor display normalization may replace these words.
+  const result = { ...record, state: "answered" as const, answer,
     actor: "local_installation_operator" as const, answered_at: new Date().toISOString(), answer_context_digest: context };
   parseOwnerHandoffs([result]);
   return result;
@@ -56,7 +58,7 @@ export function parseOwnerHandoffs(value: unknown): AuthoringOwnerHandoff[] {
     const keys = ["id", "consumer", "scope_digest", "context_digest", "question", "recorded_at", "digest", "completion", "state",
       ...(record.state === "answered" ? ["answer", "actor", "answered_at", "answer_context_digest"] : [])];
     if (Object.keys(record).some(key => !keys.includes(key)) || typeof record.id !== "string" || record.id.length > 100
-      || ids.has(record.id) || !["planning", "read_clarification", "read_value_context", "read_revision_instruction", "read_revision_clarification", "policy_clarification"].includes(record.consumer)
+      || ids.has(record.id) || !["planning", "read_clarification", "read_value_context", "read_revision_instruction", "read_revision_clarification", "policy_clarification", "input_policy", "version_maintenance"].includes(record.consumer)
       || !digest(record.scope_digest) || !digest(record.context_digest) || !digest(record.digest)
       || typeof record.question !== "string" || !record.question.trim() || record.question.length > 4000
       || !date(record.recorded_at) || !["waiting", "answered"].includes(record.state) || waiting) throw invalid();

@@ -137,7 +137,22 @@ export type RetainedDutyHistory = RetainedDutyAudit & ({
   disposition: 'pending_exact_withdrawal';
   prospective_basis: import('./action-rule-authority.js').ActionRuleProspectiveWithdrawalBasis;
 });
-export type PolicyCoverage = { input_fidelity?: {digest:string;review_digests:string[];findings:import("./authoring-input-policy-records.js").InputFidelityFinding[]}; retained_duty_history?: RetainedDutyHistory[];
+/** A fresh current-Source review of unchanged native counter duties. This is
+ * neither removal lineage nor an external-writer assurance or publication. */
+export type CrossSourceCounterReview = {
+  origin: 'HOST-COUNTER-SOURCE-REVIEW'; verified: false;
+  original_source_digest: string; current_source_digest: string;
+  original_report: PolicyCoverage; original_report_digest: string;
+  selected: import('./action-rule-authority.js').ActionRuleReviewSubject['identity'];
+  selected_body_digest: string; authority_digest: string; read_digest: string;
+  coverage_authority_digest: string; context_digest: string;
+  mappings: Array<{ original_passage_digest: string; current_passage: PolicyPassage; current_passage_digest: string }>;
+};
+export function counterSourceReviewContextDigest(record: Omit<CrossSourceCounterReview, 'context_digest' | 'mappings'>): string {
+  return canonicalJsonDigest(record);
+}
+export type PolicyCoverage = { cross_source_counter_reviews?: CrossSourceCounterReview[];
+  input_fidelity?: {digest:string;review_digests:string[];findings:import("./authoring-input-policy-records.js").InputFidelityFinding[]}; retained_duty_history?: RetainedDutyHistory[];
   /** Host-recomputed current applicability; immutable proposal audits remain history. */
   current_pending_retained_duties?: string[];
   scoped_disclosure?: ScopedDisclosureInventory; client_duties?: ClientDutyInventory;
@@ -440,6 +455,9 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
       if (priorDutyHistory.some(record => !session.coverage?.retained_duty_history?.some(current =>
         canonicalJsonDigest(current) === canonicalJsonDigest(record))))
         throw new Error('POLICY_RETAINED_DUTY_HISTORY_CHANGED: Prior reports and retired associations must remain in history; no review was overwritten.');
+      if ((existing.coverage?.cross_source_counter_reviews ?? []).some((record, index) =>
+        canonicalJsonDigest(record) !== canonicalJsonDigest(session.coverage?.cross_source_counter_reviews?.[index] ?? null)))
+        throw new Error('POLICY_RETAINED_DUTY_HISTORY_CHANGED: Prior cross-Source counter reviews must remain in order and unchanged.');
       const prior=existing.scoped_disclosure_reviews??[];
       assertScopedDisclosureReviews(prior);
       if (prior.some((r,i)=>r.digest!==session.scoped_disclosure_reviews?.[i]?.digest))
@@ -456,7 +474,8 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
       if (priorScopes.some((r,i)=>r.digest!==session.source_transaction_scope_reviews?.[i]?.digest))
         throw new Error("SOURCE_TRANSACTION_SCOPE_HISTORY_CHANGED: Existing scope decisions must be retained; no review was overwritten.");
     } catch(error) { if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error; }
-    if(session.coverage?.retained_duty_history!==undefined && !validStoredCoverage(session.coverage,session.snapshots))
+    if((session.coverage?.retained_duty_history!==undefined || session.coverage?.cross_source_counter_reviews!==undefined)
+      && !validStoredCoverage(session.coverage,session.snapshots))
       throw new Error('POLICY_RETAINED_DUTY_PENDING: Invalid host-retained duty audit; no report was saved.');
     const serialized = JSON.stringify(session);
     if (Buffer.byteLength(serialized) > 2 * 1024 * 1024) throw new Error("Saved policy sources exceed the supported size. The previous snapshot remains unchanged; remove older sources explicitly before adding more context.");
@@ -509,7 +528,7 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
   assertCountingDecisions(value);
   // Optional explanation records are not authority. Corruption must not make the intact source unreadable.
   if (value.coverage && !validStoredCoverage(value.coverage, value.snapshots)) {
-    if (value.coverage.retained_duty_history !== undefined)
+    if (value.coverage.retained_duty_history !== undefined || value.coverage.cross_source_counter_reviews !== undefined)
       throw new Error('POLICY_RETAINED_DUTY_PENDING: Saved retained-duty history is invalid. Preserve the source and inspect the prior report and publication history locally; no review can be reused or sent.');
     delete value.coverage;
   }
@@ -543,10 +562,74 @@ function validProspectiveWithdrawalBasis(basis: import('./action-rule-authority.
     && canonicalJsonDigest(unsigned)===proof_digest;
 }
 
-function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot[], historyDepth = 0): boolean {
+function validCounterSourceHistory(records: CrossSourceCounterReview[] | undefined, sources: PolicyTextSnapshot[], depth: number): boolean {
+  if (records === undefined) return true;
+  const digest = (value: unknown) => typeof value === 'string' && /^sha256:[a-f0-9]{64}$/u.test(value);
+  return Array.isArray(records) && records.length <= 120 && new Set(records.map(r => r?.context_digest)).size === records.length
+    && records.every(record => {
+      if (!record || Object.keys(record).sort().join(',') !== 'authority_digest,context_digest,coverage_authority_digest,current_source_digest,mappings,origin,original_report,original_report_digest,original_source_digest,read_digest,selected,selected_body_digest,verified'
+        || record.origin !== 'HOST-COUNTER-SOURCE-REVIEW' || record.verified !== false
+        || ![record.authority_digest,record.read_digest,record.coverage_authority_digest,record.selected_body_digest,record.context_digest,
+          record.original_source_digest,record.current_source_digest,record.original_report_digest].every(digest)
+        || record.original_source_digest === record.current_source_digest
+        || !sources.some(s => s.digest === record.current_source_digest)
+        || !record.selected || Object.keys(record.selected).sort().join(',') !== 'location,record,store'
+        || !['active','disabled'].includes(record.selected.location) || !digest(record.selected.store)
+        || typeof record.selected.record !== 'string' || !record.selected.record.length || record.selected.record.length > 128
+        || record.coverage_authority_digest !== canonicalJsonDigest({read:record.read_digest,action:record.authority_digest})
+        || record.original_report?.source_digest !== record.original_source_digest
+        || canonicalJsonDigest(record.original_report) !== record.original_report_digest
+        || !validStoredCoverage(record.original_report,sources,depth+1)
+        || record.original_report.retained_duty_history?.length
+        || !Array.isArray(record.mappings) || !record.mappings.length || record.mappings.length > 120
+        || new Set(record.mappings.map(m => m?.original_passage_digest)).size !== record.mappings.length) return false;
+      const {context_digest,mappings,...base} = record;
+      if (counterSourceReviewContextDigest(base) !== context_digest) return false;
+      const duties = record.original_report.passages.filter(p => Boolean(deferredReviewObligation(p)
+        || receiptConfigurationComponentOnly(p) || isDeferredSourceReadback(p) || isDeferredSourceCounterMaintenance(p)));
+      return duties.length === mappings.length && mappings.every(m => {
+        if (!m || !m.current_passage || Object.keys(m).sort().join(',') !== 'current_passage,current_passage_digest,original_passage_digest'
+          || !digest(m.original_passage_digest) || canonicalJsonDigest(m.current_passage) !== m.current_passage_digest) return false;
+        const originals = duties.filter(p => canonicalJsonDigest(p) === m.original_passage_digest);
+        const p = originals[0], current = m.current_passage;
+        return originals.length === 1 && isDeferredSourceCounterMaintenance(p!) && Boolean(deferredReviewObligation(p!))
+          && p!.source_counter_resolution?.source_digest === record.original_source_digest
+          && isDeferredSourceCounterMaintenance(current) && Boolean(deferredReviewObligation(current))
+          && current.source_counter_obligation?.path === p!.source_counter_obligation?.path
+          && current.source_counter_resolution?.source_digest === record.current_source_digest
+          && current.source_counter_resolution?.proof_digest === p!.source_counter_resolution?.proof_digest
+          && validStoredCoverage({source_digest:record.current_source_digest,draft_digest:record.original_report.draft_digest,
+            passages:[current]},sources,depth+1);
+      });
+    });
+}
+
+/** Audit membership is not permission to drop a current source-wide duty.
+ * A separately validated host withdrawal may retire its Action association;
+ * the prepared path still proves that withdrawal against the native store. */
+function validCurrentCounterAssociations(report: PolicyCoverage): boolean {
+  const sameDuty = (current: PolicyPassage, mapped: PolicyPassage) => Boolean(current
+    && isDeferredSourceCounterMaintenance(current) && deferredReviewObligation(current)
+    && current.source_counter_obligation?.path === mapped.source_counter_obligation?.path
+    && current.source_counter_resolution?.source_digest === report.source_digest
+    && current.source_counter_resolution?.proof_digest === mapped.source_counter_resolution?.proof_digest);
+  return Array.isArray(report.passages) && (report.cross_source_counter_reviews ?? [])
+    .filter(record => record.current_source_digest === report.source_digest)
+    .every(record => record.mappings.every(mapping => {
+      const mapped = mapping.current_passage;
+      const current = report.passages.filter(p => sameDuty(p,mapped));
+      return current.length === 1 || current.length === 0
+        && (report.retained_duty_history ?? []).some(history => sameDuty(history.original_passage,mapped));
+    }));
+}
+
+/** Storage integrity only. Current native applicability is revalidated by the
+ * prepared Review path; this never authenticates a report supplied by a model. */
+export function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot[], historyDepth = 0): boolean {
   if (!report || historyDepth > 120) return false;
   const source = sources.find((entry) => entry.digest === report.source_digest);
-  return Boolean(source && (report.retained_duty_history === undefined || Array.isArray(report.retained_duty_history)
+  return Boolean(source && validCounterSourceHistory(report.cross_source_counter_reviews, sources, historyDepth)
+    && (report.retained_duty_history === undefined || Array.isArray(report.retained_duty_history)
     && report.retained_duty_history.length <= 120 && report.retained_duty_history.every(record => record
       && record.origin === 'HOST-RETAINED-DUTY' && record.verified === false && record.source_digest === source.digest
       && (record.disposition === 'outside_current_action_scope'
@@ -581,6 +664,7 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
         && new Set(report.current_pending_retained_duties).size===report.current_pending_retained_duties.length
         && report.current_pending_retained_duties.every(d => report.retained_duty_history?.some(r =>
           r.disposition==='pending_exact_withdrawal' && canonicalJsonDigest(r)===d)))
+    && validCurrentCounterAssociations(report)
     && (report.client_duties === undefined || validClientDutyInventory(report.client_duties)) && /^sha256:[a-f0-9]{64}$/u.test(report.draft_digest)
     && (report.source_transaction_requirement_pending === undefined || report.source_transaction_requirement_pending === true)
     && !(report.source_transaction_requirement_pending && report.source_transaction_association)
