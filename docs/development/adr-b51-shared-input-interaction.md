@@ -251,9 +251,16 @@ disclosed observations, not omitted peer semantics or an overall UX verdict.
 The affected public regression file passed all21 cases on the integrated test pin,
 and typecheck passed. Detailed independent onboarding and edit adjudications and
 actual process-closure evidence remain in the external qualification packet.
-This is a development checkpoint, not accepted delivery. The independent withheld
-Resume control, genuine terminal controls, final gates and installed acceptance
-remain required. The earlier 88 assertions
+The independently sealed different-schema public Resume control passed. It uses
+`dispatch_lab` and `handover_note`, enters an actually saved unanswered question,
+then captures the exact declared answer and proposal. Default-No decline and
+later default Keep retain the question, answer, proposal, histories and counters
+without Source adoption or authority. Native pending status is expected here;
+this intentional pending control is not a completed positive task. It is a
+same-process public replay, separate from the cold production-host controls.
+
+This is a development checkpoint, not accepted delivery. Genuine terminal
+controls, final gates and installed acceptance remain required. The earlier 88 assertions
 retain their limited scope. Controlled successful replies in the new restart
 fixtures derive references from actual transmitted frames and declared answers.
 Version blank/unknown handling already exists; the added Version raw-save
