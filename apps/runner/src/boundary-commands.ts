@@ -14,6 +14,8 @@ import { runSourceInputConversation } from "./authoring-input-policy-conversatio
 import { assertSourceInputRootBinding, createSourceInputHost } from "./authoring-input-host.js";
 import { runVersionConversation } from "./authoring-version-conversation.js";
 import { createVersionQuestionHost } from "./authoring-version-host.js";
+import { createReadMeaningHost } from "./authoring-read-meaning-host.js";
+import type { ReadMeaningInteraction, ReadMeaningInteractionResponse } from "./authoring-read-meaning-interaction.js";
 import { actionRuleAuthoringCheckpoint, actionLogicalTurnMaterialDigest, assertActionLogicalTurnJournalAdvance,
   type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { sourceInputFidelity } from "./authoring-input-policy.js";
@@ -3308,92 +3310,77 @@ function withBoundaryModelProgress<T>(
     : operation();
 }
 
+async function presentReadMeaningInteraction(input: {
+  session: BoundaryReviewInteractiveSession;
+  model: ActionModelSuggestionSession;
+  businessContext?: OperatorBusinessContext;
+  view: ReadMeaningInteraction;
+}): Promise<ReadMeaningInteractionResponse> {
+  const { view } = input;
+  if (view.kind === "question") {
+    const raw = await input.session.promptText(presentOperatorClarification(view.text,
+      { stage: "read", context: input.businessContext, target: view.request }), {
+      preserveWhitespace: true, recordPolicyAnswer: false,
+      context: readMeaningQuestionMaterial(input.model, view.request, input.businessContext, view.previous),
+    });
+    return { kind: "answer", binding: view.binding, raw: raw ?? null };
+  }
+  if (view.kind === "readback") {
+    const decline = view.purpose === "decline", replacement = view.purpose === "replacement";
+    const accepted = await input.session.confirm(decline ? "Decline this Read question? No keeps it pending."
+      : replacement ? "Use this new answer as the current interpretation?" : "Record these exact words as the meaning for this task?", {
+      defaultValue: false,
+      context: decline ? ["This is a local decision, not business meaning or a model request. No keeps the exact saved question available to answer on Resume."]
+        : operatorBusinessReadback([...view.lines], input.businessContext),
+      exactDetails: { title: decline ? "CURRENT READ QUESTION" : replacement ? "CURRENT READ MEANING REPLACEMENT" : "CURRENT READ MEANING", lines: [...view.lines] },
+    });
+    return { kind: "decision", binding: view.binding, accepted: accepted ?? null };
+  }
+  const choice = await input.session.chooseOption?.("SAVED MEANING IS STILL PENDING", [
+    { value: "pending", label: "Keep this meaning pending [recommended]", detail: "The earlier response stays saved; no meaning or model request is inferred." },
+    { value: "answer", label: "Answer this same business question", detail: "Retain the earlier response and record a new answer for explicit review." },
+  ], { initialValue: "pending", context: [...view.material] });
+  return { kind: "pending", binding: view.binding, choice: choice === "answer" ? "answer" : "keep" };
+}
+
+function readMeaningQuestionMaterial(model: ActionModelSuggestionSession, request: ModelReadClarificationRequest,
+  businessContext?: OperatorBusinessContext, previous?: ModelReadClarificationRequest & { answer: string }): string[] {
+  return ["CLARIFY ONE REVIEWED NAME", ...(previous ? [
+    `Earlier question: ${previous.question}`, `Earlier answer: ${previous.answer}`,
+    "That answer remains current. A new answer will be saved for your local review before it can replace this interpretation or reach the model.",
+  ] : []),
+  `Reviewed subject: ${operatorBusinessLabel(businessContext, request) ?? "the selected business information"}. Exact identity and model rationale are in details.`,
+  previous ? `Only an explicitly confirmed replacement may be sent to ${boundaryModelLabel(model)} for bounded remapping.`
+    : `Your answer will be sent to ${boundaryModelLabel(model)} for one bounded remapping call.`,
+  "Explain only the business meaning. Do not paste rows, credentials, personal data, or trusted tenant/principal values.",
+  "Runner will validate the resulting exact plan and will not grant or activate authority.",
+  "Blank keeps this question unanswered unless you explicitly choose to decline. Escape or EOF leaves it saved and unanswered."];
+}
+
+/** Compatibility presenter without native question records. Initial native Read
+ * questions instead use the shared record host and typed presenter above. */
 async function promptReadBoundaryClarification(input: {
   session: BoundaryReviewInteractiveSession;
   model: ActionModelSuggestionSession;
   request: ModelReadClarificationRequest;
   previous?: ModelReadClarificationRequest & { answer: string };
   businessContext?: OperatorBusinessContext;
-  mediation?: {
-    read(): OperatorQuestion;
-    save(next: OperatorQuestion): Promise<void>;
-    accept(next: OperatorQuestion): Promise<void>;
-  };
 }): Promise<ModelReadClarificationDecision | undefined> {
   const exactTarget = `${input.request.resource}${input.request.field ? `.${input.request.field}` : ""}`;
   input.session.rememberDetails?.("READ QUESTION DETAILS", [input.request.question, input.request.reason, `Exact reviewed metadata: ${exactTarget}`]);
-  let question = input.mediation?.read();
-  if (question?.disposition && question.disposition !== "unknown") {
-    question = reopenOperatorQuestion(question); await input.mediation!.save(question);
-  }
-  if (question && !question.presentation) {
-    question = presentOperatorQuestion(question, input.request.question); await input.mediation!.save(question);
-  }
-  const displayed = presentOperatorClarification(question?.presentation?.text ?? input.request.question,
-    { stage: "read", context: input.businessContext, target: input.request });
-  const answer = question?.raw_answer?.text ?? await input.session.promptText(displayed, {
-    preserveWhitespace: Boolean(input.mediation), recordPolicyAnswer: false,
-    context: [
-      "CLARIFY ONE REVIEWED NAME",
-      ...(input.previous ? [
-        `Earlier question: ${input.previous.question}`, `Earlier answer: ${input.previous.answer}`,
-        "That answer remains current. A new answer will be saved for your local review before it can replace this interpretation or reach the model.",
-      ] : []),
-      `Reviewed subject: ${operatorBusinessLabel(input.businessContext, input.request) ?? "the selected business information"}. Exact identity and model rationale are in details.`,
-      input.previous ? `Only an explicitly confirmed replacement may be sent to ${boundaryModelLabel(input.model)} for bounded remapping.`
-        : `Your answer will be sent to ${boundaryModelLabel(input.model)} for one bounded remapping call.`,
-      "Explain only the business meaning. Do not paste rows, credentials, personal data, or trusted tenant/principal values.",
-      "Runner will validate the resulting exact plan and will not grant or activate authority.",
-      "Blank keeps this question unanswered unless you explicitly choose to decline. Escape or EOF leaves it saved and unanswered.",
-    ],
+  const answer = await input.session.promptText(presentOperatorClarification(input.request.question,
+    { stage: "read", context: input.businessContext, target: input.request }), {
+    preserveWhitespace: false, recordPolicyAnswer: false,
+    context: readMeaningQuestionMaterial(input.model, input.request, input.businessContext, input.previous),
   });
-  if (answer === undefined) {
-    if (question) await input.mediation!.save(leaveOperatorQuestionPending(question, "cancelled"));
-    return undefined;
-  }
-  if (question && !question.raw_answer) {
-    question = captureOperatorAnswer(question, answer); await input.mediation!.save(question);
-  }
-  if (answer.trim()) {
-    if (question) {
-      if (answer.length > 1_000) {
-        await input.mediation!.save(leaveOperatorQuestionPending(question, "unknown"));
-        input.session.present?.("READ MEANING REMAINS PENDING", ["Your complete answer is saved. This Read mapping accepts at most 1,000 text units; no part was shortened or adopted. Resume to supply a shorter answer for this same question."], "warning");
-        return undefined;
-      }
-      if (isUnknownReadMeaning(answer)) {
-        await input.mediation!.save(leaveOperatorQuestionPending(question, "unknown"));
-        return { state: "answered", answer };
-      }
-      if (!question.proposal) {
-        question = proposeOperatorAnswer(question, { question_id: question.id, revision: question.revision,
-          answer_id: question.raw_answer!.id, disposition: "proposed", value: { kind: "attributed_meaning" } });
-        await input.mediation!.save(question);
-      }
-      // Later replacement uses its existing single old/new readback instead.
-      if (!input.previous) {
-        const readback = operatorQuestionReadback(question);
-        const confirmed = await input.session.confirm("Record these exact words as the meaning for this task?", {
-          defaultValue: false, context: operatorBusinessReadback(readback, input.businessContext),
-          exactDetails: { title: "CURRENT READ MEANING", lines: readback },
-        });
-        if (confirmed !== true) {
-          await input.mediation!.save(leaveOperatorQuestionPending(question, confirmed === undefined ? "cancelled" : "declined"));
-          return undefined;
-        }
-        await input.mediation!.accept(question);
-      }
-      return { state: "answered", answer };
-    }
-    return { state: "answered", answer: answer.trim() };
-  }
+  if (answer === undefined) return undefined;
+  if (answer.trim()) return { state: "answered", answer: answer.trim() };
   const decline = await input.session.confirm("Decline this Read question? No keeps it pending.", {
     defaultValue: false,
     context: ["This is a local decision, not business meaning or a model request. No keeps the exact saved question available to answer on Resume."],
     exactDetails: { title: "CURRENT READ QUESTION", lines: [input.request.question,
       "Declining leaves this meaning unanswered. No keeps the exact saved question available on Resume."] },
   });
-  if (question) await input.mediation!.save(leaveOperatorQuestionPending(question, decline === true ? "declined" : decline === undefined ? "cancelled" : "unknown"));
   return decline === true ? { state: "declined" } : undefined;
 }
 
@@ -7869,47 +7856,27 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       await persistAuthoringResume("read_mapping", permit);
       if (resumePersistenceBlocked) throw checkpointSaveFailure("The Read assistance checkpoint");
     });
-    const currentReadQuestion = () => {
-      const h = ownerHandoffs.at(-1);
-      const q = [...operatorQuestions].reverse().find(record => record.handoff_id === h?.id && record.kind === "attributed_meaning");
-      if (!q || !h || h.state !== "waiting") throw checkpointSaveFailure("The exact saved Read question");
-      return q;
-    };
-    const saveReadQuestion = async (next: OperatorQuestion) => mutateOwnerHandoff(async permit => {
-      const current = currentReadQuestion();
-      await assertAuthoringResumeCurrent(undefined, false, permit);
-      if (current.id !== next.id || current.context_digest !== await ownerQuestionContext(permit)
-        || current.scope_digest !== ownerQuestionScope()) throw new PolicySourceChangedError();
-      operatorQuestions[operatorQuestions.indexOf(current)] = next;
-      await persistAuthoringResume("read_mapping", permit);
-      if (resumePersistenceBlocked) throw checkpointSaveFailure("The exact Read question evidence");
-    });
-    const acceptReadQuestion = async (shown: OperatorQuestion) => mutateOwnerHandoff(async permit => {
-      await assertAuthoringResumeCurrent(undefined, false, permit);
-      const current = currentReadQuestion(), h = ownerHandoffs.at(-1)!, checkpoint = readAssistanceCheckpoint;
-      const contextDigest = await ownerQuestionContext(permit);
-      if (current.digest !== shown.digest || h.state !== "waiting" || current.context_digest !== contextDigest
-        || current.scope_digest !== ownerQuestionScope() || !current.raw_answer || !checkpoint
-        || checkpoint.stage !== "waiting" || checkpoint.pending_question.kind !== "clarification"
-        || checkpoint.pending_question.request.resource !== current.target.resource
-        || checkpoint.pending_question.request.field !== current.target.field
-        || checkpoint.pending_question.question !== current.presentation?.text) throw new PolicySourceChangedError();
-      const raw = current.raw_answer.text;
-      const adopted = confirmOperatorAnswer(current);
-      const answered = answerOwnerHandoff(h, raw, contextDigest);
-      const { digest: _old, schema_version: _version, ...body } = checkpoint;
-      readAssistanceCheckpoint = readWorkloadAssistanceCheckpoint({ ...body, stage: "decided",
-        pending_question: { ...checkpoint.pending_question, decision: { state: "answered", answer: raw },
-          ...(checkpoint.pending_question.replacement ? { replacement: { ...checkpoint.pending_question.replacement,
-            proposed_answer: raw, confirmed: true } } : {}) } });
-      if (h.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
-        ownerHandoffCheckpoint(h), { digest: canonicalJsonDigest(answered), operator_messages: [raw] });
-      ownerHandoffs[ownerHandoffs.length - 1] = answered;
-      operatorQuestions[operatorQuestions.indexOf(current)] = adopted;
-      rememberModelAuthoringTurn(authoringConversation, h.question, raw);
-      await persistAuthoringResume("read_mapping", permit);
-      if (resumePersistenceBlocked) throw checkpointSaveFailure("The confirmed Read meaning");
-    });
+    const readMeaningHost = createReadMeaningHost({ access: {
+      readQuestions: () => operatorQuestions, readHandoffs: () => ownerHandoffs,
+      readCheckpoint: () => readAssistanceCheckpoint, readRecovery: () => generationRecovery,
+      readConversationTurns: () => authoringConversation?.turns,
+      scopeDigest: ownerQuestionScope, contextDigest: ownerQuestionContext,
+      assertFresh: permit => assertAuthoringResumeCurrent(undefined, false, permit), mutate: mutateOwnerHandoff,
+      install: update => {
+        if (update.questions) operatorQuestions = update.questions;
+        if (update.handoffs) ownerHandoffs = update.handoffs;
+        if (update.checkpoint) readAssistanceCheckpoint = update.checkpoint;
+        if (Object.prototype.hasOwnProperty.call(update, "recovery")) generationRecovery = update.recovery;
+        if (update.conversationTurns && authoringConversation)
+          authoringConversation.turns.splice(0, authoringConversation.turns.length, ...update.conversationTurns);
+      },
+      save: async (permit, subject) => { await persistAuthoringResume("read_mapping", permit);
+        if (resumePersistenceBlocked) throw checkpointSaveFailure(subject); },
+      checkpointFailure: checkpointSaveFailure,
+    }, interact: view => presentReadMeaningInteraction({ session: readAssistanceSession, model: mappingSession,
+      businessContext: operatorBusinessContext(mappingBoundary.pack.resources), view }),
+    answerTooLarge: () => input.session.present?.("READ MEANING REMAINS PENDING", [
+      "Your complete answer is saved. This Read mapping accepts at most 1,000 text units; no part was shortened or adopted. Resume to supply a shorter answer for this same question."], "warning") });
     const prepareRequestedRelationship = async (request: { resource: string }, currentBoundary: ExplorationBoundaryDraft) => {
       pendingReadRelationship = { resource: request.resource };
       await persistAuthoringResume("read_mapping");
@@ -7999,70 +7966,17 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               model: mappingSession,
               request,
             }),
-            ...(input.authoringChat ? { clarificationReplacementHandler: async ({ previous, request, answer }) => {
-              const assertCurrent = async () => {
-                await assertAuthoringResumeCurrent(undefined);
-                const pending = readAssistanceCheckpoint?.pending_question, handoff = ownerHandoffs.at(-1);
-                if (pending?.kind !== "clarification" || readAssistanceCheckpoint?.stage !== "waiting"
-                  || canonicalJsonDigest(pending.request) !== canonicalJsonDigest(request)
-                  || pending.replacement?.previous_digest !== canonicalJsonDigest(previous)
-                  || pending.replacement.proposed_answer !== answer || handoff?.state !== "waiting"
-                  || handoff.scope_digest !== ownerQuestionScope() || handoff.context_digest !== await ownerQuestionContext())
-                  throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The exact pending interpretation review changed. No replacement was accepted.");
-              };
-              await assertCurrent();
-              const readback = [`Earlier question: ${previous.question}`, `Earlier answer: ${previous.answer}`,
-                  `Follow-up question: ${request.question}`, `Proposed answer: ${answer}`,
-                  ...operatorQuestionReadback(currentReadQuestion()),
-                  "Yes replaces only this interpretation. Both exact responses stay in history and count against the same question allowance.",
-                  "No or cancel keeps the proposal pending and the earlier interpretation current. Resume reopens this review without another answer or model request."];
-              const confirmed = await input.session.confirm("Use this new answer as the current interpretation?", { defaultValue: false,
-                context: operatorBusinessReadback(readback, operatorBusinessContext(mappingBoundary.pack.resources)),
-                exactDetails: { title: "CURRENT READ MEANING REPLACEMENT", lines: readback } });
-              await assertCurrent();
-              if (confirmed === true) await acceptReadQuestion(currentReadQuestion());
-              return confirmed === true;
-            } } : {}),
+            ...(input.authoringChat ? { clarificationReplacementHandler: readMeaningHost.confirmReplacement } : {}),
             clarificationHandler: async (request, clarificationContext) => {
               if (input.authoringChat) {
-                const saved = currentReadQuestion();
-                if (saved.raw_answer && (saved.disposition === "unknown" || !saved.raw_answer.text.trim())) {
-                  // Resume of an unanswered blank re-presents the saved question
-                  // locally. A second pending menu must not obstruct that existing
-                  // route. Preserve the blank as history rather than overwriting it.
-                  const blankWaiting = !saved.raw_answer.text.trim() && !saved.confirmation
-                    && readAssistanceCheckpoint?.stage === "waiting"
-                    && readAssistanceCheckpoint.pending_question.kind === "clarification"
-                    && !readAssistanceCheckpoint.pending_question.decision;
-                  if (!blankWaiting) {
-                    const choice = await readAssistanceSession.chooseOption?.("SAVED MEANING IS STILL PENDING", [
-                      { value: "pending", label: "Keep this meaning pending [recommended]", detail: "The earlier response stays saved; no meaning or model request is inferred." },
-                      { value: "answer", label: "Answer this same business question", detail: "Retain the earlier response and record a new answer for explicit review." },
-                    ], { initialValue: "pending", context: [saved.presentation?.text ?? request.question,
-                      `Earlier response: ${saved.raw_answer.text}`, "A new response uses the same existing Read clarification allowance."] });
-                    if (choice !== "answer") return undefined;
-                  }
-                  await mutateOwnerHandoff(async permit => {
-                    await assertAuthoringResumeCurrent(undefined, false, permit);
-                    if (currentReadQuestion().digest !== saved.digest || saved.context_digest !== await ownerQuestionContext(permit)
-                      || saved.scope_digest !== ownerQuestionScope()) throw new PolicySourceChangedError();
-                    operatorQuestions.push(createOperatorQuestion({ id: randomUUID(), revision: saved.revision + 1,
-                      handoff_id: saved.handoff_id, kind: saved.kind, scope_digest: saved.scope_digest,
-                      context_digest: saved.context_digest, target: saved.target, material: saved.material,
-                      evidence: saved.evidence, continuation: saved.continuation }));
-                    await persistAuthoringResume("read_mapping", permit);
-                    if (resumePersistenceBlocked) throw checkpointSaveFailure("The new response to the retained Read question");
-                  });
-                }
+                const exactTarget = `${request.resource}${request.field ? `.${request.field}` : ""}`;
+                readAssistanceSession.rememberDetails?.("READ QUESTION DETAILS", [request.question, request.reason, `Exact reviewed metadata: ${exactTarget}`]);
               }
-              const decision = await promptReadBoundaryClarification({
-                session: readAssistanceSession,
-                model: mappingSession,
-                request,
-                businessContext: operatorBusinessContext(mappingBoundary.pack.resources),
-                ...(input.authoringChat ? { mediation: { read: currentReadQuestion, save: saveReadQuestion, accept: acceptReadQuestion } } : {}),
-                ...(clarificationContext ? { previous: clarificationContext.previous } : {}),
-              });
+              const decision = input.authoringChat
+                ? await readMeaningHost.clarify(request, clarificationContext?.previous)
+                : await promptReadBoundaryClarification({ session: readAssistanceSession, model: mappingSession, request,
+                  businessContext: operatorBusinessContext(mappingBoundary.pack.resources),
+                  ...(clarificationContext ? { previous: clarificationContext.previous } : {}) });
               if (decision?.state === "answered" && !input.authoringChat) {
                 rememberModelAuthoringClarification(
                   authoringConversation,

@@ -371,3 +371,29 @@ slice. In particular, a confirmed first Input append invalidating an older revie
 selection and an interrupted step at zero attempts without Continue are recorded
 recovery inputs. Preserve currentness, uncertainty and exhausted-generation fences;
 no automatic rebase, fresh counter or completion is proposed by this checkpoint.
+
+## Initial Read implementation checkpoint
+
+`authoring-read-meaning-host.ts` now owns the native initial meaning question's
+raw capture, local proposal, default-No readback, pending/reopen/replacement and
+protected decided-checkpoint transitions. The old inline save/accept/pending
+implementations are removed. A stage-specific binding derives from the actual
+question, owner handoff and producer assistance checkpoint; responses carry only
+raw words or choices. The CLI presenter uses those same views. Existing non-native
+compatibility presentation remains separate and keeps its prior trimming contract.
+
+The original producer checkpoint callback still creates the real completion and
+handoff. It still indexes confirmed naming testimony into Source only after
+accepted remapping, then returns through the ordinary final Read caller. Source
+and Resume CAS, short mutation permits and rollback stay with their actual writers.
+Read-edit, values, private prerequisites, relationships and native allowance owners
+are unchanged. A presented or confirmed meaning is not database evidence or
+permission, and a failed remap or uncertain save does not become completion.
+
+Types and 165 focused producer/checkpoint/view controls pass. All 37 affected
+public assistance controls pass with unchanged assertions, including literal raw
+retention, pending/default-No, replacement, competing saves, Source drift and
+remapping/index acknowledgement failures. These public controls are in-process.
+The independent initial Read batch is presealed; genuine cold producer/host/caller,
+small changed-presenter terminal controls, its DEV verdict and the one whole
+package gate remain required. This checkpoint is not Read DEV acceptance.
