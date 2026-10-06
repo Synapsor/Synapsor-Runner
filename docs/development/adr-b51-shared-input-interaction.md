@@ -12,6 +12,8 @@ Keep the existing Input controller and durable records. Extract its CLI host
 transitions into one production adapter, and derive typed interaction views from
 those records. The CLI and an internal headless test adapter must submit responses
 to the same handlers. The next slice covers Input in onboarding and editing only.
+Those entry routes already share `ensureInputPolicyAgenda` and the same controller;
+this consolidates the inline host transitions and their CLI/headless-test use.
 
 Do not add another question engine or a separately writable UX progress store.
 Do not migrate Version, Read, every old job or activation in this first slice.
@@ -26,17 +28,19 @@ Paths below are under `apps/runner/src`; line anchors refer to the inspected pin
 | --- | --- |
 | Input entry and root selection | `boundary-commands.ts:4600 ensureInputPolicyAgenda`; called after create/revise planning at6863, saved Review at5412, and pending Input Resume before planning at6145. |
 | Durable question and interpretation | `authoring-operator-question.ts:19 OperatorQuestion` carries target, context, Source binding, wording, raw answer, proposed value, confirmation and histories. `runSourceInputConversation` at `authoring-input-policy-conversation.ts:83` owns Source review, missing-information child, mapping and confirmation. |
-| Raw answer and attribution | Input host `recordRawAnswer` at commands4715 captures exact raw text, updates its answered owner handoff and generation-answer association, then performs one Resume save. Conversation text is separate model context. |
+| Raw answer and attribution | Input host `recordRawAnswer` at commands4715 captures exact raw text and performs one Resume save. Nonblank answers update the answered owner handoff and generation-answer association; blank answers retain a waiting handoff. Conversation text is separate model context. |
 | Generation and allowances | The Input root owns its existing6/8 episode pool; children refer to that root. `operatorQuestionEpisode` and existing generation-recovery records reserve and retain their separate allowances. No new pool, correction reset or transport bypass is proposed. |
 | Readback and decision | `operatorQuestionReadback` creates canonical facts. Controller207–209 asks default-No and saves confirmation of that exact proposal. Wording is separate from this readback. |
 | Source adoption and acknowledgement | Controller211–240 performs exact Source append and Resume acknowledgement. A confirmed question alone is neither Source adoption nor an Action save. |
 | Owning-stage validation | `sourceInputFidelity` and `assessInputFidelity` check the applicable review as Action producers compile. Whole-program and surviving-duty checks remain. |
 | Resume and checkpoints | `persistAuthoringResume` at commands4812 routes the full stage snapshot to `writeBoundaryAuthoringResumeState` at resume437. The latter checks expected revision and immutable question, history and transport advancement. |
 | Disabled revision and activation | The Action host save at commands7409 creates a disabled revision. Consent11990 and activation12017 remain separate. Model prose, Input confirmation and Source review grant no active authority. |
-| Version comparison | `runVersionConversation` at version-conversation37 uses the same question record but a pending Version/Action owning turn. Host7281/7298 repeats raw-answer and Resume mechanics; host7348 and action-rule-model602–628 subsequently consume the reviewed counter. Confirmation remains an unverified statement until that consumption. |
+| Version comparison | `runVersionConversation` at version-conversation37 uses the same question record but a pending Version/Action owning turn. Host7281/7298 repeats raw-answer and Resume mechanics; host7348 and action-rule-model602–628 subsequently consume the reviewed counter. The operator's all-writers statement remains unverified even after consumption; consumption is not proof of external writer behaviour. |
 
-`ownerQuestionContext` at commands4916–4949 includes Source, store, outcomes,
-reader metadata and the saved Action baseline. Similar rechecks at model dispatch,
+`ownerQuestionContext` at commands4916–4949 includes Source, reader metadata and
+the saved Action baseline. Input store/outcomes are separately checked by the
+root binding and `ensureInputPolicyAgenda/assertInputCurrent` at4606–4613/4677–4687.
+Similar rechecks at model dispatch,
 response adoption and persistence guard different boundaries; they are not
 duplicates to delete merely because their names resemble one another.
 
@@ -63,15 +67,21 @@ Input already supplies the usable idempotent handoff:
 3. Append the exact attributed Input review to the Source session under its CAS.
 4. Acknowledge that append in Resume under the same project lease.
 
-If interruption occurs between3 and4, recovery resolves the exact matching review
-and verifies its prior Source by removing that exact last append. It then finishes
-the acknowledgement without changing timestamps, regenerating or reconfirming.
-It does not accept an arbitrary same-looking latest review. The existing
-`append_recovery/completed_review` checks remain authoritative.
+If interruption occurs between3 and4, recovery resolves the exact matching review.
+The `append_recovery` route removes that exact last append to reconstruct and
+verify the prior Source against the current input; otherwise `completed_review`
+revalidates the exact applicable saved record. It then finishes the acknowledgement
+without changing timestamps, regenerating or reconfirming. It does not accept an
+arbitrary same-looking latest review. Both existing checks remain authoritative.
 
-Views must distinguish confirmed-but-not-appended, appended-but-not-acknowledged,
-consumed Source review, saved disabled Action and active authority. A display
-cannot collapse these states into “saved” or “ready”.
+Production acknowledgement performs a general Resume save; it does not persist
+an Input-review acknowledgement identity. Do not infer a historical acknowledgement
+from a timestamp or revision. When the exact Source review exists, render
+“Source interpretation saved; continuation requires revalidation” and use the
+existing idempotent path. A missing matching Source review, a saved disabled
+Action and active authority can be distinguished from their actual records.
+Do not invent a durable “appended but unacknowledged” cursor or collapse these
+different records into one “ready” state.
 
 ## Interaction envelope
 
@@ -119,7 +129,7 @@ the separate existing activation consent succeeds.
 | File/function | Small change |
 | --- | --- |
 | New internal `authoring-input-interaction.ts` | Derive Input question/readback/pending views; define strict response variants and expected binding. No storage, budgets or generic orchestration engine. |
-| Existing Input host in `boundary-commands.ts` | Extract root/child selection and raw-answer, replacement, reopen, acknowledgement transitions into one production host factory using current Resume/Source callbacks and permits. Remove their old inline lifecycle implementations when migrated. |
+| Existing Input host in `boundary-commands.ts` | Extract root/child selection plus `saveQuestion`4692, `createMissingQuestion`4700, raw-answer, replacement, reopen and acknowledgement transitions into one production host factory using current Resume/Source callbacks and permits. This includes completion-to-handoff/child/generation association and CAS. Remove their old inline lifecycle implementations when migrated. |
 | `authoring-input-policy-conversation.ts` | Retain the controller and its existing ports/validators. Bind prompt and confirmation through the shared view adapter; retain exact append-recovery. |
 | CLI presenter and internal test adapter | Render/answer that same view and call the same host transitions. Do not let the test adapter fabricate handoffs, completions, actors or saved authority. |
 | Existing Input/Resume tests | Share scenario facts and add restart-at-handoff comparison through both entry routes; keep a small real PTY set for display, default-No, cancellation and navigation. |
@@ -159,6 +169,11 @@ An isolated zero-provider batch on the unchanged source passed88/88 assertions:
 Input controller38, OperatorQuestion26, Version comparison19, derived public
 Review/Resume5. Actual Source/Resume files and CAS were exercised; no real provider,
 source DB or complete positive editing/publication observation is claimed.
+
+These restart controls reread real persisted files but retain injected fixture
+callbacks; the fixture acknowledgement Set is in memory. They do not establish
+an independently durable acknowledgement identity or a separate-process cold
+restart after every handoff. The future slice needs that stronger comparison.
 
 The controller fixtures sometimes deliberately request clarification even when
 their Source already contains bounds. Those tests characterize durable handoffs,
