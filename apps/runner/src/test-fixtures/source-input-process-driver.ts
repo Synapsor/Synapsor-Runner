@@ -28,8 +28,15 @@ export async function inputProcessRuntime(cwd: string, runtimeRoot: string, capt
 
 export async function runInputProcess(runtime: InputProcessRuntime, projectRoot: string,
   mode: "start" | "restart", stop: InputProcessStop, controlFile?: string): Promise<InputProcessResult> {
+  return runAuthoringProcess<InputProcessResult>(runtime, "source-input-process.ts", projectRoot, mode, stop, controlFile);
+}
+
+/** Identical owned-child mechanics for Input and Version. No response, record,
+ * assertions or scenario selection crosses this process-only seam. */
+export async function runAuthoringProcess<T extends { pid: number }>(runtime: InputProcessRuntime, fixture: "source-input-process.ts" | "source-version-process.ts",
+  projectRoot: string, mode: "start" | "restart", stop: string, controlFile?: string): Promise<T> {
   const child = spawn(process.execPath, ["--import", path.join(runtime.cwd, "node_modules/tsx/dist/loader.mjs"),
-    path.join(runtime.cwd, "apps/runner/src/test-fixtures/source-input-process.ts"), projectRoot, mode, stop,
+    path.join(runtime.cwd, "apps/runner/src/test-fixtures", fixture), projectRoot, mode, stop,
     ...(controlFile ? [controlFile] : [])], {
     cwd: runtime.cwd, env: { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR,
       TSX_DISABLE_CACHE: "1", TSX_TSCONFIG_PATH: runtime.tsconfig }, stdio: ["ignore", "pipe", "pipe"],
@@ -48,8 +55,8 @@ export async function runInputProcess(runtime: InputProcessRuntime, projectRoot:
     await fs.writeFile(path.join(runtime.captureDirectory, `${name}.stdout.json`), stdout, { mode: 0o600, flag: "wx" });
     await fs.writeFile(path.join(runtime.captureDirectory, `${name}.stderr.txt`), stderr, { mode: 0o600, flag: "wx" });
   }
-  if (code !== 0) throw new Error(`Fresh Input process exit ${code}: ${stderr}`);
-  const result = JSON.parse(stdout.trim()) as InputProcessResult;
+  if (code !== 0) throw new Error(`Fresh ${fixture} process exit ${code}: ${stderr}\n${stdout}`);
+  const result = JSON.parse(stdout.trim()) as T;
   if (result.pid !== child.pid) throw new Error("Fresh-process identity mismatch.");
   try { process.kill(result.pid, 0); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return result; throw error; }
