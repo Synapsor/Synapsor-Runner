@@ -18,7 +18,7 @@ import {
 import type { AskIntentCheckMode } from "./ask-intent-preferences.js";
 import { askPlanSyntaxRepair, matchesAskPlanSyntaxRepair, type AskPlanSyntaxRepair } from "./ask-plan-recovery.js";
 import { isFixedOpenRouterModel, OPENROUTER_CHAT_ENDPOINT } from "./hosted-provider-settings.js";
-import { recoverAuthoringGeneration, authoringGenerationHandled, authoringGenerationFailed, authoringQuestionCompletion, authoringQuestionSequenceCompletion, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
+import { recoverAuthoringGeneration, authoringGenerationHandled, authoringGenerationFailed, authoringQuestionCompletion, authoringQuestionSequenceCompletion, createAuthoringHostEpisodeBudget, suspendAuthoringHostEpisodeBudget, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { coverageToolDeclarationIssue } from "./authoring-coverage-tool-profile.js";
 
 const DEFAULT_REMOTE_TIMEOUT_SECONDS = 30;
@@ -650,7 +650,6 @@ export async function runAskProviderTurn(input: {
     || input.tools.length === 0 || input.tools.some(tool => !tool.name.startsWith("runner.")))) {
     throw new AskError("ASK_AUTHORING_SURFACE_INVALID", "A saved Action logical turn requires conversational operator-only authoring and its own allowance.", 400);
   }
-  const admissionBudget = input.actionLogicalTurnBudget ?? input.episodeBudget;
   if (input.allowToolFreeAuthoringResponse
     && (input.gateway.mode !== "authoring" || input.tools.length !== 0 || input.requiredInitialToolName)) {
     throw new AskError(
@@ -694,6 +693,18 @@ export async function runAskProviderTurn(input: {
   const contextMeasurement = input.dependencies?.contextMeasurement
     ? { ...input.dependencies.contextMeasurement, meter: input.dependencies.contextMeasurement.meter ?? createTaskContextMeter() }
     : undefined;
+  // Typed question/Action controllers retain their own allowances. A nested
+  // producer must not inherit an enclosing fallback episode accidentally.
+  const restoreEpisode = input.actionLogicalTurnBudget || input.episodeBudget
+    ? suspendAuthoringHostEpisodeBudget() : undefined;
+  const hostEpisode = input.gateway.mode === "authoring" && !input.actionLogicalTurnBudget && !input.episodeBudget
+    ? await createAuthoringHostEpisodeBudget({
+      keyDigest: canonicalJsonDigest({ authority: input.authorityDigest,
+        required_tool: input.requiredInitialToolName ?? null,
+        tools: input.tools.map(tool => tool.name) }),
+      conversational: input.conversationalAuthoring === true,
+    }) : undefined;
+  const admissionBudget = input.actionLogicalTurnBudget ?? input.episodeBudget ?? hostEpisode;
   const generationResults: ProviderHttpResult[] = [];
   let reservedCallbacks = 0;
   const reserveToolBatch = async (count: number) => {
@@ -737,6 +748,7 @@ export async function runAskProviderTurn(input: {
     ...(input.gateway.resolveAskIntentCheck ? { resolveAskIntentCheck: input.gateway.resolveAskIntentCheck.bind(input.gateway) } : {}),
   };
   const currentUtcDate = (input.dependencies?.now?.() ?? new Date()).toISOString().slice(0, 10);
+  try {
   let result: AskTurnResult;
   try { result = await checked(() => input.configuration.provider === "anthropic"
     ? runAnthropicTurn({
@@ -776,6 +788,7 @@ export async function runAskProviderTurn(input: {
     if (completion) questionCompletions.set(result, completion);
   }
   return result;
+  } finally { hostEpisode?.release(); restoreEpisode?.(); }
 }
 
 const transientTransportCodes = new Set(["ECONNRESET", "ECONNREFUSED", "EAI_AGAIN", "ETIMEDOUT", "EPIPE"]);

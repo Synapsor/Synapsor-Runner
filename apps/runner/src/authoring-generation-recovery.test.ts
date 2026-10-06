@@ -8,6 +8,8 @@ import { AskError, completedAuthoringQuestion, askToolSurfaceDigest, resolveAskP
   type ProviderHttpInput, type ProviderHttpResult, type AskToolCallResult } from "./model-ask.js";
 import { authoringReadCheckpoint, assertAuthoringReadCheckpoint, authoringReadDecisionCheckpoint, assertAuthoringReadDecision, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, assertAuthoringQuestionHandoff, authoringGenerationCurrentnessCode, authoringGenerationHandled, authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
   recoverAuthoringGeneration, prepareAuthoringManualRecovery, permitAuthoringManualRecovery,
+  prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, createAuthoringHostEpisodeBudget,
+  assertAuthoringTransportAdvance, authoringInterruptedRecoveryNeeded,
   validateAuthoringTransportState, withAuthoringGenerationRecovery,
   isAuthoringGenerationStop, type AuthoringGenerationHost, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
@@ -48,7 +50,7 @@ async function fixture(mode: string) {
       res.end('data: '+JSON.stringify({type:"response.incomplete",response:{status:"incomplete",incomplete_details:{reason:"max_output_tokens"},output:[]}})+'\n\n');return;
     }
     if (mode === "bad-json") { res.end('{"unfinished":'); return; }
-    if (mode === "truncated-json") { res.writeHead(200,{"content-type":"application/json","content-length":"999"}); res.write('{"unfinished":');setTimeout(()=>res.destroy(),10);return; }
+    if (mode === "truncated-json" || mode === "C-success" && sends === 1 || mode === "success-C" && sends === 2) { res.writeHead(200,{"content-type":"application/json","content-length":"999"}); res.write('{"unfinished":');setTimeout(()=>res.destroy(),10);return; }
     if (mode.startsWith("schema400")) {
       const payload=JSON.stringify({error:{code:"invalid_function_parameters",param:"tools[0].parameters"}});
       res.writeHead(400,{"content-type":"application/json",...(mode.endsWith("truncated")?{"content-length":"9999"}:{})});
@@ -76,6 +78,151 @@ const input = (endpoint:URL, signal = new AbortController().signal):ProviderHttp
   body:{model:"DERIVED",store:false,input:"DERIVED",max_output_tokens:10,tools:[]},signal,timeoutMs:10_000,
   stream:{format:"openai_responses"}});
 const enter = <T>(m:ReturnType<typeof memory>, run:()=>Promise<T>) => withAuthoringGenerationRecovery(()=>{configureAuthoringGenerationRecovery(m.host);return run();});
+
+describe("recorded interrupted authoring continuation",()=>{
+  const checkpoint = canonicalJsonDigest("acknowledged local checkpoint");
+  it("retains native C exactly while one explicit linked request completes normally",async()=>{
+    const f=await fixture("C-success"),m=memory(f.endpoint,0);
+    await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest)))
+      .rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    const old=JSON.stringify(m.read().operations[0]);expect(m.read().operations[0]!.state).toBe("partial");
+    await enter(m,async()=>{const p=await prepareAuthoringInterruptedRecovery(checkpoint);expect(p.remaining_attempts).toBe(2);
+      await permitAuthoringInterruptedRecovery(p);});
+    expect(f.sends()).toBe(1);expect(JSON.stringify(m.read().operations[0])).toBe(old);
+    expect(authoringInterruptedRecoveryNeeded(m.read())).toBe(false);
+    await enter(m,async()=>{const r=await recoverAuthoringGeneration({...input(f.endpoint),body:{...input(f.endpoint).body,input:"Continue the current reviewed task"}},secureAskJsonRequest);
+      await authoringGenerationHandled([r]);m.set(authoringTransportCheckpoint(m.read())!);});
+    expect(f.sends()).toBe(2);expect(JSON.stringify(m.read().operations[0])).toBe(old);
+    expect(m.read().operations[1]!.state).toBe("checkpointed");
+    expect(m.read().operations[1]!.recovery_of?.root_operation_id).toBe(m.read().operations[0]!.id);
+    expect(m.read().interrupted_dispositions![0]!.status).toBe("admitted");
+    expect(m.read().operations[0]!.checkpoint_seen).toBeUndefined();
+  });
+  it("pending inspection and a declined decision require no disposition or send",async()=>{
+    const f=await fixture("truncated-json"),m=memory(f.endpoint,0);
+    await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest))).rejects.toBeInstanceOf(AskError);
+    const before=JSON.stringify(m.read());
+    await enter(m,async()=>{await prepareAuthoringInterruptedRecovery(checkpoint);});
+    expect(JSON.stringify(m.read())).toBe(before);expect(f.sends()).toBe(1);
+    expect(authoringInterruptedRecoveryNeeded(m.read())).toBe(true);
+  });
+  it("multiple unresolved steps require exact local decisions before a linked continuation",async()=>{
+    const f=await fixture("success-C"),m=memory(f.endpoint,0);
+    await expect(enter(m,async()=>{
+      await recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest);
+      return recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest);
+    })).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    const old=m.read().operations.map(o=>JSON.stringify(o));expect(m.read().operations.map(o=>o.state)).toEqual(["received","partial"]);
+    await enter(m,async()=>{
+      await expect(prepareAuthoringInterruptedRecovery(checkpoint)).rejects.toMatchObject({code:"ASK_GENERATION_INTERRUPTED_RECOVERY_UNAVAILABLE"});
+      const p=await prepareAuthoringInterruptedRecovery(checkpoint,undefined,m.read().operations[0]!.id);
+      expect(p.unresolved_operation_count).toBe(2);
+      await expect(permitAuthoringInterruptedRecovery(p)).rejects.toMatchObject({code:"ASK_GENERATION_INTERRUPTED_RECOVERY_UNAVAILABLE"});
+      await permitAuthoringInterruptedRecovery(p,{mode:"local_review"});
+    });
+    await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest))).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    await enter(m,async()=>{const p=await prepareAuthoringInterruptedRecovery(checkpoint);expect(p.unresolved_operation_count).toBe(1);
+      await permitAuthoringInterruptedRecovery(p);});
+    await enter(m,async()=>{const r=await recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest);
+      await authoringGenerationHandled([r]);m.set(authoringTransportCheckpoint(m.read())!);});
+    expect(m.read().operations.slice(0,2).map(o=>JSON.stringify(o))).toEqual(old);expect(f.sends()).toBe(3);
+    expect(m.read().interrupted_dispositions!.map(d=>d.status)).toEqual(["local_review","admitted"]);
+  });
+  it("reuses fallback counters and correction flags across changed wording and restart",async()=>{
+    const f=await fixture("C-success"),m=memory(f.endpoint,0);let owner="";
+    await expect(enter(m,async()=>{const b=(await createAuthoringHostEpisodeBudget({keyDigest:canonicalJsonDigest("first question"),conversational:false}))!;
+      owner=b.ownerId;await b.admitIteration();await b.reserveToolBatch(2);expect(await b.reserveCorrection()).toBe(true);
+      expect(await b.reserveWordingCorrection()).toBe(true);
+      try{return await recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest);}finally{b.release();}
+    })).rejects.toBeInstanceOf(AskError);
+    const old=JSON.stringify(m.read().operations[0]);
+    await enter(m,async()=>{await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(checkpoint));});
+    await enter(m,async()=>{const b=(await createAuthoringHostEpisodeBudget({keyDigest:canonicalJsonDigest("narrower current question"),conversational:false}))!;
+      expect(b.ownerId).toBe(owner);expect(await b.reserveCorrection()).toBe(false);expect(await b.reserveWordingCorrection()).toBe(false);
+      await b.admitIteration();await b.reserveToolBatch(1);
+      const r=await recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest);await authoringGenerationHandled([r]);
+      m.set(authoringTransportCheckpoint(m.read())!);b.release();});
+    expect(m.read().episodes).toHaveLength(1);expect(m.read().episodes![0]).toMatchObject({iterations_used:2,tool_calls_used:3,correction_used:true,wording_correction_used:true});
+    expect(JSON.stringify(m.read().operations[0])).toBe(old);expect(f.sends()).toBe(2);
+  });
+  it("three linked attempts stay exhausted while recorded local review remains available",async()=>{
+    const f=await fixture("truncated-json"),m=memory(f.endpoint,0);const historical:string[]=[];
+    for(let i=0;i<3;i++){
+      await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest))).rejects.toBeInstanceOf(AskError);
+      historical.push(JSON.stringify(m.read().operations[i]));
+      if(i<2) await enter(m,async()=>{await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(checkpoint));});
+    }
+    await enter(m,async()=>{const p=await prepareAuthoringInterruptedRecovery(checkpoint);expect(p.remaining_attempts).toBe(0);
+      await expect(permitAuthoringInterruptedRecovery(p)).rejects.toMatchObject({code:"ASK_GENERATION_INTERRUPTED_RECOVERY_UNAVAILABLE"});
+      await permitAuthoringInterruptedRecovery(p,{mode:"local_review"});});
+    expect(m.read().operations.map(o=>JSON.stringify(o))).toEqual(historical);expect(f.sends()).toBe(3);
+    expect(m.read().interrupted_dispositions!.at(-1)).toMatchObject({status:"local_review",decision:"stop_and_review_current"});
+    expect(m.read().interrupted_dispositions!.at(-1)!.replacement_operation_id).toBeUndefined();
+    await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest)))
+      .rejects.toMatchObject({code:"ASK_GENERATION_INTERRUPTED_RECOVERY_UNAVAILABLE"});expect(f.sends()).toBe(3);
+  });
+  it("a linked operation cannot renew the root's possible B duplicate reissue",async()=>{
+    const f=await fixture("B-always"),m=memory(f.endpoint,2);m.host.allowRetries=()=>false;
+    await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest)))
+      .rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_UNKNOWN"});
+    const old=JSON.stringify(m.read().operations[0]);m.host.allowRetries=()=>true;
+    await enter(m,async()=>{await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(checkpoint));});
+    await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest)))
+      .rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_UNKNOWN"});
+    expect(f.sends()).toBe(2);expect(m.read().operations[1]!.attempts).toHaveLength(1);
+    expect(JSON.stringify(m.read().operations[0])).toBe(old);expect(m.messages).toEqual([]);
+  });
+  it("legacy local disposition does not create a fresh same-step budget",async()=>{
+    const f=await fixture("C-success"),m=memory(f.endpoint,0);
+    await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest))).rejects.toBeInstanceOf(AskError);
+    const old=JSON.stringify(m.read().operations[0]);
+    await enter(m,async()=>{await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(checkpoint),{mode:"local_review"});});
+    await expect(enter(m,()=>createAuthoringHostEpisodeBudget({keyDigest:canonicalJsonDigest("same business step"),conversational:false})))
+      .rejects.toMatchObject({code:"ASK_GENERATION_INTERRUPTED_RECOVERY_UNAVAILABLE"});
+    expect(m.read().episodes).toBeUndefined();m.drift();
+    await enter(m,async()=>{const b=(await createAuthoringHostEpisodeBudget({keyDigest:canonicalJsonDigest("different current stage"),conversational:false}))!;
+      await b.admitIteration();const r=await recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest);
+      await authoringGenerationHandled([r]);m.set(authoringTransportCheckpoint(m.read())!);b.release();});
+    expect(JSON.stringify(m.read().operations[0])).toBe(old);expect(f.sends()).toBe(2);
+  });
+  it.each([false,true])("stale context or competing permission refuses before another request (%s)",async competing=>{
+    const f=await fixture("truncated-json"),m=memory(f.endpoint,0);
+    await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest))).rejects.toBeInstanceOf(AskError);
+    await enter(m,async()=>{const p=await prepareAuthoringInterruptedRecovery(checkpoint);
+      if(competing) await permitAuthoringInterruptedRecovery(p);else m.drift();
+      const before=JSON.stringify(m.read());await expect(permitAuthoringInterruptedRecovery(p)).rejects.toMatchObject({code:"ASK_GENERATION_CONTEXT_CHANGED"});
+      expect(JSON.stringify(m.read())).toBe(before);});expect(f.sends()).toBe(1);
+  });
+  it("a disposed live owner's late result cannot return or change its old operation",async()=>{
+    const f=await fixture("healthy"),m=memory(f.endpoint,0);let release!:()=>void,started!:()=>void;
+    const ready=new Promise<void>(r=>{started=r;});const blocked=new Promise<void>(r=>{release=r;});
+    const first=enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),async()=>{started();await blocked;return {status:200,body:{status:"completed",output:[]}};}));
+    const observed=first.catch(e=>e);await ready;
+    await enter(m,async()=>{await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(checkpoint));});
+    const before=JSON.stringify(m.read());release();expect(await observed).toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(JSON.stringify(m.read())).toBe(before);expect(m.read().operations[0]!.state).toBe("in_flight");expect(f.sends()).toBe(0);
+  });
+  it("a late successful response rechecks current business context before returning",async()=>{
+    const f=await fixture("healthy"),m=memory(f.endpoint,0);
+    await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),async()=>{m.drift();return {status:200,body:{status:"completed",output:[]}};})))
+      .rejects.toMatchObject({code:"ASK_GENERATION_CONTEXT_CHANGED"});
+    expect(m.read().operations[0]!.checkpoint_seen).toBeUndefined();expect(f.sends()).toBe(0);
+  });
+  it("Resume advance rejects deletion, old-output reclassification and counter resets",async()=>{
+    const f=await fixture("truncated-json"),m=memory(f.endpoint,0);
+    await expect(enter(m,async()=>{const b=(await createAuthoringHostEpisodeBudget({keyDigest:canonicalJsonDigest("stable owner"),conversational:false}))!;
+      await b.admitIteration();await b.reserveToolBatch(1);await b.reserveCorrection();return recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest);})).rejects.toBeInstanceOf(AskError);
+    await enter(m,async()=>{await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(checkpoint));});
+    const old=structuredClone(m.read());
+    for(const change of [(s:AuthoringTransportState)=>{s.interrupted_dispositions=[];},
+      (s:AuthoringTransportState)=>{s.operations[0]!.state="checkpointed";},
+      (s:AuthoringTransportState)=>{s.episodes![0]!.iterations_used=0;},
+      (s:AuthoringTransportState)=>{s.episodes![0]!.correction_used=false;}]){
+      const next=structuredClone(old);change(next);expect(()=>assertAuthoringTransportAdvance(old,next)).toThrow();
+    }
+    expect(JSON.stringify(m.read())).toBe(JSON.stringify(old));expect(f.sends()).toBe(1);
+  });
+});
 
 describe("saved authoring generation transport recovery",()=>{
   it("retains a native no-response boundary for explicit manual recovery without automatic opt-in", async () => {

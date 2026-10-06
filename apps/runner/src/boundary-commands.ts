@@ -1,6 +1,7 @@
+import { reviewInterruptedAuthoringStep } from "./authoring-interrupted-step-review.js";
 import { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
 export { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
-import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, authoringActionCheckpoint, authoringReadCheckpoint, authoringReadDecisionCheckpoint, assertAuthoringReadCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, authoringActionCheckpoint, authoringReadCheckpoint, authoringReadDecisionCheckpoint, assertAuthoringReadCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, authoringInterruptedRecoveryNeeded, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, leaveOperatorQuestionPending,
   operatorQuestionReadback, presentOperatorQuestion, proposeOperatorAnswer, reopenOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
@@ -202,6 +203,8 @@ import {
   assertBoundaryAuthoringResumeCurrent,
   boundaryAuthoringVersionReviews,
   prepareBoundaryActionRevision,
+  prepareBoundaryActionEditDisposition,
+  type BoundaryActionEditDisposition,
   clearBoundaryAuthoringResumeState,
   boundaryAuthoringActionIsUnfinished,
   readBoundaryAuthoringResumeState,
@@ -4361,6 +4364,42 @@ function boundaryAuthoringCancelled(error: unknown, chat?: BoundaryAuthoringChat
     || error instanceof Error && error.message === "ACTION_RULE_MODEL_DRAFT_CANCELLED";
 }
 
+/** Recovery targets business state, while the existing Resume CAS separately
+ * guards admission counters. Reserving the next iteration must not turn a
+ * reviewed continuation into another business target. */
+function generationActionMeaning(action: BoundaryAuthoringResumeAction | undefined) {
+  if (!action?.checkpoint) return action ?? null;
+  const { digest: _digest, logical_turns, ...checkpoint } = action.checkpoint;
+  return { ...action, checkpoint: { ...checkpoint, ...(logical_turns ? { logical_turns: logical_turns.map(turn => {
+    const { iterations_used: _iterations, tool_calls_used: _tools, used_version_corrections: _corrections,
+      wording_correction_used: _wording, ...identity } = turn;
+    return identity;
+  }) } : {}) } };
+}
+function generationRevisionMeaning(revision: BoundaryAuthoringResumeState["pending_action_revision"]) {
+  if (!revision?.checkpoint) return revision ?? null;
+  return { ...revision, checkpoint: generationActionMeaning({ intent: revision.instruction, checkpoint: revision.checkpoint })!.checkpoint };
+}
+async function boundaryGenerationContext(projectRoot: string, resume: BoundaryAuthoringResumeState,
+  permit?: ProjectAuthorityMutationPermit): Promise<`sha256:${string}`> {
+  const context = await loadBoundaryReviewContext(projectRoot);
+  const actions = await readActionRuleAuthorityRevisionBaseline(projectRoot, permit);
+  return canonicalJsonDigest({ binding: boundaryAuthoringResumeBinding(context.bundle), candidate: context.candidate,
+    actions, source: resume.policy_source_session ? await policySourceSavedDigest(projectRoot, resume.policy_source_session) : null,
+    job: resume.job_intent, stage: resume.stage, model: resume.model,
+    permission: { private: resume.private_read_metadata_digest ?? null, destination: resume.metadata_destination_digest ?? null },
+    action: generationActionMeaning(resume.action), revision: generationRevisionMeaning(resume.pending_action_revision),
+    request: resume.pending_job_revision ?? null, removal: resume.pending_action_removal ?? null,
+    addition: resume.pending_action_addition ?? null, read: resume.read ?? null,
+    read_assistance: resume.read_assistance ?? null, read_revision: resume.pending_read_revision_state ?? null,
+    pending_policy_review: resume.pending_policy_review ?? null, owner_handoffs: resume.owner_handoffs ?? [],
+    questions: (resume.operator_questions ?? []).map(question => {
+      if (!question.budget) return question;
+      const { digest: _digest, budget: _budget, ...meaning } = question;
+      return meaning;
+    }) });
+}
+
 async function interactiveReadWorkloadAssist(
   input: InteractiveReadWorkloadAssistInput,
 ): Promise<BoundaryAssistOutcome> {
@@ -4492,6 +4531,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let pendingActionRemoval = availableResume?.pending_action_removal;
   let pendingActionRevision = availableResume?.pending_action_revision;
   let reconciledActionRevisions = structuredClone(availableResume?.reconciled_action_revisions ?? []);
+  let actionEditDispositions = structuredClone(availableResume?.action_edit_dispositions ?? []);
   let reviewedVersionFields = boundaryAuthoringVersionReviews(availableResume);
   let reviewedActionDisclosures = structuredClone(availableResume?.reviewed_action_disclosures ?? []);
   let readPrerequisiteDecisions = parseReadPrerequisiteBusinessDecisions(availableResume?.read_prerequisite_decisions ?? []);
@@ -4800,6 +4840,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         ...(pendingActionRemoval ? { pendingActionRemoval } : {}),
         ...((dependencyRecoveryEdit?.revision ?? pendingActionRevision) ? { pendingActionRevision: dependencyRecoveryEdit?.revision ?? pendingActionRevision } : {}),
         reconciledActionRevisions,
+        actionEditDispositions,
         reviewedVersionFields,
         reviewedActionDisclosures,
         readPrerequisiteDecisions,
@@ -5128,6 +5169,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       savedTransactionDecisionAvailable = Boolean(savedSources.source_transaction_reviews?.length);
     } catch { /* The ordinary saved Review reports an unavailable source. */ }
   }
+  let generationRecoveryPermit: ProjectAuthorityMutationPermit | undefined;
   const writeGenerationRecovery = async (state: AuthoringTransportState, permit?: ProjectAuthorityMutationPermit) => {
     if (!activeResume || activeResume.revision_digest !== savedResumeRevision || resumePersistenceBlocked) throw checkpointSaveFailure("Transport history");
     await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
@@ -5189,22 +5231,87 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     // not renew retry permission from the old structure during this invocation.
     allowRetries: () => !revalidateSavedJob,
     read: () => generationRecovery,
-    write: writeGenerationRecovery,
+    write: state => writeGenerationRecovery(state, generationRecoveryPermit),
     current: async () => {
       assertRunning();
-      await assertAuthoringResumeCurrent(undefined);
-      const context = await loadBoundaryReviewContext(input.projectRoot);
-      const source = activeResume?.policy_source_session
+      await assertAuthoringResumeCurrent(undefined, false, generationRecoveryPermit);
+      if (!activeResume) throw checkpointSaveFailure("The generation context");
+      const source = activeResume.policy_source_session
         ? await policySourceSavedDigest(input.projectRoot, activeResume.policy_source_session) : null;
       if (authoringConversation?.policySources?.snapshots.length && source !== canonicalJsonDigest(authoringConversation.policySources)) throw new PolicySourceChangedError();
-      return canonicalJsonDigest({binding: boundaryAuthoringResumeBinding(context.bundle), candidate: context.candidate,
-        source, model: activeResume?.model, permission: privateReadMetadataDigest ?? null,
-        action: activeResume?.action ?? null, revision: activeResume?.pending_action_revision ?? null,
-        request: activeResume?.pending_job_revision ?? null, removal: activeResume?.pending_action_removal ?? null});
+      return boundaryGenerationContext(input.projectRoot, activeResume, generationRecoveryPermit);
     },
     progress: message => input.authoringChat?.runner("AUTHORING CONNECTION", [message]),
   });
+  const reviewInterruptedStep = async () => {
+    if (!activeResume || activeResume.revision_digest !== savedResumeRevision || revalidateSavedJob)
+      throw checkpointSaveFailure("The interrupted business step review");
+    const reviewedResume = activeResume;
+    const inspectCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
+      await assertAuthoringResumeCurrent(undefined, false, permit);
+      const current = await loadBoundaryReviewContext(input.projectRoot);
+      const reader = await inspectPolicyReviewSource(current.lock, input.schemaInspector);
+      const actions = await readActionRuleAuthorityRevisionBaseline(input.projectRoot, permit);
+      return canonicalJsonDigest({ binding: boundaryAuthoringResumeBinding(current.bundle), candidate: current.candidate,
+        reader_schema: schemaFingerprintForInspection(reader.inspection), reader_role: rolePostureFingerprint(reader.inspection),
+        actions, source: reviewedResume.policy_source_session
+          ? await policySourceSavedDigest(input.projectRoot, reviewedResume.policy_source_session) : null,
+        resume: reviewedResume.revision_digest });
+    };
+    const inspected = await inspectCurrent();
+    const unresolved = generationRecovery ? unresolvedAuthoringTransportOperations(generationRecovery) : [];
+    let selectedOperation: string | undefined;
+    if (unresolved.length > 1) {
+      selectedOperation = await input.session.chooseOption?.("REVIEW RETAINED UNFINISHED STEPS", [
+        ...unresolved.map((operation, index) => ({ value: operation.id, label: `Inspect unfinished recorded step ${index + 1}`,
+          detail: `Exact operation: ${operation.id}; current state: ${operation.state}` })),
+        { value: "pause", label: "Keep all steps pending" },
+      ], { initialValue: "pause", context: [
+        "Several saved steps need inspection. Each decision retains the original uncertainty; no request is sent.",
+        "Inspect and record local review of earlier steps before selecting bounded continuation of the still-unfinished task.",
+      ] });
+      if (!selectedOperation || selectedOperation === "pause") return {
+        ...boundaryAssistResult(boundaryAssistBackNotice("All unfinished steps remain pending. No decision or provider request was made.")), navigation: "pause" as const };
+    }
+    const decision = await reviewInterruptedAuthoringStep({ session: input.session,
+      businessContext: [`Saved job: ${reviewedResume.job_intent}`,
+        `Unfinished task: ${formatBoundaryAuthoringStage(reviewedResume.stage)}`,
+        ...(reviewedResume.pending_action_revision ? [`Pending change: ${reviewedResume.pending_action_revision.instruction}`] : []),
+        ...(reviewedResume.pending_read_revision ? [`Pending Read change: ${reviewedResume.pending_read_revision}`] : [])],
+      prepare: async () => {
+        const preview = await prepareAuthoringInterruptedRecovery(reviewedResume.revision_digest, undefined, selectedOperation);
+        const turn = (reviewedResume.pending_action_revision?.checkpoint ?? reviewedResume.action?.checkpoint)?.logical_turns?.at(-1);
+        const knownTypedAllowance = turn && !turn.completed && turn.iterations_used < 12 && turn.tool_calls_used < 24
+          || reviewedResume.operator_questions?.some(question => question.budget && !question.confirmation
+            && question.budget.iterations_used < 6 && question.budget.tool_calls_used < 8);
+        return { preview, canContinue: preview.unresolved_operation_count === 1 && preview.remaining_attempts > 0 && Boolean(preview.episode_id || knownTypedAllowance),
+          details: [`Saved job revision: ${reviewedResume.revision_digest}`,
+            `Current inspected state: ${inspected}`, `Interrupted operation: ${preview.operation_id}; attempt: ${preview.attempt_id}`,
+            `Remaining attempts in this generation chain: ${preview.remaining_attempts}`,
+            ...(!preview.episode_id && !knownTypedAllowance ? ["No provable saved provider allowance owns this historical step. Local current-work review remains available; this does not grant a new provider episode."] : []),
+            "The original response and local save outcome are not acknowledged by this review.",
+            "Retained business state:", ...JSON.stringify({ stage: reviewedResume.stage,
+              action: reviewedResume.action, pending_action_revision: reviewedResume.pending_action_revision,
+              read_assistance: reviewedResume.read_assistance, pending_read_revision_state: reviewedResume.pending_read_revision_state,
+              owner_handoffs: reviewedResume.owner_handoffs, operator_questions: reviewedResume.operator_questions }, null, 2).split("\n")] };
+      },
+      record: async (preview, mode) => withProjectAuthorityMutation(input.projectRoot, async permit => {
+        generationRecoveryPermit = permit;
+        try {
+          if (await inspectCurrent(permit) !== inspected) throw new Error("AUTHORING_RECOVERY_CONTEXT_CHANGED: Saved rules or inspected metadata changed during recovery review. Reopen the current saved step; no recovery decision was recorded.");
+          await permitAuthoringInterruptedRecovery(preview, { mode });
+        } finally { generationRecoveryPermit = undefined; }
+      }),
+    });
+    return { ...boundaryAssistResult({ tone: decision === "recorded" ? "success" : "warning",
+      title: decision === "recorded" ? "Interrupted step recovery recorded." : "Interrupted step remains pending.",
+      lines: [decision === "recorded" ? "Reopen the saved job for ordinary continuation or current saved-work review. No provider request was made." : "No recovery decision or provider request was made.",
+        "Original uncertainty, answers, saved drafts and limits remain recorded. Publication and execution still require their ordinary reviews."] }), navigation: "pause" as const };
+  };
+  const needsInterruptedReview = authoringInterruptedRecoveryNeeded(generationRecovery);
   const conversationalJobChoices = [
+    ...(availableResume && !revalidateSavedJob && needsInterruptedReview ? [{value: "interrupted_step_recovery",
+      label: "Review the interrupted business step (no model)", detail: "Preserve its uncertainty and inspect supported continuation within existing limits."}] : []),
     ...(availableResume && !revalidateSavedJob ? [{ value: "review_rules", label: "Review attached rules and unresolved decisions",
       detail: "Recheck the exact saved candidate and current attachment; keep business edits separate." },
       {value:"review_disclosure",label:"Review source-required disclosure meaning (no model)",
@@ -5398,7 +5505,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       footer: "Return to the saved review to inspect or restore the conversation." });
   }
   if (input.authoringChat && input.session.chooseOption) {
-    let selected = input.initialPolicyReview ? "review_rules" : input.continueSavedJob ? "resume" : input.initialSavedReadRevision ? "model" : await input.session.chooseOption(
+    let selected = input.initialPolicyReview && !needsInterruptedReview ? "review_rules" : input.continueSavedJob && !needsInterruptedReview ? "resume" : input.initialSavedReadRevision && !needsInterruptedReview ? "model" : await input.session.chooseOption(
       "START BOUNDARY DRAFTING",
       conversationalJobChoices,
       {
@@ -5414,6 +5521,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       },
     );
     if (selected === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
+    if (selected === "interrupted_step_recovery") return reviewInterruptedStep();
     if (selected === "manual_transport_recovery" && activeResume && !revalidateSavedJob) {
       let preview: Awaited<ReturnType<typeof prepareAuthoringManualRecovery>>;
       try { preview = await prepareAuthoringManualRecovery(activeResume.revision_digest); }
@@ -6159,6 +6267,83 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     retainedReadEdit = { action: structuredClone(resumeAction), addition: structuredClone(pendingActionAddition) };
   }
   const resumesCompletedActionsAfterRevalidation = Boolean(revalidatedCompletedOutcomes?.length) || recoveringSeparatelySavedActions;
+  let retainingCurrentActionDraft = false;
+  const reviewChangedActionDraft = async (pending: BoundaryAuthoringActionRevision,
+    baseline: NonNullable<Awaited<ReturnType<typeof loadActionRuleRevisionBaseline>>>): Promise<"keep_current" | "edit_current" | undefined> => {
+    const currentBaseline = canonicalJsonDigest(baseline.draft);
+    // Conversation setup creates an empty, unsaved Source session. Only an
+    // attached snapshot has a durable Source identity to compare here.
+    const sources = authoringConversation?.policySources?.snapshots.length
+      ? authoringConversation.policySources : undefined;
+    const sourceDigest = sources ? canonicalJsonDigest(sources) : undefined;
+    const canRebase = !pending.checkpoint && !resumeAction?.checkpoint && !pending.coverage_repair;
+    const exactDetails = [
+      `Saved Action authority draft: ${baseline.authorityDigest}`,
+      `Current edit baseline: ${currentBaseline}`,
+      `Pending edit baseline: ${pending.baseline_digest}`,
+      `Pending instruction: ${pending.instruction}`,
+      "This records an operator choice about the exact current candidate. It does not identify who saved it, complete an interrupted generation, pass attached rules, or activate authority.",
+      "Pending request and original checkpoint (all consumed limits retained):", ...JSON.stringify(pending, null, 2).split("\n"),
+      "Current disabled Action draft:", ...JSON.stringify(baseline.draft, null, 2).split("\n"),
+      ...(!canRebase ? ["Continuing from a changed baseline is unavailable while an original checkpoint, pending question or Source correction needs its exact counter-preserving recovery. Keep it pending or explicitly choose this current candidate."] : []),
+    ];
+    let choice: string | undefined;
+    do {
+      choice = await input.session.chooseOption?.("REVIEW CHANGED ACTION DRAFT", [
+        { value: "details", label: "Inspect the exact current revision and pending instruction" },
+        { value: "keep_current", label: "Keep the current saved draft and close this pending edit" },
+        { value: "edit_current", label: "Continue the edit from this reviewed current draft", disabled: !canRebase },
+        { value: "pause", label: "Pause with the pending edit preserved" },
+      ], { initialValue: "pause", displayContext: true, context: operatorBusinessReadback([
+        `Pending change: ${pending.instruction}`,
+        `Current rule: ${baseline.draft.review.when}`,
+        `Current result: ${baseline.draft.review.then}`,
+        `Current review route: ${baseline.draft.review.human_review}`,
+        "Choose whether to retain this saved candidate. This does not claim the interrupted step completed; full current review and activation remain separate.",
+      ], operatorBusinessContext(context.candidate.pack.resources)) });
+      if (choice === "details") await input.session.showReviewDetails?.("Current Action draft and pending edit", exactDetails);
+    } while (choice === "details");
+    if (choice !== "keep_current" && choice !== "edit_current" || choice === "edit_current" && !canRebase) return undefined;
+    const history = actionEditDispositions;
+    try {
+      await withProjectAuthorityMutation(input.projectRoot, async permit => {
+        if (!activeResume) throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: The exact saved request is unavailable; no disposition was recorded.");
+        await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, { revision: pending }, { permit });
+        if (sources && await policySourceSavedDigest(input.projectRoot, sources.id) !== sourceDigest) throw new PolicySourceChangedError();
+        const current = await reloadReadReviewForModelRevision(input.projectRoot, context, baseline.subject);
+        const exact = await loadActionRuleRevisionBaseline({ projectRoot: input.projectRoot,
+          boundaryName: context.candidate.pack.name, outcome: pending.outcome, preserveVerificationFields: true,
+          expectedReadDigest: baseline.sourceRule.read_boundary_digest });
+        if (!exact || exact.authorityDigest !== baseline.authorityDigest || canonicalJsonDigest(exact.draft) !== currentBaseline
+          || explorationBoundaryCandidateDigest(current.candidate) !== baseline.sourceRule.read_boundary_digest)
+          throw new Error("ACTION_RULE_REVISION_STALE: The displayed current candidate or Read changed; the original request remains pending.");
+        const record: BoundaryActionEditDisposition = prepareBoundaryActionEditDisposition({ pending,
+          read_digest: baseline.sourceRule.read_boundary_digest, authority_digest: baseline.authorityDigest,
+          current_baseline_digest: currentBaseline, current_draft: baseline.draft,
+          generation_recovery_digest: canonicalJsonDigest(generationRecovery ?? null),
+          ...(sources && sourceDigest ? { policy_source_session: sources.id, policy_source_digest: sourceDigest } : {}),
+          choice: choice as "keep_current" | "edit_current", actor: localInteractiveActor() });
+        actionEditDispositions = [...history, record];
+        pendingActionRevision = choice === "keep_current" ? undefined : prepareBoundaryActionRevision({
+          outcome: pending.outcome, instruction: pending.instruction, baseline_digest: currentBaseline,
+          ...(pending.operator_statements ? { operator_statements: pending.operator_statements } : {}),
+          preparation: { read_digest: baseline.sourceRule.read_boundary_digest, authority_digest: baseline.authorityDigest },
+        });
+        await persistAuthoringResume("authority_review", permit);
+        if (resumePersistenceBlocked) throw checkpointSaveFailure("The current-draft disposition");
+      });
+      input.authoringChat?.checkpoint("Current draft decision recorded", [
+        "The original request, checkpoint counters and uncertainty remain in append-only history. No interrupted generation was marked complete.",
+        "Continue with ordinary current disabled review and attached-rule checks; activation remains separate."]);
+      return choice;
+    } catch (error) {
+      pendingActionRevision = pending; actionEditDispositions = history; assertRunning(error);
+      input.authoringChat?.checkpoint("Pending edit review was not saved", [
+        redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+        "The original request remains pending; no current candidate, active authority or Source data changed."], "warning");
+      return undefined;
+    }
+  };
   if (resumeSelected && pendingActionRevision?.preparation && !pendingReadRevision) {
     const pending = pendingActionRevision;
     const baseline = await loadActionRuleRevisionBaseline({ projectRoot: input.projectRoot,
@@ -6178,8 +6363,14 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     } else {
       if (baseline.authorityDigest !== pending.preparation!.authority_digest
         || canonicalJsonDigest(baseline.draft) !== pending.baseline_digest) {
-        throw new Error("ACTION_RULE_REVISION_STALE: Another saved revision changed the edit baseline. Reopen the current revision for explicit revalidation; no edit was repeated.");
+        const disposition = await reviewChangedActionDraft(pending, baseline);
+        if (!disposition) return boundaryAssistResult({
+          tone: "warning", title: "Changed Action draft remains pending.",
+          lines: ["The original edit and consumed limits are preserved; no model request or authority change occurred."],
+          footer: "Reopen this saved job to inspect the exact current candidate or pause." });
+        retainingCurrentActionDraft = disposition === "keep_current";
       }
+      if (pendingActionRevision) {
       jobPlan = { state: "planned", read_mode: "reuse", action_mode: "revise", action_outcome: pending.outcome,
         action_strategy: "rule_derived", action_intent: pending.instruction, action_intents: [pending.instruction],
         summary: "Finish the acknowledged edit; no changed candidate has been saved yet.",
@@ -6193,6 +6384,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       input.authoringChat?.checkpoint("Saved Action edit still needs drafting", [
         `Request: ${pending.instruction}`, `Current saved revision: ${baseline.authorityDigest}`,
         "The request is saved; the changed draft is not. Next: prepare and validate the same disabled edit."]);
+      }
     }
   }
   const pendingActionAdditionInstruction = (addition: BoundaryAuthoringActionAddition) =>
@@ -6218,8 +6410,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     && mode === "model"
     && preselectedMappingSession !== undefined
     && modelEgressAcknowledged
-    && (!resumePastPlanning || resumesCompletedActionsAfterRevalidation || Boolean(pendingReadRevision))
-    && (resumesCompletedActionsAfterRevalidation
+    && (!resumePastPlanning || resumesCompletedActionsAfterRevalidation || retainingCurrentActionDraft || Boolean(pendingReadRevision))
+    && (resumesCompletedActionsAfterRevalidation || retainingCurrentActionDraft
       || input.modelBoundaryJobPlanner !== undefined
       || input.modelReadWorkloadGenerator === undefined);
   if (shouldPlanModelJob) {
@@ -6257,7 +6449,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       }
       // Completed drafting has an exact local contract. A schema/role repair
       // requires revalidation of that contract, not another interpretation.
-      if (dependencyRecoveryEdit || recoveringSeparatelySavedActions || (revalidateSavedJob && resumeSelected && loadedResume.status === "stale"
+      if (dependencyRecoveryEdit || retainingCurrentActionDraft || recoveringSeparatelySavedActions || (revalidateSavedJob && resumeSelected && loadedResume.status === "stale"
         && (resumesCompletedActionsAfterRevalidation
           || ["authority_review", "client_setup"].includes(loadedResume.value.stage)))) {
         jobPlan = {
@@ -6527,7 +6719,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               action_intents: draftingIntents, action_outcome: revalidatedActionOutcomes[0] } : {}) };
         } else jobPlan = { ...jobPlan, read_mode: "reuse" };
       }
-      if ((dependencyRecoveryEdit || revalidateSavedJob || recoveringSeparatelySavedActions) && resumeSelected
+      if ((dependencyRecoveryEdit || revalidateSavedJob || retainingCurrentActionDraft || recoveringSeparatelySavedActions) && resumeSelected
         && (jobPlan.read_mode === "none" || jobPlan.read_mode === "reuse")
         && (jobPlan.action_mode === "none" || jobPlan.action_mode === "reuse")) {
         // Rebuild from the reconciled candidate, not the old serving revision.
@@ -11538,44 +11730,12 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     const currentBaseline = canonicalJsonDigest(entry.result.compiled.draft);
     if (pendingActionRevision.baseline_digest !== currentBaseline) {
-      const pending = pendingActionRevision;
-      const reviewedAction = semanticActionAuthorityDraft!;
-      const exactDetails = [
-        `Saved Action authority draft: ${reviewedAction.digest}`,
-        `Current edit baseline: ${currentBaseline}`,
-        `Pending edit baseline: ${pending.baseline_digest}`,
-        `Pending instruction: ${pending.instruction}`,
-        "The saved draft and active authority are unchanged. This review does not identify who saved this revision or assume the pending edit is complete.",
-        "Current disabled Action draft:", ...JSON.stringify(entry.result.compiled.draft, null, 2).split("\n"),
-      ];
-      let choice: string | undefined;
-      do {
-        choice = await input.session.chooseOption?.("REVIEW CHANGED ACTION DRAFT", [
-          { value: "details", label: "Inspect the exact current revision and pending instruction" },
-          { value: "keep_current", label: "Keep the current saved draft and close this pending edit" },
-          { value: "edit_current", label: "Continue the edit from this reviewed current draft" },
-          { value: "pause", label: "Pause with the pending edit preserved" },
-        ], { initialValue: "pause", displayContext: true, context: exactDetails.slice(0, 5) });
-        if (choice === "details") await input.session.showReviewDetails?.("Current Action draft and pending edit", exactDetails);
-      } while (choice === "details");
-      if (choice !== "keep_current" && choice !== "edit_current") return pauseAttachedRules();
-      try {
-        await reloadReadReviewForModelRevision(input.projectRoot, context, reviewedAction);
-        pendingActionRevision = choice === "keep_current" ? undefined : prepareBoundaryActionRevision({
-          outcome: pending.outcome, instruction: pending.instruction, baseline_digest: currentBaseline,
-          ...(pending.operator_statements ? { operator_statements: pending.operator_statements } : {}),
-        });
-        await persistAuthoringResume("authority_review");
-        if (resumePersistenceBlocked) throw checkpointSaveFailure("The pending edit review");
-      } catch (error) {
-        pendingActionRevision = pending;
-        assertRunning(error);
-        input.authoringChat?.checkpoint("Pending edit review was not saved", [
-          redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
-          "The pending instruction is preserved. No Action draft or active authority was changed by this review.",
-        ], "warning");
-        return pauseAttachedRules();
-      }
+      const baseline = await loadActionRuleRevisionBaseline({ projectRoot: input.projectRoot,
+        boundaryName: context.candidate.pack.name, outcome: pendingActionRevision.outcome, preserveVerificationFields: true,
+        expectedReadDigest: explorationBoundaryCandidateDigest(context.candidate) });
+      if (!baseline || baseline.authorityDigest !== semanticActionAuthorityDraft!.digest
+        || canonicalJsonDigest(baseline.draft) !== currentBaseline
+        || !await reviewChangedActionDraft(pendingActionRevision, baseline)) return pauseAttachedRules();
     }
     if (pendingActionRevision) await revisePolicyAction(entry, pendingActionRevision.instruction, pendingActionRevision.operator_statements, pendingActionRevision.coverage_repair);
     if (pendingActionRevision) return pauseAttachedRules();
@@ -13009,8 +13169,7 @@ async function reviewSavedBoundaryPolicyInner(input: {
       read: () => resume.generation_recovery,
       current: async () => {
         await assertCurrent();
-        return canonicalJsonDigest({source: await policySourceSavedDigest(input.projectRoot, input.sources.id),
-          read: readDigest, action: authority?.digest ?? null, request, model: resume.model});
+        return boundaryGenerationContext(input.projectRoot, resume);
       },
       write: async recovery => {
         await assertCurrent();

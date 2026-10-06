@@ -1,4 +1,4 @@
-import { assertAuthoringReadDecision, assertAuthoringReadCheckpoint, assertAuthoringQuestionHandoff, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { assertAuthoringReadDecision, assertAuthoringReadCheckpoint, assertAuthoringTransportAdvance, assertAuthoringQuestionHandoff, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION } from "./authoring-program-capacity.js";
 import { ownerHandoffCheckpoint, parseOwnerHandoffs, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import { assertOperatorQuestionsAdvance, parseOperatorQuestions, type OperatorQuestion } from "./authoring-operator-question.js";
@@ -9,6 +9,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { parseReadPrerequisiteBusinessDecisions, type ReadPrerequisiteBusinessDecision } from "./read-prerequisite-decisions.js";
 import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceDecisionAnswer, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionDecisionAnswer, type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
+import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import type { AskHistoryTurn } from "./model-ask.js";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
@@ -71,6 +72,29 @@ export type BoundaryAuthoringActionRevision = {
   coverage_repair?: { source_digest: string; report_digest: string;
     source_ranges: Array<{ start: number; end: number }> };
 };
+
+/** An operator disposition of an exact current candidate, never a claim that
+ * interrupted generation completed or that policy coverage/activation passed. */
+export type BoundaryActionEditDisposition = {
+  id: string; pending: BoundaryAuthoringActionRevision;
+  read_digest: `sha256:${string}`; authority_digest: `sha256:${string}`;
+  current_baseline_digest: `sha256:${string}`; current_draft: ActionRuleModelDraftV1;
+  generation_recovery_digest: `sha256:${string}`;
+  policy_source_session?: string; policy_source_digest?: `sha256:${string}`;
+  choice: "keep_current" | "edit_current"; actor: string; reviewed_at: string;
+};
+
+export function prepareBoundaryActionEditDisposition(input: Omit<BoundaryActionEditDisposition, "id" | "reviewed_at">,
+  now = new Date().toISOString()): BoundaryActionEditDisposition {
+  return normalizeActionEditDispositions([{ ...structuredClone(input), id: randomUUID(), reviewed_at: now }])[0]!;
+}
+
+export function assertBoundaryActionEditDispositionsAdvance(previous: readonly BoundaryActionEditDisposition[],
+  next: readonly BoundaryActionEditDisposition[]): void {
+  if (next.length < previous.length || previous.some((record, index) =>
+    canonicalJsonDigest(record) !== canonicalJsonDigest(next[index])))
+    throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: Current-draft dispositions are append-only; their pending snapshots and consumed counters cannot be removed or rewritten.");
+}
 
 export type ReviewedActionDisclosure = {
   outcome: string; read_digest: `sha256:${string}`; authority_digest: `sha256:${string}`; review_digest: `sha256:${string}`;
@@ -207,6 +231,7 @@ export type BoundaryAuthoringResumeState = {
   pending_action_removal?: BoundaryAuthoringActionRemoval;
   pending_action_revision?: BoundaryAuthoringActionRevision;
   reconciled_action_revisions?: BoundaryActionReconciliation[];
+  action_edit_dispositions?: BoundaryActionEditDisposition[];
   /** Host-reviewed operating prerequisites, not proof of external writers or authority. */
   reviewed_version_fields?: ReviewedActionVersionField[];
   reviewed_action_disclosures?: ReviewedActionDisclosure[];
@@ -280,6 +305,7 @@ export function buildBoundaryAuthoringResumeState(input: {
   pendingActionRemoval?: BoundaryAuthoringActionRemoval;
   pendingActionRevision?: BoundaryAuthoringActionRevision;
   reconciledActionRevisions?: BoundaryActionReconciliation[];
+  actionEditDispositions?: BoundaryActionEditDisposition[];
   reviewedVersionFields?: readonly ReviewedActionVersionField[];
   reviewedActionDisclosures?: readonly ReviewedActionDisclosure[];
   /** Omitted retains this Boundary's records; [] explicitly clears them. Never upgrades legacy conversation. */
@@ -376,6 +402,9 @@ export function buildBoundaryAuthoringResumeState(input: {
     ...((input.reconciledActionRevisions ?? input.previous?.reconciled_action_revisions)?.length ? {
       reconciled_action_revisions: normalizeActionReconciliations(input.reconciledActionRevisions ?? input.previous!.reconciled_action_revisions),
     } : {}),
+    ...((input.actionEditDispositions ?? input.previous?.action_edit_dispositions)?.length ? {
+      action_edit_dispositions: normalizeActionEditDispositions(input.actionEditDispositions ?? input.previous!.action_edit_dispositions),
+    } : {}),
     ...(reviewedVersionFields.length ? { reviewed_version_fields: reviewedVersionFields } : {}),
     ...((input.reviewedActionDisclosures ?? input.previous?.reviewed_action_disclosures)?.length
       ? { reviewed_action_disclosures: parseReviewedActionDisclosures(input.reviewedActionDisclosures ?? input.previous!.reviewed_action_disclosures!) } : {}),
@@ -416,7 +445,11 @@ export async function writeBoundaryAuthoringResumeState(
     const previous = options ? await compareResumeRevision(held.projectRoot, frozen.binding, expected!) : undefined;
     if (previous?.job_intent === frozen.job_intent && previous.binding.boundary_name === frozen.binding.boundary_name) {
       assertOperatorQuestionsAdvance(previous.operator_questions ?? [], frozen.operator_questions ?? []);
+      if (previous.generation_recovery && !frozen.generation_recovery)
+        throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Interrupted generation history cannot be removed from the same saved job.");
+      if (frozen.generation_recovery) assertAuthoringTransportAdvance(previous.generation_recovery, frozen.generation_recovery);
     }
+    if (previous) assertBoundaryActionEditDispositionsAdvance(previous.action_edit_dispositions ?? [], frozen.action_edit_dispositions ?? []);
     const filePath = resumePath(held.projectRoot);
     await writeAtomic(filePath, `${JSON.stringify(frozen, null, 2)}\n`);
     const saved = await readBoundaryAuthoringResumeState(held.projectRoot, frozen.binding);
@@ -522,7 +555,7 @@ export async function clearBoundaryAuthoringResumeState(projectRootInput: string
     if (state.schema_version === AUTHORING_PROGRAM_RESUME_VERSION
       || boundaryAuthoringActionIsUnfinished(state.action) || state.read_assistance || state.pending_job_revision || state.pending_read_revision
       || state.pending_action_addition || state.pending_action_revision || state.pending_action_removal
-      || state.reconciled_action_revisions?.length || state.pending_policy_review || state.completed_policy_reviews?.length
+      || state.reconciled_action_revisions?.length || state.action_edit_dispositions?.length || state.pending_policy_review || state.completed_policy_reviews?.length
       || state.operator_questions?.length) return false;
     await fs.rm(filePath, { force: true });
     return true;
@@ -645,6 +678,7 @@ export function assertBoundaryAuthoringResumeState(
   if (value.metadata_destination_digest !== undefined) normalizePrivateReadMetadataDigest(value.metadata_destination_digest);
   if (value.pending_action_revision !== undefined) normalizeActionRevision(value.pending_action_revision);
   if (value.reconciled_action_revisions !== undefined) normalizeActionReconciliations(value.reconciled_action_revisions);
+  if (value.action_edit_dispositions !== undefined) normalizeActionEditDispositions(value.action_edit_dispositions);
   if (value.reviewed_action_disclosures !== undefined) parseReviewedActionDisclosures(value.reviewed_action_disclosures);
   if (value.reviewed_version_fields !== undefined) parseReviewedActionVersionFields(value.reviewed_version_fields, 32);
   if (value.generation_recovery !== undefined) validateAuthoringTransportState(value.generation_recovery);
@@ -1009,6 +1043,38 @@ function normalizeActionRevision(value: unknown): BoundaryAuthoringActionRevisio
       }) } : {}),
     ...(value.checkpoint ? { checkpoint: parseActionRuleAuthoringCheckpoint(value.checkpoint) } : {}),
   };
+}
+
+function normalizeActionEditDispositions(value: unknown): BoundaryActionEditDisposition[] {
+  const fail = () => new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Current-draft disposition history is invalid; no pending edit or consumed counter was discarded.");
+  if (!Array.isArray(value) || value.length > 32) throw fail();
+  const ids = new Set<string>();
+  return value.map(item => {
+    if (!isRecord(item) || Object.keys(item).some(key => !["id", "pending", "read_digest", "authority_digest",
+      "current_baseline_digest", "current_draft", "generation_recovery_digest", "policy_source_session", "policy_source_digest", "choice", "actor", "reviewed_at"].includes(key))
+      || typeof item.id !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(item.id)
+      || ids.has(item.id) || !["keep_current", "edit_current"].includes(String(item.choice)) || typeof item.actor !== "string"
+      || typeof item.reviewed_at !== "string" || !Number.isFinite(Date.parse(item.reviewed_at))
+      || !isRecord(item.current_draft) || JSON.stringify(item.current_draft).length > 262_144) throw fail();
+    if ((item.policy_source_session === undefined) !== (item.policy_source_digest === undefined)) throw fail();
+    if (item.policy_source_session !== undefined) normalizeSourceSession(item.policy_source_session);
+    if (item.policy_source_digest !== undefined) {
+      if (typeof item.policy_source_digest !== "string") throw fail();
+      reviewedDigest(item.policy_source_digest, "disposition Source snapshot");
+    }
+    ids.add(item.id);
+    const pending = normalizeActionRevision(item.pending);
+    const currentBaseline = reviewedDigest(item.current_baseline_digest, "current Action baseline");
+    if (item.current_draft.outcome !== pending.outcome || canonicalJsonDigest(item.current_draft) !== currentBaseline
+      || item.choice === "edit_current" && pending.checkpoint) throw fail();
+    return { id: item.id, pending, current_draft: structuredClone(item.current_draft) as unknown as ActionRuleModelDraftV1,
+      current_baseline_digest: currentBaseline, read_digest: reviewedDigest(item.read_digest, "current Read"),
+      authority_digest: reviewedDigest(item.authority_digest, "current Action authority"),
+      generation_recovery_digest: reviewedDigest(item.generation_recovery_digest, "retained generation history"),
+      ...(item.policy_source_session ? { policy_source_session: item.policy_source_session as string,
+        policy_source_digest: item.policy_source_digest as `sha256:${string}` } : {}),
+      choice: item.choice as BoundaryActionEditDisposition["choice"], actor: reviewedText(item.actor, "review actor", 256), reviewed_at: item.reviewed_at };
+  });
 }
 
 function normalizeActionReconciliations(value: unknown): BoundaryActionReconciliation[] {

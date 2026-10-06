@@ -5158,6 +5158,85 @@ describe("boundary operator-plane CLI", () => {
     } finally { await fixture.dispose(); }
   }, 30_000);
 
+  it.each(["keep_current", "pause", "unsafe_rebase", "resume_race", "action_race"] as const)("reviews an externally saved current Action before generation (%s)", async mode => {
+    const fixture = await staleSemanticRevalidationFixture();
+    try {
+      const context = await loadBoundaryReviewContext(fixture.root);
+      const authority = (await readActionRuleAuthorityDraft(fixture.root, "reviewed_staging_rules"))!;
+      const outcomes = authority.authority.rules.map(entry => entry.rule.outcome), outcome = outcomes[1]!;
+      const checkpoint = actionRuleAuthoringCheckpoint({ intent_digest: canonicalJsonDigest("pending edit"),
+        context_digest: canonicalJsonDigest("original candidate"), components: {}, logical_turns: [{
+          id: "00000000-0000-4000-8000-000000000001", origin_context_digest: canonicalJsonDigest("original turn"),
+          iterations_used: 12, tool_calls_used: 24, wording_correction_used: true }] });
+      const pending = { outcome, instruction: "Change this one saved rule while retaining every peer.",
+        baseline_digest: canonicalJsonDigest("the earlier reviewed candidate"), checkpoint,
+        preparation: { read_digest: context.bundle.candidate_digest, authority_digest: canonicalJsonDigest("earlier Action authority") } };
+      const saved = buildBoundaryAuthoringResumeState({ binding: { boundary_name: context.candidate.pack.name,
+        generation_lock_fingerprint: context.candidate.generation_lock_fingerprint, schema_fingerprint: context.lock.schema_fingerprint,
+        role_posture_fingerprint: context.lock.role_posture_fingerprint }, stage: "action_drafting",
+        actionWorkflow: "program", jobIntent: "Retain the complete reviewed visit program.", provider: "openai", model: "gpt-test",
+        action: { intent: "Retain the complete reviewed visit program.", strategy: "rule_derived", outcome,
+          intents: outcomes.map(value => `Keep ${value}.`), intended_outcomes: outcomes, completed_outcomes: outcomes },
+        pendingActionRevision: pending });
+      await writeBoundaryAuthoringResumeState(fixture.root, saved);
+      const generate = vi.fn(async () => { throw new Error("A changed-baseline disposition must precede any generation."); });
+      const originalChoose = fixture.session.chooseOption!, details: string[][] = []; let menus = 0;
+      const disabledReview = vi.spyOn(fixture.session, "confirmReviewedDisabled");
+      fixture.session.showReviewDetails = async (_title, lines) => { details.push(lines); };
+      fixture.session.chooseOption = vi.fn(async (title, choices, options) => {
+        if (mode === "resume_race" && title === "SETUP NEEDS ATTENTION") {
+          expect(options?.context?.join("\n")).toContain("BOUNDARY_AUTHORING_RESUME_CHANGED");
+          return "pause";
+        }
+        if (title !== "REVIEW CHANGED ACTION DRAFT") return originalChoose(title, choices, options);
+        menus++; expect(options?.initialValue).toBe("pause");
+        expect(choices.find((choice: { value: string; disabled?: boolean }) => choice.value === "edit_current")?.disabled).toBe(true);
+        expect(options?.context?.join("\n")).toContain(pending.instruction);
+        if (menus === 1) return "details";
+        if (mode === "resume_race") {
+          const competing = await readBoundaryAuthoringResumeState(fixture.root, saved.binding);
+          if (competing.status !== "ready") throw new Error("The competing owner requires the actual current saved job");
+          await writeBoundaryAuthoringResumeState(fixture.root, buildBoundaryAuthoringResumeState({
+            binding: competing.value.binding, stage: competing.value.stage, jobIntent: competing.value.job_intent, provider: "openai", model: "gpt-test",
+            actionWorkflow: "program", action: competing.value.action, pendingActionRevision: { ...pending, instruction: "A competing owner edit remains pending." }, previous: competing.value
+          }), { expectedRevisionDigest: competing.value.revision_digest });
+        }
+        if (mode === "action_race") await writeActionRuleAuthorityDraft(fixture.root, buildActionRuleAuthorityDraft({
+          name: authority.authority.name, action_boundary_name: authority.authority.action_boundary.name, catalog: authority.authority.catalog,
+          rules: authority.authority.rules.map(({ activated_at: _time, ...rule }) => rule), approval_classes: authority.authority.approval_classes,
+          reviews: authority.reviews.map(review => ({ ...review, then: review.then + " A competing exact review." })) }));
+        return mode === "pause" ? "pause" : mode === "unsafe_rebase" ? "edit_current" : "keep_current";
+      });
+      await fixture.run(generate);
+      expect(generate).not.toHaveBeenCalled(); expect(fixture.planner).not.toHaveBeenCalled();
+      const loaded = await readBoundaryAuthoringResumeState(fixture.root, saved.binding);
+      if (loaded.status !== "ready") throw new Error("Disposition must retain an inspectable current job");
+      if (mode === "keep_current") {
+        expect(loaded.value.pending_action_revision, JSON.stringify(fixture.chats.flatMap(chat => [
+          ...vi.mocked(chat.checkpoint).mock.calls, ...vi.mocked(chat.rememberDetails).mock.calls,
+        ]))).toBeUndefined();
+        expect(loaded.value.action_edit_dispositions).toHaveLength(1);
+        expect(loaded.value.action_edit_dispositions![0]!.pending).toEqual(pending);
+        expect(loaded.value.action_edit_dispositions![0]!.choice).toBe("keep_current");
+        // This fixture deliberately finishes at the current Read review gate.
+        // A local disposition cannot manufacture its signoff or Action review.
+        expect(fixture.session.chooseOption).toHaveBeenCalledWith("ACTIVATE READ BOUNDARY", expect.anything(), expect.anything());
+        expect(disabledReview).not.toHaveBeenCalled();
+        const retainedAuthority = (await readActionRuleAuthorityDraft(fixture.root, authority.authority.name))!;
+        expect(retainedAuthority.authority.rules.map(entry => entry.rule)).toEqual(authority.authority.rules.map(entry => entry.rule));
+        expect(retainedAuthority.authority.approval_classes).toEqual(authority.authority.approval_classes);
+      } else {
+        expect(loaded.value.action_edit_dispositions ?? []).toEqual([]);
+        expect(loaded.value.pending_action_revision?.checkpoint).toEqual(checkpoint);
+        expect(loaded.value.pending_action_revision?.instruction).toBe(mode === "resume_race"
+          ? "A competing owner edit remains pending." : pending.instruction);
+        expect(disabledReview).not.toHaveBeenCalled();
+      }
+      expect(details.flat().join("\n")).toContain("does not identify who saved it");
+      expect(await readActionRuleAuthorityActivation(fixture.root)).toBeUndefined();
+    } finally { await fixture.dispose(); }
+  }, 30_000);
+
   it.each(["stale_resume", "failed_planning_resume", "pending_removal_draft", "authority_review_resume", "read_only_revision", "current_resume", "current_removal_draft"] as const)("revalidates separately saved rules while retaining an unfinished standalone agenda (%s)", async shape => {
     const fixture = await staleSemanticRevalidationFixture({ unusedVerificationField: true });
     const generator = vi.fn(async () => { throw new Error("No new business decision is needed to revalidate saved rules."); });
