@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { onboard, start } from "./guided-start.js";
@@ -480,6 +480,27 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       expect(savedRoot(initiallySaved).budget).toEqual({iterations_used:1,tool_calls_used:1,correction_used:false});
       expect(sourceBefore.input_policy_reviews??[]).toEqual([]);
       variantSnapshots.push({stage:"ordinary-scripted-unanswered-checkpoint",resume:initiallySaved,sources:sourceBefore,read:readBefore});
+      // Preparation-only test seam: keep the ORIGINAL native project and stop
+      // before a target raw answer/mapping. The terminal lane resumes this same
+      // project; no question/proof/state is copied, rewritten or rebound.
+      const waitingReceipt=process.env.B51_PUBLIC_INPUT_PREPARE_UNANSWERED_RECEIPT;
+      if(waitingReceipt) {
+        const sourcePath=path.join(root,".synapsor/boundary-authoring/policy-sources",`${sourceId}.json`);
+        await fs.writeFile(waitingReceipt,JSON.stringify({
+          origin:"SCRIPTED_ORDINARY_PUBLIC_UNANSWERED_INPUT_CHECKPOINT",
+          projectRoot:root,schema:"dispatch_lab",resumePath:resumeFile,sourcePath,
+          resumeSha:createHash("sha256").update(await fs.readFile(resumeFile)).digest("hex"),
+          sourceSha:createHash("sha256").update(await fs.readFile(sourcePath)).digest("hex"),
+          resumeRevision:initiallySaved.revision_digest,readCandidateDigest:readBefore.bundle.candidate_digest,
+          sourceSession:sourceId,sourceDigest:activePolicySource(sourceBefore)!.digest,
+          rootQuestionId:savedRoot(initiallySaved).id,childQuestionId:question.id,
+          childQuestionDigest:question.digest,budget:savedRoot(initiallySaved).budget,
+          rawAnswerPresent:false,mappingPresent:false,confirmationPresent:false,
+          providerCalls:0,databaseCalls:0,authorityGranted:false,
+          limits:"Scripted ordinary public setup with native reviewed Read baseline; not real-model onboarding or activation evidence."
+        },null,2),{flag:"wx"});
+        return {origin:"SCRIPTED_ORDINARY_PUBLIC_UNANSWERED_INPUT_CHECKPOINT",provider_calls:0,requests};
+      }
       const beforeResumeRequests=requests;
       stage="variant_resume";
       expect(await boundaryReviewCommand(["--project-root",root,"--access","--job-first"],inspect,outer,undefined,options)).toBe(0);
@@ -743,7 +764,7 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
     if (process.env.B51_INDEPENDENT_PUBLIC_DISK) {
       await fs.cp(root,path.join(process.env.B51_INDEPENDENT_PUBLIC_DISK,path.basename(root)),{recursive:true,errorOnExist:true});
     }
-    await fs.rm(root,{recursive:true,force:true});
+    if(!process.env.B51_PUBLIC_INPUT_PREPARE_UNANSWERED_RECEIPT) await fs.rm(root,{recursive:true,force:true});
   }
 }
 
