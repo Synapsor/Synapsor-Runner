@@ -8,17 +8,18 @@ import type { ReadBoundaryFieldExposureChange, ModelReadBoundaryRevisionClarific
   ModelReadBoundaryRevisionClarificationDecision } from "./read-authoring-contract-types.js";
 
 type Digest = `sha256:${string}`;
-export type ReadBoundaryRevisionCheckpoint = {
-  schema_version: "synapsor.read-boundary-revision-checkpoint.v1";
-  input_digest: Digest; boundary_digest: Digest; catalog_digest: Digest; tool_digest: Digest;
-  stage: "waiting" | "decided";
-  pending_question: {
+export type ReadBoundaryRevisionCheckpointPending = {
     kind: "clarification"; request: ModelReadBoundaryRevisionClarification; question: string;
     completion?: AuthoringQuestionCompletion; decision?: ModelReadBoundaryRevisionClarificationDecision;
   } | {
     kind: "private_prerequisite"; request: { reason: string };
     completion?: AuthoringQuestionCompletion; nested_checkpoint?: ReadPrerequisiteCheckpoint;
   };
+
+export type ReadBoundaryRevisionCheckpoint = {
+  schema_version: "synapsor.read-boundary-revision-checkpoint.v1";
+  input_digest: Digest; boundary_digest: Digest; catalog_digest: Digest; tool_digest: Digest;
+
   state: {
     call_count: number; correction_used: boolean; prerequisite_review_failed: boolean;
     issue: string; clarification_count: number;
@@ -30,7 +31,8 @@ export type ReadBoundaryRevisionCheckpoint = {
     usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
   };
   digest: Digest;
-};
+} & ({ stage: "waiting" | "decided"; pending_question: ReadBoundaryRevisionCheckpointPending; dispatch_question?: never }
+  | { stage: "dispatching"; dispatch_question: string; pending_question?: never });
 const record=(value:unknown):value is Record<string,unknown>=>!!value && typeof value==="object" && !Array.isArray(value);
 const exact=(value:Record<string,unknown>,keys:string[])=>Object.keys(value).every(key=>keys.includes(key) && value[key]!==undefined);
 const hash=(value:unknown)=>typeof value==="string" && /^sha256:[a-f0-9]{64}$/u.test(value);
@@ -42,7 +44,7 @@ const jsonShape=(value:unknown):boolean=>value===null || typeof value==="string"
   || typeof value==="number" && Number.isFinite(value) || Array.isArray(value) && value.every(jsonShape)
   || record(value) && [Object.prototype,null].includes(Object.getPrototypeOf(value)) && Object.values(value).every(jsonShape);
 
-export function readBoundaryRevisionCheckpoint(input:Omit<ReadBoundaryRevisionCheckpoint,"schema_version"|"digest">):ReadBoundaryRevisionCheckpoint {
+export function readBoundaryRevisionCheckpoint(input:ReadBoundaryRevisionCheckpoint extends infer C ? C extends ReadBoundaryRevisionCheckpoint ? Omit<C,"schema_version"|"digest"> : never : never):ReadBoundaryRevisionCheckpoint {
   const body={schema_version:"synapsor.read-boundary-revision-checkpoint.v1" as const,...structuredClone(input)};
   try {return parseReadBoundaryRevisionCheckpoint({...body,digest:canonicalJsonDigest(body)});}catch {throw invalid();}
 }
@@ -57,11 +59,12 @@ export function readBoundaryRevisionDecisionAnswer(checkpoint:ReadBoundaryRevisi
  * current catalog and retained host selections are revalidated by the producer. */
 export function parseReadBoundaryRevisionCheckpoint(value:unknown):ReadBoundaryRevisionCheckpoint {
   try {if(Buffer.byteLength(JSON.stringify(value))>64*1024 || !jsonShape(value))throw invalid();}catch {throw invalid();}
-  if(!record(value) || !exact(value,["schema_version","input_digest","boundary_digest","catalog_digest","tool_digest","stage","pending_question","state","digest"])
+  if(!record(value) || !exact(value,["schema_version","input_digest","boundary_digest","catalog_digest","tool_digest","stage","pending_question","dispatch_question","state","digest"])
     || value.schema_version!=="synapsor.read-boundary-revision-checkpoint.v1"
     || ![value.input_digest,value.boundary_digest,value.catalog_digest,value.tool_digest,value.digest].every(hash)
-    || !["waiting","decided"].includes(value.stage as string) || !record(value.pending_question) || !record(value.state))throw invalid();
-  const q=value.pending_question,s=value.state;
+    || !["waiting","decided","dispatching"].includes(value.stage as string) || !record(value.state) || (value.stage === "dispatching" ? value.pending_question !== undefined || !text(value.dispatch_question,64*1024) : !record(value.pending_question) || value.dispatch_question!==undefined))throw invalid();
+  const q=record(value.pending_question)?value.pending_question:{},s=value.state;
+  if(value.stage!=="dispatching") {
   if(q.kind==="private_prerequisite") {
     if(!exact(q,["kind","request","completion","nested_checkpoint"]) || !record(q.request)
       || !exact(q.request,["reason"]) || !text(q.request.reason,500)
@@ -78,14 +81,15 @@ export function parseReadBoundaryRevisionCheckpoint(value:unknown):ReadBoundaryR
   }
   if(q.decision!==undefined && (!record(q.decision) || !exact(q.decision,["state","answer"])
     || (q.decision.state==="answered" ? !rawAnswer(q.decision.answer) : q.decision.state!=="declined" || q.decision.answer!==undefined)))throw invalid();
+  }
   if(!exact(s,["call_count","correction_used","prerequisite_review_failed","issue","clarification_count","clarification_answers","private_decisions","reviewed_prerequisite","reviewed_relationship","usage"])
-    || !count(s.call_count) || s.call_count===0 || typeof s.correction_used!=="boolean" || typeof s.prerequisite_review_failed!=="boolean"
+    || !count(s.call_count) || value.stage!=="dispatching" && s.call_count===0 || typeof s.correction_used!=="boolean" || typeof s.prerequisite_review_failed!=="boolean"
     || typeof s.issue!=="string" || s.issue.length>1500 || !count(s.clarification_count)
     || (s.clarification_count as number)>(s.call_count as number)
     || !Array.isArray(s.clarification_answers) || s.clarification_answers.length!==Math.min(s.clarification_count as number,16)
     || s.clarification_answers.some(answer=>!record(answer) || !exact(answer,["question","answer"]) || !text(answer.question,500) || !rawAnswer(answer.answer))
     || !Array.isArray(s.private_decisions))throw invalid();
-  if(q.decision && (q.decision as Record<string,unknown>).state==="answered") {
+  if(record(q) && q.decision && (q.decision as Record<string,unknown>).state==="answered") {
     const last=s.clarification_answers.at(-1);
     if(!record(last) || last.question!==q.question || last.answer!==(q.decision as Record<string,unknown>).answer)throw invalid();
   }

@@ -18,8 +18,12 @@ export type AuthoringInterruptedDisposition = {
 };
 export type AuthoringHostEpisode = {
   id: string; key_digest: Digest; conversational: boolean;
+  /** Prospective controller origin; never backfilled onto historical owners. */
+  context_digest?: Digest;
   iterations_used: number; tool_calls_used: number;
   correction_used: boolean; wording_correction_used: boolean;
+  /** Existing Read representation correction, distinct from general repair. */
+  naming_evidence_correction_used?: true;
 };
 
 export type AuthoringQuestionCompletion = {
@@ -116,6 +120,8 @@ export type AuthoringGenerationHost = {
 type CompletedTurnOperation = { id: string; request_digest: `sha256:${string}`; context_digest: `sha256:${string}`; attempt_id: string };
 type Frame = { host?: AuthoringGenerationHost; owned: Set<string>; active: boolean;
   episode_id?: string;
+  last_episode_id?: string;
+  producer_corrections?: {correction_used: boolean; wording_correction_used: boolean; naming_evidence_correction_used?: true};
   /** Ephemeral associations minted from real response identities only after a
    * decoder/callback turn completes. Never loaded from a saved checkpoint. */
   completedTurns: Map<string, CompletedTurnOperation[]> };
@@ -241,11 +247,12 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
   if (s.episodes !== undefined) {
     if (!Array.isArray(s.episodes) || s.episodes.length > 4096) throw invalid();
     for (const e of s.episodes) {
-      if (!e || !exactKeys(e,["id","key_digest","conversational","iterations_used","tool_calls_used","correction_used","wording_correction_used"])
-        || !id(e.id) || seen.has(e.id) || !digest(e.key_digest) || typeof e.conversational !== "boolean"
+      if (!e || !exactKeys(e,["id","key_digest","context_digest","conversational","iterations_used","tool_calls_used","correction_used","wording_correction_used","naming_evidence_correction_used"])
+        || !id(e.id) || seen.has(e.id) || !digest(e.key_digest) || e.context_digest !== undefined && !digest(e.context_digest) || typeof e.conversational !== "boolean"
         || !Number.isSafeInteger(e.iterations_used) || e.iterations_used < 0 || e.iterations_used > (e.conversational ? 12 : 6)
         || !Number.isSafeInteger(e.tool_calls_used) || e.tool_calls_used < 0 || e.tool_calls_used > (e.conversational ? 24 : 8)
-        || typeof e.correction_used !== "boolean" || typeof e.wording_correction_used !== "boolean") throw invalid();
+        || typeof e.correction_used !== "boolean" || typeof e.wording_correction_used !== "boolean"
+        || e.naming_evidence_correction_used !== undefined && e.naming_evidence_correction_used !== true) throw invalid();
       seen.add(e.id);
     }
   }
@@ -450,15 +457,59 @@ export function assertAuthoringTransportAdvance(previous: AuthoringTransportStat
   if (nextEpisodes.length < episodes.length) throw invalid();
   for (const [i,e] of episodes.entries()) {
     const n = nextEpisodes[i];
-    if (!n || n.id !== e.id || n.key_digest !== e.key_digest || n.conversational !== e.conversational
+    if (!n || n.id !== e.id || n.key_digest !== e.key_digest || n.context_digest !== e.context_digest || n.conversational !== e.conversational
       || n.iterations_used < e.iterations_used || n.tool_calls_used < e.tool_calls_used
-      || e.correction_used && !n.correction_used || e.wording_correction_used && !n.wording_correction_used) throw invalid();
+      || e.correction_used && !n.correction_used || e.wording_correction_used && !n.wording_correction_used
+      || e.naming_evidence_correction_used && !n.naming_evidence_correction_used) throw invalid();
   }
 }
 
 export type AuthoringHostEpisodeBudget = AskAuthoringEpisodeBudget & {
   ownerId: string; reserveCorrection(): Promise<boolean>; reserveWordingCorrection(): Promise<boolean>; release(): void;
 };
+type ProducerCorrectionKind = "semantic" | "wording" | "read_naming";
+/** A new producer must not adopt the preceding producer's ephemeral owner.
+ * This does not touch a saved linked permission, history or any counter. */
+export function beginAuthoringProducerInvocation(): void {
+  const frame = storage.getStore(); if (frame) frame.last_episode_id = undefined;
+}
+export function authoringInterruptedProducerCorrections(): {correction_used: boolean; wording_correction_used: boolean; naming_evidence_correction_used: boolean} {
+  const frame = storage.getStore(), state = frame?.host?.read();
+  if (state) validateAuthoringTransportState(state);
+  const linked = state?.interrupted_dispositions?.find(d => d.status === "permitted");
+  const manual = state?.operations.find(o => o.manual_recovery?.status === "permitted" && !disposedOperation(state,o.id));
+  const owner = linked?.episode_id ?? manual?.episode_id;
+  const saved = owner && state?.episodes?.find(e => e.id === owner);
+  return {correction_used:Boolean(saved && saved.correction_used || frame?.producer_corrections?.correction_used),
+    wording_correction_used:Boolean(saved && saved.wording_correction_used || frame?.producer_corrections?.wording_correction_used),
+    naming_evidence_correction_used:Boolean(saved && saved.naming_evidence_correction_used || frame?.producer_corrections?.naming_evidence_correction_used)};
+}
+/** Reserve on the actual completed producer episode, before its correction
+ * request. Explicit domain controllers continue to use their own reservation. */
+export async function reserveAuthoringProducerCorrection(kind: ProducerCorrectionKind): Promise<boolean> {
+  const frame = storage.getStore(), host = frame?.host;
+  if (!host?.available()) return true; // Existing non-persisted producer behavior.
+  if (frame!.active) throw new AskError("ASK_GENERATION_ALREADY_ACTIVE","An authoring generation is still active.",409);
+  const state = structuredClone(host.read()!); validateAuthoringTransportState(state);
+  const owner = frame!.last_episode_id, episode = state.episodes?.find(e => e.id === owner);
+  const op = [...state.operations].reverse().find(o => o.episode_id === owner && frame!.owned.has(o.id)
+    && o.attempts.at(-1)?.outcome === "response" && !disposedOperation(state,o.id));
+  if (!episode || !op) return false; // Never invent a historical budget owner.
+  if (await currentRecoveryContext(host) !== op.context_digest) throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
+  const flag = kind === "semantic" ? "correction_used" : kind === "wording" ? "wording_correction_used" : "naming_evidence_correction_used";
+  if (episode[flag]) return false;
+  episode[flag] = true; if (kind === "read_naming") episode.correction_used = true;
+  await writeRecoveryState(host,state); return true;
+}
+/** Carry only this existing correction into its next ordinary episode. Each
+ * ordinary Read follow-up still retains its independent normal6/8 allowance. */
+export async function withAuthoringProducerCorrection<T>(kind: ProducerCorrectionKind, run: () => Promise<T>): Promise<T> {
+  const frame = storage.getStore(), previous = frame?.producer_corrections;
+  if (frame) frame.producer_corrections = {correction_used:kind !== "wording" || previous?.correction_used === true,
+    wording_correction_used:kind === "wording" || previous?.wording_correction_used === true,
+    ...(kind === "read_naming" || previous?.naming_evidence_correction_used ? {naming_evidence_correction_used:true} : {})};
+  try { return await run(); } finally { if (frame) frame.producer_corrections = previous; }
+}
 /** An explicit domain controller must not inherit an enclosing fallback pool. */
 export function suspendAuthoringHostEpisodeBudget(): () => void {
   const frame = storage.getStore(), previous = frame?.episode_id;
@@ -471,7 +522,7 @@ export function suspendAuthoringHostEpisodeBudget(): () => void {
 export async function createAuthoringHostEpisodeBudget(input: {keyDigest: Digest; conversational: boolean}): Promise<AuthoringHostEpisodeBudget | undefined> {
   const admitted = authoringGenerationAdmissionState();
   if (!admitted?.host.available()) return undefined;
-  const {frame,host,initial,interrupted} = admitted;
+  const {frame,host,initial,interrupted,manual} = admitted;
   if (!digest(input.keyDigest)) throw invalid();
   const current = await currentRecoveryContext(host);
   if (!interrupted && initial.interrupted_dispositions?.some(d => d.status === "local_review" && d.current_context_digest === current))
@@ -479,11 +530,23 @@ export async function createAuthoringHostEpisodeBudget(input: {keyDigest: Digest
   if (interrupted && !interrupted.episode_id) throw new AskError("ASK_GENERATION_LEGACY_BUDGET_UNAVAILABLE",
     "This historical step has no durable fallback-budget owner. Inspect or continue through supported local review; no new zeroed provider allowance was created.",409);
   const previousOwner = frame.episode_id;
-  let episode = interrupted ? initial.episodes?.find(e => e.id === interrupted.episode_id) : undefined;
+  const continuationOwner = interrupted?.episode_id ?? manual?.episode_id;
+  let episode = continuationOwner ? initial.episodes?.find(e => e.id === continuationOwner) : undefined;
+  if (!continuationOwner) {
+    const orphaned = (initial.episodes ?? []).filter(e => e.key_digest === input.keyDigest
+      && !initial.operations.some(op => op.episode_id === e.id));
+    if (orphaned.some(e => e.context_digest === undefined && (e.iterations_used > 0 || e.tool_calls_used > 0 || e.correction_used || e.wording_correction_used || e.naming_evidence_correction_used)))
+      throw new AskError("ASK_GENERATION_LEGACY_BUDGET_UNAVAILABLE", "An unfinished historical controller has no provable current target. No zeroed allowance was created.",409);
+    const currentOwners = orphaned.filter(e => e.context_digest === current);
+    if (currentOwners.length > 1) throw new AskError("ASK_GENERATION_LEGACY_BUDGET_UNAVAILABLE", "More than one unfinished controller matches this step. Preserve its limits for supported local inspection.",409);
+    episode = currentOwners[0];
+  }
   if (episode && episode.conversational !== input.conversational) throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
   if (!episode) {
-    episode = {id:randomUUID(),key_digest:input.keyDigest,conversational:input.conversational,
-      iterations_used:0,tool_calls_used:0,correction_used:false,wording_correction_used:false};
+    episode = {id:randomUUID(),key_digest:input.keyDigest,context_digest:current,conversational:input.conversational,
+      iterations_used:0,tool_calls_used:0,correction_used:frame.producer_corrections?.correction_used === true,
+      wording_correction_used:frame.producer_corrections?.wording_correction_used === true,
+      ...(frame.producer_corrections?.naming_evidence_correction_used ? {naming_evidence_correction_used:true} : {})};
     await writeRecoveryState(host,{...initial,episodes:[...initial.episodes ?? [],episode]});
   }
   const owner = episode.id; frame.episode_id = owner;
@@ -502,7 +565,7 @@ export async function createAuthoringHostEpisodeBudget(input: {keyDigest: Digest
         throw new AskError("ASK_TOOL_BUDGET_EXCEEDED","The saved authoring callback allowance is exhausted.",422); },
     reserveCorrection:()=>change(e=>{if(e.correction_used)return false;e.correction_used=true;return true;}),
     reserveWordingCorrection:()=>change(e=>{if(e.wording_correction_used)return false;e.wording_correction_used=true;return true;}),
-    release:()=>{if(frame.episode_id===owner)frame.episode_id=previousOwner;},
+    release:()=>{if(frame.episode_id===owner)frame.episode_id=previousOwner;frame.last_episode_id=owner;},
   };
 }
 

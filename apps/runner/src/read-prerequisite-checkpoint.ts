@@ -20,18 +20,19 @@ export type ModelReadPrerequisiteClarification = { question: string; reason: str
   applicability?: "unanswered" | "changed";
 };
 
-export type ReadPrerequisiteCheckpoint = {
-  schema_version: "synapsor.read-prerequisite-checkpoint.v1";
-  input_digest: Digest; tool_digest: Digest;
-  stage: "waiting" | "decided";
-  /** Exact approved inputs, before this producer's own confirmed additions. */
-  seed: { approved_business_clarifications: Array<{ question: string; answer: string }>;
-    approved_business_decisions: ReadPrerequisiteBusinessDecision[] };
-  pending: ({ kind: "clarification"; request: ModelReadPrerequisiteClarification;
+export type ReadPrerequisiteCheckpointPending = ({ kind: "clarification"; request: ModelReadPrerequisiteClarification;
     decision?: { state: "answered"; answer: string } }
     | { kind: "semantic_confirmation"; proposal: ModelReadPrerequisiteProposal;
       decision?: { state: "confirmed"; operator_evidence: string } | { state: "revise"; instruction: string } })
     & { completion?: AuthoringQuestionCompletion };
+
+export type ReadPrerequisiteCheckpoint = {
+  schema_version: "synapsor.read-prerequisite-checkpoint.v1";
+  input_digest: Digest; tool_digest: Digest;
+  /** Exact approved inputs, before this producer's own confirmed additions. */
+  seed: { approved_business_clarifications: Array<{ question: string; answer: string }>;
+    approved_business_decisions: ReadPrerequisiteBusinessDecision[] };
+
   state: {
     correction_used: boolean; issue: string; new_questions: number;
     answers: Array<{ question: string; answer: string }>;
@@ -43,7 +44,8 @@ export type ReadPrerequisiteCheckpoint = {
       renewed_business_questions: number; semantic_reviews: number };
   };
   digest: Digest;
-};
+} & ({ stage: "waiting" | "decided"; pending: ReadPrerequisiteCheckpointPending; dispatch_question?: never }
+  | { stage: "dispatching"; dispatch_question: string; pending?: never });
 const obj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
 const keys = (x: Record<string, unknown>, allowed: string[]) => Object.keys(x).every(k => allowed.includes(k) && x[k] !== undefined);
 const hash = (x: unknown) => typeof x === "string" && /^sha256:[a-f0-9]{64}$/u.test(x);
@@ -55,24 +57,25 @@ function proposal(x: unknown): boolean {
     && hash(x.candidate_id) && hash(x.selection_digest) && obj(x.selection)
     && text(x.source_description, 1000) && text(x.positive_state_description, 1000);
 }
-export function readPrerequisiteCheckpoint(input: Omit<ReadPrerequisiteCheckpoint, "schema_version" | "digest">): ReadPrerequisiteCheckpoint {
+export function readPrerequisiteCheckpoint(input: ReadPrerequisiteCheckpoint extends infer C ? C extends ReadPrerequisiteCheckpoint ? Omit<C, "schema_version" | "digest"> : never : never): ReadPrerequisiteCheckpoint {
   const body = { schema_version: "synapsor.read-prerequisite-checkpoint.v1" as const, ...structuredClone(input) };
   return parseReadPrerequisiteCheckpoint({ ...body, digest: canonicalJsonDigest(body) });
 }
 /** JSON storage is not consent or a transport acknowledgement. The producer
  * checks the exact current input/catalog and reparses every retained proposal. */
 export function parseReadPrerequisiteCheckpoint(value: unknown): ReadPrerequisiteCheckpoint {
-  if (!obj(value) || !keys(value, ["schema_version", "input_digest", "tool_digest", "stage", "seed", "pending", "state", "digest"])
+  if (!obj(value) || !keys(value, ["schema_version", "input_digest", "tool_digest", "stage", "seed", "pending", "dispatch_question", "state", "digest"])
     || value.schema_version !== "synapsor.read-prerequisite-checkpoint.v1"
     || ![value.input_digest, value.tool_digest, value.digest].every(hash)
-    || !["waiting", "decided"].includes(String(value.stage)) || !obj(value.pending) || !obj(value.state)) throw invalid();
+    || !["waiting", "decided", "dispatching"].includes(String(value.stage)) || !obj(value.state) || (value.stage === "dispatching" ? value.pending !== undefined || !text(value.dispatch_question,64*1024) : !obj(value.pending) || value.dispatch_question!==undefined)) throw invalid();
   if (!obj(value.seed) || !keys(value.seed, ["approved_business_clarifications", "approved_business_decisions"])) throw invalid();
   const history = (x: unknown): x is Array<{ question: string; answer: string }> => Array.isArray(x) && x.length <= 16
     && Buffer.byteLength(JSON.stringify(x)) <= 64 * 1024
     && x.every(a => obj(a) && keys(a, ["question", "answer"]) && text(a.question, 4000) && text(a.answer, 8000));
   if (!history(value.seed.approved_business_clarifications)) throw invalid();
   parseReadPrerequisiteBusinessDecisions(value.seed.approved_business_decisions);
-  const p = value.pending, s = value.state;
+  const p = obj(value.pending) ? value.pending : {}, s = value.state;
+  if(value.stage!=="dispatching") {
   if (!keys(p, p.kind === "clarification" ? ["kind", "request", "completion", "decision"] : ["kind", "proposal", "completion", "decision"])) throw invalid();
   if (p.kind === "clarification") {
     if (!obj(p.request) || !keys(p.request, ["question", "reason", "decision", "applicability"])
@@ -93,6 +96,7 @@ export function parseReadPrerequisiteCheckpoint(value: unknown): ReadPrerequisit
       : d.state === "confirmed" ? !keys(d, ["state", "operator_evidence"]) || !text(d.operator_evidence, 2000)
       : d.state !== "revise" || !keys(d, ["state", "instruction"]) || !text(d.instruction, 8000))) throw invalid();
   }
+  }
   if (!keys(s, ["correction_used", "issue", "new_questions", "answers", "confirmed_answers", "saved_decisions", "questions", "replayed_decisions", "questioned_proposal", "metrics"])
     || typeof s.correction_used !== "boolean" || typeof s.issue !== "string" || s.issue.length > 4000
     || !count(s.new_questions) || (s.new_questions as number) > 3
@@ -104,6 +108,7 @@ export function parseReadPrerequisiteCheckpoint(value: unknown): ReadPrerequisit
     || !obj(s.metrics) || !keys(s.metrics, ["business_questions", "reused_business_answers", "repeated_business_questions", "renewed_business_questions", "semantic_reviews"])
     || ["business_questions", "reused_business_answers", "repeated_business_questions", "renewed_business_questions", "semantic_reviews"]
       .some(key => !count((s.metrics as Record<string, unknown>)[key])) || s.metrics.business_questions !== s.new_questions) throw invalid();
+  if(value.stage!=="dispatching") {
   if (p.kind === "clarification") {
     const request = p.request as Record<string, unknown>;
     const key = obj(request.decision) ? request.decision.decision_id : (request.question as string).trim().toLowerCase();
@@ -113,7 +118,9 @@ export function parseReadPrerequisiteCheckpoint(value: unknown): ReadPrerequisit
       if (!obj(last) || last.question !== request.question || last.answer !== decision.answer) throw invalid();
     }
   } else if ((s.metrics.semantic_reviews as number) < 1) throw invalid();
+  }
   parseReadPrerequisiteBusinessDecisions(s.saved_decisions);
+  if(value.stage==="dispatching" && Buffer.byteLength(JSON.stringify(value))>64*1024)throw invalid();
   const { digest, ...body } = value;
   if (canonicalJsonDigest(body) !== digest) throw invalid();
   return structuredClone(value) as ReadPrerequisiteCheckpoint;

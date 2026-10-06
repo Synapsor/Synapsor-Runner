@@ -14,6 +14,7 @@ import {
 } from "./boundary-authoring-resume.js";
 import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { readBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
 
 const binding: BoundaryAuthoringResumeBinding = {
   boundary_name: "reviewed_staging",
@@ -23,6 +24,28 @@ const binding: BoundaryAuthoringResumeBinding = {
 };
 
 describe("Boundary authoring resume state", () => {
+  it("retains an interrupted Read edit input without recording a consumed result", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-dispatch-state-"));
+    const instruction = "Keep units private and preserve unrelated access.";
+    const checkpoint = readBoundaryRevisionCheckpoint({ stage: "dispatching", dispatch_question: instruction,
+      input_digest: canonicalJsonDigest("exact input"), boundary_digest: canonicalJsonDigest(binding),
+      catalog_digest: canonicalJsonDigest("exact catalog"), tool_digest: canonicalJsonDigest("exact tools"),
+      state: { call_count: 2, correction_used: true, prerequisite_review_failed: false, issue: "",
+        clarification_count: 0, clarification_answers: [], private_decisions: [] } });
+    const input = { binding, stage: "authority_review" as const, jobIntent: "Read the register.", provider: "openai" as const,
+      model: "test", pendingReadRevision: instruction };
+    const request = { instruction, provenance: "operator" as const, privacy_only: true, checkpoint };
+    try {
+      const saved = buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: request });
+      await writeBoundaryAuthoringResumeState(root, saved, { expectedRevisionDigest: null });
+      expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: saved });
+      expect(saved.pending_read_revision_state).toEqual(request);
+      expect(saved.pending_read_revision_state).not.toHaveProperty("result_received");
+      expect(saved.completed_policy_reviews).toBeUndefined();
+      expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: { ...request, result_received: true } }))
+        .toThrow("unfinished Read question or dispatch");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("retains exact Read revision mode and consumed-unsaved disposition without granting replay", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-revision-state-"));
     const instruction = "Keep units private.\nPreserve all labels and unrelated access.";

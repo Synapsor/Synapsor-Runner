@@ -1030,7 +1030,8 @@ it.each(['clarification', 'semantic_confirmation'])('retains the actual decoded 
   const inspect = () => {
     const op = state.operations.at(-1)!;
     expect(op.state).toBe('handled');
-    expect(cp?.pending.completion).toEqual({ operation_id: op.id, request_digest: op.request_digest,
+    if(!cp || cp.stage!=="waiting")throw new Error("Expected the actual prerequisite wait checkpoint");
+    expect(cp.pending.completion).toEqual({ operation_id: op.id, request_digest: op.request_digest,
       context_digest: op.context_digest, response_digest: canonicalJsonDigest(body) });
   };
   try {
@@ -1051,7 +1052,7 @@ it('rejects malformed checkpoint state and tampered candidate before Resume egre
   const { digest: _digest, schema_version: _version, ...base } = cp;
   expect(() => readPrerequisiteCheckpoint({ ...base, state: { ...base.state, new_questions: 4 } })).toThrow('CHECKPOINT_INVALID');
   expect(() => parseReadPrerequisiteCheckpoint({ ...cp, stage: 'decided' })).toThrow('CHECKPOINT_INVALID');
-  const altered = structuredClone(base); if (altered.pending.kind !== 'semantic_confirmation') throw new Error('wrong test stage');
+  const altered = structuredClone(base); if (altered.stage === 'dispatching' || altered.pending.kind !== 'semantic_confirmation') throw new Error('wrong test stage');
   altered.pending.proposal.selection.current_state.positive_state = 'not_admitted';
   const malformed = readPrerequisiteCheckpoint(altered), unused = model([]);
   await expect(generateModelReadPrerequisite({ ...f.input, resumeCheckpoint: malformed, dependencies: { requestJson: unused } })).rejects.toThrow('READ_PREREQUISITE_MODEL_INVALID');
@@ -1148,4 +1149,25 @@ it('does not substitute an earlier technical question for a later missing busine
   expect(send).toHaveBeenCalledTimes(3); expect(questions).toHaveLength(2);
   expect(questions[0]).toContain('current admission'); expect(questions[1]).toContain('mark inclusive start');
   expect(questions[1]).not.toContain('establish current admission');
+});
+
+
+it("saves prerequisite dispatch counters without a question or semantic consent and retains exact input currentness", async () => {
+  const f = fixture(); let saved: ReadPrerequisiteCheckpoint | undefined;
+  const noSend = vi.fn();
+  await expect(generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson: noSend }, onCheckpoint: async next => {
+    if (next.stage === "dispatching") { saved = next; throw new Error("OWNED_BEFORE_DISPATCH_STOP"); }
+  } })).rejects.toThrow("OWNED_BEFORE_DISPATCH_STOP");
+  expect(noSend).not.toHaveBeenCalled(); expect(f.confirmSemanticSelection).not.toHaveBeenCalled();
+  expect(saved).toMatchObject({ stage: "dispatching", state: { correction_used: false, new_questions: 0, answers: [], metrics: { semantic_reviews: 0 } } });
+  expect(saved).not.toHaveProperty("pending");
+  const { digest: _d, schema_version: _s, ...body } = saved!;
+  expect(() => readPrerequisiteCheckpoint({ ...body, pending: { kind: "clarification", request: { question: "Invented?", reason: "Invented" } } } as any)).toThrow("CHECKPOINT_INVALID");
+  expect(() => readPrerequisiteCheckpoint({ ...body, dispatch_question: "" } as any)).toThrow("CHECKPOINT_INVALID");
+  const changed = vi.fn();
+  await expect(generateModelReadPrerequisite({ ...f.input, instruction: "A different business requirement.", resumeCheckpoint: saved, dependencies: { requestJson: changed } })).rejects.toThrow("CHECKPOINT_STALE");
+  expect(changed).not.toHaveBeenCalled();
+  const resumed = model([f.payload], request => { expect(JSON.stringify(request.body)).toContain(JSON.stringify(saved!.dispatch_question).slice(1,-1)); });
+  const result = await generateModelReadPrerequisite({ ...f.input, resumeCheckpoint: saved, dependencies: { requestJson: resumed } });
+  expect(resumed).toHaveBeenCalledOnce(); expect(f.confirmSemanticSelection).toHaveBeenCalledOnce(); expect(result.state).toBe("reviewed");
 });

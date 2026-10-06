@@ -871,6 +871,12 @@ function assertReadAssistanceHandoff(value: {
   const checkpoint = parseReadWorkloadAssistanceCheckpoint(value.read_assistance);
   if (value.generation_recovery !== undefined) validateAuthoringTransportState(value.generation_recovery);
   const generation = value.generation_recovery as AuthoringTransportState | undefined;
+  // This is the producer's reserved input, not a returned question or answer.
+  // Native transport history and the owner ledger remain independently checked.
+  if (checkpoint.stage === "dispatching") {
+    parseOwnerHandoffs(value.owner_handoffs ?? []);
+    return;
+  }
   const question = checkpoint.pending_question;
   const consumer = question.kind === "value" ? "read_value_context" : "read_clarification";
   const handoffs = parseOwnerHandoffs(value.owner_handoffs ?? []);
@@ -916,7 +922,7 @@ function normalizeReadRevisionState(value: unknown): BoundaryAuthoringReadRevisi
   }
   if (value.checkpoint !== undefined) {
     const checkpoint = parseReadBoundaryRevisionCheckpoint(value.checkpoint);
-    if (value.result_received && checkpoint.stage === "waiting") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: An unanswered Read question cannot be a consumed revision result.");
+    if (value.result_received && (checkpoint.stage === "waiting" || checkpoint.stage === "dispatching")) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: An unfinished Read question or dispatch cannot be a consumed revision result.");
   }
   return structuredClone(value) as BoundaryAuthoringReadRevision;
 }
@@ -924,16 +930,18 @@ function normalizeReadRevisionState(value: unknown): BoundaryAuthoringReadRevisi
 function assertReadRevisionHandoff(value: Record<string, unknown>): void {
   const pending = normalizeReadRevisionState(value.pending_read_revision_state);
   if (!pending.checkpoint) return;
-  const checkpoint = pending.checkpoint, question = checkpoint.pending_question;
+  const checkpoint = pending.checkpoint;
   const generation = value.generation_recovery as AuthoringTransportState | undefined;
   if (generation) validateAuthoringTransportState(generation);
   const handoffs = parseOwnerHandoffs(value.owner_handoffs ?? []);
+  if (checkpoint.stage === "dispatching") return;
+  const question = checkpoint.pending_question;
   if (question.kind === "private_prerequisite") {
     if (question.completion) assertAuthoringReadCheckpoint(generation, question.completion,
       { consumer: "read_revision", kind: "private_prerequisite", material_digest: canonicalJsonDigest(question.request) });
     else if (generation) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The private Read request lacks its native completion.");
     const nested = question.nested_checkpoint;
-    if (!nested) return;
+    if (!nested || nested.stage === "dispatching") return;
     const p = nested.pending;
     if (p.kind === "semantic_confirmation") {
       if (p.completion) assertAuthoringReadCheckpoint(generation, p.completion,

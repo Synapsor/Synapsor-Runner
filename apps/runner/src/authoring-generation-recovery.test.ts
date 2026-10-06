@@ -9,10 +9,12 @@ import { AskError, completedAuthoringQuestion, askToolSurfaceDigest, resolveAskP
 import { authoringReadCheckpoint, assertAuthoringReadCheckpoint, authoringReadDecisionCheckpoint, assertAuthoringReadDecision, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, assertAuthoringQuestionHandoff, authoringGenerationCurrentnessCode, authoringGenerationHandled, authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
   recoverAuthoringGeneration, prepareAuthoringManualRecovery, permitAuthoringManualRecovery,
   prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, createAuthoringHostEpisodeBudget,
+  beginAuthoringProducerInvocation, authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
   assertAuthoringTransportAdvance, authoringInterruptedRecoveryNeeded,
   validateAuthoringTransportState, withAuthoringGenerationRecovery,
   isAuthoringGenerationStop, type AuthoringGenerationHost, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
+import { planModelBoundaryJob, type BoundaryJobCurrentState } from "./boundary-job-model.js";
 
 const servers: Server[] = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const s of servers.splice(0)) { s.closeAllConnections(); await new Promise<void>(r => s.close(() => r())); } });
@@ -50,7 +52,7 @@ async function fixture(mode: string) {
       res.end('data: '+JSON.stringify({type:"response.incomplete",response:{status:"incomplete",incomplete_details:{reason:"max_output_tokens"},output:[]}})+'\n\n');return;
     }
     if (mode === "bad-json") { res.end('{"unfinished":'); return; }
-    if (mode === "truncated-json" || mode === "C-success" && sends === 1 || mode === "success-C" && sends === 2) { res.writeHead(200,{"content-type":"application/json","content-length":"999"}); res.write('{"unfinished":');setTimeout(()=>res.destroy(),10);return; }
+    if (mode === "truncated-json" || mode === "C-success" && sends === 1 || ["success-C","correction-C"].includes(mode) && sends === 2) { res.writeHead(200,{"content-type":"application/json","content-length":"999"}); res.write('{"unfinished":');setTimeout(()=>res.destroy(),10);return; }
     if (mode.startsWith("schema400")) {
       const payload=JSON.stringify({error:{code:"invalid_function_parameters",param:"tools[0].parameters"}});
       res.writeHead(400,{"content-type":"application/json",...(mode.endsWith("truncated")?{"content-length":"9999"}:{})});
@@ -78,6 +80,67 @@ const input = (endpoint:URL, signal = new AbortController().signal):ProviderHttp
   body:{model:"DERIVED",store:false,input:"DERIVED",max_output_tokens:10,tools:[]},signal,timeoutMs:10_000,
   stream:{format:"openai_responses"}});
 const enter = <T>(m:ReturnType<typeof memory>, run:()=>Promise<T>) => withAuthoringGenerationRecovery(()=>{configureAuthoringGenerationRecovery(m.host);return run();});
+
+describe("producer correction ownership",()=>{
+  it.each(["required-tool","planning"])("records the correction before interrupted %s dispatch and never renews it",async producer=>{
+    const f=await fixture("correction-C"),m=memory(f.endpoint,0);
+    const tools=[{name:"runner.inspect",description:"DERIVED metadata-only local fixture",input_schema:{type:"object",properties:{},additionalProperties:false}}];
+    const authorityDigest=askToolSurfaceDigest(tools),configuration=resolveAskProviderConfiguration({provider:"openai",model:"DERIVED",api_key:"local-only",authority_digest:authorityDigest,egress_acknowledged:true},{},new Date());
+    const dependencies={requestJson:(i:ProviderHttpInput)=>secureAskJsonRequest({...i,endpoint:f.endpoint,scope:"custom_loopback"})};
+    const state:BoundaryJobCurrentState={read:{boundary_name:"reviewed_records",authority:"disabled",fully_reviewed:true,resource_ids:["lab.records"],exact_reusable_revision_count:1},actions:[],
+      control_plane:{trusted_scope:"runner_injected",approval_history:"runner_proposal_ledger",model_may_supply_scope_values:false,model_may_supply_approval_history:false}};
+    const run=():Promise<unknown>=>producer==="planning" ? planModelBoundaryJob({session:{provider:"openai",model:"DERIVED",apiKey:"local-only",dependencies},
+      jobIntent:"Keep the current reviewed record access.",currentState:state,egressAcknowledged:true})
+      : runRequiredAuthoringToolCall({question:"Inspect the declared metadata.",toolName:"runner.inspect",run:question=>runAskProviderTurn({configuration,tools,question,history:[],authorityDigest,
+        gateway:{mode:"authoring",listTools:()=>tools,close:async()=>undefined,callTool:async()=>{throw new Error("No function call was sent by this empty-response fixture.");}},
+        signal:new AbortController().signal,requiredInitialToolName:"runner.inspect",completeAfterRequiredTool:true,dependencies})});
+    await expect(enter(m,run)).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(f.sends()).toBe(2);const old=JSON.stringify(m.read().operations.at(-1));
+    const owner=m.read().operations.at(-1)!.episode_id;
+    expect(m.read().episodes!.find(e=>e.id===owner)!.correction_used).toBe(true);
+    await enter(m,async()=>{await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(canonicalJsonDigest("ordinary saved producer checkpoint")));});
+    await expect(enter(m,run)).rejects.toBeDefined();
+    expect(f.sends()).toBe(3);expect(JSON.stringify(m.read().operations[1])).toBe(old);
+    expect(m.read().episodes!.find(e=>e.id===owner)!.correction_used).toBe(true);
+  });
+});
+
+describe("prospective producer controller admission",()=>{
+  it.each(["episode","iteration"])("a lost %s acknowledgement is terminal before HTTP and reuses exact remaining counters",async failure=>{
+    const f=await fixture("healthy"),m=memory(f.endpoint,0),write=m.host.write,key=canonicalJsonDigest("actual current producer input");
+    let failed=false;
+    m.host.write=async state=>{await write(state);const e=state.episodes?.at(-1);
+      if(!failed && e && (failure==="episode" ? e.iterations_used===0 : e.iterations_used===1)){failed=true;throw new Error("DERIVED private controller save acknowledgement lost");}};
+    await expect(enter(m,async()=>{const b=(await createAuthoringHostEpisodeBudget({keyDigest:key,conversational:false}))!;await b.admitIteration();}))
+      .rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(f.sends()).toBe(0);expect(m.read().operations).toEqual([]);expect(m.read().episodes).toHaveLength(1);
+    const prior=structuredClone(m.read().episodes![0]!);m.host.write=write;
+    await enter(m,async()=>{const b=(await createAuthoringHostEpisodeBudget({keyDigest:key,conversational:false}))!;
+      expect(b.ownerId).toBe(prior.id);await b.admitIteration();b.release();});
+    expect(m.read().episodes).toHaveLength(1);expect(m.read().episodes![0]!.iterations_used).toBe(prior.iterations_used+1);
+  });
+  it("does not attach a legacy orphan to invented context or erase a prospective origin",async()=>{
+    const f=await fixture("healthy"),m=memory(f.endpoint,0),key=canonicalJsonDigest("actual current producer input");
+    await enter(m,async()=>{const b=(await createAuthoringHostEpisodeBudget({keyDigest:key,conversational:false}))!;await b.admitIteration();b.release();});
+    const before=structuredClone(m.read()),changed=structuredClone(before);delete changed.episodes![0]!.context_digest;
+    expect(()=>assertAuthoringTransportAdvance(before,changed)).toThrow("BOUNDARY_AUTHORING_RESUME_INVALID");
+    m.set(changed);await expect(enter(m,()=>createAuthoringHostEpisodeBudget({keyDigest:key,conversational:false})))
+      .rejects.toMatchObject({code:"ASK_GENERATION_LEGACY_BUDGET_UNAVAILABLE"});expect(f.sends()).toBe(0);expect(m.read().episodes).toHaveLength(1);
+  });
+  it("keeps naming and wording corrections monotonic without giving an unrelated completed producer their flags",async()=>{
+    const f=await fixture("healthy"),m=memory(f.endpoint,0),key=canonicalJsonDigest("actual current producer input");
+    await enter(m,async()=>{const b=(await createAuthoringHostEpisodeBudget({keyDigest:key,conversational:false}))!;await b.admitIteration();
+      const r=await recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest);await authoringGenerationHandled([r]);b.release();
+      expect(await reserveAuthoringProducerCorrection("read_naming")).toBe(true);expect(await reserveAuthoringProducerCorrection("read_naming")).toBe(false);
+      expect(await reserveAuthoringProducerCorrection("wording")).toBe(true);expect(await reserveAuthoringProducerCorrection("wording")).toBe(false);
+      const before=structuredClone(m.read()),changed=structuredClone(before);delete changed.episodes![0]!.naming_evidence_correction_used;
+      expect(()=>assertAuthoringTransportAdvance(before,changed)).toThrow("BOUNDARY_AUTHORING_RESUME_INVALID");m.set(authoringTransportCheckpoint(m.read())!);
+      beginAuthoringProducerInvocation();expect(authoringInterruptedProducerCorrections()).toEqual({correction_used:false,wording_correction_used:false,naming_evidence_correction_used:false});
+      const next=(await createAuthoringHostEpisodeBudget({keyDigest:key,conversational:false}))!;expect(next.ownerId).not.toBe(b.ownerId);next.release();
+    });
+    expect(m.read().episodes).toHaveLength(2);expect(m.read().episodes![1]).toMatchObject({correction_used:false,wording_correction_used:false});expect(f.sends()).toBe(1);
+  });
+});
 
 describe("recorded interrupted authoring continuation",()=>{
   const checkpoint = canonicalJsonDigest("acknowledged local checkpoint");
@@ -472,7 +535,8 @@ describe("saved authoring generation transport recovery",()=>{
   it("complete malformed JSON keeps the existing one model correction, not transport recovery",async()=>{
     const f=await fixture("bad-json"),m=memory(f.endpoint);let corrections=0;
     await expect(enter(m,()=>runRequiredAuthoringToolCall({question:"DERIVED",toolName:"runner.inspect",onCorrection:()=>corrections++,
-      run:()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest)}))).rejects.toMatchObject({code:"ASK_PROVIDER_RESPONSE_INVALID"});
+      run:async()=>{const budget=await createAuthoringHostEpisodeBudget({keyDigest:canonicalJsonDigest("current fixture input"),conversational:false});
+        try{return await recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest);}finally{budget?.release();}}}))).rejects.toMatchObject({code:"ASK_PROVIDER_RESPONSE_INVALID"});
     expect(f.sends()).toBe(2);expect(corrections).toBe(1);expect(m.read().operations.map(o=>o.state)).toEqual(["refused","refused"]);
     expect(m.read().operations.every(o=>o.attempts.length===1 && o.attempts[0]!.outcome==="response")).toBe(true);
   });
@@ -564,7 +628,9 @@ describe("saved authoring generation transport recovery",()=>{
   });
   it.each([0,1,2,3])("recovery bookkeeping acknowledgement %s cannot be swallowed by narration",async failAt=>{
     const f=await fixture("narration"),m=memory(f.endpoint,0);let writes=0;const write=m.host.write;
-    m.host.write=async next=>{await write(next);if(++writes===failAt)throw new Error("DERIVED private checkpoint acknowledgement lost");};
+    m.host.write=async next=>{await write(next);
+      const op=next.operations.at(-1), target=failAt===1?"in_flight":failAt===2?"received":"handled";
+      if(failAt && op?.state===target && ++writes===1)throw new Error("DERIVED private checkpoint acknowledgement lost");};
     const run=()=>narrateValidatedAuthoringStep({session:{provider:"openai",model:"DERIVED",apiKey:"dummy-key",conversation:createModelAuthoringConversation(),
       dependencies:{requestJson:request=>secureAskJsonRequest({...request,endpoint:f.endpoint,scope:"custom_loopback",headers:{}})}},
       egressAcknowledged:true,operatorMessage:"Explain this saved state.",validatedFacts:["The saved draft is still pending."]});
@@ -579,7 +645,7 @@ describe("saved authoring generation transport recovery",()=>{
   });
   it.each(["POLICY_SOURCE_CHANGED", "BOUNDARY_AUTHORING_RESUME_CHANGED"])("known pre-write %s remains terminal through narration with its safe reason",async code=>{
     const f=await fixture("narration"),m=memory(f.endpoint,0);let writes=0;const write=m.host.write;
-    m.host.write=async next=>{if(++writes===2)throw Object.assign(new Error("DERIVED private currentness detail"),{code});await write(next);};
+    m.host.write=async next=>{if(next.operations.at(-1)?.state==="received")throw Object.assign(new Error("DERIVED private currentness detail"),{code});await write(next);};
     const run=()=>narrateValidatedAuthoringStep({session:{provider:"openai",model:"DERIVED",apiKey:"dummy-key",conversation:createModelAuthoringConversation(),
       dependencies:{requestJson:request=>secureAskJsonRequest({...request,endpoint:f.endpoint,scope:"custom_loopback",headers:{}})}},
       egressAcknowledged:true,operatorMessage:"Explain the saved state.",validatedFacts:["The saved draft is still pending."]});

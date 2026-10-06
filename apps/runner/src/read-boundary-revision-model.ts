@@ -11,6 +11,8 @@ import { ReadPrerequisiteCatalogTooLargeError, type ReviewedReadCurrentStatePrer
 export { reviewedModelAnalysisOperations } from "./read-field-privacy.js";
 import { parseReadPolicySettings, READ_POLICY_SETTINGS_SCHEMA, type ReadBoundaryPolicyChange } from "./read-boundary-policy-revision.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
+import { authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
+  withAuthoringProducerCorrection } from "./authoring-generation-recovery.js";
 import { operatorBusinessContext, operatorClarificationGate, presentOperatorClarification } from "./authoring-operator-presentation.js";
 import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionCheckpoint, type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
@@ -327,7 +329,7 @@ export async function generateModelReadBoundaryRevision(input: {
     "Never expose trusted scope fields to the model, invent identifiers, change unrequested settings, or claim anything was activated or written.",
     "Ask one concise clarification rather than guessing. Call the required tool exactly once.",
   ].join(" ");
-  const run = (question: string) => runAskProviderTurn({
+  const providerTurn = (question: string) => runAskProviderTurn({
     configuration,
     question: [question,
       ...(callCount > 0 && issue ? [`Exact validation issue from the rejected revision: ${issue.slice(0, 1_500)}. Correct this mismatch without dropping requested privacy changes.`] : []),
@@ -348,6 +350,10 @@ export async function generateModelReadBoundaryRevision(input: {
       ? authorityDigest
       : canonicalJsonDigest({ stale: true }),
   });
+  const run = async (question: string) => {
+    await checkpoint("dispatching", question);
+    return correctionUsed ? withAuthoringProducerCorrection("semantic",()=>providerTurn(question)) : providerTurn(question);
+  };
 
   const inputDigest = canonicalJsonDigest({ instruction, operator_naming_context: operatorNamingContext ?? null,
     provider: configuration.provider, model: configuration.model, endpoint: configuration.endpoint.href,
@@ -359,7 +365,7 @@ export async function generateModelReadBoundaryRevision(input: {
       || readBoundaryRevisionCatalog(input.boundary).digest !== catalog.digest) throw new Error(
       "READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The exact Read draft or catalog changed while clarification was pending; no replacement was sent.");
   };
-  let usage: ModelReadBoundaryRevisionResult["usage"], correctionUsed = false, clarificationCount = 0;
+  let usage: ModelReadBoundaryRevisionResult["usage"], correctionUsed = authoringInterruptedProducerCorrections().correction_used, clarificationCount = 0;
   let completion: ReturnType<typeof completedAuthoringQuestion>;
   const clarificationAnswers: Array<{ question: string; answer: string }> = [];
   let pending: ReadBoundaryRevisionCheckpoint["pending_question"] | undefined;
@@ -372,12 +378,12 @@ export async function generateModelReadBoundaryRevision(input: {
       ...(reviewedRelationship ? { reviewed_relationship: structuredClone(reviewedRelationship) } : {}) }, structuredClone(input.boundary));
     assertCurrent();
   };
-  const checkpoint = async (stage: "waiting" | "decided") => {
+  const checkpoint = async (stage: "waiting" | "decided" | "dispatching", dispatchQuestion?: string) => {
     if (stage === "decided" && pending) lastDecided = structuredClone(pending);
-    if (!input.onCheckpoint || !pending) return;
+    if (!input.onCheckpoint || stage !== "dispatching" && !pending) return;
     assertCurrent();
     await input.onCheckpoint(readBoundaryRevisionCheckpoint({ input_digest: inputDigest, boundary_digest: boundaryDigest,
-      catalog_digest: catalog.digest, tool_digest: authorityDigest, stage, pending_question: pending, state: {
+      catalog_digest: catalog.digest, tool_digest: authorityDigest, ...(stage === "dispatching" ? { stage, dispatch_question: dispatchQuestion! } : { stage, pending_question: pending! }), state: {
         call_count: callCount, correction_used: correctionUsed, prerequisite_review_failed: prerequisiteReviewFailed,
         issue: issue.slice(0, 1500), clarification_count: clarificationCount, clarification_answers: clarificationAnswers.slice(-16),
         private_decisions: [...privateDecisions.values()], ...(reviewedPrerequisite ? { reviewed_prerequisite: reviewedPrerequisite } : {}),
@@ -402,25 +408,32 @@ export async function generateModelReadBoundaryRevision(input: {
           "READ_BOUNDARY_REVISION_CHECKPOINT_INVALID: A retained privacy decision no longer matches the exact current field catalog.");
         privateDecisions.set(`${change.resource}.${change.field}`, structuredClone(change));
       }
-      callCount = s.call_count; correctionUsed = s.correction_used; prerequisiteReviewFailed = s.prerequisite_review_failed;
+      callCount = s.call_count; correctionUsed ||= s.correction_used; prerequisiteReviewFailed = s.prerequisite_review_failed;
       issue = s.issue; clarificationCount = s.clarification_count; clarificationAnswers.push(...s.clarification_answers);
       reviewedPrerequisite = s.reviewed_prerequisite; reviewedRelationship = s.reviewed_relationship; usage = s.usage;
-      pending = saved.pending_question; completion = pending.completion;
-      if (pending.kind === "clarification") clarification = pending.request;
-      else prerequisiteRequest = pending.request;
+      pending = saved.pending_question; completion = pending?.completion;
+      if (pending?.kind === "clarification") clarification = pending.request;
+      else if (pending) prerequisiteRequest = pending.request;
       lastDecided = saved.stage === "decided" ? structuredClone(pending) : undefined;
       await revalidateStaged();
       // The host rechecks the saved answer's current context/CAS here. This is
       // the same decided record, not a new decoder receipt or question handoff.
       if (saved.stage === "decided") await checkpoint("decided");
+      if (saved.stage === "dispatching") {
+        const continued = correctionUsed ? { result: await run(saved.dispatch_question), correction_used: false }
+          : await runRequiredAuthoringToolCall({ run, question: saved.dispatch_question, toolName: SUBMIT_READ_BOUNDARY_REVISION_TOOL,
+            onCorrection: () => { correctionUsed = true; } });
+        correctionUsed ||= continued.correction_used; acceptTurn(continued.result);
+      }
     } else {
       const initial = await runRequiredAuthoringToolCall({ run, question: baseQuestion, toolName: SUBMIT_READ_BOUNDARY_REVISION_TOOL,
         onCorrection: () => { correctionUsed = true; } });
-      correctionUsed = initial.correction_used; acceptTurn(initial.result);
+      correctionUsed ||= initial.correction_used; acceptTurn(initial.result);
     }
     while (!changes) {
       if (!clarification && !prerequisiteRequest && !relationshipRequest) {
         if (correctionUsed) break;
+        if (!await reserveAuthoringProducerCorrection("semantic")) break;
         correctionUsed = true;
         if (lastDecided) {
           const previous = pending; pending = lastDecided;

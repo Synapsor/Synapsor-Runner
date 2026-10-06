@@ -33,7 +33,7 @@ it("persists the canonical question before its owner handler and resumes with ze
   expect(first).toHaveBeenCalledOnce();const next=vi.fn(async request=>{expect(JSON.stringify(request.body)).toContain(answer);return response(valid);});
   const stages:string[]=[];
   const result=await generateModelReadBoundaryRevision({...setup(next),resumeCheckpoint:saved,onCheckpoint:async(value:any)=>{if(value)stages.push(value.stage);},clarificationHandler:async()=>{expect(next).not.toHaveBeenCalled();return {state:"answered",answer};}} as any);
-  expect(next).toHaveBeenCalledOnce();expect(stages).toEqual(["waiting","decided"]);expect(result.changes).toMatchObject([{field:"status",after:"runner_only"}]);
+  expect(next).toHaveBeenCalledOnce();expect(stages).toEqual(["waiting","decided","dispatching"]);expect(result.changes).toMatchObject([{field:"status",after:"runner_only"}]);
 });
 
 it("saved decided answer survives a callback crash without a reprompt or duplicate answer",async()=>{
@@ -102,7 +102,7 @@ it("retains a typed private field choice through correction, question pause and 
 it("explicit decline is durably decided while EOF remains waiting",async()=>{
   const {saved}=await paused();let decided:ReadBoundaryRevisionCheckpoint|undefined;const noSend=vi.fn();
   await expect(generateModelReadBoundaryRevision({...setup(noSend),resumeCheckpoint:saved,onCheckpoint:async(value:any)=>{decided=value;},clarificationHandler:async()=>({state:"declined"})} as any)).rejects.toThrow("READ_BOUNDARY_REVISION_CLARIFICATION_DECLINED");
-  expect(decided?.stage).toBe("decided");expect(decided?.pending_question.kind === "clarification" ? decided.pending_question.decision : undefined).toEqual({state:"declined"});expect(noSend).not.toHaveBeenCalled();
+  expect(decided?.stage).toBe("decided");if(!decided || decided.stage!=="decided" || decided.pending_question.kind!=="clarification")throw new Error("Expected the actual decided clarification checkpoint");expect(decided.pending_question.decision).toEqual({state:"declined"});expect(noSend).not.toHaveBeenCalled();
 });
 
 it("closed parser refuses nested extras, changed digest and oversized records",async()=>{
@@ -161,8 +161,8 @@ it("retained host relationship cannot be restored without actual current revalid
 it("accepted-result notification precedes caller save and does not silently clear a retained decision",async()=>{
   const {saved}=await paused();let durable:ReadBoundaryRevisionCheckpoint|undefined=saved;const calls=vi.fn(async()=>response(valid));let accepted=false;
   await expect(generateModelReadBoundaryRevision({...setup(calls),resumeCheckpoint:saved,clarificationHandler:async()=>({state:"answered",answer}),onCheckpoint:async(value:any,_boundary:any,result:any)=>{
-    if(value)durable=value;else {accepted=true;expect(result.changes).toMatchObject([{field:"status",after:"runner_only"}]);expect(durable?.stage).toBe("decided");throw new Error("OWNED_GUARDED_SAVE_REFUSED");}
-  }} as any)).rejects.toThrow("OWNED_GUARDED_SAVE_REFUSED");expect(accepted).toBe(true);expect(durable?.stage).toBe("decided");expect(calls).toHaveBeenCalledOnce();
+    if(value)durable=value;else {accepted=true;expect(result.changes).toMatchObject([{field:"status",after:"runner_only"}]);expect(durable?.stage).toBe("dispatching");expect(durable?.state.clarification_answers).toEqual([{question:question.question,answer}]);throw new Error("OWNED_GUARDED_SAVE_REFUSED");}
+  }} as any)).rejects.toThrow("OWNED_GUARDED_SAVE_REFUSED");expect(accepted).toBe(true);expect(durable?.stage).toBe("dispatching");expect(durable?.state.clarification_answers).toEqual([{question:question.question,answer}]);expect(calls).toHaveBeenCalledOnce();
 });
 
 it.each([1,2])("carries a real decoded completion receipt for owner wait at actual turn%s",async turn=>{
@@ -171,9 +171,29 @@ it.each([1,2])("carries a real decoded completion receipt for owner wait at actu
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));const endpoint=new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
   const host={available:()=>true,read:()=>state,current:async()=>canonicalJsonDigest(saved??"owned_revision_origin"),write:async(value:AuthoringTransportState)=>{validateAuthoringTransportState(value);state=structuredClone(value);}};
   try {await expect(withAuthoringGenerationRecovery(()=>{configureAuthoringGenerationRecovery(host);return generateModelReadBoundaryRevision({...setup((request:any)=>secureAskJsonRequest({...request,endpoint,scope:"custom_loopback"})),onCheckpoint:async(value:any)=>{saved=value;},clarificationHandler:async()=>{
-    const op=state.operations.at(-1)!;expect(saved?.pending_question.completion).toMatchObject({operation_id:op.id,request_digest:op.request_digest,context_digest:op.context_digest,
+    const op=state.operations.at(-1)!;if(!saved || saved.stage!=="waiting")throw new Error("Expected the actual waiting clarification checkpoint");expect(saved.pending_question.completion).toMatchObject({operation_id:op.id,request_digest:op.request_digest,context_digest:op.context_digest,
       response_digest:canonicalJsonDigest(response({clarification_request:{...question,question:question.question+String(sends)}}).body)});
     expect(op.state).toBe("handled");return sends<turn ? {state:"answered",answer} : undefined;
   }} as any);})).rejects.toMatchObject({code:"ASK_CANCELLED"});expect(sends).toBe(turn);}
   finally {server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}
+});
+
+
+it("saves a dispatching revision with no invented question before send and revalidates its ordinary continuation", async () => {
+  let saved: ReadBoundaryRevisionCheckpoint | undefined;
+  const noSend = vi.fn();
+  await expect(generateModelReadBoundaryRevision({ ...setup(noSend), onCheckpoint: async next => {
+    if (next?.stage === "dispatching") { saved = next; throw new Error("OWNED_BEFORE_DISPATCH_STOP"); }
+  } })).rejects.toThrow("OWNED_BEFORE_DISPATCH_STOP");
+  expect(noSend).not.toHaveBeenCalled(); expect(saved).toMatchObject({ stage: "dispatching", state: { call_count: 0, correction_used: false } });
+  expect(saved).not.toHaveProperty("pending_question");
+  const { digest: _d, schema_version: _s, ...body } = saved!;
+  expect(() => readBoundaryRevisionCheckpoint({ ...body, pending_question: { kind: "clarification", request: question, question: question.question } } as any)).toThrow("CHECKPOINT_INVALID");
+  expect(() => readBoundaryRevisionCheckpoint({ ...body, dispatch_question: "" } as any)).toThrow("CHECKPOINT_INVALID");
+  const changed = vi.fn();
+  await expect(generateModelReadBoundaryRevision({ ...setup(changed), instruction: "A different business request.", resumeCheckpoint: saved })).rejects.toThrow("CHECKPOINT_STALE");
+  expect(changed).not.toHaveBeenCalled();
+  const resumed = vi.fn(async request => { expect(JSON.stringify(request.body)).toContain(JSON.stringify(saved!.dispatch_question).slice(1,-1)); return response(valid); });
+  const result = await generateModelReadBoundaryRevision({ ...setup(resumed), resumeCheckpoint: saved });
+  expect(resumed).toHaveBeenCalledOnce(); expect(result.changes).toMatchObject([{ field: "status", after: "runner_only" }]);
 });

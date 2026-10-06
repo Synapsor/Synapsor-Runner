@@ -76,7 +76,9 @@ describe("canonical bounded Read assistance decision attribution", () => {
   });
 
   it("refuses missing, unknown and oversize decisions without inferring a decline", () => {
-    const waiting = checkpoint().pending_question;
+    const saved = checkpoint();
+    if (saved.stage === "dispatching") throw new Error("The fixture must contain a waiting question.");
+    const waiting = saved.pending_question;
     expect(() => readWorkloadAssistanceDecisionAnswer(waiting)).toThrow("CHECKPOINT_INVALID");
     expect(() => readWorkloadAssistanceDecisionAnswer({ kind: "clarification", request, question: questionText,
       decision: { state: "answered", answer: "a".repeat(1001) } })).toThrow("CHECKPOINT_INVALID");
@@ -192,6 +194,7 @@ async function completedPair(kind: ReadWorkloadAssistanceQuestion["kind"] = "cla
 }
 function decidedPair(pair: Awaited<ReturnType<typeof completedPair>>, decision: ReadWorkloadAssistanceQuestion["decision"]) {
   const cp = checkpoint({ ...pair.cp.pending_question, decision } as ReadWorkloadAssistanceQuestion);
+  if (cp.stage !== "decided") throw new Error("The fixture must contain a decided question.");
   const answer = readWorkloadAssistanceDecisionAnswer(cp.pending_question);
   const handoff = answerOwnerHandoff(pair.handoff, answer, pair.handoff.context_digest);
   const generation = authoringQuestionAnswerCheckpoint(pair.next.generation_recovery, ownerHandoffCheckpoint(pair.handoff),
@@ -201,6 +204,26 @@ function decidedPair(pair: Awaited<ReturnType<typeof completedPair>>, decision: 
 }
 
 describe("Read assistance actual completion linkage and atomic persistence", () => {
+  it("preserves a dispatch reservation without inventing a question or acknowledging an uncertain local save", async () => {
+    const pair = await completedPair();
+    const { digest: _digest, pending_question: _pending, dispatch_question: _dispatch, ...body } = checkpoint();
+    const raw = readWorkloadAssistanceCheckpoint({ ...body, stage: "dispatching",
+      dispatch_question: "Map the selected visit stages using the current reviewed inputs." });
+    const next = build(raw, { previous: pair.base, generationRecovery: pair.base.generation_recovery });
+    await writeBoundaryAuthoringResumeState(pair.root, next, { expectedRevisionDigest: pair.base.revision_digest });
+    const loaded = await readBoundaryAuthoringResumeState(pair.root, binding);
+    if (loaded.status !== "ready") throw new Error("Expected the reserved Read input to remain inspectable.");
+    expect(loaded.value.read_assistance).toEqual(raw);
+    expect(loaded.value.read_assistance).not.toHaveProperty("pending_question");
+    expect(loaded.value.owner_handoffs ?? []).toEqual([]);
+    expect(loaded.value.read).toBeUndefined();
+    expect(loaded.value.generation_recovery).toEqual(pair.base.generation_recovery);
+    expect(loaded.value.generation_recovery!.operations[0]).toMatchObject({ state: "handled" });
+    expect(loaded.value.generation_recovery!.operations[0]).not.toHaveProperty("checkpoint_seen", true);
+    expect(() => build(resign({ ...raw, pending_question: checkpoint().pending_question }) as ReadWorkloadAssistanceCheckpoint))
+      .toThrow("CHECKPOINT_INVALID");
+  });
+
   it.each(["clarification", "value", "relationship"] as const)("binds %s to the actual consumer and canonical answered owner record", async kind => {
     const pair = await completedPair(kind);
     expect(pair.base.generation_recovery!.operations[0]!.state).toBe("handled");

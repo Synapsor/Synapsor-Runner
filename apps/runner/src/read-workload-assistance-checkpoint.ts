@@ -34,8 +34,6 @@ export type ReadWorkloadAssistanceCheckpoint = {
   boundary_digest: Digest;
   catalog_digest: Digest;
   tool_digest: Digest;
-  stage: "waiting" | "decided";
-  pending_question: ReadWorkloadAssistanceQuestion;
   state: {
     call_count: number; attempt: number; phase: ReadWorkloadDiagnostic["phase"];
     correction_used: boolean; relationship_reviews: number; relationship_review_limit: 0 | 3;
@@ -56,7 +54,8 @@ export type ReadWorkloadAssistanceCheckpoint = {
     usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
   };
   digest: Digest;
-};
+} & ({ stage: "waiting" | "decided"; pending_question: ReadWorkloadAssistanceQuestion; dispatch_question?: never }
+  | { stage: "dispatching"; dispatch_question: string; pending_question?: never });
 
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const exact = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).every(k => keys.includes(k));
@@ -77,7 +76,7 @@ export class ReadWorkloadAssistancePausedError extends Error {
   constructor(detail = "The assistance question remains pending. No decline, replacement generation or Read authority was inferred.") { super(`READ_WORKLOAD_AUTHORING_PAUSED: ${detail}`); }
 }
 
-export function readWorkloadAssistanceCheckpoint(input: Omit<ReadWorkloadAssistanceCheckpoint, "schema_version" | "digest">): ReadWorkloadAssistanceCheckpoint {
+export function readWorkloadAssistanceCheckpoint(input: ReadWorkloadAssistanceCheckpoint extends infer C ? C extends ReadWorkloadAssistanceCheckpoint ? Omit<C, "schema_version" | "digest"> : never : never): ReadWorkloadAssistanceCheckpoint {
   const body = { schema_version: "synapsor.read-workload-assistance-checkpoint.v1" as const, ...structuredClone(input) };
   return parseReadWorkloadAssistanceCheckpoint({ ...body, digest: canonicalJsonDigest(body) });
 }
@@ -135,12 +134,12 @@ function assertAssistanceQuestion(value: unknown, stage: "waiting" | "decided"):
  * decision against its CURRENT catalog and compares exact canonical input. */
 export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkloadAssistanceCheckpoint {
   const fail = () => new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: Preserve the pending Read assistance state; it is malformed or changed.");
-  if (!record(value) || !exact(value, ["schema_version", "input_digest", "boundary_digest", "catalog_digest", "tool_digest", "stage", "pending_question", "state", "digest"])
+  if (!record(value) || !exact(value, ["schema_version", "input_digest", "boundary_digest", "catalog_digest", "tool_digest", "stage", "pending_question", "dispatch_question", "state", "digest"])
     || value.schema_version !== "synapsor.read-workload-assistance-checkpoint.v1"
     || ![value.input_digest, value.boundary_digest, value.catalog_digest, value.tool_digest, value.digest].every(digest)
-    || !["waiting", "decided"].includes(value.stage as string) || !record(value.state) || !record(value.pending_question)) throw fail();
-  const q = value.pending_question, s = value.state;
-  assertAssistanceQuestion(q, value.stage as "waiting" | "decided");
+    || !["waiting", "decided", "dispatching"].includes(value.stage as string) || !record(value.state) || (value.stage === "dispatching" ? value.pending_question !== undefined || !text(value.dispatch_question, 64 * 1024) : !record(value.pending_question) || value.dispatch_question !== undefined)) throw fail();
+  const q = record(value.pending_question) ? value.pending_question : {}, s = value.state;
+  if (value.stage !== "dispatching") assertAssistanceQuestion(q, value.stage as "waiting" | "decided");
   const flags = ["correction_used", "clarification_from_invalid_naming", "clarification_resolved", "mechanical_clarification_resolved",
     "value_request_resolved", "repeated_assistance_request", "naming_evidence_correction_used"];
   if (!exact(s, ["call_count", "attempt", "phase", "relationship_reviews", "relationship_review_limit", "clarified_targets", "clarification_answers", "unresolved_answers", "reviewed_replacements",
@@ -166,7 +165,7 @@ export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkl
         || ![r.previous_digest, r.next_digest, r.context_digest].every(digest) || r.actor !== "local_installation_operator") throw fail();
     }
   }
-  const pendingReplacement = q.replacement;
+  const pendingReplacement = record(q) ? q.replacement : undefined;
   if (record(pendingReplacement) && pendingReplacement.proposed_answer !== undefined
     && s.clarified_targets.length + ((s.unresolved_answers as unknown[] | undefined)?.length ?? 0) >= 4) throw fail();
   for (const d of s.diagnostics) if (!record(d) || !exact(d, ["attempt", "phase", "category", "code", "reasons"])

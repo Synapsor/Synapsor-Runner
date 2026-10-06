@@ -4380,6 +4380,20 @@ function generationRevisionMeaning(revision: BoundaryAuthoringResumeState["pendi
   if (!revision?.checkpoint) return revision ?? null;
   return { ...revision, checkpoint: generationActionMeaning({ intent: revision.instruction, checkpoint: revision.checkpoint })!.checkpoint };
 }
+/** Controller reservations are protected by Resume CAS and their durable
+ * allowance, not a new business identity. Retain all actual inputs, answers,
+ * selections and the producer's exact dispatch question in that identity. */
+function generationReadControllerMeaning(checkpoint: ReadWorkloadAssistanceCheckpoint | ReadBoundaryRevisionCheckpoint | ReadPrerequisiteCheckpoint | undefined): unknown {
+  if (!checkpoint) return null;
+  const { digest: _digest, state, ...body } = checkpoint;
+  const meaning = { ...state } as Record<string, unknown>;
+  for (const key of ["call_count", "attempt", "correction_used", "relationship_reviews",
+    "naming_evidence_correction_used", "clarification_count", "new_questions", "metrics", "usage"])
+    delete meaning[key];
+  const pending = "pending_question" in body ? body.pending_question : undefined;
+  return { ...body, state: meaning, ...(pending?.kind === "private_prerequisite" && pending.nested_checkpoint
+    ? { pending_question: { ...pending, nested_checkpoint: generationReadControllerMeaning(pending.nested_checkpoint) } } : {}) };
+}
 export async function boundaryGenerationContext(projectRoot: string, resume: BoundaryAuthoringResumeState,
   permit?: ProjectAuthorityMutationPermit): Promise<`sha256:${string}`> {
   const context = await loadBoundaryReviewContext(projectRoot);
@@ -4391,7 +4405,9 @@ export async function boundaryGenerationContext(projectRoot: string, resume: Bou
     action: generationActionMeaning(resume.action), revision: generationRevisionMeaning(resume.pending_action_revision),
     request: resume.pending_job_revision ?? null, removal: resume.pending_action_removal ?? null,
     addition: resume.pending_action_addition ?? null, read: resume.read ?? null,
-    read_assistance: resume.read_assistance ?? null, read_revision: resume.pending_read_revision_state ?? null,
+    read_assistance: generationReadControllerMeaning(resume.read_assistance),
+    read_revision: resume.pending_read_revision_state ? { ...resume.pending_read_revision_state,
+      ...(resume.pending_read_revision_state.checkpoint ? { checkpoint: generationReadControllerMeaning(resume.pending_read_revision_state.checkpoint) } : {}) } : null,
     pending_policy_review: resume.pending_policy_review ?? null, owner_handoffs: resume.owner_handoffs ?? [],
     questions: (resume.operator_questions ?? []).map(question => {
       if (!question.budget) return question;
@@ -4792,7 +4808,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const {store}=await inputPolicyContext();
     return sourceInputFidelity(source,sources,store,[draft]).findings;
   };
-  const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage, permit?: ProjectAuthorityMutationPermit): Promise<void> => {
+  const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage, permit?: ProjectAuthorityMutationPermit,
+    acknowledgeGeneration = true): Promise<void> => {
     assertRunning();
     if (!input.authoringChat
       || !currentResumeBinding
@@ -4825,7 +4842,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         ...(selectedResumeModel.provider === "openai_compatible"
           ? { metadataDestinationDigest: canonicalJsonDigest(authoringDestination(selectedResumeModel)) } : {}),
         conversation: authoringConversation?.turns,
-        generationRecovery: authoringTransportCheckpoint(generationRecovery),
+        // A pre-dispatch controller snapshot reserves existing limits. It is
+        // not a consumer acknowledgement of a response or uncertain save.
+        generationRecovery: acknowledgeGeneration ? authoringTransportCheckpoint(generationRecovery) : generationRecovery,
         ownerHandoffs,
         operatorQuestions,
         readAssistanceCheckpoint: readAssistanceCheckpoint ?? null,
@@ -4988,7 +5007,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       const checkpoint = pendingReadRevisionState?.checkpoint, parent = checkpoint?.pending_question;
       const nested = parent?.kind === "private_prerequisite" ? parent.nested_checkpoint : undefined;
       const correction = confirmingQuestion?.target.phase === "read_prerequisite_correction";
-      if (!checkpoint || parent?.kind !== "private_prerequisite" || !nested || nested.stage !== "waiting") throw new PolicySourceChangedError();
+      if (!checkpoint || checkpoint.stage === "dispatching" || parent?.kind !== "private_prerequisite" || !nested || nested.stage !== "waiting") throw new PolicySourceChangedError();
       if (correction ? nested.pending.kind !== "semantic_confirmation" || handoff.completion !== undefined
         : nested.pending.kind !== "clarification" || nested.pending.request.question !== handoff.question
           || canonicalJsonDigest(nested.pending.completion ?? null) !== canonicalJsonDigest(handoff.completion ?? null))
@@ -5010,7 +5029,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             questions: body.state.questions.filter(q => !readPrerequisiteDecisions.some(d => d.question.trim().toLowerCase() === q)) } : {}),
           saved_decisions: saved ? parseReadPrerequisiteBusinessDecisions([
             ...body.state.saved_decisions.filter(record => record.decision_id !== saved.decision_id), saved]) : body.state.saved_decisions } });
-      if (decided.pending.kind === "semantic_confirmation" && decided.pending.completion)
+      if (decided.pending?.kind === "semantic_confirmation" && decided.pending.completion)
         generationRecovery = authoringReadDecisionCheckpoint(generationRecovery, decided.pending.completion,
           decided.pending.proposal, decided.pending.decision);
       const { digest: _outerDigest, schema_version: _outerVersion, ...outer } = checkpoint;
@@ -7945,7 +7964,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           const pending = readAssistanceCheckpoint.pending_question;
           const answers = [...readAssistanceCheckpoint.state.clarified_targets];
           const retired = new Set((readAssistanceCheckpoint.state.reviewed_replacements ?? []).map(review => review.previous_index));
-          if (pending.kind === "clarification" && pending.decision?.state === "answered") {
+          if (pending?.kind === "clarification" && pending.decision?.state === "answered") {
             if (pending.replacement?.confirmed) retired.add(pending.replacement.previous_index);
             answers.push({ ...pending.request, answer: pending.decision.answer });
           }
@@ -7976,7 +7995,17 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           ...(readAssistanceCheckpoint ? { assistance_history: structuredClone(readAssistanceCheckpoint) } : {}) };
         readAssistanceCheckpoint = undefined;
       } else {
-        const checked = parseReadWorkloadAssistanceCheckpoint(checkpoint), q = checked.pending_question;
+        const checked = parseReadWorkloadAssistanceCheckpoint(checkpoint);
+        if (checked.stage === "dispatching") {
+          // Preserve the producer's actual input and spent limits before I/O.
+          // A raw controller reservation is neither an operator question nor
+          // acknowledgement of any previous uncertain response or mutation.
+          readAssistanceCheckpoint = checked;
+          await persistAuthoringResume("read_mapping", permit, false);
+          if (resumePersistenceBlocked) throw checkpointSaveFailure("The Read dispatch checkpoint");
+          return;
+        }
+        const q = checked.pending_question;
         const consumer = q.kind === "value" ? "read_value_context" : "read_clarification";
         const last = ownerHandoffs.at(-1);
         const sameQuestion = last?.consumer === consumer && last.question === q.question
@@ -8119,7 +8148,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       await persistAuthoringResume("read_mapping");
       await assertAuthoringResumeCurrent(undefined);
       const pending = ownerHandoffs.at(-1);
-      if (pending?.state === "waiting" && readAssistanceCheckpoint?.pending_question.kind === "relationship") {
+      if (pending?.state === "waiting" && readAssistanceCheckpoint?.pending_question?.kind === "relationship") {
         reviewedRelationshipAnswer = { id: pending.id, digest: pending.digest, context: await ownerQuestionContext() };
       }
       return { ...verified, candidate: mappingBoundary };
@@ -10117,7 +10146,15 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       if (explorationBoundaryCandidateDigest(currentBoundary) !== current.bundle.candidate_digest) {
         throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The exact Read candidate changed. Preserve this question and inspect the current saved job.");
       }
-      const checked = parseReadBoundaryRevisionCheckpoint(checkpoint), q = checked.pending_question;
+      const checked = parseReadBoundaryRevisionCheckpoint(checkpoint);
+      if (checked.stage === "dispatching" || checked.pending_question.kind === "private_prerequisite"
+        && checked.pending_question.nested_checkpoint?.stage === "dispatching") {
+        pendingReadRevisionState = { ...pendingReadRevisionState, checkpoint: checked };
+        await persistAuthoringResume("authority_review", permit, false);
+        if (resumePersistenceBlocked) throw checkpointSaveFailure("The Read edit dispatch checkpoint");
+        return;
+      }
+      const q = checked.pending_question;
       if (q.kind === "private_prerequisite") {
         const checkpointNative = (completion: NonNullable<AuthoringOwnerHandoff["completion"]> | undefined,
           kind: "private_prerequisite" | "prerequisite_mapping", material: unknown) => {
@@ -10132,13 +10169,13 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         };
         checkpointNative(q.completion, "private_prerequisite", q.request);
         const nested = q.nested_checkpoint;
-        if (nested?.pending.kind === "semantic_confirmation") {
+        if (nested?.pending?.kind === "semantic_confirmation") {
           checkpointNative(nested.pending.completion, "prerequisite_mapping", nested.pending.proposal);
           if (nested.stage === "decided" && nested.pending.completion)
             generationRecovery = authoringReadDecisionCheckpoint(generationRecovery, nested.pending.completion,
               nested.pending.proposal, nested.pending.decision);
         }
-        if (nested?.pending.kind === "clarification") {
+        if (nested?.pending?.kind === "clarification") {
           const p = nested.pending, last = ownerHandoffs.at(-1);
           const same = last?.consumer === "read_revision_prerequisite" && last.question === p.request.question
             && canonicalJsonDigest(last.completion ?? null) === canonicalJsonDigest(p.completion ?? null);

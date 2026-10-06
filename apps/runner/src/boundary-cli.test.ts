@@ -64,6 +64,7 @@ import {
   promptBoundaryMappingModel,
   reviewSavedBoundaryPolicy,
 } from "./boundary-commands.js";
+import { readWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import {
   createSavedBoundary,
   renameSavedBoundary,
@@ -18066,6 +18067,33 @@ describe("saved post-edit review uses reader evidence after writer setup", () =>
 
 
 describe("public saved-job connection recovery control", () => {
+  it("keeps Read reservations in the same generation target while binding actual inputs and business answers", async () => {
+    const f = await staleSemanticRevalidationFixture();
+    try {
+      const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
+      const state = { call_count: 0, attempt: 1, phase: "initial" as const, correction_used: false, relationship_reviews: 0,
+        relationship_review_limit: 3 as const, clarified_targets: [], clarification_answers: [], clarification_from_invalid_naming: false,
+        clarification_resolved: false, mechanical_clarification_resolved: false, value_request_resolved: false,
+        repeated_assistance_request: false, naming_evidence_correction_used: false, diagnostics: [] };
+      const input = { stage: "dispatching" as const, dispatch_question: "Map the current selected visit stages.",
+        input_digest: canonicalJsonDigest("actual approved inputs"), boundary_digest: canonicalJsonDigest(binding),
+        catalog_digest: canonicalJsonDigest("actual catalog"), tool_digest: canonicalJsonDigest("actual tools"), state };
+      const resume = (checkpoint: ReturnType<typeof readWorkloadAssistanceCheckpoint>) => buildBoundaryAuthoringResumeState({ binding,
+        stage: "read_mapping", jobIntent: "List selected visit status.", provider: "openai", model: "gpt-test",
+        readAssistanceCheckpoint: checkpoint });
+      const original = await boundaryGenerationContext(f.root, resume(readWorkloadAssistanceCheckpoint(input)));
+      const reserved = readWorkloadAssistanceCheckpoint({ ...input, state: { ...state, call_count: 2, attempt: 3,
+        correction_used: true, naming_evidence_correction_used: true, relationship_reviews: 1 } });
+      expect(await boundaryGenerationContext(f.root, resume(reserved))).toBe(original);
+      for (const changed of [{ ...input, dispatch_question: "Map a different business view." },
+        { ...input, input_digest: canonicalJsonDigest("different approved inputs") },
+        { ...input, state: { ...state, clarification_resolved: true,
+          clarified_targets: [{ resource: "public.service_visits", field: "status", reason: "Clarify its business meaning.",
+            question: "Which stages?", answer: "Scheduled and completed visits." }], clarification_answers: ["Scheduled and completed visits."] } }]) {
+        expect(await boundaryGenerationContext(f.root, resume(readWorkloadAssistanceCheckpoint(changed)))).not.toBe(original);
+      }
+    } finally { await f.dispose(); }
+  });
   it.each(["native-legacy-association", "native-unconfirmed-association", "native-literal-retention", "native-no-confirm", "native-cancel-confirm", "native-source-cas", "native-answer-too-large", "native-remap-failed", "native-history-full", "native-index-save-failed", "native-meaning-retention", "native-source-drift", "native-competing", "native-decline", "native-blank-cancel", "native-replace-yes", "native-blank", "native-replace-no", "pause", "answer", "decline", "blank", "blank-cancel", "replace-no", "replace-yes", "replace-source-drift", "replace-competing", "decline-source-drift", "decline-competing", "source-drift", "competing", "registered-refusal", "diagnostic-refusal", "checkpoint-failed", "checkpoint-noop", "read-ack-race", "resume-ack-race"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async rawMode => {
     const mode = ["native-meaning-retention", "native-literal-retention"].includes(rawMode) ? "answer" : rawMode.replace(/^native-/u, "");
     const native = rawMode.startsWith("native-");
