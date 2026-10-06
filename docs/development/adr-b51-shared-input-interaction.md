@@ -237,9 +237,23 @@ this case and the unchanged healthy control. Independent replay also passed:
 actual saved Source, Resume and authority agree; both native activation selectors
 remain absent. This establishes the scoped scripted onboarding route only.
 
-This is a development checkpoint, not accepted delivery. Selected-baseline
-editing, independent route verdicts, final gates and installed acceptance remain
-required. The earlier 88 assertions
+The selected disabled-baseline edit also passed independent replay. A plain
+request changes the first Action to two reviewers while the second keeps one.
+The actual before/after readback and explicit decision save the disabled revision;
+Input records, independent reviewer arrangements, private eligibility, effects,
+Version, Read semantics and surviving duties remain intact. Source applicability
+records the exact operator override separately from the prior policy. Normal
+revision/timestamp advancement is checked explicitly. No activation, provider or
+source DB effect is claimed. The model-only advisory still says one reviewer and
+the selected-Action footer is narrower than the saved whole program; these are
+disclosed observations, not omitted peer semantics or an overall UX verdict.
+
+The affected public regression file passed all21 cases on the integrated test pin,
+and typecheck passed. Detailed independent onboarding and edit adjudications and
+actual process-closure evidence remain in the external qualification packet.
+This is a development checkpoint, not accepted delivery. The independent withheld
+Resume control, genuine terminal controls, final gates and installed acceptance
+remain required. The earlier 88 assertions
 retain their limited scope. Controlled successful replies in the new restart
 fixtures derive references from actual transmitted frames and declared answers.
 Version blank/unknown handling already exists; the added Version raw-save
