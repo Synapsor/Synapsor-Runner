@@ -3338,10 +3338,11 @@ async function presentReadMeaningInteraction(input: {
     return { kind: "decision", binding: view.binding, accepted: accepted ?? null };
   }
   const choice = await input.session.chooseOption?.("SAVED MEANING IS STILL PENDING", [
-    { value: "pending", label: "Keep this meaning pending [recommended]", detail: "The earlier response stays saved; no meaning or model request is inferred." },
-    { value: "answer", label: "Answer this same business question", detail: "Retain the earlier response and record a new answer for explicit review." },
-  ], { initialValue: "pending", context: [...view.material] });
-  return { kind: "pending", binding: view.binding, choice: choice === "answer" ? "answer" : "keep" };
+    { value: "keep", label: "Keep this meaning pending [recommended]", detail: "The earlier response stays saved; no meaning or model request is inferred." },
+    { value: "review", label: "Review the saved answer", detail: "Reopen its exact readback without asking again or adopting it automatically." },
+    ...(view.canReplace ? [{ value: "replace", label: "Replace the answer", detail: "Answer this same question again; retain the earlier words and review the new response explicitly." }] : []),
+  ], { initialValue: "keep", context: [...view.material] });
+  return { kind: "pending", binding: view.binding, choice: choice === "review" || choice === "replace" ? choice : "keep" };
 }
 
 function readMeaningQuestionMaterial(model: ActionModelSuggestionSession, request: ModelReadClarificationRequest,
