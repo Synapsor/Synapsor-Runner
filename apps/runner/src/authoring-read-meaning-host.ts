@@ -104,15 +104,16 @@ export function createReadMeaningHost(input: {
   });
   const resumePending = async (request: ModelReadClarificationRequest) => {
     const saved = readQuestion();
-    if (!saved.raw_answer || saved.disposition !== "unknown" && saved.raw_answer.text.trim()) return true;
+    if (!saved.raw_answer) return true;
     const cp = access.readCheckpoint();
     const blankWaiting = !saved.raw_answer.text.trim() && !saved.confirmation && cp?.stage === "waiting"
       && cp.pending_question.kind === "clarification" && !cp.pending_question.decision;
     if (!blankWaiting) {
-      const response = await exchange({ kind: "pending", binding: binding(), canAnswer: true, defaultValue: "keep",
+      const response = await exchange({ kind: "pending", binding: binding(), canReplace: true, defaultValue: "keep",
         material: [saved.presentation?.text ?? request.question, `Earlier response: ${saved.raw_answer.text}`,
           "A new response uses the same existing Read clarification allowance."] });
-      if (response.kind !== "pending" || response.choice !== "answer") return false;
+      if (response.kind !== "pending" || response.choice === "keep") return false;
+      if (response.choice === "review") return true;
     }
     await access.mutate(async permit => {
       await assertCurrent(permit);

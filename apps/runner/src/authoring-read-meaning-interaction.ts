@@ -17,8 +17,10 @@ type View = AuthoringQuestionInteraction<ReadMeaningInteractionBinding>;
 export type ReadMeaningInteraction =
   | (Extract<View, { kind: "question" }> & { request: ModelReadClarificationRequest; previous?: PreviousReadMeaning })
   | (Extract<View, { kind: "readback" }> & { purpose: "meaning" | "decline" | "replacement" })
-  | Extract<View, { kind: "pending" }>;
-export type ReadMeaningInteractionResponse = AuthoringQuestionResponse<ReadMeaningInteractionBinding>;
+  | (Omit<Extract<View, { kind: "pending" }>, "canAnswer"> & { canReplace: boolean });
+export type ReadMeaningInteractionResponse =
+  | Exclude<AuthoringQuestionResponse<ReadMeaningInteractionBinding>, { kind: "pending" }>
+  | { kind: "pending"; binding: ReadMeaningInteractionBinding; choice: "keep" | "review" | "replace" };
 
 /** Only a view of the existing native initial-Read records. Counter advancement
  * is still validated by the producer and Resume journal; no new stored cursor. */
@@ -34,6 +36,6 @@ export function assertReadMeaningInteractionResponse(view: ReadMeaningInteractio
   if (canonicalJsonDigest(view.binding) !== canonicalJsonDigest(response.binding)
     || view.kind === "question" && (response.kind !== "answer" || response.raw !== null && typeof response.raw !== "string")
     || view.kind === "readback" && (response.kind !== "decision" || response.accepted !== null && typeof response.accepted !== "boolean")
-    || view.kind === "pending" && (response.kind !== "pending" || !["keep", "answer"].includes(response.choice)
-      || !view.canAnswer && response.choice !== "keep")) throw new PolicySourceChangedError();
+    || view.kind === "pending" && (response.kind !== "pending" || !["keep", "review", "replace"].includes(response.choice)
+      || !view.canReplace && response.choice === "replace")) throw new PolicySourceChangedError();
 }

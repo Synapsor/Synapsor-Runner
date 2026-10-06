@@ -16,7 +16,7 @@ import { READ_PROCESS_FACTS as facts } from "./source-read-process-contract.js";
 import type { BoundaryReviewInteractiveSession } from "../boundary-cli-picker.js";
 
 const [root, mode, stop] = process.argv.slice(2);
-if (!root || !["start", "restart"].includes(mode!) || !["unanswered", "proposal", "confirmed", "returned"].includes(stop!))
+if (!root || !["start", "restart"].includes(mode!) || !["unanswered", "proposal", "confirmed", "returned", "replace", "keep"].includes(stop!))
   throw new Error("Owned root/mode/stop required.");
 const inspection = ownedProgramInspection();
 process.env.OWNED_READ_PROCESS_URL = "postgresql://fixture.invalid/never-opened";
@@ -32,15 +32,16 @@ const localRead = async () => {
   if (question?.kind !== "attributed_meaning" || question.target.resource !== "studio.parcels" || question.target.field !== "units")
     throw new Error("Only the declared business question has a supplied answer.");
   prompts++;
-  return stop === "unanswered" ? undefined : facts.raw;
+  return stop === "unanswered" ? undefined : stop === "replace" ? facts.replacementRaw : facts.raw;
 };
 const select = async (choice: { title?: string; message?: string; initialValue?: string; options: { value: string }[] }) => {
   const values = choice.options.map(option => option.value);
-  const title = choice.message ?? choice.title ?? "";
+  const title = choice.title ?? choice.message ?? "";
+  const prompt = choice.message ?? title;
   let selected: string | undefined;
-  if (title === "Record these exact words as the meaning for this task?") {
-    assert.equal(choice.initialValue, "no"); confirmations++; selected = stop === "proposal" ? "no" : "yes";
-  } else if (title === "SAVED MEANING IS STILL PENDING") { pendingViews++; selected = "answer"; }
+  if (prompt === "Record these exact words as the meaning for this task?") {
+    assert.equal(choice.initialValue, "no"); confirmations++; selected = stop === "proposal" || stop === "keep" ? "no" : "yes";
+  } else if (title === "SAVED MEANING IS STILL PENDING") { pendingViews++; selected = stop === "replace" ? "replace" : stop === "keep" ? "keep" : "review"; }
   else if (title === "START BOUNDARY DRAFTING") selected = "resume";
   else if (/Send this Boundary-authoring conversation|Allow the assistant to send|reviewed structural context/u.test(title)) {
     assert.equal(choice.initialValue, "no"); selected = "yes";
@@ -58,7 +59,7 @@ const session: BoundaryReviewInteractiveSession = {
   chooseOption: async (title, options, config) => select({ title, options, initialValue: config?.initialValue }),
   confirm: async (title, options) => {
     if (title === "Record these exact words as the meaning for this task?") {
-      assert.equal(options?.defaultValue, false); confirmations++; return stop !== "proposal";
+      assert.equal(options?.defaultValue, false); confirmations++; return stop !== "proposal" && stop !== "keep";
     }
     return false;
   },

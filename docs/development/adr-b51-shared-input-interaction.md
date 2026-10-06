@@ -478,3 +478,9 @@ Luna STOP1560 is candidate finding #20, with a frozen-source reproduction being
 prepared separately. Its proposed cause remains unproven; no frozen patch or
 recovery admission change belongs in this extraction. Any reproduced fix follows
 in the blocked/recovery slice after Action review.
+
+### Owner-authorized #21 Read meaning amendment
+
+STOP1565 reproduced on the unchanged initial Read host: a native question with declined nonblank words resumed cold into the retained readback without an amendment choice. The failing-before process control is preserved in `CAUSE21-FAILING-BEFORE.json` under the Action DEV evidence packet. The Read host now offers Keep / Review / Replace for retained nonblank words. Keep saves no decision; Review reuses the exact answer; Replace appends a question revision with the same target, handoff, evidence and native allowance, preserving the old raw event. Confirmation and accepted remap still precede Source indexing. No model call, budget reset, authority or permission is granted by replacement.
+
+This is an explicitly authorized UX correction, not an extraction-only equivalence claim. The existing special blank-wait and accepted interpretation replacement rules remain unchanged. Primary cold replacement and Keep controls passed alongside the original cold Read controls; independent withheld correction coverage and the final integrated DEV full remain pending. Frozen candidate 62e4bf54 is untouched.

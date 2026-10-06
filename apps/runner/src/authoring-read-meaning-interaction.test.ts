@@ -46,7 +46,7 @@ it.each(["question_id", "question_revision", "question_digest", "handoff_digest"
 it("an answer cannot confirm a readback or choose a recovery operation", () => {
   const { view, binding } = fixture();
   expect(() => assertReadMeaningInteractionResponse(view, { kind: "decision", binding, accepted: true })).toThrow("POLICY_SOURCE_CHANGED");
-  expect(() => assertReadMeaningInteractionResponse(view, { kind: "pending", binding, choice: "answer" })).toThrow("POLICY_SOURCE_CHANGED");
+  expect(() => assertReadMeaningInteractionResponse(view, { kind: "pending", binding, choice: "replace" })).toThrow("POLICY_SOURCE_CHANGED");
   expect(() => assertReadMeaningInteractionResponse(view, { kind: "answer", binding, raw: 1 } as unknown as ReadMeaningInteractionResponse)).toThrow("POLICY_SOURCE_CHANGED");
 });
 
@@ -57,9 +57,9 @@ it.each([true, false, null])("the exact readback accepts only an explicit decisi
   expect(() => assertReadMeaningInteractionResponse(view, { kind: "answer", binding, raw: "yes" })).toThrow("POLICY_SOURCE_CHANGED");
 });
 
-it("a pending view cannot invent an available Answer route", () => {
+it("a pending view cannot invent an available Replace route", () => {
   const { binding } = fixture();
-  const view: ReadMeaningInteraction = { kind: "pending", binding, material: [], canAnswer: false, defaultValue: "keep" };
+  const view: ReadMeaningInteraction = { kind: "pending", binding, material: [], canReplace: false, defaultValue: "keep" };
   expect(() => assertReadMeaningInteractionResponse(view, { kind: "pending", binding, choice: "keep" })).not.toThrow();
-  expect(() => assertReadMeaningInteractionResponse(view, { kind: "pending", binding, choice: "answer" })).toThrow("POLICY_SOURCE_CHANGED");
+  expect(() => assertReadMeaningInteractionResponse(view, { kind: "pending", binding, choice: "replace" })).toThrow("POLICY_SOURCE_CHANGED");
 });

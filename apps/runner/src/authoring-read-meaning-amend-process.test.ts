@@ -1,0 +1,55 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { expect, it } from "vitest";
+import type { BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import type { PolicySourceSession } from "./authoring-policy-source.js";
+import { inputProcessRuntime, runAuthoringProcess } from "./test-fixtures/source-input-process-driver.js";
+import { READ_PROCESS_FACTS as facts } from "./test-fixtures/source-read-process-contract.js";
+
+type Result = { pid: number; state: string; code: number;
+  counts: { requests: number; readRequests: number; prompts: number; confirmations: number; pendingViews: number };
+  resume: BoundaryAuthoringResumeState; sources: PolicySourceSession; menus: Array<{title?: string; options: Array<{value: string}>; initialValue?: string}> };
+const cwd = fileURLToPath(new URL("../../../", import.meta.url));
+it("#21 cold Resume can Replace a declined nonblank Read answer without losing words or resetting its allowance", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-amend-"));
+  const runtime = await inputProcessRuntime(cwd, root, process.env.B51_READ_PROCESS_CAPTURE_DIR ?? path.join(root, "captures"));
+  const project = path.join(root, "declined-meaning");
+  const before = await runAuthoringProcess<Result>(runtime, "source-read-process.ts", project, "start", "proposal");
+  const old = before.resume.operator_questions!.at(-1)!;
+  expect(old).toMatchObject({ disposition: "declined", raw_answer: { text: facts.raw } });
+  expect(old.confirmation).toBeUndefined();
+  const after = await runAuthoringProcess<Result>(runtime, "source-read-process.ts", project, "restart", "replace");
+  expect(after.pid).not.toBe(before.pid); expect(after.state).toBe("closed");
+  expect(after.counts.pendingViews).toBe(1);
+  expect(after.counts).toMatchObject({ prompts: 1, confirmations: 1, readRequests: 1 });
+  const menu = after.menus.find(menu => menu.title === "SAVED MEANING IS STILL PENDING")!;
+  expect(menu.initialValue).toBe("keep"); expect(menu.options.map(option => option.value)).toEqual(["keep", "review", "replace"]);
+  expect(after.resume.operator_questions!.find(q => q.id === old.id)).toEqual(old);
+  const next = after.resume.operator_questions!.at(-1)!;
+  expect(next.id).not.toBe(old.id); expect(next.revision).toBe(old.revision + 1);
+  expect(next.handoff_id).toBe(old.handoff_id); expect(next.raw_answer!.text).toBe(facts.replacementRaw);
+  expect(next.confirmation).toBeDefined();
+  expect(after.resume.read?.assistance_history?.state).toMatchObject({ call_count: 2, correction_used: false });
+  expect(after.resume.read_assistance).toBeUndefined();
+  expect(after.sources.operator_messages).toHaveLength(1);
+  expect(JSON.parse(after.sources.operator_messages![0]!)).toMatchObject({kind: "confirmed_read_meaning", statements: [{raw_answer: facts.replacementRaw}]});
+  expect(after.sources.operator_messages![0]).not.toContain(facts.raw);
+  expect(after.resume.authority_granted).toBe(false); expect(after.resume.source_database_changed).toBe(false);
+}, 60_000);
+
+it("#21 Keep on cold Resume preserves the declined words, native waiting checkpoint and all allowances", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-keep-"));
+  const runtime = await inputProcessRuntime(cwd, root, process.env.B51_READ_PROCESS_CAPTURE_DIR ?? path.join(root, "captures"));
+  const project = path.join(root, "pending-meaning");
+  const before = await runAuthoringProcess<Result>(runtime, "source-read-process.ts", project, "start", "proposal");
+  const after = await runAuthoringProcess<Result>(runtime, "source-read-process.ts", project, "restart", "keep");
+  expect(after.state).toBe("closed"); expect(after.pid).not.toBe(before.pid);
+  expect(after.counts).toMatchObject({ pendingViews: 1, requests: 0, prompts: 0, confirmations: 0 });
+  expect(after.resume.operator_questions).toEqual(before.resume.operator_questions);
+  expect(after.resume.owner_handoffs).toEqual(before.resume.owner_handoffs);
+  expect(after.resume.read_assistance).toEqual(before.resume.read_assistance);
+  expect(after.resume.generation_recovery).toEqual(before.resume.generation_recovery);
+  expect(after.sources).toEqual(before.sources);
+}, 60_000);
