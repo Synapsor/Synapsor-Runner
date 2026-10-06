@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertBoundaryAuthoringResumeMaterial,
   buildBoundaryAuthoringResumeState,
+  consumeBoundaryReadRevisionResult,
   boundaryAuthoringVersionReviews,
   prepareBoundaryActionRevision,
   clearBoundaryAuthoringResumeState,
@@ -16,6 +17,13 @@ import {
 import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { readBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
+import { generateModelReadBoundaryRevision } from "./read-boundary-revision-model.js";
+import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ExplorationBoundaryDraft } from "./auto-boundary.js";
+import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint } from "./authoring-owner-handoff.js";
+import { authoringQuestionAnswerCheckpoint, authoringQuestionCheckpoint,
+  configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery } from "./authoring-generation-recovery.js";
+import { askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, completedAuthoringQuestion, AskError } from "./model-ask.js";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
 const binding: BoundaryAuthoringResumeBinding = {
   boundary_name: "reviewed_staging",
@@ -24,7 +32,65 @@ const binding: BoundaryAuthoringResumeBinding = {
   role_posture_fingerprint: `sha256:${"3".repeat(64)}`,
 };
 
+// Existing Read revision public fixture reduced to the declared model-visible catalog.
+function ownedReadRevisionDraft(): ExplorationBoundaryDraft {
+  return {
+      schema_version: "synapsor.exploration-boundary.v1", activation: "disabled_unreviewed", deployment_profile: "staging",
+      source: "local_postgres", compiler_version: "1.8.0", spec_version: "1.11.0", reporting_timezone: "UTC",
+      trusted_context: { provider: "environment", tenant_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL" },
+      generation_lock_fingerprint: binding.generation_lock_fingerprint, role_posture_fingerprint: binding.role_posture_fingerprint,
+      pack: { name: binding.boundary_name, resources: [{ id: "public.orders", schema: "public", table: "orders", primary_key: "id",
+        tenant_key: "tenant_id", principal_key: "principal_id", field_types: { id: "uuid", tenant_id: "text", principal_id: "text", status: "text" },
+        selectable_fields: ["id", "status"], filterable_fields: { status: ["eq"] }, sortable_fields: ["status"], groupable_fields: [],
+        aggregate_measures: [], aggregate_measure_functions: {}, count_distinct_fields: [], time_bucket_fields: {},
+        kept_out_fields: ["tenant_id", "principal_id"], relationships: [], minimum_cohort_size: 5, suppression_aware_totals: true }] },
+      budgets: structuredClone(DEFAULT_REVIEWED_EXPLORATION_BUDGETS), unresolved_decisions: [],
+    };
+}
+
 describe("Boundary authoring resume state", () => {
+  it("records a parsed Read revision result with its exact dispatch as inert history and reopens without replay", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-consumed-history-"));
+    const instruction = "Keep order identifiers private. Preserve unrelated access.";
+    const draft = ownedReadRevisionDraft();
+    const input = { binding, stage: "authority_review" as const, jobIntent: "Read order status.",
+      provider: "openai" as const, model: "offline-test", pendingReadRevision: instruction };
+    let request: NonNullable<Parameters<typeof buildBoundaryAuthoringResumeState>[0]["pendingReadRevisionState"]> = {
+      instruction, provenance: "operator", privacy_only: true,
+    };
+    let saved = buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: request });
+    let calls = 0, consumed = 0;
+    try {
+      await writeBoundaryAuthoringResumeState(root, saved, { expectedRevisionDigest: null });
+      const result = await generateModelReadBoundaryRevision({ instruction, provider: "openai", model: "offline-test", apiKey: "OWNED-key",
+        boundary: draft, egressAcknowledged: true, privacyOnly: true,
+        dependencies: { requestJson: async () => { calls++; return { status: 200, body: { output: [{ type: "function_call",
+          call_id: "owned_read_result", name: "runner__submit_read_boundary_revision",
+          arguments: JSON.stringify({ resource_changes: [{ resource: "public.orders", field_exposure: [{ field: "id", exposure: "runner_only" }] }] }) }] } }; } },
+        onCheckpoint: async (checkpoint, _current, accepted) => {
+          if (checkpoint) request = { ...request, checkpoint };
+          else {
+            expect(accepted?.changes).toEqual([expect.objectContaining({ resource: "public.orders", field: "id", after: "runner_only" })]);
+            consumed++;
+            request = consumeBoundaryReadRevisionResult(request);
+          }
+          const next = buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: request, previous: saved });
+          await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: saved.revision_digest }); saved = next;
+        },
+      });
+      expect(result).toMatchObject({ authority_granted: false, source_database_changed: false });
+      expect(calls).toBe(1); expect(consumed).toBe(1);
+      expect(saved.pending_read_revision_state).not.toHaveProperty("checkpoint");
+      expect(saved.pending_read_revision_state).toMatchObject({ result_received: true,
+        checkpoint_history: { stage: "dispatching", state: { call_count: 1, correction_used: false } } });
+      const reopened = await readBoundaryAuthoringResumeState(root, binding);
+      expect(reopened).toEqual({ status: "ready", value: saved });
+      expect(buildBoundaryAuthoringResumeState({ ...input, previous: saved }).pending_read_revision_state).toEqual(saved.pending_read_revision_state);
+      expect(saved.pending_read_revision_state).not.toHaveProperty("saved_read_digest");
+      expect(saved.completed_policy_reviews).toBeUndefined(); expect(saved.authority_granted).toBe(false);
+      expect(calls).toBe(1);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("retains an interrupted Read edit input without recording a consumed result", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-dispatch-state-"));
     const instruction = "Keep units private and preserve unrelated access.";
@@ -46,6 +112,168 @@ describe("Boundary authoring resume state", () => {
       expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: { ...request, result_received: true } }))
         .toThrow("unfinished Read question or dispatch");
     } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+  it("retains native answered Read history, exact counters and CAS without acknowledging another result", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-native-history-"));
+    const instruction = "Use the operator's exact term and preserve unrelated access.";
+    const input = { binding, stage: "authority_review" as const, jobIntent: "Read order status.", provider: "openai" as const,
+      model: "offline-test", pendingReadRevision: instruction };
+    let current = buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: { instruction, provenance: "operator", privacy_only: false } });
+    try {
+      await writeBoundaryAuthoringResumeState(root, current, { expectedRevisionDigest: null });
+      await withAuthoringGenerationRecovery(async () => {
+        configureAuthoringGenerationRecovery({ available: () => true, read: () => current.generation_recovery,
+          current: async () => canonicalJsonDigest(binding), write: async recovery => {
+            const next = buildBoundaryAuthoringResumeState({ ...input, previous: current, generationRecovery: recovery });
+            await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: current.revision_digest }); current = next;
+          } });
+        const tools = [{ name: "runner.inspect", description: "OWNED OFFLINE", input_schema: { type: "object", properties: {}, additionalProperties: false } }];
+        const authorityDigest = askToolSurfaceDigest(tools);
+        const configuration = resolveAskProviderConfiguration({ provider: "openai", model: "offline-test", api_key: "OWNED-key",
+          authority_digest: authorityDigest, egress_acknowledged: true }, {}, new Date());
+        const question = "What business term should identify the order's progress?";
+        const result = await runAskProviderTurn({ configuration, question, history: [], tools, authorityDigest, signal: new AbortController().signal,
+          gateway: { mode: "authoring", listTools: () => tools, close: async () => {}, callTool: async () => { throw new Error("No callback allowed"); } },
+          dependencies: { requestJson: async () => ({ status: 200, body: { status: "completed", output: [{ type: "message",
+            content: [{ type: "output_text", text: question }] }] } }) } });
+        const completion = completedAuthoringQuestion(result);
+        if (!completion) throw new Error("Expected the actual native question completion.");
+        const cp = readBoundaryRevisionCheckpoint({ stage: "waiting", input_digest: canonicalJsonDigest(instruction),
+          boundary_digest: canonicalJsonDigest(binding), catalog_digest: canonicalJsonDigest("declared current catalog"), tool_digest: authorityDigest,
+          pending_question: { kind: "clarification", request: { question, reason: "The operator's preferred term is missing." }, question, completion },
+          state: { call_count: 1, correction_used: false, prerequisite_review_failed: false, issue: "", clarification_count: 0,
+            clarification_answers: [], private_decisions: [] } });
+        if (cp.stage !== "waiting" || cp.pending_question.kind !== "clarification") throw new Error("Expected the actual waiting question.");
+        const handoff = createOwnerHandoff({ consumer: "read_revision_clarification", scope_digest: cp.input_digest,
+          context_digest: cp.boundary_digest, question, completion });
+        const waiting = buildBoundaryAuthoringResumeState({ ...input, previous: current, ownerHandoffs: [handoff],
+          generationRecovery: authoringQuestionCheckpoint(current.generation_recovery, ownerHandoffCheckpoint(handoff)),
+          pendingReadRevisionState: { instruction, provenance: "operator", privacy_only: false, checkpoint: cp } });
+        await writeBoundaryAuthoringResumeState(root, waiting, { expectedRevisionDigest: current.revision_digest }); current = waiting;
+        const answer = "Order progress";
+        const answered = answerOwnerHandoff(handoff, answer, handoff.context_digest);
+        const generation = authoringQuestionAnswerCheckpoint(current.generation_recovery, ownerHandoffCheckpoint(handoff),
+          { digest: canonicalJsonDigest(answered), operator_messages: [answer] });
+        const { digest: _digest, ...body } = cp;
+        const decided = readBoundaryRevisionCheckpoint({ ...body, stage: "decided", pending_question: { ...cp.pending_question,
+          decision: { state: "answered", answer } }, state: { ...cp.state, clarification_count: 1, clarification_answers: [{ question, answer }] } });
+        if (decided.stage !== "decided" || decided.pending_question.kind !== "clarification") throw new Error("Expected the native answered fixture.");
+        const { digest: _decidedDigest, pending_question, ...dispatchBody } = decided;
+        const dispatch = readBoundaryRevisionCheckpoint({ ...dispatchBody, stage: "dispatching", dispatch_question: "Apply the reviewed exact business term.",
+          previous_question: { stage: "decided", pending_question }, state: { ...decided.state, call_count: 2, correction_used: true } });
+        if (dispatch.stage !== "dispatching") throw new Error("Expected the exact dispatched producer input.");
+        const pending = { instruction, provenance: "operator" as const, privacy_only: false, checkpoint: dispatch };
+        const request = consumeBoundaryReadRevisionResult(pending);
+        expect(request.checkpoint_history).toEqual(dispatch);
+        expect(pending.checkpoint).toEqual(dispatch); expect(pending).not.toHaveProperty("result_received");
+        const consumed = buildBoundaryAuthoringResumeState({ ...input, previous: current, ownerHandoffs: [answered], generationRecovery: generation,
+          pendingReadRevisionState: request });
+        expect(consumed.generation_recovery).toEqual(generation);
+        expect(consumed.owner_handoffs).toEqual([answered]);
+        expect(consumed.pending_read_revision_state?.checkpoint_history).toEqual(dispatch);
+        expect(consumed.pending_read_revision_state).not.toHaveProperty("checkpoint");
+        await writeBoundaryAuthoringResumeState(root, consumed, { expectedRevisionDigest: current.revision_digest });
+        expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: consumed });
+        await expect(writeBoundaryAuthoringResumeState(root, consumed, { expectedRevisionDigest: current.revision_digest })).rejects.toThrow("BOUNDARY_AUTHORING_RESUME_CHANGED");
+        expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: consumed });
+        const altered = readBoundaryRevisionCheckpoint({ ...dispatchBody, stage: "dispatching", dispatch_question: dispatch.dispatch_question,
+          previous_question: { stage: "decided", pending_question: { ...pending_question, decision: { state: "answered", answer: "Invented progress" } } },
+          state: { ...dispatch.state, clarification_answers: [{ question, answer: "Invented progress" }] } });
+        expect(() => buildBoundaryAuthoringResumeState({ ...input, previous: consumed, pendingReadRevisionState: { ...request, checkpoint_history: altered } }))
+          .toThrow("attributable answer");
+        const changedCompletion = readBoundaryRevisionCheckpoint({ ...dispatchBody, stage: "dispatching", dispatch_question: dispatch.dispatch_question,
+          previous_question: { stage: "decided", pending_question: { ...pending_question,
+            completion: { ...completion, response_digest: canonicalJsonDigest("unowned response") } } }, state: dispatch.state });
+        expect(() => buildBoundaryAuthoringResumeState({ ...input, previous: consumed, pendingReadRevisionState: { ...request, checkpoint_history: changedCompletion } }))
+          .toThrow("matching owner-question handoff");
+      });
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it.each(["cancelled", "malformed", "stale", "late"] as const)("keeps %s Read results unconsumed through the native producer", async failure => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-result-refusal-"));
+    const instruction = "Keep order identifiers private. Preserve unrelated access.", draft = ownedReadRevisionDraft();
+    const input = { binding, stage: "authority_review" as const, jobIntent: "Read order status.", provider: "openai" as const,
+      model: "offline-test", pendingReadRevision: instruction };
+    let request: NonNullable<Parameters<typeof buildBoundaryAuthoringResumeState>[0]["pendingReadRevisionState"]> = {
+      instruction, provenance: "operator", privacy_only: true };
+    let current = buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: request });
+    let context = canonicalJsonDigest(binding), acceptedResults = 0, calls = 0;
+    try {
+      await writeBoundaryAuthoringResumeState(root, current, { expectedRevisionDigest: null });
+      await withAuthoringGenerationRecovery(async () => {
+        configureAuthoringGenerationRecovery({ available: () => true, read: () => current.generation_recovery, current: async () => context,
+          write: async recovery => withProjectAuthorityMutation(root, async permit => {
+            const next = buildBoundaryAuthoringResumeState({ ...input, previous: current, pendingReadRevisionState: request, generationRecovery: recovery });
+            await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: current.revision_digest, permit }); current = next;
+          }) });
+        const attempt = generateModelReadBoundaryRevision({ instruction, provider: "openai", model: "offline-test", apiKey: "OWNED-key",
+          boundary: draft, egressAcknowledged: true, privacyOnly: true,
+          dependencies: { requestJson: async () => {
+            calls++;
+            if (failure === "cancelled") throw new AskError("ASK_CANCELLED", "The owned fixture stopped without a response.", 499);
+            if (failure === "late") context = canonicalJsonDigest("changed business context before response acceptance");
+            return { status: 200, body: { output: [{ type: "function_call", call_id: `owned_read_result_${calls}`,
+              name: "runner__submit_read_boundary_revision", arguments: failure === "malformed" ? "{" : JSON.stringify({
+                resource_changes: [{ resource: "public.orders", field_exposure: [{ field: "id", exposure: "runner_only" }] }] }) }] } };
+          } },
+          onCheckpoint: async (checkpoint, _draft, accepted) => withProjectAuthorityMutation(root, async permit => {
+            if (!checkpoint) {
+              if (!accepted) throw new Error("An accepted callback must contain its parsed result.");
+              acceptedResults++; request = consumeBoundaryReadRevisionResult(request);
+            } else request = { ...request, checkpoint };
+            const next = buildBoundaryAuthoringResumeState({ ...input, previous: current, pendingReadRevisionState: request });
+            await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: current.revision_digest, permit }); current = next;
+            if (failure === "stale") draft.pack.resources[0]!.selectable_fields = ["status"];
+          }),
+        });
+        await expect(attempt).rejects.toMatchObject({ code: failure === "malformed" ? "ASK_TOOL_ARGUMENTS_INVALID"
+          : failure === "late" ? "ASK_GENERATION_CONTEXT_CHANGED" : failure === "stale" ? "ASK_AUTHORITY_CHANGED" : "ASK_CANCELLED" });
+      });
+      expect(acceptedResults).toBe(0);
+      expect(current.pending_read_revision_state).not.toHaveProperty("result_received");
+      expect(current.pending_read_revision_state).not.toHaveProperty("checkpoint_history");
+      expect(current.pending_read_revision_state?.checkpoint).toMatchObject({ stage: "dispatching" });
+      if (failure !== "stale") expect(current.generation_recovery?.operations.length).toBeGreaterThan(0);
+      expect(current.generation_recovery?.operations.every(operation => operation.state !== "checkpointed" && !operation.checkpoint_seen)).not.toBe(false);
+      expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: current });
+      // The existing required-tool path permits one bounded correction for a
+      // complete malformed reply. Neither reply becomes a consumed revision.
+      expect(calls).toBe(failure === "stale" ? 0 : failure === "malformed" ? 2 : 1);
+      expect(current.authority_granted).toBe(false); expect(current.source_database_changed).toBe(false);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it("refuses pending or malformed Read history and never promotes a result disposition twice", () => {
+    const instruction = "Keep order identifiers private.";
+    const request = { instruction, provenance: "operator" as const, privacy_only: true };
+    const input = { binding, stage: "authority_review" as const, jobIntent: "Read orders.", provider: "openai" as const, model: "offline-test", pendingReadRevision: instruction };
+    const base = { input_digest: canonicalJsonDigest(instruction), boundary_digest: canonicalJsonDigest(binding),
+      catalog_digest: canonicalJsonDigest("catalog"), tool_digest: canonicalJsonDigest("tool"),
+      state: { call_count: 1, correction_used: false, prerequisite_review_failed: false, issue: "", clarification_count: 0,
+        clarification_answers: [], private_decisions: [] } };
+    const waiting = readBoundaryRevisionCheckpoint({ ...base, stage: "waiting", pending_question: { kind: "clarification",
+      request: { question: "Which identifiers?", reason: "Missing scope." }, question: "Which identifiers?" } });
+    if (waiting.stage !== "waiting") throw new Error("Expected the waiting storage fixture.");
+    expect(() => consumeBoundaryReadRevisionResult({ ...request, checkpoint: waiting })).toThrow("unanswered Read question");
+    const dispatch = readBoundaryRevisionCheckpoint({ ...base, stage: "dispatching", dispatch_question: instruction });
+    const consumed = consumeBoundaryReadRevisionResult({ ...request, checkpoint: dispatch });
+    expect(() => consumeBoundaryReadRevisionResult(consumed)).toThrow("already has a recorded result disposition");
+    expect(() => consumeBoundaryReadRevisionResult({ ...request, terminal_reason: "READ_BOUNDARY_REVISION_NOT_SUBMITTED" })).toThrow("recorded result disposition");
+    for (const state of [
+      { ...request, checkpoint_history: dispatch },
+      { ...consumed, checkpoint: dispatch },
+      { ...consumed, checkpoint_history: waiting },
+      { ...consumed, checkpoint_history: { ...dispatch, digest: canonicalJsonDigest("not this snapshot") } },
+      { ...consumed, checkpoint_history: { ...dispatch, save: true } },
+    ]) expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: state as any })).toThrow();
+    const awaiting = readBoundaryRevisionCheckpoint({ ...base, stage: "dispatching", dispatch_question: instruction,
+      previous_question: { stage: "waiting", pending_question: waiting.pending_question } });
+    expect(() => consumeBoundaryReadRevisionResult({ ...request, checkpoint: awaiting })).toThrow("unanswered Read question");
+    const privateIdentity = readBoundaryRevisionCheckpoint({ ...base, stage: "dispatching", dispatch_question: "Tenant is actual-tenant-42." });
+    expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: {
+      ...consumed, checkpoint_history: privateIdentity } })).toThrow("TRUSTED_IDENTITY_BLOCKED");
+    expect(buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: consumed }).completed_policy_reviews).toBeUndefined();
   });
   it("retains exact Read revision mode and consumed-unsaved disposition without granting replay", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-revision-state-"));

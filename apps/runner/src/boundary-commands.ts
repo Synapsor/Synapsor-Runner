@@ -198,6 +198,7 @@ import {
 } from "./model-authoring-conversation.js";
 import {
   buildBoundaryAuthoringResumeState,
+  consumeBoundaryReadRevisionResult,
   updateBoundaryPolicyReview,
   type BoundaryPolicyReviewRequest,
   assertBoundaryAuthoringResumeCurrent,
@@ -10138,7 +10139,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         if (!pendingReadRevisionState || explorationBoundaryCandidateDigest(currentBoundary) !== current.bundle.candidate_digest) {
           throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The consumed revision belongs to another current candidate.");
         }
-        pendingReadRevisionState = { ...pendingReadRevisionState, result_received: true };
+        pendingReadRevisionState = consumeBoundaryReadRevisionResult(pendingReadRevisionState);
         await persistAuthoringResume("authority_review", permit);
         if (resumePersistenceBlocked) throw checkpointSaveFailure("The consumed Read revision result");
       });

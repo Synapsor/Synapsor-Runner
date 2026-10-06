@@ -154,6 +154,8 @@ export type BoundaryAuthoringReadRevision = {
   vocabulary_only?: true;
   interpretation_instruction?: string;
   checkpoint?: ReadBoundaryRevisionCheckpoint;
+  /** Last producer input/answered question after actual parsing, never resumable. */
+  checkpoint_history?: ReadBoundaryRevisionCheckpoint;
   /** Complete locally consumed result; no saved revision or resend permission. */
   result_received?: true;
   /** Recorded guarded Read commit only; following review may still be pending. */
@@ -911,7 +913,7 @@ function assertReadAssistanceHandoff(value: {
 }
 
 function normalizeReadRevisionState(value: unknown): BoundaryAuthoringReadRevision {
-  if (!isRecord(value) || Object.keys(value).some(key => !["instruction", "provenance", "privacy_only", "vocabulary_only", "interpretation_instruction", "checkpoint", "result_received", "saved_read_digest", "terminal_reason"].includes(key))
+  if (!isRecord(value) || Object.keys(value).some(key => !["instruction", "provenance", "privacy_only", "vocabulary_only", "interpretation_instruction", "checkpoint", "checkpoint_history", "result_received", "saved_read_digest", "terminal_reason"].includes(key))
     || typeof value.instruction !== "string" || !["operator", "guided"].includes(value.provenance as string) || typeof value.privacy_only !== "boolean"
     || value.vocabulary_only !== undefined && value.vocabulary_only !== true
     || value.result_received !== undefined && value.result_received !== true
@@ -932,13 +934,52 @@ function normalizeReadRevisionState(value: unknown): BoundaryAuthoringReadRevisi
     const checkpoint = parseReadBoundaryRevisionCheckpoint(value.checkpoint);
     if (value.result_received && (checkpoint.stage === "waiting" || checkpoint.stage === "dispatching")) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: An unfinished Read question or dispatch cannot be a consumed revision result.");
   }
+  if (value.checkpoint_history !== undefined) {
+    if (value.result_received !== true || value.checkpoint !== undefined) throw new Error(
+      "BOUNDARY_AUTHORING_RESUME_INVALID: Read producer history requires a consumed result and cannot be an active checkpoint.");
+    const history = parseReadBoundaryRevisionCheckpoint(value.checkpoint_history);
+    assertConsumedReadRevisionHistory(history);
+  }
   return structuredClone(value) as BoundaryAuthoringReadRevision;
+}
+
+/** Only the actual parsed-result callback may record consumption. This local
+ * transition does not acknowledge a transport, save a Read, or grant authority. */
+export function consumeBoundaryReadRevisionResult(current: BoundaryAuthoringReadRevision): BoundaryAuthoringReadRevision {
+  const checked = normalizeReadRevisionState(current);
+  if (checked.result_received || checked.terminal_reason) throw new Error(
+    "BOUNDARY_AUTHORING_RESUME_INVALID: This Read revision already has a recorded result disposition.");
+  const { checkpoint, ...request } = checked;
+  return normalizeReadRevisionState({ ...request, result_received: true,
+    ...(checkpoint ? { checkpoint_history: checkpoint } : {}) });
+}
+
+function assertConsumedReadRevisionHistory(checkpoint: ReadBoundaryRevisionCheckpoint): void {
+  const fail = () => new Error("BOUNDARY_AUTHORING_RESUME_INVALID: An unanswered Read question cannot become consumed producer history.");
+  if (checkpoint.stage === "waiting") throw fail();
+  const prior = checkpoint.stage === "dispatching" ? checkpoint.previous_question : checkpoint;
+  if (!prior) return;
+  if (prior.stage === "waiting") throw fail();
+  const question = prior.pending_question;
+  if (question.kind === "clarification") {
+    if (question.decision?.state !== "answered") throw fail();
+    return;
+  }
+  const nested = question.nested_checkpoint;
+  if (!nested) return;
+  if (nested.stage === "waiting") throw fail();
+  const pending = nested.stage === "dispatching" ? nested.previous_pending : nested;
+  if (pending && (pending.stage === "waiting" || pending.pending.kind === "semantic_confirmation"
+    && pending.pending.decision?.state !== "confirmed")) throw fail();
 }
 
 function assertReadRevisionHandoff(value: Record<string, unknown>): void {
   const pending = normalizeReadRevisionState(value.pending_read_revision_state);
-  if (!pending.checkpoint) return;
-  const checkpoint = pending.checkpoint;
+  const checkpoint = pending.checkpoint ?? pending.checkpoint_history;
+  if (checkpoint) assertReadRevisionCheckpointHandoff(value, checkpoint);
+}
+
+function assertReadRevisionCheckpointHandoff(value: Record<string, unknown>, checkpoint: ReadBoundaryRevisionCheckpoint): void {
   const generation = value.generation_recovery as AuthoringTransportState | undefined;
   if (generation) validateAuthoringTransportState(generation);
   const handoffs = parseOwnerHandoffs(value.owner_handoffs ?? []);
@@ -946,8 +987,7 @@ function assertReadRevisionHandoff(value: Record<string, unknown>): void {
     const prior = checkpoint.previous_question;
     if (prior) {
       const { digest: _digest, dispatch_question: _dispatch, previous_question: _previous, ...body } = checkpoint;
-      assertReadRevisionHandoff({ ...value, pending_read_revision_state: { ...pending,
-        checkpoint: readBoundaryRevisionCheckpoint({ ...body, ...prior }) } });
+      assertReadRevisionCheckpointHandoff(value, readBoundaryRevisionCheckpoint({ ...body, ...prior }));
     }
     return;
   }
@@ -963,9 +1003,9 @@ function assertReadRevisionHandoff(value: Record<string, unknown>): void {
       if (prior) {
         const { digest: _digest, dispatch_question: _dispatch, previous_pending: _previous, ...body } = nested;
         const { digest: _outerDigest, ...outer } = checkpoint;
-        assertReadRevisionHandoff({ ...value, pending_read_revision_state: { ...pending,
-          checkpoint: readBoundaryRevisionCheckpoint({ ...outer, pending_question: { ...question,
-            nested_checkpoint: readPrerequisiteCheckpoint({ ...body, ...prior }) } }) } });
+        assertReadRevisionCheckpointHandoff(value,
+          readBoundaryRevisionCheckpoint({ ...outer, pending_question: { ...question,
+            nested_checkpoint: readPrerequisiteCheckpoint({ ...body, ...prior }) } }));
       }
       return;
     }

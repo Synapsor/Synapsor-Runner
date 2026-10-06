@@ -71,3 +71,14 @@ drift or lost acknowledgement keeps its charge. Repeated fenced opens retain
 the same raw answers, dispatch and spent allowance. The original equality
 guards remain unchanged; follow-up fixtures separately inspect the fourth
 confirmed decision and the later fifth dispatch that retains it as history.
+
+An accepted Read revision must also leave its last dispatch in history rather
+than mark an active dispatch completed. The existing parsed-result callback
+now moves its exact bounded snapshot into `checkpoint_history` under the same
+lease, currentness and Resume CAS checks. Its raw answers and counters remain
+unchanged. The existing native question association checks validate that
+history, and unfinished questions remain rejected. History is never passed
+back to the producer. This records known consumption, with no saved Read,
+activation, transport acknowledgement or replay permission granted by the
+transition itself. Unknown, malformed, cancelled, stale and late results
+retain their active checkpoint and normal recovery fence.

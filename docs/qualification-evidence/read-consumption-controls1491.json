@@ -1,0 +1,88 @@
+{
+  "checkpoint": "1491",
+  "utc": "2026-10-06T11:06:23.900916+00:00",
+  "base_head": "aaecacf7b3c7d3dfc4bebe5b7f66078e941c7743",
+  "status": "INTEGRATED_READ_CONSUMPTION_FIX_NATIVE_PASS_PUBLIC_PARTIAL_NOT_FREEZE",
+  "native": {
+    "pass": 1199,
+    "fail": 0,
+    "skip": 1,
+    "seconds": 105.04156031800085,
+    "group_closed": true,
+    "source_bytes_modes_diff_unchanged": true
+  },
+  "public_selected_original_failures": {
+    "exact_selected": 77,
+    "pass": 73,
+    "fail": 4,
+    "filtered_skipped": 366,
+    "seconds": 119.03828379900006,
+    "group_closed": true,
+    "source_bytes_modes_diff_unchanged": true
+  },
+  "independent": {
+    "entry": "native privacy-only saved Read revision producer/owner-answer/CAS/reopen local host adapter",
+    "before": "1P2F; exact consumed-dispatch failure plus dependent absent shape fixture",
+    "after": "3P0F",
+    "limits": "No whole public Source lease/CLI/installed proof; nested variants inspected only; own adapter timestamps excluded after demonstrated redundant rebuild, substantive pending/generation/answers/proofs/counters exact; native localhost18 sends,0provider/DB"
+  },
+  "original82_regressions": {
+    "resolved_by_affected_runs": 78,
+    "remaining": 4,
+    "remaining_modes": [
+      "policy_target_postcommit_permanent",
+      "policy_target_postcommit_competing_pause",
+      "policy_target_postcommit_edit_current",
+      "policy_target_postcommit_delegation_save"
+    ],
+    "symptom": "Scripted operator rejects SETUP RECOVERY prompt; causal classification pending, no fixture or product verdict inferred."
+  },
+  "source_sha256": {
+    "boundary-authoring-resume.ts": "1e698c5d17128c504cc0d1d9fcc3df3f9f1ea1fb0d92e3d1b94b284915ed9a31",
+    "boundary-commands.ts": "1ef9319b8e1c4b6e2d0881bb6e44e44bb2fc22c31dfa962987da6f32e1e60009",
+    "boundary-authoring-resume.test.ts": "5b5e3721d6b0212859f0d51733606fe71209822875ef77a06be3ec57b1453309"
+  },
+  "evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/class19-read-consumption-transition1487-v1/FINAL-PACKET.json",
+      "sha256": "c427f954fd18df374e99bcc7f38b47264954b437caf556ac78504118914463f2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/integrated-consumption1490-v1/RESULT1490.json",
+      "sha256": "5433410ebceb27fd868f85e8abd635705aae156d23ae7830c0f7aa7c202649e4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/integrated-consumption1490-v1/run/results.json",
+      "sha256": "82089746ed1964777c31ee95a159c034ff862e6617aa44c1245a8182c736c186"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/integrated-public77-1491-v1/RESULT1491.json",
+      "sha256": "3080517e5e15cdef04e8161c3da5eca02dc15e5e781fe1cc589d57786285b4b7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/integrated-public77-1491-v1/run/results.json",
+      "sha256": "af860762bc6fbfc6ceecb0f0945d5c0ee18d0c8b4e9a777cd2ef2342827317f4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/integrated-public77-1491-v1/EXACT-SELECTION.json",
+      "sha256": "a34dbe01c4d6f5a171ac1be19578f0df665ea0e5f8cbd01bf467960ef0f394f6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/operator-conversation-development/read-consumption-withheld1487-v1/REVIEW.md",
+      "sha256": "91f49f6f29f76007221ac66ef7941f9e0ed4162099b4879f8bd1f4ae287f0851"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/operator-conversation-development/read-consumption-withheld1487-v1/READBACK.json",
+      "sha256": "5143a6822d1f3da0ffb659b900286b68fc1f592372304e20bb8dbb09fdb6c4c8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/operator-conversation-development/read-consumption-withheld1487-v1/SEAL.json",
+      "sha256": "41624b8ad54bf611fd1c7eac435187c54e2e362552d82636e4c72a312fbc88c1"
+    }
+  ],
+  "class_fixed": false,
+  "freeze": false,
+  "paid_calls": 0,
+  "no_allocation_meter": true,
+  "next": "Read-only causal triage4, smallest authorized #19/fixture repair if reproduced; affected controls; actual current type/build/freshness; freshpin/full1488 thenPG/offline/package/size"
+}
