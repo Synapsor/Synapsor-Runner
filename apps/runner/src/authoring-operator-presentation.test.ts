@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { containsOperatorTechnicalName, operatorBusinessContext, operatorBusinessReadback,
-  operatorClarificationGate, presentOperatorClarification } from "./authoring-operator-presentation.js";
+  operatorClarificationGate, parseOperatorClarificationGateState, presentOperatorClarification } from "./authoring-operator-presentation.js";
 
 describe("shared operator business presentation", () => {
   it.each(["read", "action", "input", "version"] as const)("uses a local description immediately when %s has no field label", stage => {
@@ -85,6 +85,28 @@ describe("shared operator business presentation", () => {
   it("does not replace a resource identity with one of its field labels", () => {
     expect(presentOperatorClarification("Does billing.cases contain billing.cases.private_note?", { stage: "read", context }))
       .toBe("Does billing cases contain registrar note?");
+  });
+  it("retains the same original bounds and negation after its wording state is restored", () => {
+    const target = { resource: "billing.cases", field: "private_note" };
+    const first = operatorClarificationGate({ stage: "input", context, target });
+    const original = "Should billing.cases.private_note be optional, never exceed 200 characters?";
+    expect(first(original).state).toBe("rephrase");
+    const state = first.snapshot(); expect(state?.original_question).toBe(original);
+    const restored = operatorClarificationGate({ stage: "input", context, target, resumeState: state });
+    expect(restored("Should the registrar note be required and exceed 300 characters?")).toEqual({ state: "question", fallback: true,
+      question: "Should registrar note be optional, never exceed 200 characters?" });
+    expect(restored.snapshot()).toEqual(state);
+    expect(() => operatorClarificationGate({ stage: "read", context, target, resumeState: state })).toThrow("STATE_STALE");
+    expect(() => operatorClarificationGate({ stage: "input", context: { references: [] }, target, resumeState: state })).toThrow("STATE_STALE");
+    expect(() => restored(original, { resource: "billing.cases", field: "state_code" })).toThrow("STATE_STALE");
+    expect(() => parseOperatorClarificationGateState({ ...state, original_question: "x".repeat(4001) })).toThrow("STATE_INVALID");
+    expect(() => parseOperatorClarificationGateState({ ...state, response: "invented receipt" })).toThrow("STATE_INVALID");
+  });
+  it("does not create wording state for already-plain text or an unlabelled local fallback", () => {
+    const plain = operatorClarificationGate({ stage: "input", context });
+    expect(plain("May the registrar note be optional?").state).toBe("question"); expect(plain.snapshot()).toBeUndefined();
+    const missing = operatorClarificationGate({ stage: "read", context: operatorBusinessContext([{ id: "coded.r1", field_types: { d2: "text" } }]) });
+    expect(missing("What does coded.r1.d2 mean?").state).toBe("question"); expect(missing.snapshot()).toBeUndefined();
   });
 
 });

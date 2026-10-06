@@ -1,3 +1,4 @@
+import { operatorBusinessContext, operatorClarificationGate } from "./authoring-operator-presentation.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -2501,3 +2502,53 @@ function generatedBoundaryWithoutStatusEnum(): ExplorationBoundaryDraft {
   boundary.pack.resources[0]!.field_enums = {};
   return boundary;
 }
+
+
+it("retains the original wording constraints across native interruption of its single rephrase", async () => {
+  const boundary=generatedBoundary(); boundary.pack.resources[0]!.field_metadata={status:{label:"Fulfillment stage"}};
+  const declaredTask="List at most 5 purchases, never including canceled purchases; clarify the current fulfillment stage meaning.";
+  const original="Should public.orders.status identify current fulfillment stage for a view of at most 5 purchases that must never include canceled purchases?";
+  const changed="Should public.orders.status identify current fulfillment stage for a view of at most 9 purchases that may include canceled purchases?";
+  const target={resource:"public.orders",field:"status"};
+  const context=operatorBusinessContext(readWorkloadCatalog(boundary).resources);
+  const control=operatorClarificationGate({stage:"read",context,target});
+  expect(control(original).state).toBe("rephrase");
+  const ordinary=control(changed);expect(ordinary).toMatchObject({state:"question",fallback:true});
+  if(ordinary.state!=="question")throw new Error("Expected the existing local constraint fallback");
+  const requests:unknown[]=[],asked:string[]=[],checkpoints:ReadWorkloadAssistanceCheckpoint[]=[];
+  let state:AuthoringTransportState={version:1,operations:[]},checkpoint:ReadWorkloadAssistanceCheckpoint|undefined,sends=0;
+  const response=(question:string)=>({status:"completed",output:[{type:"function_call",call_id:"bounded_wording",name:"runner__submit_read_workloads",arguments:JSON.stringify({clarification_request:{...target,question,reason:"Current fulfillment stage meaning is unresolved."}})}]});
+  const server=createServer(async(req,res)=>{
+    let raw="";for await(const chunk of req)raw+=String(chunk);requests.push(JSON.parse(raw));sends++;
+    if(sends===2){res.writeHead(200,{"content-type":"application/json","content-length":"9999"});res.write('{"unfinished":');setTimeout(()=>res.destroy(),10);return;}
+    res.setHeader("content-type","application/json");res.end(JSON.stringify(response(sends===1?original:changed)));
+  });
+  await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+  const endpoint=new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
+  const host={available:()=>true,read:()=>state,current:async()=>canonicalJsonDigest({declaredTask,catalog:readWorkloadCatalog(boundary).digest}),write:async(value:AuthoringTransportState)=>{validateAuthoringTransportState(value);state=structuredClone(value);}};
+  const entering=(resume:boolean)=>withAuthoringGenerationRecovery(()=>{configureAuthoringGenerationRecovery(host);return generateModelReadWorkload({
+    name:"owned_wording_resume",allowedQuestions:[declaredTask],provider:"openai",model:"owned-local-fixture",generatedBoundary:boundary,apiKey:"test-key",egressAcknowledged:true,deferNarration:true,
+    dependencies:{requestJson:r=>secureAskJsonRequest({...r,endpoint,scope:"custom_loopback"})},...(resume?{resumeCheckpoint:checkpoint}:{}),
+    onCheckpoint:async value=>{checkpoint=structuredClone(value);if(value)checkpoints.push(structuredClone(value));},
+    clarificationHandler:async request=>{asked.push(request.question);return undefined;}
+  });});
+  let old="",firstOutcome="",resumeOutcome="";
+  try{
+    await entering(false).catch(error=>{firstOutcome=error.code??error.message;});
+    expect(firstOutcome).toBe("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION");expect(sends).toBe(2);
+    expect(state.operations.at(-1)?.state).toBe("partial");expect(checkpoint).toMatchObject({stage:"dispatching",state:{correction_used:true,call_count:1,attempt:2}});
+    expect(JSON.stringify(requests[0])).toContain("Fulfillment stage");expect(JSON.stringify(requests[0])).toContain(declaredTask);
+    expect(JSON.stringify(requests[1])).toContain("Rephrase the same missing business question once");expect(asked).toEqual([]);
+    old=JSON.stringify(state.operations[1]);
+    await withAuthoringGenerationRecovery(async()=>{configureAuthoringGenerationRecovery(host);
+      await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(checkpoint!.digest,undefined,state.operations[0]!.id),{mode:"local_review"});
+      await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(checkpoint!.digest));
+    });
+    await entering(true).catch(error=>{resumeOutcome=error.code??error.message;});
+    expect(resumeOutcome).toContain("READ_WORKLOAD_AUTHORING_PAUSED");expect(sends).toBe(3);expect(JSON.stringify(state.operations[1])).toBe(old);
+    expect(asked).toHaveLength(1);expect(asked[0]).toBe(ordinary.question);
+  }finally{
+    server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));
+
+  }
+});

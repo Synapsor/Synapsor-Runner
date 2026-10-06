@@ -116,6 +116,31 @@ async function fixture(options: { presentation?: boolean; answer?: string; decis
 }
 
 describe("Version outside-batch controller with controlled host CAS and genuine B35 decoding", () => {
+  it("raw-saves Version wording before the correction without acknowledging its uncertain response", async () => {
+    const f = await fixture({ presentation: false });
+    try {
+      const original = "Does billing.accounts.revision advance on every update and never remain unchanged?";
+      const before = f.disk();
+      f.requestJson.mockImplementationOnce(async () => ({ status: 200, body: { status: "completed", output: [{
+        type: "function_call", call_id: "version-wording-first", name: "runner__propose_operator_decision",
+        arguments: JSON.stringify({ question_id: before.question!.id, revision: before.question!.revision,
+          status: "needs_information", question: original }),
+      }] } })).mockImplementationOnce(async () => {
+        const saved = f.disk();
+        expect(saved.question!.wording_state?.gate.original_question).toBe(original);
+        expect(saved.question!.presentation).toBeUndefined(); expect(saved.question!.raw_answer).toBeUndefined();
+        expect(saved.handoff).toEqual(before.handoff);
+        expect(saved.checkpoint.logical_turns!.at(-1)).toMatchObject({ used_version_corrections: [before.question!.id] });
+        expect(vi.mocked(f.ports.saveQuestion).mock.calls.some(([, , completion, options]) => !completion && options?.rawCheckpoint)).toBe(true);
+        throw new AskError("ASK_CANCELLED", "Controlled interruption before the correction response.", 499);
+      });
+      await expect(f.tracked(() => runVersionConversation({ ...f.input,
+        businessContext: { references: [{ resource: "billing.accounts", field: "revision", label: "change counter", origin: "policy_term" }] },
+      }))).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      expect(f.ports.prompt).not.toHaveBeenCalled(); expect(f.ports.confirm).not.toHaveBeenCalled();
+      expect(f.disk().question!.confirmation).toBeUndefined();
+    } finally { await fs.rm(f.root, { recursive: true, force: true }); }
+  });
   it("preserves exact raw UTF-8, default-safe readback and unverified confirmation, then reuses zero-send", async () => {
     const raw = "  Yes — café\tall writers.  ", f = await fixture({ answer: raw, decision: true });
     try {

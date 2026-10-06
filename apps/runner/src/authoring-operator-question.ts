@@ -4,6 +4,7 @@ import type { AskAuthoringEpisodeBudget } from "./model-ask.js";
 import type { AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import type { AuthoringQuestionCompletion, AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { AskError } from "./model-provider-transport.js";
+import { parseOperatorClarificationGateState, type OperatorClarificationGateState } from "./authoring-operator-presentation.js";
 
 type Digest = `sha256:${string}`;
 export type OperatorQuestionValue =
@@ -37,6 +38,8 @@ export type OperatorQuestion = {
   /** Read keeps its producer's counters. New assisted local consumers share
    * ONE existing normal provider allowance across both stages and restart. */
   budget?: { iterations_used: number; tool_calls_used: number; correction_used: boolean };
+  /** Inert wording input retained before the existing single correction. */
+  wording_state?: { stage: "present" | "source-review"; gate: OperatorClarificationGateState };
   presentation?: { text: string; recorded_at: string };
   raw_answer?: { id: string; text: string; actor: "local_installation_operator"; recorded_at: string };
   proposal?: { question_id: string; revision: number; answer_id?: string; source_reference?: Digest;
@@ -74,7 +77,7 @@ export function createOperatorQuestion(input: Pick<OperatorQuestion,
 
 export function parseOperatorQuestion(value: unknown): OperatorQuestion {
   if (!object(value) || !exact(value, ["version", "id", "revision", "handoff_id", "kind", "scope_digest", "context_digest", "target",
-    "material", "evidence", "continuation", "source_binding", "budget_owner_id", "budget", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
+    "material", "evidence", "continuation", "source_binding", "budget_owner_id", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
     || value.version !== 1 || !id(value.id) || value.handoff_id !== undefined && !text(value.handoff_id, 100) || !count(value.revision, Number.MAX_SAFE_INTEGER, 1)
     || !["attributed_meaning", "input_bounds", "writer_maintenance"].includes(value.kind as string)
     || !digest(value.scope_digest) || !digest(value.context_digest) || !digest(value.digest)
@@ -109,6 +112,15 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     || value.kind === "input_bounds" && !value.target.outcomes.length) invalid("The decision does not match its exact target or continuation.");
   if (value.budget !== undefined && (!object(value.budget) || !exact(value.budget, ["iterations_used", "tool_calls_used", "correction_used"])
     || !count(value.budget.iterations_used, 6) || !count(value.budget.tool_calls_used, 8) || typeof value.budget.correction_used !== "boolean")) invalid("Invalid owning episode counters.");
+  if (value.wording_state !== undefined) {
+    const wording = value.wording_state;
+    if (!object(wording) || !exact(wording, ["stage", "gate"])
+      || wording.stage !== (value.source_binding ? "source-review" : "present")) invalid("Wording belongs to another question stage.");
+    const gate = parseOperatorClarificationGateState(wording.gate);
+    const target = { ...(value.target.resource ? { resource: value.target.resource } : {}), ...(value.target.field ? { field: value.target.field } : {}) };
+    if (gate.stage !== (value.kind === "writer_maintenance" ? "version" : value.kind === "input_bounds" ? "input" : "read")
+      || canonicalJsonDigest(gate.target ?? {}) !== canonicalJsonDigest(target)) invalid("Wording belongs to another exact question target.");
+  }
   if (value.presentation !== undefined && (!object(value.presentation) || !exact(value.presentation, ["text", "recorded_at"])
     || !text(value.presentation.text, 4000) || !date(value.presentation.recorded_at))) invalid("Invalid saved presentation.");
   if (value.raw_answer !== undefined && (!value.presentation || !object(value.raw_answer) || !exact(value.raw_answer, ["id", "text", "actor", "recorded_at"])
@@ -186,6 +198,15 @@ export function presentOperatorQuestion(q: OperatorQuestion, text: string): Oper
   return update(q, next => {
     if (next.presentation) invalid("Redisplay the saved presentation; do not generate another one.");
     next.presentation = { text, recorded_at: new Date().toISOString() };
+  });
+}
+/** The host saves this input under its ordinary raw currentness/CAS boundary,
+ * without acknowledging a response or changing the question's allowance. */
+export function retainOperatorQuestionWording(q: OperatorQuestion, wording: NonNullable<OperatorQuestion["wording_state"]>): OperatorQuestion {
+  return update(q, next => {
+    if (next.presentation || next.raw_answer || next.proposal || next.disposition) invalid("Do not rewrite wording for an already presented or interpreted question.");
+    if (next.wording_state && canonicalJsonDigest(next.wording_state) !== canonicalJsonDigest(wording)) invalid("The original wording input cannot be replaced.");
+    next.wording_state = structuredClone(wording);
   });
 }
 export function captureOperatorAnswer(q: OperatorQuestion, raw: string): OperatorQuestion {
@@ -331,7 +352,7 @@ export function assertOperatorQuestionsAdvance(previous: readonly OperatorQuesti
       ...(q.source_binding ? { source_binding: q.source_binding } : {}),
       ...(q.budget_owner_id ? { budget_owner_id: q.budget_owner_id } : {}) });
     if (canonicalJsonDigest(fixed(old)) !== canonicalJsonDigest(fixed(current))) invalid("A pending question's routing or currentness binding changed.");
-    for (const field of ["presentation", "raw_answer"] as const) {
+    for (const field of ["wording_state", "presentation", "raw_answer"] as const) {
       if (old[field] && canonicalJsonDigest(old[field]) !== canonicalJsonDigest(current[field] ?? null)) invalid("Presented or captured evidence changed.");
     }
     if (old.budget && (!current.budget || current.budget.iterations_used < old.budget.iterations_used

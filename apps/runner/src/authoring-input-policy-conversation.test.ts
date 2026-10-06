@@ -106,7 +106,8 @@ async function fixture(replies: Reply[] = [proposal], outcomes = ["work.hold"], 
   const input = { projectRoot, sources, session: { provider: "openai" as const, model: "controlled-model",
     apiKey: "inert-controlled-credential", dependencies: { requestJson } }, outcomes, store, actor: "local_installation_operator",
     ports, egressAcknowledged: true, env: {} };
-  const run = async (override: Partial<Omit<typeof input, "session">> & { session?: ActionModelSuggestionSession } = {},
+  const run = async (override: Partial<Omit<typeof input, "session">> & { session?: ActionModelSuggestionSession;
+    businessContext?: Parameters<typeof runSourceInputConversation>[0]["businessContext"] } = {},
     options: { checkpointTypedRefusal?: boolean } = {}) => withAuthoringGenerationRecovery(async () => {
     const configured = { ...input, ...override };
     if (typeof configured.session.dependencies?.requestJson !== "function" || "baseUrl" in configured.session) {
@@ -155,6 +156,29 @@ async function fixture(replies: Reply[] = [proposal], outcomes = ["work.hold"], 
 }
 
 describe("specific assisted Source Input controller, real Source/Resume CAS and controlled decoders", () => {
+  it("raw-saves the original Input wording before correction without a handoff or completed result", async () => {
+    const original = "Should work.parcels.status be optional and never exceed 64 characters?";
+    const f = await fixture([q => ({ ...information(q), question: original })]);
+    const save = vi.spyOn(f.ports, "saveQuestion"), before = f.selected();
+    f.requestJson.mockImplementationOnce(async () => ({ status: 200, body: { status: "completed", output: [{
+      type: "function_call", call_id: "wording-first", name: "runner__propose_operator_decision",
+      arguments: JSON.stringify({ ...information(f.selected()), question: original }),
+    }] } })).mockImplementationOnce(async () => {
+      const saved = f.selected();
+      expect(saved.wording_state?.gate.original_question).toBe(original);
+      expect(saved.presentation).toBeUndefined(); expect(saved.raw_answer).toBeUndefined();
+      expect(f.readResume().owner_handoffs).toBeUndefined();
+      expect(saved.id).toBe(before.id); expect(saved.source_binding).toEqual(before.source_binding);
+      expect(saved.budget?.correction_used).toBe(true);
+      expect(save.mock.calls.some(([, , options]) => options.rawCheckpoint === true && !options.completion)).toBe(true);
+      throw new AskError("ASK_CANCELLED", "Controlled interruption before the correction response.", 499);
+    });
+    await expect(f.run({ businessContext: { references: [{ resource: "work.parcels", field: "status", label: "parcel note", origin: "policy_term" }] } }))
+      .rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    expect(f.selected().wording_state?.gate.original_question).toBe(original);
+    expect(f.prompt).not.toHaveBeenCalled(); expect(f.confirm).not.toHaveBeenCalled();
+    expect((await loadPolicySources(f.input.projectRoot, f.input.sources.id)).input_policy_reviews).toBeUndefined();
+  });
   it.each([4_000, 4_002])("retains exact long Unicode input evidence or refuses before mapping at %s UTF-16 units", async units => {
     const sourceText = "Hold a parcel with its note.\nAgree the lower and upper note-length bounds and the counting unit before preparing its input contract.";
     const prefix = "  The note needs one through 64 UTF-16 units, counting spaces; emoji counts as two. ";

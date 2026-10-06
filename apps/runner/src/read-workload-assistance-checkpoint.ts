@@ -1,3 +1,4 @@
+import { parseOperatorClarificationGateState, type OperatorClarificationGateState } from "./authoring-operator-presentation.js";
 import { normalizeReadMeaningAttempts, type ReadMeaningAttempt } from "./read-meaning-evidence.js";
 import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -35,6 +36,8 @@ export type ReadWorkloadAssistanceCheckpoint = {
   catalog_digest: Digest;
   tool_digest: Digest;
   state: {
+    /** Original wording-only input; never an operator answer or completion. */
+    wording?: OperatorClarificationGateState;
     call_count: number; attempt: number; phase: ReadWorkloadDiagnostic["phase"];
     correction_used: boolean; relationship_reviews: number; relationship_review_limit: 0 | 3;
     clarified_targets: Array<ModelReadClarificationRequest & { answer: string }>;
@@ -150,7 +153,7 @@ export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkl
   const flags = ["correction_used", "clarification_from_invalid_naming", "clarification_resolved", "mechanical_clarification_resolved",
     "value_request_resolved", "repeated_assistance_request", "naming_evidence_correction_used"];
   if (!exact(s, ["call_count", "attempt", "phase", "relationship_reviews", "relationship_review_limit", "clarified_targets", "clarification_answers", "unresolved_answers", "reviewed_replacements",
-    ...flags, "resolved_mechanical_request", "naming_correction_workload", "approved_value_context", "diagnostics", "usage"])
+    ...flags, "wording", "resolved_mechanical_request", "naming_correction_workload", "approved_value_context", "diagnostics", "usage"])
     || !count(s.call_count, 11) || !count(s.attempt, 16) || !["initial", "correction", "follow-up"].includes(s.phase as string)
     || ![0, 3].includes(s.relationship_review_limit as number) || !count(s.relationship_reviews, s.relationship_review_limit as number)
     || flags.some(k => typeof s[k] !== "boolean") || !Array.isArray(s.clarified_targets) || s.clarified_targets.length > 4
@@ -160,6 +163,10 @@ export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkl
     || s.naming_correction_workload !== undefined && !digest(s.naming_correction_workload)
     || s.approved_value_context !== undefined && !provided(s.approved_value_context)
     || !Array.isArray(s.diagnostics) || s.diagnostics.length > 6) throw fail();
+  if (s.wording !== undefined) {
+    try { if (parseOperatorClarificationGateState(s.wording).stage !== "read") throw new Error("wrong wording stage"); }
+    catch { throw fail(); }
+  }
   if (s.unresolved_answers !== undefined) {
     const attempts = normalizeReadMeaningAttempts(s.unresolved_answers);
     if (attempts.length + s.clarified_targets.length > 4) throw fail();

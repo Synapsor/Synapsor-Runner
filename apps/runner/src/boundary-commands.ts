@@ -4693,7 +4693,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             const old=operatorQuestions.find(q=>q.id===next.id);
             if(!old||old.digest!==expected)throw new PolicySourceChangedError();
             operatorQuestions[operatorQuestions.indexOf(old)]=next;
-            await persistAuthoringResume(stage(),permit);
+            await persistAuthoringResume(stage(),permit,!options.rawCheckpoint);
             if(resumePersistenceBlocked)throw checkpointSaveFailure('The exact input-policy question');
           },options?.permit),
           createMissingQuestion:async(currentRoot,text,completion,options)=>mutateOwnerHandoff(async permit=>{
@@ -7255,13 +7255,18 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         assertActionVersionQuestionHandoff({ generation_recovery: generationRecovery,
           owner_handoffs: ownerHandoffs, operator_questions: operatorQuestions }, cp);
       };
-      const persistQuestion = async (q: OperatorQuestion, expected: string, completion?: AuthoringOwnerHandoff["completion"]) =>
-        coordinated(async () => {
+      const persistQuestion = async (q: OperatorQuestion, expected: string, completion?: AuthoringOwnerHandoff["completion"],
+        options?: { rawCheckpoint: true }) =>
+        coordinated(async permit => {
           await assertCurrent(borrowedPermit);
           const previous = readQuestion(), cp = settings.read()!;
           if (previous.digest !== expected || previous.id !== q.id) throw stale();
           operatorQuestions[operatorQuestions.indexOf(previous)] = q;
-          await request.savePendingVersion(cp.pending_version!, cp.pending_question!, completion);
+          if (options?.rawCheckpoint) {
+            if (completion) throw stale();
+            await persistAuthoringResume(settings.stage, permit, false);
+            if (resumePersistenceBlocked) throw checkpointSaveFailure("The counter question wording input");
+          } else await request.savePendingVersion(cp.pending_version!, cp.pending_question!, completion);
         });
       const initial = readQuestion();
       const result = await runVersionConversation({ binding: { ...prepared.review,

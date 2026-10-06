@@ -1,3 +1,4 @@
+import { parseOperatorClarificationGateState, type OperatorClarificationGateState } from "./authoring-operator-presentation.js";
 import { parseReadPrerequisiteCheckpoint, type ReadPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
 import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -21,6 +22,8 @@ export type ReadBoundaryRevisionCheckpoint = {
   input_digest: Digest; boundary_digest: Digest; catalog_digest: Digest; tool_digest: Digest;
 
   state: {
+    /** Original wording-only input; never an operator answer or completion. */
+    wording?: OperatorClarificationGateState;
     call_count: number; correction_used: boolean; prerequisite_review_failed: boolean;
     issue: string; clarification_count: number;
     /** The existing producer sends its last16 answers, not a new question cap. */
@@ -93,13 +96,17 @@ export function parseReadBoundaryRevisionCheckpoint(value:unknown):ReadBoundaryR
   if(q.decision!==undefined && (!record(q.decision) || !exact(q.decision,["state","answer"])
     || (q.decision.state==="answered" ? !rawAnswer(q.decision.answer) : q.decision.state!=="declined" || q.decision.answer!==undefined)))throw invalid();
   }
-  if(!exact(s,["call_count","correction_used","prerequisite_review_failed","issue","clarification_count","clarification_answers","private_decisions","reviewed_prerequisite","reviewed_relationship","usage"])
+  if(!exact(s,["wording","call_count","correction_used","prerequisite_review_failed","issue","clarification_count","clarification_answers","private_decisions","reviewed_prerequisite","reviewed_relationship","usage"])
     || !count(s.call_count) || value.stage!=="dispatching" && s.call_count===0 || typeof s.correction_used!=="boolean" || typeof s.prerequisite_review_failed!=="boolean"
     || typeof s.issue!=="string" || s.issue.length>1500 || !count(s.clarification_count)
     || (s.clarification_count as number)>(s.call_count as number)
     || !Array.isArray(s.clarification_answers) || s.clarification_answers.length!==Math.min(s.clarification_count as number,16)
     || s.clarification_answers.some(answer=>!record(answer) || !exact(answer,["question","answer"]) || !text(answer.question,500) || !rawAnswer(answer.answer))
     || !Array.isArray(s.private_decisions))throw invalid();
+  if (s.wording !== undefined) {
+    try { if (parseOperatorClarificationGateState(s.wording).stage !== "read") throw new Error("wrong wording stage"); }
+    catch { throw invalid(); }
+  }
   if(record(q) && q.decision && (q.decision as Record<string,unknown>).state==="answered") {
     const last=s.clarification_answers.at(-1);
     if(!record(last) || last.question!==q.question || last.answer!==(q.decision as Record<string,unknown>).answer)throw invalid();

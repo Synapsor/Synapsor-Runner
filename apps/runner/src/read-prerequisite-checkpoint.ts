@@ -1,3 +1,4 @@
+import { parseOperatorClarificationGateState, type OperatorClarificationGateState } from "./authoring-operator-presentation.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import type { ReadCurrentStatePrerequisiteSelection } from "./read-prerequisite.js";
@@ -34,6 +35,8 @@ export type ReadPrerequisiteCheckpoint = {
     approved_business_decisions: ReadPrerequisiteBusinessDecision[] };
 
   state: {
+    /** Original wording-only input; never an operator answer or completion. */
+    wording?: OperatorClarificationGateState;
     correction_used: boolean; issue: string; new_questions: number;
     answers: Array<{ question: string; answer: string }>;
     confirmed_answers: Array<{ question: string; answer: string }>;
@@ -106,7 +109,7 @@ export function parseReadPrerequisiteCheckpoint(value: unknown): ReadPrerequisit
       : d.state !== "revise" || !keys(d, ["state", "instruction"]) || !text(d.instruction, 8000))) throw invalid();
   }
   }
-  if (!keys(s, ["correction_used", "issue", "new_questions", "answers", "confirmed_answers", "saved_decisions", "questions", "replayed_decisions", "questioned_proposal", "metrics"])
+  if (!keys(s, ["wording", "correction_used", "issue", "new_questions", "answers", "confirmed_answers", "saved_decisions", "questions", "replayed_decisions", "questioned_proposal", "metrics"])
     || typeof s.correction_used !== "boolean" || typeof s.issue !== "string" || s.issue.length > 4000
     || !count(s.new_questions) || (s.new_questions as number) > 3
     || !history(s.answers) || !history(s.confirmed_answers)
@@ -117,6 +120,10 @@ export function parseReadPrerequisiteCheckpoint(value: unknown): ReadPrerequisit
     || !obj(s.metrics) || !keys(s.metrics, ["business_questions", "reused_business_answers", "repeated_business_questions", "renewed_business_questions", "semantic_reviews"])
     || ["business_questions", "reused_business_answers", "repeated_business_questions", "renewed_business_questions", "semantic_reviews"]
       .some(key => !count((s.metrics as Record<string, unknown>)[key])) || s.metrics.business_questions !== s.new_questions) throw invalid();
+  if (s.wording !== undefined) {
+    try { if (parseOperatorClarificationGateState(s.wording).stage !== "read") throw new Error("wrong wording stage"); }
+    catch { throw invalid(); }
+  }
   if(value.stage!=="dispatching") {
   if (p.kind === "clarification") {
     const request = p.request as Record<string, unknown>;

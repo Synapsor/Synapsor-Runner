@@ -388,7 +388,7 @@ export async function generateModelReadBoundaryRevision(input: {
     assertCurrent();
     await input.onCheckpoint(readBoundaryRevisionCheckpoint({ input_digest: inputDigest, boundary_digest: boundaryDigest,
       catalog_digest: catalog.digest, tool_digest: authorityDigest, ...(stage === "dispatching" ? { stage, dispatch_question: dispatchQuestion!, ...(previousQuestion ? { previous_question: structuredClone(previousQuestion) } : {}) } : { stage, pending_question: pending! }), state: {
-        call_count: callCount, correction_used: correctionUsed, prerequisite_review_failed: prerequisiteReviewFailed,
+        call_count: callCount, correction_used: correctionUsed, ...(wording.snapshot() ? { wording: wording.snapshot() } : {}), prerequisite_review_failed: prerequisiteReviewFailed,
         issue: issue.slice(0, 1500), clarification_count: clarificationCount, clarification_answers: clarificationAnswers.slice(-16),
         private_decisions: [...privateDecisions.values()], ...(reviewedPrerequisite ? { reviewed_prerequisite: reviewedPrerequisite } : {}),
         ...(reviewedRelationship ? { reviewed_relationship: reviewedRelationship } : {}), ...(usage ? { usage } : {}),
@@ -406,6 +406,7 @@ export async function generateModelReadBoundaryRevision(input: {
         || saved.tool_digest !== authorityDigest) throw new Error(
         "READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The original instruction, Read/catalog, model profile or tool surface changed; no replacement was sent.");
       const s = saved.state;
+      wording = operatorClarificationGate({ stage: "read", context: businessContext, ...(s.wording ? { resumeState: s.wording } : {}) });
       previousQuestion = saved.stage === "dispatching" ? saved.previous_question : { stage: saved.stage, pending_question: structuredClone(saved.pending_question) };
       for (const change of s.private_decisions) {
         const field = catalog.resources.find(resource => resource.id === change.resource)?.fields.find(field => field.id === change.field);

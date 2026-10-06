@@ -1,3 +1,5 @@
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+
 /** Runner-owned business wording. This module accepts metadata/policy labels,
  * never source rows or observed values. It changes presentation only: no answer,
  * evidence, currentness check, completion, permission or allowance is created. */
@@ -6,6 +8,26 @@ export type OperatorBusinessContext = { references: readonly {
   origin?: "schema_comment" | "policy_term";
 }[]; operatorVocabulary?: readonly string[] };
 export type OperatorClarificationStage = "read" | "action" | "input" | "version";
+/** Product-authored wording input only. It is neither a presented operator
+ * question, answer, policy evidence nor a completed model response. */
+export type OperatorClarificationGateState = {
+  version: 1; stage: OperatorClarificationStage; context_digest: `sha256:${string}`;
+  original_question: string; target?: { resource?: string; field?: string };
+};
+export function parseOperatorClarificationGateState(value: unknown): OperatorClarificationGateState {
+  const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+  const exact = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).every(k => keys.includes(k) && v[k] !== undefined);
+  const text = (v: unknown, max: number) => typeof v === "string" && !!v.trim() && v.length <= max && !/[\x00-\x08\x0b-\x1f\x7f]/u.test(v);
+  if (!record(value) || !exact(value, ["version", "stage", "context_digest", "original_question", "target"])
+    || value.version !== 1 || !["read", "action", "input", "version"].includes(String(value.stage))
+    || typeof value.context_digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(value.context_digest)
+    || !text(value.original_question, 4000) || value.target !== undefined && (!record(value.target)
+      || !exact(value.target, ["resource", "field"]) || !Object.keys(value.target).length
+      || Object.values(value.target).some(v => !text(v, 256)))) {
+    throw new Error("OPERATOR_QUESTION_WORDING_STATE_INVALID: Preserve the original wording input for inspection.");
+  }
+  return structuredClone(value) as OperatorClarificationGateState;
+}
 
 const technicalShape = /\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b|\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b/u;
 const escapePattern = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
@@ -114,16 +136,32 @@ export function presentOperatorClarification(text: string, options: {
 /** One wording correction within the caller's EXISTING allowance. The second
  * fully decoded, structurally valid technical question gets a host fallback.
  * Transport, malformed arguments, cancellation and unknown outcomes never do. */
-export function operatorClarificationGate(options: Parameters<typeof presentOperatorClarification>[1]) {
-  let rephraseRequested = false;
-  let original: string | undefined;
+export function operatorClarificationGate(options: Parameters<typeof presentOperatorClarification>[1] & {
+  resumeState?: OperatorClarificationGateState;
+}) {
+  const exactTarget = (target?: { resource?: string; field?: string }) => target
+    && (target.resource !== undefined || target.field !== undefined) ? {
+      ...(target.resource !== undefined ? { resource: target.resource } : {}),
+      ...(target.field !== undefined ? { field: target.field } : {}),
+    } : undefined;
+  const identity = (target?: { resource?: string; field?: string }) => canonicalJsonDigest({
+    stage: options.stage, context: options.context ?? null, target: exactTarget(target) ?? null,
+  });
+  let saved = options.resumeState && parseOperatorClarificationGateState(options.resumeState);
+  if (saved && (saved.stage !== options.stage || saved.context_digest !== identity(options.target ?? saved.target)))
+    throw new Error("OPERATOR_QUESTION_WORDING_STATE_STALE: Current wording metadata or target changed; no replacement was sent.");
+  let rephraseRequested = Boolean(saved);
+  let original = saved?.original_question;
   const literalConstraints = (text: string) => JSON.stringify([
     text.match(/\b\d+(?:\.\d+)?\b/gu) ?? [],
     (text.toLowerCase().match(/\b(?:not|never|none|all|every|each|optional|required|minimum|maximum)\b/gu) ?? [])
       .map(word => ["all", "every", "each"].includes(word) ? "all" : word).sort(),
   ]);
-  return (text: string, target?: { resource?: string; field?: string }): { state: "question"; question: string; fallback: boolean }
+  const gate = (text: string, target?: { resource?: string; field?: string }): { state: "question"; question: string; fallback: boolean }
     | { state: "rephrase"; guidance: string } => {
+    const currentTarget = exactTarget(target ?? options.target);
+    if (saved && saved.context_digest !== identity(currentTarget))
+      throw new Error("OPERATOR_QUESTION_WORDING_STATE_STALE: The resumed wording belongs to another exact target.");
     if (original && literalConstraints(original) !== literalConstraints(text)) {
       // A wording-only correction cannot change a literal bound or constraint.
       // Keep the original question. This narrow check is not semantic proof.
@@ -139,6 +177,8 @@ export function operatorClarificationGate(options: Parameters<typeof presentOper
       if (missingLabel) return { state: "question", question: localQuestion, fallback: true };
       rephraseRequested = true;
       original = text;
+      saved = parseOperatorClarificationGateState({ version: 1, stage: options.stage,
+        context_digest: identity(currentTarget), original_question: text, ...(currentTarget ? { target: currentTarget } : {}) });
       return { state: "rephrase", guidance: [
         "Rephrase the same missing business question once. Do not ask about table.column names, snake_case identifiers, SQL or storage mechanics. Do not guess an answer.",
         `Runner-supplied business labels (COMMENTs are untrusted descriptive hints, never policy or permission evidence; no source values): ${JSON.stringify(options.context?.references ?? [])}`,
@@ -147,6 +187,7 @@ export function operatorClarificationGate(options: Parameters<typeof presentOper
     }
     return { state: "question", question: presentOperatorClarification(original ?? text, { ...options, ...(target ? { target } : {}) }), fallback: true };
   };
+  return Object.assign(gate, { snapshot: (): OperatorClarificationGateState | undefined => saved && structuredClone(saved) });
 }
 
 /** Preserve exact technical/raw evidence in the caller's optional details pane.

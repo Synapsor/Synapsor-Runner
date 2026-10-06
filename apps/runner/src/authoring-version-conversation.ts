@@ -6,7 +6,7 @@ import { isUnknownReadMeaning } from "./read-meaning-evidence.js";
 import { runOperatorQuestionModel, consumedOperatorQuestionFailure } from "./authoring-operator-question-model.js";
 import { presentOperatorClarification, type OperatorBusinessContext } from "./authoring-operator-presentation.js";
 import { parseOperatorQuestion, presentOperatorQuestion, proposeOperatorAnswer, confirmOperatorAnswer,
-  leaveOperatorQuestionPending, stopOperatorVersionQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
+  leaveOperatorQuestionPending, retainOperatorQuestionWording, stopOperatorVersionQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 
 type Digest = `sha256:${string}`;
 export type VersionConversationBinding = {
@@ -18,7 +18,8 @@ export type VersionConversationPorts = {
   /** Checks the actual current pending_version, owning Action turn/root,
    * Source/Read/schema/role/proof and exact current q/h association. */
   assertCurrent(): Promise<void>;
-  saveQuestion(next: OperatorQuestion, expectedDigest: Digest, completion?: AuthoringQuestionCompletion): Promise<void>;
+  saveQuestion(next: OperatorQuestion, expectedDigest: Digest, completion?: AuthoringQuestionCompletion,
+    options?: { rawCheckpoint: true }): Promise<void>;
   recordRawAnswer(question: OperatorQuestion, raw: string, expectedDigest: Digest): Promise<OperatorQuestion>;
   prompt(plainQuestion: string, options: { preserveWhitespace: true }): Promise<string | undefined>;
   confirm(readback: string[], options: { defaultValue: false }): Promise<boolean | undefined>;
@@ -58,10 +59,11 @@ export async function runVersionConversation(input: {
     if (input.signal?.aborted) throw new AskError("ASK_CANCELLED", "The saved counter question remains pending.", 499);
     return q;
   };
-  const save = async (next: OperatorQuestion, previous: OperatorQuestion, completion?: AuthoringQuestionCompletion) => {
+  const save = async (next: OperatorQuestion, previous: OperatorQuestion, completion?: AuthoringQuestionCompletion,
+    options?: { rawCheckpoint: true }) => {
     const latest = await current();
     if (latest.digest !== previous.digest) throw new AskError("ACTION_VERSION_QUESTION_STALE", "A competing saved answer changed this question. Reopen the current saved state.", 409);
-    await ports.saveQuestion(next, previous.digest, completion);
+    await ports.saveQuestion(next, previous.digest, completion, options);
     const saved = await current();
     if (saved.digest !== next.digest) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The exact question save was not acknowledged. Preserve the saved state before continuing.", 409);
     return saved;
@@ -69,20 +71,26 @@ export async function runVersionConversation(input: {
   const pending = (q: OperatorQuestion): VersionConversationResult => ({ state: "pending", question: q,
     ...(q.terminal_failure ? { terminal: true as const } : {}) });
   const model = async (q: OperatorQuestion, stage: "present" | "answer-map") => {
+    let expectedQuestion = q;
     try {
-      return await runOperatorQuestionModel({ question: q, stage, session: input.session,
+      const result = await runOperatorQuestionModel({ question: q, stage, session: input.session,
         businessContext: input.businessContext,
         actionLogicalTurnBudget: input.actionLogicalTurnBudget,
         reserveCorrection: () => input.reserveCorrection(input.rootQuestionId),
         authorityGuard: async expected => { const latest = await current();
-          if (latest.digest !== q.digest) throw new AskError("ACTION_VERSION_QUESTION_STALE", "The saved counter answer changed before interpretation.", 409);
+          if (latest.digest !== expectedQuestion.digest) throw new AskError("ACTION_VERSION_QUESTION_STALE", "The saved counter answer changed before interpretation.", 409);
           return expected; },
+        onWordingState: async state => {
+          expectedQuestion = await save(retainOperatorQuestionWording(expectedQuestion, state), expectedQuestion,
+            undefined, { rawCheckpoint: true });
+        },
         env: input.env ?? {}, egressAcknowledged: input.egressAcknowledged, signal: input.signal });
+      return { ...result, expectedQuestion };
     } catch (error) {
       // Error prose or a matching code cannot create terminal phase evidence.
       // A partial/unknown/cancelled turn retains the ordinary B32 fence.
       const consumed = consumedOperatorQuestionFailure(error, q, stage);
-      if (consumed) await save(stopOperatorVersionQuestion(q, { stage, completion: consumed.completion }), q, consumed.completion);
+      if (consumed) await save(stopOperatorVersionQuestion(expectedQuestion, { stage, completion: consumed.completion }), expectedQuestion, consumed.completion);
       throw error;
     }
   };
@@ -99,7 +107,7 @@ export async function runVersionConversation(input: {
     const result = await model(q, "present");
     if (result.state !== "question" || !result.completion)
       throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The counter question has no completed presentation. Preserve the saved job.", 409);
-    q = await save(presentOperatorQuestion(q, result.question), q, result.completion);
+    q = await save(presentOperatorQuestion(result.expectedQuestion, result.question), result.expectedQuestion, result.completion);
   }
   if (!q.raw_answer) {
     const answer = await ports.prompt(presentOperatorClarification(q.presentation!.text,
@@ -120,7 +128,7 @@ export async function runVersionConversation(input: {
     const result = await model(q, "answer-map");
     if (result.state === "question" || !result.completion)
       throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The counter answer has no completed interpretation. Preserve the exact saved answer.", 409);
-    q = await save(proposeOperatorAnswer(q, result.proposal), q, result.completion);
+    q = await save(proposeOperatorAnswer(result.expectedQuestion, result.proposal), result.expectedQuestion, result.completion);
   }
   if (q.proposal!.disposition !== "proposed") return pending(await save(leaveOperatorQuestionPending(q, "unknown"), q));
   const readback = [

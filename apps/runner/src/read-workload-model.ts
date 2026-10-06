@@ -745,7 +745,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The Read metadata changed while assistance was pending. Preserve the question and revalidate; no new mapping was sent.");
   };
   const controllerState = (): ReadWorkloadAssistanceCheckpoint["state"] => ({
-        call_count: callCount, attempt, phase, correction_used: correctionUsed, relationship_reviews: relationshipReviews,
+        call_count: callCount, attempt, phase, correction_used: correctionUsed, ...(wording.snapshot() ? { wording: wording.snapshot() } : {}), relationship_reviews: relationshipReviews,
         relationship_review_limit: relationshipReviewLimit, clarified_targets: clarifiedTargets, clarification_answers: clarificationAnswers,
         ...(unresolvedAnswers.length ? { unresolved_answers: unresolvedAnswers } : {}),
         ...(reviewedReplacements.length ? { reviewed_replacements: reviewedReplacements } : {}),
@@ -782,6 +782,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       return parsed;
     };
     const s = saved.state, q = saved.pending_question;
+    wording = operatorClarificationGate({ stage: "read", context: businessContext(), ...(s.wording ? { resumeState: s.wording } : {}) });
     previousQuestion = saved.stage === "dispatching" ? saved.previous_question : { stage: saved.stage, pending_question: structuredClone(saved.pending_question) };
     const retired = new Set<number>(), replaced = new Set<number>();
     for (const review of s.reviewed_replacements ?? []) {

@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { AskError, type AskProviderDependencies } from "./model-ask.js";
-import { captureOperatorAnswer, createOperatorQuestion, presentOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
+import { captureOperatorAnswer, createOperatorQuestion, presentOperatorQuestion, retainOperatorQuestionWording,
+  assertOperatorQuestionsAdvance, parseOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import { newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
 import { makeSourceInputReview } from "./authoring-input-policy.js";
 import { configureAuthoringGenerationRecovery, validateAuthoringTransportState, withAuthoringGenerationRecovery,
@@ -233,6 +234,33 @@ describe("shared operator-question model adapter; controlled real decoders only"
 
 
 describe("B50 real Terra technical questions", () => {
+  it("raw-saves original wording before correction and restores it on the same typed question", async () => {
+    let q = record("input_bounds");
+    const original = "Should work.parcels.status be optional and never exceed 64 characters?";
+    const changed = "Should work.parcels.status be required and exceed 128 characters?";
+    const businessContext = { references: [{ resource: "work.parcels", field: "status", label: "parcel note", origin: "policy_term" as const }] };
+    const first = fixture(q, [{ ...information(q), question: original }]);
+    const before = structuredClone(q);
+    await expect(runOperatorQuestionModel({ ...first.input, businessContext, onWordingState: async state => {
+      q = retainOperatorQuestionWording(q, state); throw new Error("OWNED_WORDING_RAW_ACK_LOST");
+    } })).rejects.toThrow("OWNED_WORDING_RAW_ACK_LOST");
+    expect(first.requestJson).toHaveBeenCalledOnce(); expect(first.episode.counts()).toEqual({ iterations: 1, tools: 1, correction: false });
+    expect(q.wording_state?.gate.original_question).toBe(original); expect(q.presentation).toBeUndefined();
+    expect(q.raw_answer).toBeUndefined(); expect(q.proposal).toBeUndefined(); expect(q.confirmation).toBeUndefined();
+    expect(() => assertOperatorQuestionsAdvance([before], [q])).not.toThrow();
+    const resumed = fixture(q, [{ ...information(q), question: changed }], { episode: first.episode });
+    const result = await runOperatorQuestionModel({ ...resumed.input, businessContext });
+    expect(result).toMatchObject({ state: "question", question: "Should parcel note be optional and never exceed 64 characters?" });
+    expect(resumed.requestJson).toHaveBeenCalledOnce(); expect(first.episode.counts()).toEqual({ iterations: 2, tools: 2, correction: false });
+    const { digest: _digest, ...body } = q;
+    const removedBody = { ...body }; delete removedBody.wording_state;
+    const removed = parseOperatorQuestion({ ...removedBody, digest: canonicalJsonDigest(removedBody) });
+    expect(() => assertOperatorQuestionsAdvance([q], [removed])).toThrow("evidence changed");
+    expect(() => retainOperatorQuestionWording(q, { ...q.wording_state!, stage: "source-review" })).toThrow("cannot be replaced");
+    const noSend = fixture(q, [{ ...information(q), question: changed }]);
+    await expect(runOperatorQuestionModel({ ...noSend.input, businessContext: { references: [] } })).rejects.toThrow("STATE_STALE");
+    expect(noSend.requestJson).not.toHaveBeenCalled();
+  });
   it.each([
     { field: "section_id", label: "course section", question: "Does registrations.section_id represent the student-facing course section that may be shown with each registration, or should the registration display instead use fields reached through the listed course-section relationship?" },
     { field: "status_reason", label: "optional acceptance note", question: "Should the optional acceptance note be stored in registrations.status_reason, or is there another authoritative field/source for it?" },

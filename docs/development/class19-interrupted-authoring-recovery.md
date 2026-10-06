@@ -51,5 +51,10 @@ acknowledgement of a saved allowance remains charged on ordinary Resume.
 
 The original wording input must also survive a wording-only interruption.
 A reproduced partial correction changed a bound and its negation on Resume;
-this finding remains open until the shared gate's bounded original-question
-state, typed-question host adapters and independent variants are qualified.
+the shared gate now stores a bounded original-question input. All three Read
+controllers and the existing typed Input and Version question adapters save
+that input under their raw currentness/CAS boundary before correction. Resume
+restores the same target and vocabulary binding; drift refuses continuation.
+The normal completion and explicit confirmation saves remain separate.
+Integrated affected tests pass; independent variants and final qualification
+remain required before this class can be marked fixed.

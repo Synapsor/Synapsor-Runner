@@ -2,7 +2,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionModelSuggestionSession } from "./action-tui.js";
 import { makeSourceInputReview, assertSourceInputRequirements, type SourceInputPolicyReview } from "./authoring-input-policy.js";
 import { assertOperatorQuestionsAdvance, confirmOperatorAnswer, leaveOperatorQuestionPending, operatorQuestionEpisode, operatorQuestionReadback,
-  parseOperatorQuestion, proposeOperatorAnswer, stopOperatorInputQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
+  parseOperatorQuestion, proposeOperatorAnswer, retainOperatorQuestionWording, stopOperatorInputQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import { consumedOperatorInputFailure, runOperatorQuestionModel } from "./authoring-operator-question-model.js";
 import { presentOperatorClarification, type OperatorBusinessContext } from "./authoring-operator-presentation.js";
 import { activePolicySource, loadPolicySources, policySourceSavedDigest, savePolicySources,
@@ -23,7 +23,7 @@ export type SourceInputConversationPorts = {
   readQuestions(): { root: OperatorQuestion; children: readonly OperatorQuestion[] };
   assertCurrent(permit?: ProjectAuthorityMutationPermit, recovery?: SourceInputConversationRecovery): Promise<void>;
   saveQuestion(next: OperatorQuestion, expectedDigest: Digest, options: {
-    permit?: ProjectAuthorityMutationPermit; completion?: Completion;
+    permit?: ProjectAuthorityMutationPermit; completion?: Completion; rawCheckpoint?: true;
   }): Promise<void>;
   createMissingQuestion(root: OperatorQuestion, text: string, completion: Completion, options: {
     expectedRootDigest: Digest; permit?: ProjectAuthorityMutationPermit;
@@ -105,11 +105,11 @@ export async function runSourceInputConversation(input: {
     await ports.assertCurrent(permit);
     return current;
   };
-  const saveQuestion = async (next: OperatorQuestion, expected: OperatorQuestion, completion?: Completion) => {
+  const saveQuestion = async (next: OperatorQuestion, expected: OperatorQuestion, completion?: Completion, rawCheckpoint?: true) => {
     await withProjectAuthorityMutation(input.projectRoot, async permit => {
       await pendingCurrent(permit, expected);
       if (selected().question.digest !== expected.digest) invalid();
-      await ports.saveQuestion(next, expected.digest, { permit, ...(completion ? { completion } : {}) });
+      await ports.saveQuestion(next, expected.digest, { permit, ...(completion ? { completion } : {}), ...(rawCheckpoint ? { rawCheckpoint } : {}) });
     }, { signal: input.signal });
   };
   const pending = async (q: OperatorQuestion, disposition: "unknown" | "cancelled" | "declined", completion?: Completion,
@@ -146,13 +146,15 @@ export async function runSourceInputConversation(input: {
     }
     if (!question.proposal) {
       if (question.source_binding) {
-        const original = question, { source } = await pendingCurrent();
+        let original = question;
+        const { source } = await pendingCurrent();
         const result = await interpret({ question, stage: "source-review", session: input.session,
           businessContext: input.businessContext,
           episodeBudget: episode, reserveCorrection: episode.reserveCorrection,
           authorityGuard: async expected => { await pendingCurrent(undefined, original); return expected; },
           policyText: source.text, validateProposal: validateDomain, env: input.env,
           egressAcknowledged: input.egressAcknowledged, signal: input.signal });
+        original = result.expectedQuestion;
         question = selected().question;
         if (result.state === "question") {
           if (!result.completion) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The missing-business question has no current consumed generation. Preserve it for inspection; no handoff was fabricated.", 409);
@@ -239,13 +241,27 @@ export async function runSourceInputConversation(input: {
   }, { signal: input.signal });
 
   async function interpret(modelInput: Parameters<typeof runOperatorQuestionModel>[0]) {
-    try { return await runOperatorQuestionModel(modelInput); }
+    let expected = modelInput.question;
+    try {
+      const result = await runOperatorQuestionModel({ ...modelInput,
+        authorityGuard: async digest => { await pendingCurrent(undefined, expected); return digest; },
+        onWordingState: async state => {
+          await pendingCurrent(undefined, expected);
+          const previous = selected().question;
+          if (semanticDigest(previous) !== semanticDigest(expected)) invalid();
+          const next = retainOperatorQuestionWording(previous, state);
+          await saveQuestion(next, previous, undefined, true);
+          expected = next;
+        },
+      });
+      return { ...result, expectedQuestion: expected };
+    }
     catch (error) {
       const stage = modelInput.stage;
       const proof = stage === "present" ? undefined : consumedOperatorInputFailure(error, modelInput.question, stage);
       if (proof) {
         const current = selected();
-        if (!current.root.budget!.correction_used || semanticDigest(current.question) !== semanticDigest(modelInput.question)) invalid();
+        if (!current.root.budget!.correction_used || semanticDigest(current.question) !== semanticDigest(expected)) invalid();
         await saveQuestion(stopOperatorInputQuestion(current.question, { stage: proof.stage, completion: proof.completion }), current.question, proof.completion);
       }
       // A failed CAS/save never establishes the terminal write. Its existing

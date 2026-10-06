@@ -397,7 +397,7 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
     if (!input.onCheckpoint || stage !== "dispatching" && !retained) return;
     assertCurrent();
     await input.onCheckpoint(readPrerequisiteCheckpoint({ input_digest: inputDigest, tool_digest: authorityDigest,
-      seed, ...(stage === "dispatching" ? { stage, dispatch_question: dispatchQuestion!, ...(previousPending ? { previous_pending: structuredClone(previousPending) } : {}) } : { stage, pending: retained! }), state: { correction_used: correctionUsed, issue, new_questions: newQuestions,
+      seed, ...(stage === "dispatching" ? { stage, dispatch_question: dispatchQuestion!, ...(previousPending ? { previous_pending: structuredClone(previousPending) } : {}) } : { stage, pending: retained! }), state: { correction_used: correctionUsed, ...(wording.snapshot() ? { wording: wording.snapshot() } : {}), issue, new_questions: newQuestions,
         answers, confirmed_answers: confirmedAnswers, saved_decisions: savedDecisions, questions: [...questions], replayed_decisions: [...replayedDecisions],
         ...(questionedProposal ? { questioned_proposal: questionedProposal } : {}), metrics } }));
     assertCurrent();
@@ -413,6 +413,7 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
     if (cp.input_digest !== inputDigest || cp.tool_digest !== authorityDigest || !isDeepStrictEqual(cp.seed, seed)) throw new Error(
       "READ_PREREQUISITE_CHECKPOINT_STALE: The mapping input, inspected metadata, approved history or model destination changed; no replacement was sent.");
     const s = cp.state;
+    wording = operatorClarificationGate({ stage: "read", context: businessContext, ...(s.wording ? { resumeState: s.wording } : {}) });
     previousPending = cp.stage === "dispatching" ? cp.previous_pending : { stage: cp.stage, pending: structuredClone(cp.pending) };
     if (!isDeepStrictEqual([...answers, ...s.confirmed_answers], s.answers)) invalid("Retained history is not the original approved context plus this mapping's own confirmed answers.");
     for (const a of s.answers) {

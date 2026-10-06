@@ -54,6 +54,9 @@ export async function runOperatorQuestionModel(input: {
   inputContext?: { root: OperatorQuestion; policyText: string };
   /** Host metadata/policy labels only; never source rows or observed values. */
   businessContext?: OperatorBusinessContext;
+  /** Save only the original wording input through the existing raw Resume CAS.
+   * No question, receipt, acknowledgement or allowance is created here. */
+  onWordingState?(state: NonNullable<OperatorQuestion["wording_state"]>): Promise<void>;
   /** Pure domain validation; never save, display, adopt or grant in this hook. */
   validateProposal?(questionWithProposal: OperatorQuestion): void;
   env?: NodeJS.ProcessEnv;
@@ -102,8 +105,20 @@ export async function runOperatorQuestionModel(input: {
   const consumed: AskTurnResult[] = [];
   let staged: StagedDecision | undefined;
   let safeIssue = "Use the supplied question_id, revision and exact evidence reference with only this stage's declared fields and value shape. No statement was adopted and no authority changed.";
+  const target = { ...(q.target.resource ? { resource: q.target.resource } : {}), ...(q.target.field ? { field: q.target.field } : {}) };
   const wording = operatorClarificationGate({ stage: q.kind === "writer_maintenance" ? "version"
-    : q.kind === "input_bounds" ? "input" : "read", context: input.businessContext, target: q.target });
+    : q.kind === "input_bounds" ? "input" : "read", context: input.businessContext,
+    ...(Object.keys(target).length ? { target } : {}),
+    ...(q.wording_state?.stage === input.stage ? { resumeState: q.wording_state.gate } : {}) });
+  let savedWording = q.wording_state && canonicalJsonDigest(q.wording_state);
+  const saveWording = async () => {
+    const gate = wording.snapshot();
+    if (!gate || input.stage === "answer-map" || !input.onWordingState) return;
+    const state = { stage: input.stage, gate };
+    if (canonicalJsonDigest(state) === savedWording) return;
+    await input.onWordingState(state);
+    savedWording = canonicalJsonDigest(state);
+  };
   const gateway: AskToolGateway = { mode: "authoring", listTools: () => tools, close: async () => {},
     async callTool(name, args) {
       try {
@@ -158,6 +173,7 @@ export async function runOperatorQuestionModel(input: {
   const run = async (prompt: string): Promise<StagedDecision> => {
     knownInvalid = undefined;
     staged = undefined;
+    await saveWording();
     const turn = await runAskProviderTurn({ configuration, question: prompt, history: [], gateway, tools, signal,
       dependencies: input.session.dependencies, authorityDigest, authorityGuard: input.authorityGuard,
       ...(input.actionLogicalTurnBudget ? { actionLogicalTurnBudget: input.actionLogicalTurnBudget, conversationalAuthoring: true }
@@ -174,6 +190,7 @@ export async function runOperatorQuestionModel(input: {
   try {
     result = await runRequiredAuthoringToolCall({ run, question, toolName: TOOL,
       reserveCorrection: async () => {
+        await saveWording();
         const reserved = await input.reserveCorrection();
         if (!reserved) correctionExhausted = true;
         return reserved;
