@@ -24,7 +24,7 @@ describe.skipIf(process.platform !== "linux")("production Input in a real termin
       receiptPath = path.join(capture, "native-wait-receipt.json");
       const tsconfig = JSON.parse(await fs.readFile(runtime.tsconfig, "utf8"));
       const config = path.join(capture, "vitest-source.mjs");
-      await fs.writeFile(config, `export default ${JSON.stringify({ resolve: { alias: Object.entries(tsconfig.compilerOptions.paths)
+      await fs.writeFile(config, `export default ${JSON.stringify({ cacheDir: path.join(capture, "preparation-cache"), resolve: { alias: Object.entries(tsconfig.compilerOptions.paths)
         .map(([find, replacement]) => ({ find, replacement: (replacement as string[])[0] })) } })};`);
       const prep = spawn(process.execPath, [path.join(cwd, "node_modules/vitest/vitest.mjs"), "run", "apps/runner/src/authoring-public-input-resume-withheld.test.ts",
         "--config", config, "--configLoader", "native", "-t", "independent different-schema public Input Resume", "--maxWorkers=1", "--minWorkers=1"], {
