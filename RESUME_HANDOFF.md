@@ -1,18 +1,67 @@
-# Resume checkpoint — 2026-10-05 UTC
-
-Owner resumed on the new account. Prior PAUSE_HANDOFF.md is historical; standing authorities apply. Current usage baseline37%, stop at approximately40% with commit/private push/handoff. Product remains unfrozen at db67a64e; no product/test edits during corrected full gate.
-
-Full1194 failed8,406/464/576. Config ancestry confirmed; worktree config preserved at E/preserved-worktree-config1211/synapsor.runner.json; personal config untouched. Exactly ONE corrected full1214 launched05:54Z, PID13571, execution session93015, using corrected shared-dev-command-launch1213.py and /var/tmp/synapsor-full1213-owned/{home,tmp}. Capture E/settled-source-full1214. No final result yet. Collect EXIT/results; do NOT launch a duplicate. This is standalone unfiltered Vitest,1worker20s/20s,not pnpmtest.
-
-E=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470
-W=/home/sandesh-tiwari/.codex/worktrees/b36-scoped-private-evidence/synapsor-runner
-
-Fresh RESOURCE-FULL-RESUME1214.json conservativeupper42,618,221,065 / cap42,949,672,960; free53,510,987,776. Includes new reservations full256MiB/helperA160MiB/Testerlight1MiB and growth including Tester's prior overage. No cleanup credit. Future PG256MiB/Terra256MiB/original50 192MiB are NOT admitted; remeasure/reserve before creation. Free floor8GiB. Existing containers/evidence unchanged by Main.
-
-Main: collect full1214 → diagnose actual failures (no repeatedfull) → settled types/PG/tenoffline gates and20/50/64size. Corrected preparations E/run-offline1215.py and settled-postgres1203-v2.py are AST-checked only,notrun. They now require full1214PASS; offline HOME/TMP outside/home. PG wrapper now exitsnonzero on recordedfailure/sourcechange. Oldpreparations retained. GATE-PREP-RESUME1215.json records hashes. Offline needs OFFLINE-ADMISSION1215.json; PG needs fresh GATE-ADMISSION1203.json and new synapsor-conversation-final1203. Full noDBrequired.
-
-Helper action_gap_prepare resumed lightwire sufficiency; A restore still waits fullheavyrelease, then actual fresh <=600sec admission for restore-a1197-v4.py. Existing synapsor-helper1160-pg remains stopped. Then proposal-only connected-client edits → clean ORIGINALfull50 DEV. No approvals/worker/Sourcewrites. See priorhand-off and helperprepdir for exactnamespaces/commands.
-
-Tester01a0bcb8-0925-7380-911a-8bab207b9e0b resumed from ACTIVE-HANDOFF. Corrected8control smallActionprobe launched withinadditional1MiB; Q04/Q07/Q08/Q16/B/F3 owed. Newstudent Terra diagnostic stillheld afterfull,≤$2/lab8/protected20,skipifdelaysfreeze. No new paidrunorstudentDB. Own prior8setupfail retained as fixtureerror. Main makes no provider/key/countcalls.
-
-At usage~40%, coordinate all lanes to safe handoff/stop. Preserve runningfull process if not finished; record exactprocess/exitstate and do not spawn any replacement. CutoffOct6 17Z/finalOct7 17Z; all previous safety/money/fence boundaries retained.
+{
+  "utc": "2026-10-06T01:51:23.474069+00:00",
+  "status": "PAUSED_OWNER_ACCOUNT_SWITCH",
+  "authorization": "Owner direct PAUSE GRACEFULLY relayed by Main; no resume until Owner returns.",
+  "owned_containers_before": [
+    {
+      "name": "tester-coherent-b-1277",
+      "id": "59ba7c883cfea4924402732e25b0e04662c2ddc0768ac523841001811aaeaa99",
+      "running": true
+    },
+    {
+      "name": "synapsor-helper-student1363",
+      "id": "069aedab2b6babd8f922efb3afe932ccad4aa0f0afc9ff0445a1375ca8b1994b",
+      "running": true
+    },
+    {
+      "name": "synapsor-helper-student1356",
+      "id": "80172a373f46f906bc9182c807c00978911442630976432d5e833380365d575a",
+      "running": true
+    }
+  ],
+  "owned_containers_after": [
+    {
+      "name": "tester-coherent-b-1277",
+      "id": "59ba7c883cfea4924402732e25b0e04662c2ddc0768ac523841001811aaeaa99",
+      "running": false,
+      "status": "exited",
+      "data_mounts_preserved": [
+        "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/operator-conversation-development/coherent-b-current1277-v1/socket",
+        "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/operator-conversation-development/coherent-b-current1277-v1/roles-no-passwords.sql",
+        "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/operator-conversation-development/coherent-b-current1277-v1/source.dump",
+        "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/operator-conversation-development/coherent-b-current1277-v1/pgdata"
+      ]
+    },
+    {
+      "name": "synapsor-helper-student1363",
+      "id": "069aedab2b6babd8f922efb3afe932ccad4aa0f0afc9ff0445a1375ca8b1994b",
+      "running": false,
+      "status": "exited",
+      "data_mounts_preserved": [
+        "/var/tmp/hstudent1363/socket",
+        "/var/tmp/hstudent1363/pgdata"
+      ]
+    },
+    {
+      "name": "synapsor-helper-student1356",
+      "id": "80172a373f46f906bc9182c807c00978911442630976432d5e833380365d575a",
+      "running": false,
+      "status": "exited",
+      "data_mounts_preserved": [
+        "/var/tmp/hstudent1356/socket",
+        "/var/tmp/hstudent1356/pgdata"
+      ]
+    }
+  ],
+  "owned_activity_matches": [],
+  "no_owned_suite_driver_provider_request_running": true,
+  "no_new_suite_fixture_paid_or_long_step": true,
+  "no_container_or_evidence_deletion": true,
+  "financial_ledger_sha256": "4198af868e46354046422027928e3d4eeb39813e2d2e38fa4f223a31875b4953",
+  "financial_holds": "Preserved; no reservation/recovery/reset/close mutation at pause. Pending4/protected20 unchanged.",
+  "Main_processes": "Not stopped by Tester; Main reports full1378 closed and retainedclient paused/PGstopped, PGgate unlaunched.",
+  "current_runtime": "38697fcff5bdf381cde1e85040710ffb91622c9b",
+  "current_source_pin": "final-source1387/SOURCE-PIN1387.json SHA3d86ca5915d4f3c8c6aed6bc688e923819aa75ec24adbb7c7f174ffbab8dd572",
+  "backup": "Nonsecret compact handoff delegated to established Main private backup branch only; raw/private fixtures/ledgers remain local.",
+  "unresolved_owner_decision": "Latest direct one-more Terra notice fresh slot versus A1383 stopped continuation clarification pending; no paid launch."
+}
