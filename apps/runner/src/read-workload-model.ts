@@ -355,12 +355,15 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       }
       if (isRecord(args.clarification_request)) {
         let parsedRequest: ModelReadClarificationRequest;
+        let runnerQuestion = false;
         try {
           parsedRequest = parseReadClarificationRequest(args.clarification_request, catalog);
           // A current root association does not explain its fields. Preserve
           // the distinct field question instead of reasking the answered root.
           if (!currentMeaning({ resource: parsedRequest.resource })) {
-            parsedRequest = normalizeOpaqueClarificationRequest(parsedRequest, catalog);
+            const normalized = normalizeOpaqueClarificationRequest(parsedRequest, catalog);
+            runnerQuestion = normalized !== parsedRequest;
+            parsedRequest = normalized;
           }
         } catch (error) {
           return {
@@ -429,7 +432,11 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
             error_code: "READ_WORKLOAD_CLARIFICATION_REFUSED",
           };
         }
-        const presented = wording(parsedRequest.question, parsedRequest);
+        // Runner's necessary root-meaning question is a local template, not a
+        // technical model question that warrants another generation.
+        const presented = runnerQuestion
+          ? { state: "question" as const, question: businessRequest(parsedRequest).question, fallback: true }
+          : wording(parsedRequest.question, parsedRequest);
         if (presented.state === "rephrase" && !correctionUsed) {
           workloadValidationBlockers = [presented.guidance];
           return { ok: false, error_code: "OPERATOR_QUESTION_BUSINESS_WORDING_REQUIRED", value: {
@@ -1424,7 +1431,7 @@ function normalizeOpaqueClarificationRequest(
   return {
     resource: request.resource,
     reason: "Runner broadened the model's field question because the reviewed resource name is also clearly opaque and must be explained before mapping.",
-    question: `What business records does ${request.resource} contain, and what does its referenced field ${request.field} mean?`,
+    question: "What business records does this reviewed collection contain, and what does the referenced information mean?",
   };
 }
 

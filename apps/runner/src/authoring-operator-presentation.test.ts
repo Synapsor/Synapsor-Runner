@@ -3,6 +3,18 @@ import { containsOperatorTechnicalName, operatorBusinessContext, operatorBusines
   operatorClarificationGate, presentOperatorClarification } from "./authoring-operator-presentation.js";
 
 describe("shared operator business presentation", () => {
+  it.each(["read", "action", "input", "version"] as const)("uses a local description immediately when %s has no field label", stage => {
+    const context = operatorBusinessContext([{ id: "shipping.jobs", label: "Delivery jobs", field_types: { memo_code: "text" } }]);
+    const gate = operatorClarificationGate({ stage, context, target: { resource: "shipping.jobs", field: "memo_code" } });
+    const result = gate("Should shipping.jobs.memo_code be optional, with at most 64 characters?");
+    expect(result).toMatchObject({ state: "question", fallback: true });
+    if (result.state !== "question") throw new Error("Missing labels must not spend a model correction");
+    expect(result.question).not.toContain("shipping.jobs");
+    expect(result.question).not.toContain("memo_code");
+    expect(result.question).toContain("optional");
+    expect(result.question).toContain("64");
+    expect(result.question).toContain("meaning not established");
+  });
   const context = operatorBusinessContext([{ id: "billing.cases", label: "billing cases",
     field_types: { private_note: "text", state_code: "text" },
     field_metadata: { private_note: { label: "registrar note" }, state_code: { description: "Reviewed case state." } } }]);

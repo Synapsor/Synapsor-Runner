@@ -73,7 +73,7 @@ export function operatorBusinessLabel(context: OperatorBusinessContext | undefin
 /** Substitute only known identities, keeping the original question's choices,
  * bounds and constraints. An unavailable label never becomes guessed meaning. */
 function businessText(text: string, context?: OperatorBusinessContext,
-  target?: { resource?: string; field?: string }): string {
+  target?: { resource?: string; field?: string }, onMissingLabel?: () => void): string {
   const refs = [...context?.references ?? [], ...(target?.resource && !context?.references.some(ref =>
     ref.resource === target.resource && ref.field === target.field) ? [{ resource: target.resource, field: target.field }] : [])];
   const aliases = new Map<string, typeof refs>();
@@ -90,8 +90,9 @@ function businessText(text: string, context?: OperatorBusinessContext,
     const entries = aliases.get(name)!;
     const exact = entries.find(ref => ref.resource === target?.resource && ref.field === target?.field);
     const ref = exact ?? (entries.length === 1 ? entries[0] : undefined);
-    if (!ref) return "the reviewed business information (see exact details)";
+    if (!ref) { onMissingLabel?.(); return "the reviewed business information (see exact details)"; }
     const label = plainLabel(ref.label);
+    if (!label) onMissingLabel?.();
     const duplicates = label ? [...new Set(refs.filter(other => other.label === label)
       .map(other => `${other.resource}.${other.field ?? ""}`))].sort() : [];
     return label ? duplicates.length > 1
@@ -131,6 +132,11 @@ export function operatorClarificationGate(options: Parameters<typeof presentOper
     }
     if (!containsOperatorTechnicalName(text, options.context, target ?? options.target)) return { state: "question", question: text, fallback: false };
     if (!rephraseRequested) {
+      // No established vocabulary exists for an unlabelled identity. A model
+      // wording turn cannot supply its meaning; use the honest local wording.
+      let missingLabel = false;
+      const localQuestion = businessText(text, options.context, target ?? options.target, () => { missingLabel = true; });
+      if (missingLabel) return { state: "question", question: localQuestion, fallback: true };
       rephraseRequested = true;
       original = text;
       return { state: "rephrase", guidance: [
