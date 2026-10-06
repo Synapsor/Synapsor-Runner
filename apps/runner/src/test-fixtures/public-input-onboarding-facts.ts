@@ -11,4 +11,5 @@ export const PUBLIC_INPUT_FACTS = {
   minimum: 1,
   maximum: 64,
   sourceLine: 7,
+  editRequest: "Require two parcel reviewers for the first packing Action instead of one. Keep the second packing Action at one reviewer, the original independent reviewer arrangements, and every other Read, Input, Version, private eligibility, units, effect, time limit and client responsibility unchanged.",
 } as const;

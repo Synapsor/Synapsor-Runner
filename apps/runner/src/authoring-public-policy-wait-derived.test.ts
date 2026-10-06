@@ -31,7 +31,7 @@ const jsonLine=(text:string,prefix:string):any=>{
 };
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
 
-async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=false, positiveInput=false) {
+async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=false, positiveInput=false, editInputBaseline=false) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),`owned-public-policy-wait-${control}-`));
   const resumeFile=path.join(root,".synapsor/boundary-authoring/resume.json");
   const inspection=ownedProgramInspection();
@@ -55,12 +55,14 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
     initialLines.push(PUBLIC_INPUT_FACTS.sourceClause);
   }
   const sourceFile=path.join(root,"derived-policy-wait-rules.txt");await fs.writeFile(sourceFile,initialLines.join("\n"));
-  let stage:"initial"|"question"|"restart"|"explicit_review"="initial",transcript="",requests=0,actionPhase=0,questionNarrations=0;
+  let stage:"initial"|"question"|"restart"|"explicit_review"|"edit"="initial",transcript="",requests=0,actionPhase=0,questionNarrations=0;
   let sourceId:string|undefined,questionReads=0,clarifyChosen=false,injected=false,expectedWaiting:any,competingSaved:any,baseline:any;
   let clientDutyPrompts=0,versionAnswerPending=false,liveCoverageBefore:any;
   let inputAnswerPending=false,inputPrompts=0,inputConfirmations=0,inputBeforeConfirmation:any;
   const inputActionPhases=new Map<number,number>();
   const inputSnapshots:any[]=[];
+  let editPhase=0,editSaveConfirmations=0;
+  const editSnapshots:any[]=[];
   let nestedEntered=false,nestedReads=0,nestedDeclines=0,nestedStartRequests=0,nestedAuthorityBefore:any,cachedActivationAttempts=0;
   const nestedControl=control.startsWith("nested_");
   const reviewWaitControl=control.startsWith("nested_review_");
@@ -103,6 +105,7 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       inputSnapshots.push({stage:"question-before-raw",resume:saved});
       return PUBLIC_INPUT_FACTS.rawAnswer;
     }
+    if(stage==="edit")return answers.shift();
     if(stage==="initial") {
       if(nestedControl && nestedEntered && nestedReads++===0)return `/attach ${replacementFile}`;
       return answers.shift();
@@ -128,7 +131,7 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
     onInterrupt:()=>()=>{},review:async(title:string,content:string[])=>write(`\n${title}\n${content.join("\n")}\n`),read,readConversation:read,
     choose:async(choice:any)=>{
       const values=choice.options.map((entry:any)=>entry.value);let selected:string|undefined;
-      if(choice.title==="START BOUNDARY DRAFTING")selected=stage==="initial" ? positiveInput ? "program" : "model" : stage==="explicit_review" ? "review_rules" : "resume";
+      if(choice.title==="START BOUNDARY DRAFTING")selected=stage==="initial" ? positiveInput ? "program" : "model" : stage==="edit" ? "model" : stage==="explicit_review" ? "review_rules" : "resume";
       else if(choice.title==="CLIENT FOR THIS JOB")selected="later";
       else if(choice.title==="SEND ATTACHED RULES") {expect(choice.initialValue).toBe("cancel");selected=control==="nested_transfer_cancel" && nestedEntered ? "cancel" : "send";}
       else if(choice.title==="USE THE SAVED ATTACHMENT") {
@@ -154,6 +157,13 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       else if(choice.message==="REVIEW CHANGED-RECORD PROTECTION") {expect(choice.initialValue).toBe("pending");expect(transcript).toContain("studio.parcels.version");selected="confirm";}
       else if(choice.message==="Record this planned counter maintenance for the current setup?") {expect(choice.initialValue).toBe("no");expect(transcript.replace(/\s+/gu," ")).toContain(lines[4]);selected="yes";}
       else if(choice.title==="REVIEW DECLARED TEXT INPUT BOUNDS")selected="none";
+      else if(choice.message==="Save this exact disabled Action edit?" && stage==="edit") {
+        expect(choice.initialValue).toBe("no");expect(transcript.replace(/\s+/gu," ")).toContain(PUBLIC_INPUT_FACTS.editRequest);
+        expect(transcript).toContain("/approval/required_approvals: 1 -> 2");
+        editSaveConfirmations++;
+        editSnapshots.push({stage:"exact-edit-before-save",resume:await readResume(),authority:(await listActionRuleAuthorityDrafts(root))[0]});
+        selected="yes";
+      }
       else if(choice.message==="Save this exact attributed input-policy interpretation?") {
         expect(choice.initialValue).toBe("no");
         if(positiveInput) {
@@ -211,10 +221,24 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
     if(++requests>60)fail("Finite local ordinary response bound exceeded.");
     const body=request.body,text=positiveInput ? modelVisibleUserText(body) : strings(body).join("\n"),names=(body.tools??[]).map((tool:any)=>tool.name??tool.function?.name);
     responses.push({stage,names,bytes:Buffer.byteLength(JSON.stringify(body)),request:requests,...(positiveInput ? {body} : {}),...(names.includes("runner__propose_operator_decision") ? {current_operator_question:jsonLine(text,"Current question: "),decision_tool:body.tools[0]} : {})});
+    try {
     let name:string|undefined,args:any,narration:string|undefined;
-    if(names.includes("runner__plan_boundary_job")) {expect(stage).toBe("initial");name="runner__plan_boundary_job";
+    if(names.includes("runner__plan_boundary_job")) {
+      expect(["initial","edit"]).toContain(stage);name="runner__plan_boundary_job";
+      if(stage==="edit") {
+        const current=jsonLine(text,"Current reviewed state: ");
+        expect(current.read.exact_reusable_revision_count).toBeGreaterThan(0);
+        const selected=current.actions.find((action:any)=>action.outcome===PUBLIC_INPUT_FACTS.outcomes[0]);
+        expect(selected).toMatchObject({kind:"rule_derived",authority:"disabled"});
+        expect(current.read.resource_ids).toContain(selected.resource);
+        expect(current.actions.some((action:any)=>action.outcome===PUBLIC_INPUT_FACTS.outcomes[1])).toBe(true);
+        expect(text).toContain(PUBLIC_INPUT_FACTS.editRequest);
+        args={status:"planned",read_mode:"reuse",action_mode:"revise",action_strategy:"rule_derived",action_outcome:selected.outcome,
+          action_intent:PUBLIC_INPUT_FACTS.editRequest,summary:"Change only the first packing Action to two reviewers; retain the complete disabled program."};
+      } else {
       args={status:"planned",read_mode:"reuse",action_mode:"create",action_strategy:"rule_derived",action_intent:intent,summary:"Prepare the requested one-Action disabled proposal."};
       if(positiveInput) {args.action_intents=inputIntents;args.action_outcomes=[...PUBLIC_INPUT_FACTS.outcomes];}
+      }
     } else if(names.includes("runner__propose_operator_decision")) {
       // Fixture delivery for the actual connected Version conversation. The
       // existing Source-owner operating fact remains unverified and is given
@@ -253,7 +277,36 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       args={allowed:[{id:"parcel_labels_units",description:"Read parcel labels and units.",plan:{kind:"rows",resource:"studio.parcels",select:["label","units"]}}],forbidden:[],
         operator_meanings:[{resource:"studio.parcels",operator_quote:"studio.parcels is the parcel register"},{resource:"studio.parcels",field:"label",operator_quote:"studio.parcels.label is the public parcel name"},{resource:"studio.parcels",field:"units",operator_quote:"studio.parcels.units is the unit count"}]};
     } else if(names.includes("runner__submit_action_rule_draft")) {
-      expect(stage).toBe("initial");
+      expect(["initial","edit"]).toContain(stage);
+      if(stage==="edit") {
+        const initial=jsonLine(text,"Current disabled draft: "),contract=jsonLine(text,"Current work-unit contract: ");
+        // The opening prompt retains its original snapshot. Native tool results
+        // carry subsequent component saves in this actual transmitted frame.
+        const toolResults=(body.input??[]).filter((item:any)=>item.type==="function_call_output").map((item:any)=>JSON.parse(item.output));
+        const savedComponents=toolResults.filter((value:any)=>value.status==="disabled_component_saved"&&value.persistence_scope==="component_checkpoint_only");
+        const current=savedComponents.at(-1)??initial;
+        expect(current.editing_outcome).toBe(PUBLIC_INPUT_FACTS.outcomes[0]);
+        expect(contract.identity.intended_outcome).toBe(current.editing_outcome);
+        expect(current.missing).toEqual([]);
+        const approval=current.components.approval;
+        expect(approval).toMatchObject({class_name:PUBLIC_INPUT_FACTS.reviewClasses[0],mode:"human",required_role:"parcel_reviewer",shared_limits:[]});
+        if(editPhase===0) {
+          editPhase++;
+          expect(approval.required_approvals).toBe(1);
+          name="runner__submit_approval_policy_draft";
+          args={status:"draft",class_name:approval.class_name,mode:approval.mode,required_role:approval.required_role,
+            shared_limits:approval.shared_limits,required_approvals:2,changed_fields:["required_approvals"]};
+        } else if(editPhase===1) {
+          editPhase++;expect(approval.required_approvals).toBe(2);
+          name="runner__validate_action_draft";args={};
+        } else {
+          expect(editPhase).toBe(2);expect(approval.required_approvals).toBe(2);
+          expect(toolResults.at(-1)).toMatchObject({status:"ready_for_review",outcome:current.editing_outcome,draft_changed:true,
+            validation_scope:"structural",action_save_performed:false,whole_program_review_performed:false,
+            publication_performed:false,authority_granted:false,source_database_changed:false});
+          narration="The validated first packing Action requires two parcel reviewers. This proposal remains disabled for exact edit and whole Source review.";
+        }
+      } else {
       const currentIntent=positiveInput ? jsonLine(text,"Current action intent: ") : undefined;
       const actionIndex=positiveInput ? inputIntents.indexOf(currentIntent)+1 : 1;
       if(positiveInput)expect(actionIndex).toBeGreaterThan(0);
@@ -294,6 +347,7 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
         expect(resource.version_field_options).toContain("version");
         args={resource:resource.name,field:resource.version_field_options.find((field:string)=>field==="version")};
       }
+      }
     } else if(names.includes("runner__review_policy_coverage")) {
       name="runner__review_policy_coverage";const draft=jsonLine(text,"Current draft (JSON pointer root): "),references=jsonLine(text,"Exact coverage references (select, do not invent paths): ");
       const messages=jsonLine(text,"Indexed operator messages for supporting clarifications or explicit overrides (not source text or model narration): ")??[];
@@ -302,7 +356,7 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       expect(evidence.scoped_bindings.parcel.fields.available).toMatchObject({model_visible:false,actual_values_returned:false,private_action_verification:true,model_analysis:[]});
       expect(evidence.effect.source_counter_maintenance).not.toBeNull();
       const accepted=messages.find((entry:any)=>entry.message===answer);
-      const decided=stage==="initial" || !!accepted;
+      const decided=stage==="initial" || positiveInput&&stage==="edit" || !!accepted;
       if(accepted) {const saved=await readResume(),sources=await loadPolicySources(root,sourceId!);
         expect(saved.owner_handoffs.at(-1)).toMatchObject({consumer:"policy_clarification",state:"answered",question,answer});
         expect(sources.operator_messages!.filter(message=>message===answer)).toHaveLength(1);
@@ -317,6 +371,8 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
         {start:6,end:6,disposition:"implemented",responsibility:"runner",interpretation:"Availability stays private in the actual prepared Read/Action evidence.",draft_paths:["/runner_evidence/actions/studio.pack_parcel_1/scoped_bindings/parcel/fields/available"],field_checks:[{resource:"studio.parcels",field:"available",expectation:"private"}]}];
       if(positiveInput) {
         expect(draft.actions.map((action:any)=>action.outcome)).toEqual(PUBLIC_INPUT_FACTS.outcomes);
+        if(stage==="edit")for(const [index,action] of draft.actions.entries())
+          expect(action.require).toEqual(ownedProgramDraft(index+1).require);
         expect(draft.actions[0].inputs.find((input:any)=>input.name===PUBLIC_INPUT_FACTS.input).type).toMatchObject({kind:"string",min_length:1,max_length:64,comparison:"exact"});
         expect(draft.runner_evidence.input_policy_requirement.reviews.at(-1)).toMatchObject({decision:"confirmed",question_reference:{basis:"operator_answer"}});
         passages.push({start:7,end:7,disposition:"implemented",responsibility:"runner",
@@ -328,12 +384,30 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
           interpretation:"The full two-Action agenda is represented by both exact independent outcomes.",draft_paths:["/actions/0/outcome","/actions/1/outcome"]};
         for(const passage of passages)for(const pointer of [...passage.draft_paths] as string[])
           if(pointer.startsWith("/runner_evidence/actions/studio.pack_parcel_1/"))passage.draft_paths.push(pointer.replace("studio.pack_parcel_1","studio.pack_parcel_2"));
+        if(stage==="edit") {
+          const owner=messages.find((entry:any)=>entry.message===PUBLIC_INPUT_FACTS.editRequest);
+          expect(owner).toBeDefined();
+          expect(draft.actions[0].approval).toMatchObject({class_name:PUBLIC_INPUT_FACTS.reviewClasses[0],required_approvals:editPhase===0 ? 1 : 2});
+          expect(draft.actions[1].approval).toMatchObject({class_name:PUBLIC_INPUT_FACTS.reviewClasses[1],required_approvals:1});
+          // The native Source assessment first reviews the unchanged baseline.
+          // It does not complete the pending edit. Only the subsequently
+          // compiled two-reviewer candidate needs the explicit Source override.
+          if(editPhase!==0) {
+          passages[3]!.draft_paths=passages[3]!.draft_paths.filter((pointer:string)=>pointer!=="/actions/0/approval");
+          passages[3]!.interpretation="All original unit inputs, effects and independent reviewer arrangements remain; the second packing Action still requires one reviewer.";
+          passages.push({start:4,end:4,disposition:"overridden",responsibility:"operator",
+            interpretation:"The exact later operator request replaces only the first packing Action's one-reviewer clause with two reviewers; all other clauses and the peer remain unchanged.",
+            draft_paths:["/actions/0/approval"],operator_message_id:owner.operator_message_id});
+          }
+        }
       }
       for(const passage of passages)for(const pointer of passage.draft_paths)expect(references).toContain(pointer);
-      args={passages};reports.push({stage,draft_digest:canonicalJsonDigest(draft),accepted:!!accepted,messages,passages});
+      args={passages};reports.push({stage,draft_digest:canonicalJsonDigest(draft),accepted:!!accepted,messages,passages,
+        ...(stage==="edit" ? {reviewed_approvals:draft.actions.map((action:any)=>({outcome:action.outcome,...action.approval}))} : {})});
     } else if(!names.length) {
       if(text.includes("Help the operator clarify the disputed interpretation in this saved job.")
         || text.includes("Ask only these unresolved business choices together, with their purpose and suggested answers; do not repeat the saved action summary.")) {
+        if(positiveInput&&stage==="edit")fail("Unexpected unresolved business-choice request during an approval-only edit of the unambiguous Source; inspect the actual retained frame.");
         questionNarrations++;stage="question";clarifyChosen=true;narration=question;
       }
       else narration=jsonLine(text,"Exact next question: ")??"The actual disabled record and unfinished interpretation remain available for review.";
@@ -342,8 +416,14 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
     if(control==="nested_review_role_after_response" && reviewWaitSnapshot && name==="runner__review_policy_coverage") {
       expect(injected).toBe(false);injected=true;changeReaderRole();
     }
-    return {status:200,body:{output:name ? [{type:"function_call",call_id:`owned-policy-wait-${requests}`,name,arguments:JSON.stringify(args)}]
+    const reply={status:200,body:{output:name ? [{type:"function_call",call_id:`owned-policy-wait-${requests}`,name,arguments:JSON.stringify(args)}]
       : [{type:"message",content:[{type:"output_text",text:narration}]}]}};
+    if(positiveInput)responses.at(-1).reply=reply;
+    return reply;
+    } catch(error) {
+      responses.at(-1).derivation_error=error instanceof Error ? error.message : String(error);
+      throw error;
+    }
   };
   const outer:any={chooseResource:async()=>fail("No manual resource bypass"),editFieldTiers:async()=>fail("No manual field bypass"),
     chooseOption:async(title:string,choices:any[],options:any)=>{expect(title).toBe("SETUP NEEDS ATTENTION");expect(choices.some(entry=>entry.value==="pause")).toBe(true);
@@ -405,6 +485,60 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       expect(await fs.readFile(path.join(root,".synapsor/exploration-boundary.active.json")).catch(()=>undefined)).toBeUndefined();
       expect(failures.filter(entry=>entry.title==="SETUP NEEDS ATTENTION"),transcript).toEqual([]);
       inputSnapshots.push({stage:"reviewed-disabled-program",resume:initiallySaved,sources,authority,read:(await loadBoundaryReviewContext(root))});
+      if(editInputBaseline) {
+        const before={resume:initiallySaved,sources,authority,read:await loadBoundaryReviewContext(root),requests,inputPrompts,inputConfirmations};
+        editSnapshots.push({stage:"reviewed-disabled-baseline",...before});
+        stage="edit";answers.push(PUBLIC_INPUT_FACTS.editRequest);
+        expect(await boundaryReviewCommand(["--project-root",root,"--access","--job-first"],inspect,outer,undefined,options)).toBe(0);
+        const after={resume:await readResume(),sources:await loadPolicySources(root,sourceId!),authority:(await listActionRuleAuthorityDrafts(root))[0]!,read:await loadBoundaryReviewContext(root)};
+        editSnapshots.push({stage:"post-edit-public-return",...after});
+        expect(editSaveConfirmations,transcript).toBe(1);expect(editPhase).toBe(2);
+        expect(inputPrompts).toBe(before.inputPrompts);expect(inputConfirmations).toBe(before.inputConfirmations);
+        expect(after.resume.operator_questions).toEqual(before.resume.operator_questions);
+        expect(after.resume.owner_handoffs).toEqual(before.resume.owner_handoffs);
+        expect(after.sources.input_policy_reviews).toEqual(before.sources.input_policy_reviews);
+        expect(after.sources.snapshots).toEqual(before.sources.snapshots);
+        expect(after.sources.application_assignments!.slice(0,before.sources.application_assignments!.length)).toEqual(before.sources.application_assignments);
+        // Normal Source assessment and final changed-candidate review each
+        // have their own exact draft subject; old ownership remains history.
+        expect(after.sources.application_assignments).toHaveLength(before.sources.application_assignments!.length+2);
+        for(const assignment of after.sources.application_assignments!.slice(before.sources.application_assignments!.length))
+          expect(assignment).toMatchObject({source_digest:before.sources.coverage!.source_digest,
+            contract_digest:before.sources.coverage!.client_duties!.contract_digest,
+            obligations:before.sources.application_assignments!.at(-1)!.obligations,owner:"client_application",verified:false});
+        expect(after.sources.application_assignments!.at(-1)).toMatchObject({source_digest:before.sources.coverage!.source_digest,
+          draft_digest:after.sources.coverage!.draft_digest,contract_digest:before.sources.coverage!.client_duties!.contract_digest,
+          obligations:before.sources.application_assignments!.at(-1)!.obligations,owner:"client_application",verified:false});
+        expect(after.read.candidate).toEqual(before.read.candidate);
+        // The ordinary disabled Read review is saved once again. Assert its
+        // exact revision increment and timestamp instead of discarding either.
+        expect(after.read.progress).toEqual({...before.read.progress,revision:before.read.progress!.revision+1,
+          updated_at:after.read.progress!.updated_at});
+        expect(Date.parse(after.read.progress!.updated_at)).toBeGreaterThan(Date.parse(before.read.progress!.updated_at));
+        expect(after.resume.reviewed_version_fields).toEqual(before.resume.reviewed_version_fields);
+        // Normal merge rebuilds the disabled artifact's activated_at metadata;
+        // every business field and exact Read dependency remains unchanged.
+        const rules=(value:typeof authority)=>value.authority.rules.map(({activated_at:_time,...rule})=>rule);
+        expect(rules(after.authority)).toEqual(rules(before.authority));
+        const approvalClasses=structuredClone(before.authority.authority.approval_classes);
+        approvalClasses.find(entry=>entry.name===PUBLIC_INPUT_FACTS.reviewClasses[0])!.required_approvals=2;
+        expect(after.authority.authority.approval_classes).toEqual(approvalClasses);
+        expect(after.authority.authority.catalog).toEqual(before.authority.authority.catalog);
+        expect(after.resume.action.intended_outcomes).toEqual(PUBLIC_INPUT_FACTS.outcomes);
+        expect(after.resume.action.completed_outcomes).toEqual(PUBLIC_INPUT_FACTS.outcomes);
+        expect(after.resume.pending_action_revision).toBeUndefined();expect(after.resume.stage).toBe("authority_review");
+        expect(after.resume.generation_recovery.operations.slice(0,before.resume.generation_recovery.operations.length)).toEqual(before.resume.generation_recovery.operations);
+        expect(after.sources.coverage!.client_duties).toEqual(before.sources.coverage!.client_duties);
+        expect(after.sources.coverage!.passages.find(passage=>passage.disposition==="overridden")).toMatchObject({start:4,end:4,operator_override:PUBLIC_INPUT_FACTS.editRequest});
+        expect(after.sources.operator_messages!.filter(message=>message===PUBLIC_INPUT_FACTS.editRequest)).toHaveLength(1);
+        expect(reports.filter(report=>report.stage==="edit").map(report=>report.reviewed_approvals.map((approval:any)=>approval.required_approvals))).toEqual([[1,1],[2,1]]);
+        expect(policyReviewReadiness(activePolicySource(after.sources)!,after.sources.coverage,after.sources).ready,transcript).toBe(true);
+        expect(responses.filter(response=>response.stage==="edit"&&response.current_operator_question?.kind==="input_bounds")).toEqual([]);
+        expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+        expect(await fs.readFile(path.join(root,".synapsor/exploration-boundary.active.json")).catch(()=>undefined)).toBeUndefined();
+        expect(failures.filter(entry=>entry.title==="SETUP NEEDS ATTENTION"),transcript).toEqual([]);
+        return {origin:"IMPLEMENTER_PUBLIC_INPUT_SELECTED_BASELINE_EDIT_DISABLED",control,requests,inputPrompts,inputConfirmations,activation:false,provider_calls:0};
+      }
       return {origin:"IMPLEMENTER_PUBLIC_INPUT_ONBOARDING_DISABLED",control,requests,inputPrompts,inputConfirmations,activation:false,provider_calls:0};
     }
     if(reviewWaitControl) {
@@ -549,7 +683,7 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
   } finally {
     const evidenceRoot=process.env.OWNED_PUBLIC_POLICY_WAIT_EVIDENCE;
     if(evidenceRoot) {const persisted=await Promise.allSettled([readResume(),listActionRuleAuthorityDrafts(root),sourceId ? loadPolicySources(root,sourceId) : Promise.resolve(undefined)]);
-      await fs.mkdir(evidenceRoot,{recursive:true});await fs.writeFile(path.join(evidenceRoot,`${control}-${randomUUID()}.json`),JSON.stringify({origin:positiveInput ? "IMPLEMENTER_PUBLIC_INPUT_ONBOARDING_DISABLED" : "IMPLEMENTER_DERIVED_PUBLIC_POLICY_WAIT",control,positiveInput,transcript,publicOutput:stdout.mock.calls.map(([chunk])=>String(chunk)).join(""),menus,failures,responses,reports,questionSnapshots,inputSnapshots,injected,
+      await fs.mkdir(evidenceRoot,{recursive:true});await fs.writeFile(path.join(evidenceRoot,`${control}-${randomUUID()}.json`),JSON.stringify({origin:editInputBaseline ? "IMPLEMENTER_PUBLIC_INPUT_SELECTED_BASELINE_EDIT_DISABLED" : positiveInput ? "IMPLEMENTER_PUBLIC_INPUT_ONBOARDING_DISABLED" : "IMPLEMENTER_DERIVED_PUBLIC_POLICY_WAIT",control,positiveInput,editInputBaseline,transcript,publicOutput:stdout.mock.calls.map(([chunk])=>String(chunk)).join(""),menus,failures,responses,reports,questionSnapshots,inputSnapshots,editSnapshots,injected,
         persisted:persisted.map((result,index)=>({kind:["resume","disabled_actions","sources"][index],...(result.status==="fulfilled" ? {value:result.value} : {error:String(result.reason)} )}))},null,2));}
     await fs.rm(root,{recursive:true,force:true});
   }
@@ -557,6 +691,10 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
 
 it("public onboarding acknowledges the exact Input answer and completes reviewed disabled Read and Action drafts",async()=>{
   const result=await publicPolicyWait("healthy",false,true);expect(result.provider_calls).toBe(0);
+},30_000);
+
+it("public selected-baseline edit retains Input acknowledgement and changes only one independent reviewer requirement",async()=>{
+  const result=await publicPolicyWait("healthy",false,true,true);expect(result.provider_calls).toBe(0);
 },30_000);
 
 it.each(["healthy","pause_restart","source_drift","schema_drift","role_drift","competing_resume","explicit_review"] as const)(
