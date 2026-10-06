@@ -41,7 +41,7 @@ function ownedReadRevisionDraft(): ExplorationBoundaryDraft {
       generation_lock_fingerprint: binding.generation_lock_fingerprint, role_posture_fingerprint: binding.role_posture_fingerprint,
       pack: { name: binding.boundary_name, resources: [{ id: "public.orders", schema: "public", table: "orders", primary_key: "id",
         tenant_key: "tenant_id", principal_key: "principal_id", field_types: { id: "uuid", tenant_id: "text", principal_id: "text", status: "text" },
-        selectable_fields: ["id", "status"], filterable_fields: { status: ["eq"] }, sortable_fields: ["status"], groupable_fields: [],
+        field_enums: {}, selectable_fields: ["id", "status"], filterable_fields: { status: ["eq"] }, sortable_fields: ["status"], groupable_fields: [],
         aggregate_measures: [], aggregate_measure_functions: {}, count_distinct_fields: [], time_bucket_fields: {},
         kept_out_fields: ["tenant_id", "principal_id"], relationships: [], minimum_cohort_size: 5, suppression_aware_totals: true }] },
       budgets: structuredClone(DEFAULT_REVIEWED_EXPLORATION_BUDGETS), unresolved_decisions: [],
