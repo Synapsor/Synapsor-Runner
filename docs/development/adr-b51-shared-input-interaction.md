@@ -1,6 +1,7 @@
 # ADR B51: share the Input interaction boundary
 
-Status: proposed after phase 0; no production integration authorized.
+Status: Owner approved one Input-only implementation slice; development and
+independent acceptance are in progress on the separate B51 branch.
 Source inspected: `62e4bf54c3cb6ab9f58f423991f0c121d6e760ad`.
 T0: 2026-10-06T14:31:23Z. This work follows frozen candidate1508 and
 independent Tester installed acceptance starting. Demo verification has priority.
@@ -134,7 +135,7 @@ the separate existing activation consent succeeds.
 | CLI presenter and internal test adapter | Render/answer that same view and call the same host transitions. Do not let the test adapter fabricate handoffs, completions, actors or saved authority. |
 | Existing Input/Resume tests | Share scenario facts and add restart-at-handoff comparison through both entry routes; keep a small real PTY set for display, default-No, cancellation and navigation. |
 
-After acceptance remove the title/request-order Input driver branch and the
+Before final acceptance remove the title/request-order Input driver branch and
 superseded inline Input transition code. Merely wrapping old and new independent
 owners is not consolidation. Stage producers, generation recovery, Source CAS
 and whole-program validation retain their existing responsibilities.
@@ -184,4 +185,33 @@ completed editing task. Independent Tester semantic review is separate.
 Detailed per-case rows, actual invocation, raw JSON/logs, tested file hashes and
 closure evidence are in the external phase0 packet. Existing complete frozen
 qualification is unchanged. No production code or test assertions were edited.
-This ADR and proposed slice do not block Luna acceptance.
+This ADR and Input slice do not block Luna acceptance.
+
+## Current implementation checkpoint
+
+`authoring-input-host.ts` implements root/child selection, question save, missing
+question creation, raw answer/handoff/generation association, reopen/replacement
+and exact Source acknowledgement. The old inline production implementations in
+`ensureInputPolicyAgenda` are removed. That function now supplies narrow current
+record access, protected mutation/save callbacks and a CLI presenter.
+
+`authoring-input-interaction.ts` derives only question, canonical readback and
+pending views. An internal adapter supplies raw text or choices bound to the
+exact semantic question/root/context/proposal. Root budget advancement remains
+separately protected by exact saves and existing monotonic checks. No new stored
+cursor, activation/recovery dispatcher or permission is added.
+
+Expected Source/store/outcomes are captured for the owning turn. Resume,
+questions, handoffs, generation state, conversation and current outcomes are
+read through narrow accessors; disk Source and reader context are reread at the
+existing currentness boundaries. The protected commit installs the host's record
+updates into the enclosing workflow before its existing Resume CAS save, so the
+next owning-stage save uses the acknowledged records. Failure retains the existing
+fence and rollback. Permit propagation uses the existing mutation helper.
+
+This is a development checkpoint, not accepted delivery. Production-host tests,
+fresh-process restarts, caller continuation/failure, positive onboarding and
+selected-baseline editing, independent counterexamples, final gates and installed
+acceptance remain required. The earlier 88 assertions retain their limited scope.
+Version blank/unknown handling already exists; the added Version raw-save
+interruption work is characterization only, with no Version product change.

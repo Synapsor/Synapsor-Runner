@@ -10,7 +10,8 @@ import { operatorBusinessContext, operatorBusinessLabel, operatorBusinessReadbac
   type OperatorBusinessContext } from "./authoring-operator-presentation.js";
 import { randomUUID } from "node:crypto";
 import { reviewSourceInputPolicy } from "./authoring-input-policy-operation.js";
-import { reusableSourceInputConversationReview, runSourceInputConversation } from "./authoring-input-policy-conversation.js";
+import { runSourceInputConversation } from "./authoring-input-policy-conversation.js";
+import { assertSourceInputRootBinding, createSourceInputHost } from "./authoring-input-host.js";
 import { runVersionConversation } from "./authoring-version-conversation.js";
 import { actionRuleAuthoringCheckpoint, actionLogicalTurnMaterialDigest, assertActionLogicalTurnJournalAdvance,
   type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
@@ -4604,201 +4605,69 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       return;
     }
     const {context:inputContext,store}=await inputPolicyContext();
-    if(savedRoot){
-      const binding=savedRoot.source_binding;
-      const currentRoot=operatorQuestions.find(q=>q.id===savedRoot.id);
-      if(!binding||!currentRoot||currentRoot.digest!==savedRoot.digest
-        ||binding.source_session!==sources.id||binding.source_digest!==source.digest||binding.lines!==source.lines
-        ||binding.store_digest!==store||canonicalJsonDigest(savedRoot.target.outcomes)!==canonicalJsonDigest(outcomes)
-        ||binding.agenda_digest!==canonicalJsonDigest({source_session:sources.id,source_digest:source.digest,store_digest:store,outcomes}))
-        throw new PolicySourceChangedError();
-    }
     if(input.authoringChat&&selectedResumeModel){
-      const current=sources.input_policy_reviews?.at(-1);
-      const handoff=ownerHandoffs.at(-1);
-      const waitingForInput=handoff?.state==='waiting'&&handoff.consumer==='input_policy';
-      // Existing model-free attributed records retain their established route.
-      // This does not turn a pending assisted decision into a manual answer.
-      if(!waitingForInput&&!current?.question_reference&&current?.decision==='confirmed'&&current.source_session===sources.id
-        &&current.source_digest===source.digest&&current.store_digest===store&&outcomes.every(o=>current.outcomes.includes(o))){
-        await assertAuthoringResumeCurrent(undefined);return;
-      }
-      if(!waitingForInput&&preserveCurrentReview&&current?.question_reference&&current.decision==='confirmed'
-        &&current.source_session===sources.id&&current.source_digest===source.digest&&current.store_digest===store
-        &&canonicalJsonDigest(current.outcomes)===canonicalJsonDigest(outcomes)){
-        const root=operatorQuestions.find(q=>q.id===current.question_reference!.root_id);
-        if(!root)throw new PolicySourceChangedError();
-        const reusable=reusableSourceInputConversationReview({sources,store,outcomes,actor:localInteractiveActor(),
-          questions:{root,children:operatorQuestions.filter(q=>q.budget_owner_id===root.id)}});
-        if(reusable?.digest===current.digest){
-          await assertAuthoringResumeCurrent(undefined);
-          if(await policySourceSavedDigest(input.projectRoot,sources.id)!==canonicalJsonDigest(sources))throw new PolicySourceChangedError();
-          const fresh=await inputPolicyContext();
-          if(fresh.store!==store)throw new PolicySourceChangedError();
-          await inspectPolicyReviewSource(fresh.context.lock,input.schemaInspector);
-          return;
-        }
-      }
-      const agenda=canonicalJsonDigest({source_session:sources.id,source_digest:source.digest,store_digest:store,outcomes});
-      const stage=()=>activeResume?.stage??'action_drafting';
-      let root=savedRoot??operatorQuestions.find(q=>q.kind==='input_bounds'&&q.source_binding?.agenda_digest===agenda);
-      if(!root){
-        await mutateOwnerHandoff(async permit=>{
-          if(ownerHandoffs.at(-1)?.state==='waiting')throw new Error('AUTHORING_OWNER_QUESTION_PENDING: Inspect the saved question before reviewing another input decision.');
-          const contextDigest=await ownerQuestionContext(permit,'input_policy');
-          root=createOperatorQuestion({id:randomUUID(),revision:1,kind:'input_bounds',scope_digest:ownerQuestionScope(),context_digest:contextDigest,
-            target:{phase:'input_policy',outcomes},source_binding:{source_session:sources.id,source_digest:source.digest as `sha256:${string}`,
-              store_digest:store as `sha256:${string}`,agenda_digest:agenda,lines:source.lines},
-            material:['Review the text length requirements for this current Action inventory.',
-              'Required presence, nullability, spaces, allowed values and text length are separate. This records an unverified interpretation; it grants no permission.'],
-            evidence:[{id:sources.id,digest:source.digest as `sha256:${string}`},{id:'current-store',digest:store as `sha256:${string}`}],
-            continuation:'input_policy_review',assistedLocalConsumer:true});
-          operatorQuestions.push(root);
-          await persistAuthoringResume(stage(),permit);
-          if(resumePersistenceBlocked)throw checkpointSaveFailure('The pending input-policy interpretation');
-        });
-      }
-      const readQuestions=()=>{
-        const currentRoot=operatorQuestions.find(q=>q.id===root!.id);
-        if(!currentRoot)throw checkpointSaveFailure('The retained input-policy question');
-        return {root:currentRoot,children:operatorQuestions.filter(q=>q.budget_owner_id===currentRoot.id)};
-      };
-      const assertInputCurrent=async(permit?:ProjectAuthorityMutationPermit,recovery?:{mode:'completed_review'|'append_recovery';review:import('./authoring-input-policy.js').SourceInputPolicyReview;sourceBeforeAppend?:PolicySourceSession})=>{
-        await assertAuthoringResumeCurrent(undefined,false,permit);
-        let savedSources=sources;
-        if(recovery?.mode==='append_recovery'){
-          if(!recovery.sourceBeforeAppend||canonicalJsonDigest(recovery.sourceBeforeAppend)!==canonicalJsonDigest(sources))throw new PolicySourceChangedError();
-          const expected=structuredClone(recovery.sourceBeforeAppend);
-          expected.input_policy_reviews=[...(expected.input_policy_reviews??[]),recovery.review];
-          const actual=await loadPolicySources(input.projectRoot,sources.id);
-          if(canonicalJsonDigest(actual)!==canonicalJsonDigest(expected))throw new PolicySourceChangedError();
-          savedSources=actual;
-        }
-        if(await policySourceSavedDigest(input.projectRoot,sources.id)!==canonicalJsonDigest(savedSources))throw new PolicySourceChangedError();
-        const fresh=await inputPolicyContext();
-        if(fresh.store!==store||activePolicySource(sources)?.digest!==source.digest
-          ||canonicalJsonDigest(resumeAction?.intended_outcomes)!==canonicalJsonDigest(outcomes))throw new PolicySourceChangedError();
-        // Inspect the actual current reader; completed meaning follows its
-        // ordinary Source/store/agenda contract, not an old whole-session hash.
-        await inspectPolicyReviewSource(fresh.context.lock,input.schemaInspector);
-        if(recovery?.mode==='completed_review')return;
-        const current=readQuestions(),q=current.children.at(-1)??current.root;
-        if(q.scope_digest!==ownerQuestionScope()||q.context_digest!==await ownerQuestionContext(permit,'input_policy',recovery?.sourceBeforeAppend,savedSources))
-          throw new PolicySourceChangedError();
-      };
-      const result=await runSourceInputConversation({projectRoot:input.projectRoot,sources,session:selectedResumeModel,outcomes,store,
-        businessContext:operatorBusinessContext(inputContext.candidate.pack.resources),
-        actor:localInteractiveActor(),egressAcknowledged:modelEgressAcknowledged,ports:{readQuestions,assertCurrent:assertInputCurrent,
-          saveQuestion:async(next,expected,options)=>mutateOwnerHandoff(async permit=>{
-            await assertInputCurrent(permit);
-            const old=operatorQuestions.find(q=>q.id===next.id);
-            if(!old||old.digest!==expected)throw new PolicySourceChangedError();
-            operatorQuestions[operatorQuestions.indexOf(old)]=next;
-            await persistAuthoringResume(stage(),permit,!options.rawCheckpoint);
-            if(resumePersistenceBlocked)throw checkpointSaveFailure('The exact input-policy question');
-          },options?.permit),
-          createMissingQuestion:async(currentRoot,text,completion,options)=>mutateOwnerHandoff(async permit=>{
-            await assertInputCurrent(permit);
-            const current=readQuestions();
-            if(current.root.digest!==options.expectedRootDigest||current.root.id!==currentRoot.id
-              ||ownerHandoffs.at(-1)?.state==='waiting')throw new PolicySourceChangedError();
-            const h=createOwnerHandoff({consumer:'input_policy',question:text,scope_digest:current.root.scope_digest,
-              context_digest:current.root.context_digest,completion});
-            generationRecovery=authoringQuestionCheckpoint(generationRecovery,ownerHandoffCheckpoint(h));
-            const q=presentOperatorQuestion(createOperatorQuestion({id:randomUUID(),revision:Math.max(current.root.revision,...current.children.map(c=>c.revision))+1,
-              handoff_id:h.id,kind:'input_bounds',scope_digest:h.scope_digest,context_digest:h.context_digest,target:current.root.target,
-              material:current.root.material,evidence:current.root.evidence,continuation:'input_policy_review',budget_owner_id:current.root.id}),text);
-            ownerHandoffs.push(h);operatorQuestions.push(q);
-            await persistAuthoringResume(stage(),permit);
-            if(resumePersistenceBlocked)throw checkpointSaveFailure('The missing input-policy question');
-          },options.permit),
-          recordRawAnswer:async(q,raw,expected,options)=>mutateOwnerHandoff(async permit=>{
-            await assertInputCurrent(permit);
-            const current=readQuestions().children.at(-1),h=ownerHandoffs.at(-1);
-            if(!current||!h||current.id!==q.id||current.digest!==expected||h.id!==q.handoff_id||h.state!=='waiting')throw new PolicySourceChangedError();
-            let captured=captureOperatorAnswer(current,raw);
-            if(!raw.trim())captured=leaveOperatorQuestionPending(captured,'unknown');
-            else{
-              const answered=answerOwnerHandoff(h,raw,h.context_digest);
-              if(h.completion)generationRecovery=authoringQuestionAnswerCheckpoint(generationRecovery,ownerHandoffCheckpoint(h),
-                {digest:canonicalJsonDigest(answered),operator_messages:[raw]});
-              ownerHandoffs[ownerHandoffs.length-1]=answered;
-              rememberModelAuthoringTurn(authoringConversation,h.question,raw);
-            }
-            operatorQuestions[operatorQuestions.indexOf(current)]=captured;
-            await persistAuthoringResume(stage(),permit);
-            if(resumePersistenceBlocked)throw checkpointSaveFailure('The exact raw input-policy answer');
-          },options?.permit),
-          acknowledge:async(_q,_record,staged,permit)=>mutateOwnerHandoff(async held=>{
-            Object.assign(sources,staged);
-            await assertInputCurrent(held,{mode:'completed_review',review:_record});
-            await persistAuthoringResume(stage(),held);
-            if(resumePersistenceBlocked)throw checkpointSaveFailure('The saved input-policy interpretation');
-          },permit),
-          resumePending:async(q,currentRoot)=>{
-            if(q.source_binding&&q.proposal?.disposition!=='proposed'){
-              input.authoringChat?.runner('INPUT POLICY STILL PENDING',[
-                'No complete interpretation or missing-business question is saved. Inspect or change the attached policy through its ordinary reviewed route.',
-                'Reopening does not invent an answer or renew the authoring allowance.']);
-              return 'keep';
-            }
-            await assertInputCurrent();
-            const choice=await input.session.chooseOption?.('SAVED INPUT-POLICY DECISION',[
-              {value:'keep',label:'Keep this decision pending'},
-              {value:'answer',label:q.source_binding?'Review the saved interpretation again':'Answer the saved question'},
-            ],{initialValue:'keep',reviewOnly:true,displayContext:true,context:operatorBusinessReadback([...q.material,
-              ...(q.presentation?[q.presentation.text]:[]),...(q.raw_answer?[`Previous answer (retained): ${JSON.stringify(q.raw_answer.text)}`]:[]),
-              'Earlier questions and answers stay recorded. This choice grants no permission and does not renew the allowance.'],operatorBusinessContext(inputContext.candidate.pack.resources))});
-            if(choice!=='answer')return 'keep';
-            return mutateOwnerHandoff(async permit=>{
-              await assertInputCurrent(permit);
-              const records=readQuestions(),latest=records.children.at(-1)??records.root;
-              if(latest.digest!==q.digest||records.root.digest!==currentRoot.digest||!q.disposition||q.confirmation)throw new PolicySourceChangedError();
-              if(!q.raw_answer){
-                const h=q.handoff_id&&ownerHandoffs.find(h=>h.id===q.handoff_id);
-                if(!q.source_binding&&(!h||h.state!=='waiting'||h.question!==q.presentation?.text))throw new PolicySourceChangedError();
-                operatorQuestions[operatorQuestions.findIndex(old=>old.id===q.id)]=reopenOperatorQuestion(q);
-                await persistAuthoringResume(stage(),permit);
-                if(resumePersistenceBlocked)throw checkpointSaveFailure('The reopened input-policy question');
-                return 'reopen' as const;
-              }
-              const oldH=ownerHandoffs.find(h=>h.id===q.handoff_id);
-              if(!oldH||!q.presentation||oldH.question!==q.presentation.text
-                ||oldH.state==='waiting'&&q.raw_answer.text.trim())throw new PolicySourceChangedError();
-              let h=oldH;
-              if(oldH.state==='answered'){
-                if(ownerHandoffs.at(-1)?.state==='waiting')throw new PolicySourceChangedError();
-                if(generationRecovery?.operations.some(op=>['in_flight','received','handled','unknown','partial'].includes(op.state)))
-                  throw new AskError('ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION','Inspect the unresolved generation before answering another question. No response was replayed.',409);
-                h=createOwnerHandoff({consumer:'input_policy',question:q.presentation.text,scope_digest:q.scope_digest,context_digest:q.context_digest});
-                ownerHandoffs.push(h);
-              }
-              const next=presentOperatorQuestion(createOperatorQuestion({id:randomUUID(),revision:q.revision+1,handoff_id:h.id,
-                kind:'input_bounds',scope_digest:q.scope_digest,context_digest:q.context_digest,target:q.target,material:q.material,
-                evidence:q.evidence,continuation:q.continuation,budget_owner_id:records.root.id}),q.presentation.text);
-              operatorQuestions.push(next);
-              await persistAuthoringResume(stage(),permit);
-              if(resumePersistenceBlocked)throw checkpointSaveFailure('The replacement input-policy answer question');
-              return 'replace' as const;
-            });
+      const businessContext=operatorBusinessContext(inputContext.candidate.pack.resources);
+      const host=await createSourceInputHost({projectRoot:input.projectRoot,sources,store,outcomes,actor:localInteractiveActor(),
+        preserveCurrentReview,...(savedRoot?{savedRoot}:{}),access:{
+          readQuestions:()=>operatorQuestions,
+          readHandoffs:()=>ownerHandoffs,
+          readRecovery:()=>generationRecovery,
+          readConversationTurns:()=>authoringConversation?.turns,
+          readOutcomes:()=>resumeAction?.intended_outcomes,
+          scopeDigest:ownerQuestionScope,
+          contextDigest:(permit,sourceContext,savedSourceContext)=>ownerQuestionContext(permit,'input_policy',sourceContext,savedSourceContext),
+          assertResumeCurrent:permit=>assertAuthoringResumeCurrent(undefined,false,permit),
+          loadContext:async()=>{
+            const fresh=await inputPolicyContext();
+            return {store:fresh.store,inspectReader:async()=>{await inspectPolicyReviewSource(fresh.context.lock,input.schemaInspector);}};
           },
-          prompt:async(text,options)=>{
-            await assertInputCurrent();
+          mutate:mutateOwnerHandoff,
+          // The host owns the transitions; this adapter only installs their
+          // bounded records into the enclosing workflow and performs its save.
+          // persistAuthoringResume installs the acknowledged activeResume and
+          // generation state before control returns to the next owning stage.
+          commit:async(update,options)=>{
+            if(update.questions)operatorQuestions=update.questions;
+            if(update.handoffs)ownerHandoffs=update.handoffs;
+            if(Object.prototype.hasOwnProperty.call(update,'recovery'))generationRecovery=update.recovery;
+            if(update.conversationTurns&&authoringConversation)authoringConversation.turns.splice(0,authoringConversation.turns.length,...update.conversationTurns);
+            await persistAuthoringResume(activeResume?.stage??'action_drafting',options.permit,options.acknowledgeGeneration);
+            if(resumePersistenceBlocked)throw checkpointSaveFailure(options.subject);
+          },
+          checkpointFailure:checkpointSaveFailure,
+        },interact:async(view,assertCurrent)=>{
+          if(view.kind==='question'){
+            let raw:string|null;
             if(input.authoringChat?.readOperator){
-              input.authoringChat.rememberDetails('INPUT QUESTION DETAILS',readQuestions().root.material);
-              input.authoringChat.runner('Before you answer',operatorBusinessReadback(readQuestions().root.material,operatorBusinessContext(inputContext.candidate.pack.resources)));
-              await input.authoringChat.streamModel(text.split(/\r?\n/u));
-              return (await input.authoringChat.readOperator(undefined,()=>assertInputCurrent(),{recordPolicyAnswer:false,...options}))??null;
-            }
-            return (await input.session.promptText(text,{context:readQuestions().root.material,recordPolicyAnswer:false,...options}))??null;
-          },
-          confirm:async(lines,options)=>(await input.session.confirm('Save this exact attributed input-policy interpretation?',{
-            context:operatorBusinessReadback(lines,operatorBusinessContext(inputContext.candidate.pack.resources)),...options,exactDetails:{title:'CURRENT INPUT INTERPRETATION',lines},
-          }))??null,
+              input.authoringChat.rememberDetails('INPUT QUESTION DETAILS',[...view.material]);
+              input.authoringChat.runner('Before you answer',operatorBusinessReadback([...view.material],businessContext));
+              await input.authoringChat.streamModel(view.text.split(/\r?\n/u));
+              raw=(await input.authoringChat.readOperator(undefined,assertCurrent,{recordPolicyAnswer:false,preserveWhitespace:true}))??null;
+            }else raw=(await input.session.promptText(view.text,{context:[...view.material],recordPolicyAnswer:false,preserveWhitespace:true}))??null;
+            return {kind:'answer',binding:view.binding,raw};
+          }
+          if(view.kind==='readback')return {kind:'decision',binding:view.binding,accepted:(await input.session.confirm(
+            'Save this exact attributed input-policy interpretation?',{context:operatorBusinessReadback([...view.lines],businessContext),
+              defaultValue:false,exactDetails:{title:'CURRENT INPUT INTERPRETATION',lines:[...view.lines]}}))??null};
+          if(!view.canAnswer){
+            input.authoringChat?.runner('INPUT POLICY STILL PENDING',[
+              'No complete interpretation or missing-business question is saved. Inspect or change the attached policy through its ordinary reviewed route.',
+              'Reopening does not invent an answer or renew the authoring allowance.']);
+            return {kind:'pending',binding:view.binding,choice:'keep'};
+          }
+          const choice=await input.session.chooseOption?.('SAVED INPUT-POLICY DECISION',[
+            {value:'keep',label:'Keep this decision pending'},
+            {value:'answer',label:view.sourceInterpretation?'Review the saved interpretation again':'Answer the saved question'},
+          ],{initialValue:'keep',reviewOnly:true,displayContext:true,context:operatorBusinessReadback([...view.material],businessContext)});
+          return {kind:'pending',binding:view.binding,choice:choice==='answer'?'answer':'keep'};
         }});
+      if(host.state==='reused')return;
+      const result=await runSourceInputConversation({projectRoot:input.projectRoot,sources,session:selectedResumeModel,outcomes,store,
+        businessContext,actor:localInteractiveActor(),egressAcknowledged:modelEgressAcknowledged,ports:host.ports});
       if(result.state==='pending')throw new Error('SOURCE_INPUT_REQUIREMENT_PENDING: The saved input-policy decision is still pending. Its question and actual answers remain saved; existing access and Actions are unchanged.');
       return;
     }
+    assertSourceInputRootBinding({sources,store,outcomes,...(savedRoot?{savedRoot}:{})},operatorQuestions);
     await reviewSourceInputPolicy({projectRoot:input.projectRoot,sources,session:input.session,outcomes,store,actor:localInteractiveActor(),
       assertCurrent:async permit=>{await assertAuthoringResumeCurrent(undefined,true,permit);const fresh=await inputPolicyContext();if(fresh.store!==store)throw new PolicySourceChangedError();}});
   };
