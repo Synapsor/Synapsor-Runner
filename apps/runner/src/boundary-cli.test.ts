@@ -5886,6 +5886,119 @@ describe("boundary operator-plane CLI", () => {
       } finally { await fixture.dispose(); }
     }, 30_000);
 
+  it.each(["blank", "unknown"] as const)(
+    "B51 Version public raw-save interruption resumes pending without another opinion (%s)", async posture => {
+      const fixture = await staleSemanticRevalidationFixture({ atomicUpdates: true });
+      const file = path.join(fixture.root, ".synapsor/boundary-authoring/resume.json");
+      const raw = posture === "blank" ? "  \t " : "  I’m not sure.\t ";
+      const wording = "Do all applications changing a visit advance its counter each time?";
+      let interrupted = false, physical = 0, prompts = 0, confirmations = 0;
+      const read = async () => JSON.parse(await fs.readFile(file, "utf8"));
+      const choose = fixture.session.chooseOption!;
+      fixture.session.chooseOption = async (title, choices, options) => {
+        if (title === "SETUP NEEDS ATTENTION") return "pause";
+        if (["SAVED CHANGED-RECORD QUESTION", "SAVED BUSINESS STATEMENT"].includes(title)) return "keep";
+        return choose(title, choices, options);
+      };
+      const confirm = fixture.session.confirm;
+      fixture.session.confirm = async (title, options) => {
+        if (title === "Record this planned counter maintenance for the current setup?") {
+          confirmations++;
+          expect(options?.defaultValue).toBe(false);
+          return false;
+        }
+        return confirm(title, options);
+      };
+      const requestJson = vi.fn(async (request: any) => {
+        physical++;
+        const names = request.body.tools?.map((tool: any) => tool.name) ?? [];
+        if (physical === 1 && names.includes("runner__review_version_field")) return {
+          status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
+            name: "runner__review_version_field", arguments: JSON.stringify({ resource: "public.service_visits", field: "c09" }) }] },
+        };
+        if (physical === 2 && names.includes("runner__propose_operator_decision")) {
+          const saved = await read(), marker = saved.action.checkpoint.pending_version;
+          const q = saved.operator_questions.find((q: any) => q.id === marker.question_id);
+          expect(q.raw_answer).toBeUndefined();
+          return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
+            name: "runner__propose_operator_decision", arguments: JSON.stringify({ question_id: q.id,
+              revision: q.revision, status: "needs_information", question: wording }) }] } };
+        }
+        throw new Error("B51_VERSION_CHARACTERIZATION_UNEXPECTED_PROVIDER_REQUEST");
+      });
+      const run = () => fixture.run(generateModelActionRuleDraft, async () => fixture.inspection, {
+        modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "inert-version-characterization-key",
+          dependencies: { requestJson } },
+        boundaryAuthoringChatFactory: () => ({ ...testBoundaryAuthoringChat(fixture.session),
+          readOperator: async (_default, assertCurrent, options) => {
+            await assertCurrent?.();
+            prompts++;
+            expect(options).toMatchObject({ recordPolicyAnswer: false, preserveWhitespace: true });
+            const saved = await read(), marker = saved.action.checkpoint.pending_version;
+            expect(saved.operator_questions.find((q: any) => q.id === marker.question_id).presentation.text).toBe(wording);
+            return raw;
+          } }),
+      });
+      let committedRaw: any;
+      const realWrite = authoringResumePersistence.writeBoundaryAuthoringResumeState;
+      let checkpoint: ReturnType<typeof vi.spyOn> | undefined;
+      try {
+        await fixture.writeResume(["maintenance.complete_visit", "maintenance.close_visit"],
+          ["Keep first rule.", "Keep second rule.", "Prepare one additional follow-up, with its business reviewer still pending."]);
+        checkpoint = vi.spyOn(authoringResumePersistence, "writeBoundaryAuthoringResumeState").mockImplementation(async (...args) => {
+          const result = await realWrite(...args);
+          const marker = args[1].action?.checkpoint?.pending_version;
+          const q = marker && args[1].operator_questions?.find(q => q.id === marker.question_id);
+          if (!interrupted && args[0] === fixture.root && q?.raw_answer?.text === raw && !q.disposition) {
+            interrupted = true;
+            // A real production writer already committed and verified this exact
+            // raw checkpoint. Only its acknowledgement is interrupted; the test
+            // does not construct an unknown question or bypass its host.
+            committedRaw = await read();
+            throw new Error("B51_TEST_INTERRUPTION_AFTER_VERIFIED_VERSION_RAW_SAVE");
+          }
+          return result;
+        });
+        await expect(run()).resolves.toBe(0);
+        checkpoint.mockRestore(); checkpoint = undefined;
+        expect(interrupted).toBe(true);
+        const stopped = await read(), marker = stopped.action.checkpoint.pending_version;
+        const q = stopped.operator_questions.find((q: any) => q.id === marker.question_id);
+        expect(stopped).toEqual(committedRaw);
+        expect(q.raw_answer.text).toBe(raw);
+        expect(q.raw_answer.actor).toBe("local_installation_operator");
+        expect(q.disposition).toBeUndefined();
+        expect(q.proposal).toBeUndefined();
+        expect(q.confirmation).toBeUndefined();
+        expect(stopped.reviewed_version_fields).toBeUndefined();
+        expect(physical).toBe(2);
+        expect(prompts).toBe(1);
+        expect(confirmations).toBe(0);
+        const counters = structuredClone(stopped.action.checkpoint.logical_turns);
+        const recovery = structuredClone(stopped.generation_recovery);
+        const handoffs = structuredClone(stopped.owner_handoffs);
+        // A new public invocation reloads the committed checkpoint. This is an
+        // I/O-interruption characterization, not a cold-process restart claim.
+        await expect(run()).resolves.toBe(0);
+        const resumed = await read();
+        const pending = resumed.operator_questions.find((q: any) => q.id === marker.question_id);
+        expect(pending.id).toBe(q.id);
+        expect(pending.raw_answer).toEqual(q.raw_answer);
+        expect(pending.disposition).toBe("unknown");
+        expect(pending.proposal).toBeUndefined();
+        expect(pending.confirmation).toBeUndefined();
+        expect(resumed.reviewed_version_fields).toBeUndefined();
+        expect(resumed.action.checkpoint.pending_version).toEqual(marker);
+        expect(resumed.action.checkpoint.logical_turns).toEqual(counters);
+        expect(resumed.generation_recovery).toEqual(recovery);
+        expect(resumed.owner_handoffs).toEqual(handoffs);
+        expect(physical).toBe(2);
+        expect(prompts).toBe(1);
+        expect(confirmations).toBe(0);
+        await fixture.expectRetained(["maintenance.complete_visit", "maintenance.close_visit"]);
+      } finally { checkpoint?.mockRestore(); await fixture.dispose(); }
+    }, 30_000);
+
   it.each(["blank", "answered"] as const)("public Version answer replacement preserves the owning turn and original evidence (%s)", async posture => {
     const fixture = await staleSemanticRevalidationFixture({ atomicUpdates: true });
     const file = path.join(fixture.root, ".synapsor/boundary-authoring/resume.json");
