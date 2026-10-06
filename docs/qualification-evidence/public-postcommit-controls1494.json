@@ -1,0 +1,29 @@
+{
+  "utc": "2026-10-06T11:26:34.784494+00:00",
+  "runtime_product_head": "cc4f0ac36f9b1b71d11656e02237358395df1896",
+  "scope": "Fresh checkpoint-free positive postcommit rebase plus5 unchanged unfinished/currentness controls; not interrupted-checkpoint rebase, real-model or installed evidence",
+  "draft": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/postcommit-checkpoint-free-positive1494-v1/DRAFT.json",
+  "draft_sha256": "bc83f04c416609d3bd793f8d9d66fd825e0dc873da74138b6675bf8918f4a570",
+  "tester_review": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/operator-conversation-development/postcommit1494-draft-independent-v1/REVIEW.md",
+  "tester_review_sha256": "1144085f340305c61e2646320dcdb371484b5b8e22124de3c49419c8dbfd9c14",
+  "actual_result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/integrated-postcommit9-1494-v1/RESULT1494.json",
+  "actual_result_sha256": "ce25fd3820a6ece99fca8a37c63c33fcd50cbdd05f5624fd92104f45d06937fb",
+  "actual_selection": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/integrated-postcommit9-1494-v1/EXACT-SELECTION.json",
+  "counts": {
+    "pass": 9,
+    "fail": 0,
+    "filtered": 429
+  },
+  "original82_affected_current_closure": "Current affected native5/public77 identities PASS across1490/1491/1494, with disclosed test fixture corrections; full requalification pending",
+  "historical_failures_preserved": [
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/FINAL-FULL-RESULT1478.json",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/integrated-public77-1491-v1/RESULT1491.json",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/integrated-public4-1493-v1/RESULT1493.json"
+  ],
+  "source_unchanged": true,
+  "owned_groups_closed": true,
+  "no_allocation_meter": true,
+  "floor_bytes": 8589934592,
+  "provider_or_source_DB_calls": 0,
+  "full_freeze_installed_luna": "NOT_ESTABLISHED"
+}

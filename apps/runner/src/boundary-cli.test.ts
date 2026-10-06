@@ -9182,6 +9182,7 @@ describe("boundary operator-plane CLI", () => {
               expect(retainedRequest.length).toBeGreaterThan(0);
               expect(options?.context?.join("\n")).toContain(retainedRequest);
               expect(revise).toHaveBeenCalledOnce();
+              if (rebasePendingRevision) expect(_choices.find(choice => choice.value === "edit_current")?.disabled).toBe(false);
               return pendingReviewMenus++ === 0 ? "details" : competingPendingRevision ? "pause" : rebasePendingRevision ? "edit_current" : "keep_current";
             }
             if (posture === "policy_target_pause" && title === "CHOOSE THE ACTION TO REVISE") {
@@ -9296,11 +9297,11 @@ describe("boundary operator-plane CLI", () => {
               approval: { ...input.existingDraft!.approval, required_approvals: 2 } });
             return result;
           }
-          if (rebasePendingRevision) await input.onCheckpoint?.(actionRuleAuthoringCheckpoint({
-            intent_digest: canonicalJsonDigest(input.intent),
-            context_digest: canonicalJsonDigest({ catalog: input.builtCatalog.catalog, read: input.readBoundaryDigest, baseline: input.existingDraft }),
-            components: { approval: { ...input.existingDraft!.approval } },
-          }));
+          // This positive rebase starts without an interrupted producer checkpoint:
+          // the scripted producer returns ready, then the guarded draft is saved.
+          // The separate unsafe_rebase fixture preserves exact interrupted state
+          // and refuses generation from a changed baseline. Do not manufacture
+          // an unfinished component here or claim that fixture can be rebased.
           const draft = structuredClone(input.existingDraft!);
           draft.approval.required_approvals = 2;
           draft.review.human_review = "Two maintenance reviewers approve this proposal.";
@@ -9539,7 +9540,7 @@ describe("boundary operator-plane CLI", () => {
           expect(second.error).toBeUndefined();
           expect(secondCode).toBe(0);
           if (rebasePendingRevision) {
-            expect(first.after_resume.pending_action_revision.checkpoint).toBeDefined();
+            expect(first.after_resume.pending_action_revision.checkpoint).toBeUndefined();
             expect(pendingReviewMenus).toBe(2);
             expect(afterRestart.digest).not.toBe(expectedCurrent.digest);
             for (const outcome of outcomes) {
