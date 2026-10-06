@@ -209,9 +209,28 @@ updates into the enclosing workflow before its existing Resume CAS save, so the
 next owning-stage save uses the acknowledged records. Failure retains the existing
 fence and rollback. Permit propagation uses the existing mutation helper.
 
-This is a development checkpoint, not accepted delivery. Production-host tests,
-fresh-process restarts, caller continuation/failure, positive onboarding and
-selected-baseline editing, independent counterexamples, final gates and installed
-acceptance remain required. The earlier 88 assertions retain their limited scope.
+The shared entry function is called by saved Review, pending Input Resume,
+the newly saved plan, Resume past planning and Action production. These callers
+retain their existing stage ownership; they do not implement Input transitions.
+
+Seven production-host cases now compare uninterrupted and fresh-process runs
+at root creation, unanswered question, raw answer, proposal, confirmation,
+Source append before acknowledgement and return to the next owning stage.
+Independent controls also passed for a competing saved decision versus a stale
+displayed Yes, a forged response binding, cancellation, append before ACK and
+committed ACK with a lost response. They exercise real Source/Resume writers and
+preserve exact within-run evidence, without an acknowledgement registry.
+
+A public saved-Review characterization confirms the exact attributed Input and
+Source append survive the caller's currentness refusal. The first-ever Input
+append can invalidate a prior Review selection; its intended positive continuation
+remains a separate open route investigation. This passing persistence assertion
+does not turn that refusal into task completion.
+
+This is a development checkpoint, not accepted delivery. Complete positive
+onboarding and selected-baseline editing, remaining independent route verdicts,
+final gates and installed acceptance remain required. The earlier 88 assertions
+retain their limited scope. Controlled successful replies in the new restart
+fixtures derive references from actual transmitted frames and declared answers.
 Version blank/unknown handling already exists; the added Version raw-save
 interruption work is characterization only, with no Version product change.
