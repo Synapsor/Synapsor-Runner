@@ -28,7 +28,7 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
   const resumeFile=path.join(root,".synapsor/boundary-authoring/resume.json");
   const readResume=async()=>fs.readFile(resumeFile,"utf8").then(text=>JSON.parse(text)).catch(()=>undefined);
   let transcript="",stage:"initial"|"revision"|"reopen"="initial",requests=0,revisionRequests=0,jobReads=0,instructionReads=0,questionReads=0,reopenOffset=0;
-  let chosenRevision=false,awaitingClarification=false,followupSeen=false,before:any,waiting:any,paused:any,reopened:any;
+  let chosenRevision=false,awaitingClarification=false,followupSeen=false,before:any,waiting:any,paused:any,reopened:any,statementConfirmations=0,statementDetailsRequested=false;
   const responses:any[]=[],menus:any[]=[],failures:any[]=[],reads:any[]=[];
   let committedFault = false;
   const writeDelegation = delegationSetup.writeDelegationDraft;
@@ -73,8 +73,30 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
     choose:async(choice:any)=>{
       const values=choice.options.map((entry:any)=>entry.value);let selected:string|undefined;
       if(choice.title==="START BOUNDARY DRAFTING")selected=stage==="reopen" ? "resume" : "model";
+      else if(choice.title==="SAVED BUSINESS STATEMENT") {
+        expect(choice.initialValue).toBe("keep");expect(stage).toBe("reopen");expect(control).toBe("pause_restart");
+        const saved=await readResume();
+        expect(saved?.owner_handoffs?.at(-1)).toMatchObject({state:"waiting",question});
+        expect(saved?.operator_questions?.at(-1)?.raw_answer).toBeUndefined();
+        selected="review";
+      }
       else if(choice.title==="CLIENT FOR THIS JOB")selected="later";
       else if(choice.title==="CLIENT INTEGRATION RESPONSIBILITIES")selected="assign";
+      else if(choice.message==="Record this exact statement for the current question?") {
+        expect(choice.initialValue).toBe("no");
+        const saved=await readResume();
+        expect(saved?.operator_questions?.at(-1)).toMatchObject({kind:"attributed_meaning",raw_answer:{text:answer},proposal:{value:{kind:"attributed_meaning"}}});
+        expect(saved?.operator_questions?.at(-1)?.confirmation).toBeUndefined();
+        expect(saved?.owner_handoffs?.at(-1)).toMatchObject({state:"waiting",question});
+        expect(transcript.replace(/\s+/gu," ")).toContain(answer);
+        expect(values).toContain("__view_runner_details__");
+        if(!statementDetailsRequested) {statementDetailsRequested=true;selected="__view_runner_details__";}
+        else {
+          expect(transcript).toContain("EXACT BUSINESS STATEMENT");
+          expect(transcript.replace(/\s+/gu," ")).toContain(question);
+          statementConfirmations++;selected="yes";
+        }
+      }
       else if(values.includes("revise_model") && !chosenRevision) {chosenRevision=true;stage="revision";before=await loadBoundaryReviewContext(root);selected="revise_model";}
       else if(values.includes("finish"))selected="finish";
       else if(choice.title==="SETUP NEEDS ATTENTION" || values.includes("pause") && !values.includes("yes"))selected="pause";
@@ -126,6 +148,7 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
     paused={requests,resume:await readResume(),context:await loadBoundaryReviewContext(root)};
     expect(chosenRevision,transcript).toBe(true);expect(before).toBeDefined();
     if(control==="committed_read" || control==="guard_ack_loss") {
+      expect(statementConfirmations).toBe(1);
       expect(committedFault).toBe(true);
       expect(paused.context.bundle.candidate_digest).not.toBe(before.bundle.candidate_digest);
       expect(paused.resume.pending_read_revision_state.result_received).toBe(true);
@@ -150,6 +173,7 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
       return;
     }
     if(control==="terminal_invalid") {
+      expect(statementConfirmations).toBe(0);
       expect(revisionRequests).toBe(2);expect(questionReads).toBe(0);
       expect(paused.resume.pending_read_revision_state.terminal_reason).toBe("READ_BOUNDARY_REVISION_NOT_SUBMITTED");
       expect(paused.context.bundle.candidate_digest).toBe(before.bundle.candidate_digest);
@@ -179,6 +203,7 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
       expect(questionReads).toBe(2);expect(revisionRequests).toBe(2);expect(followupSeen).toBe(true);
       expect(responses.filter(response=>response.stage==="reopen" && response.names.includes("runner__submit_read_boundary_revision"))).toHaveLength(1);
     } else expect(followupSeen,transcript).toBe(true);
+    expect(statementConfirmations).toBe(1);
     const current=await loadBoundaryReviewContext(root),resource=readBoundaryRevisionCatalog(current.candidate).resources.find(entry=>entry.id==="studio.parcels")!;
     expect(current.bundle.candidate_digest).not.toBe(before.bundle.candidate_digest);
     expect(resource.fields.find(field=>field.id==="units")?.current_exposure).toBe("runner_only");

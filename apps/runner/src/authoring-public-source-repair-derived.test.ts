@@ -48,9 +48,10 @@ async function publicSourceRepair(control: Control) {
   await fs.writeFile(sourceFile, lines.join("\n"));
   const job = "Prepare both selected studio.pack_parcel_1 and studio.pack_parcel_2 Actions in the attached rules. Preserve the full requested agenda. Read parcel labels and units. studio.parcels is the parcel register; studio.parcels.label is the public parcel name; studio.parcels.units is the unit count.";
   const repairInstruction = "Revise only the current disabled studio.pack_parcel_1 eligibility rule to follow attached Source line 2: retain available=true and remove the contradictory available=false condition. Preserve Read unchanged, every other Action declaration, and the separate unfinished studio.pack_parcel_2 request in the complete agenda. Do not activate or execute anything.";
+  const outsideScopeAnswer = "Keep the original TTL unchanged and correct only the exact nominated eligibility condition.";
   let stage: "initial" | "review" | "repair" | "restart" = "initial", transcript = "", requests = 0, repairRequests = 0;
   let initialActionPhase = 0, repairActionPhase = 0, resolved = false, injected = false;
-  let versionAnswerPending: { question_id: string; revision: number } | undefined;
+  let versionAnswerPending: { question_id: string; revision: number } | undefined, counterDetailsRequested = false, businessDetailsRequested = false, businessConfirmations = 0;
   const versionQuestion = "Do all your applications advance the parcel change counter every time they change a parcel?";
   let sourceId: string | undefined, competingSaved: any;
   const responses: any[] = [], menus: any[] = [], reports: any[] = [];
@@ -94,6 +95,13 @@ async function publicSourceRepair(control: Control) {
       let selected: string | undefined;
       if (choice.title === "START BOUNDARY DRAFTING") selected = stage === "initial" ? "program"
         : stage === "review" ? "review_rules" : stage === "repair" ? "model" : "resume";
+      else if (choice.title === "SAVED BUSINESS STATEMENT" && control === "outside_scope") {
+        expect(stage).toBe("restart"); expect(choice.initialValue).toBe("keep");
+        const saved = JSON.parse(await fs.readFile(resumeFile, "utf8")), question = saved.operator_questions.at(-1);
+        expect(question.kind).toBe("attributed_meaning"); expect(question.raw_answer).toBeUndefined();
+        expect(saved.owner_handoffs.find((h: any) => h.id === question.handoff_id)).toMatchObject({ state: "waiting", question: question.presentation.text });
+        selected = "review";
+      }
       else if (choice.title === "CLIENT FOR THIS JOB") selected = "later";
       else if (choice.title === "SEND ATTACHED RULES") { expect(choice.initialValue).toBe("cancel"); selected = "send"; }
       else if (choice.title === "USE THE SAVED ATTACHMENT") selected = "continue";
@@ -105,9 +113,22 @@ async function publicSourceRepair(control: Control) {
       } else if (choice.message === "Record this planned counter maintenance for the current setup?") {
         expect(choice.initialValue).toBe("no");
         const shown = transcript.replace(/\s+/gu, " ");
-        expect(shown).toContain("Counter: studio.parcels.version."); expect(shown).toContain(lines[5]);
+        expect(shown).toContain(lines[5]);
         expect(shown).toContain("Implementation remains unverified.");
-        expect(shown).toContain("It grants no Read or execution permission and changes no business rule."); selected = "yes";
+        expect(shown).toContain("It grants no Read or execution permission and changes no business rule.");
+        expect(values).toContain("__view_runner_details__");
+        if (!counterDetailsRequested) { expect(shown).not.toContain("Counter: studio.parcels.version."); counterDetailsRequested = true; selected = "__view_runner_details__"; }
+        else { expect(shown).toContain("Counter: studio.parcels.version."); selected = "yes"; }
+      } else if (choice.message === "Record this exact statement for the current question?") {
+        expect(control).toBe("outside_scope"); expect(stage).toBe("restart"); expect(choice.initialValue).toBe("no");
+        const saved = JSON.parse(await fs.readFile(resumeFile, "utf8")), question = saved.operator_questions.at(-1);
+        expect(question).toMatchObject({ kind: "attributed_meaning", raw_answer: { text: outsideScopeAnswer }, proposal: { value: { kind: "attributed_meaning" } } });
+        expect(question.confirmation).toBeUndefined();
+        expect(saved.owner_handoffs.find((h: any) => h.id === question.handoff_id)).toMatchObject({ state: "waiting", question: question.presentation.text });
+        expect(values).toContain("__view_runner_details__");
+        expect(transcript.replace(/\s+/gu, " ")).toContain(outsideScopeAnswer);
+        if (!businessDetailsRequested) { businessDetailsRequested = true; selected = "__view_runner_details__"; }
+        else { expect(transcript).toContain("EXACT BUSINESS STATEMENT"); businessConfirmations++; selected = "yes"; }
       } else if (choice.title === "REVIEW DECLARED TEXT INPUT BOUNDS") selected = "none";
       else if (choice.message === "Save this exact attributed input-policy interpretation?") { expect(choice.initialValue).toBe("no"); selected = "yes"; }
       else if (choice.message === "Run a new bounded model review?") { expect(choice.initialValue).toBe("no"); selected = "yes"; }
@@ -420,10 +441,11 @@ async function publicSourceRepair(control: Control) {
         // allowance. A real attributed answer reserves another invocation but
         // changes the Source answer history: the old nomination must then stop
         // on currentness, without resetting its existing reserved allowance.
-        const answer = "Keep the original TTL unchanged and correct only the exact nominated eligibility condition.";
+        const answer = outsideScopeAnswer;
         stage = "restart"; answers.push(answer);
         await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], inspection, outer, undefined, options);
         after = await readResume();
+        expect(businessConfirmations).toBe(1);
         expect(after.pending_action_revision.checkpoint.source_repair.corrections_used).toBe(2);
         expect(after.pending_action_revision.checkpoint.source_repair.original_parent).toEqual(first.source_repair.original_parent);
         expect((await listActionRuleAuthorityDrafts(root))[0]).toEqual(authorityBefore);
