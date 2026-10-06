@@ -397,3 +397,20 @@ remapping/index acknowledgement failures. These public controls are in-process.
 The independent initial Read batch is presealed; genuine cold producer/host/caller,
 small changed-presenter terminal controls, its DEV verdict and the one whole
 package gate remain required. This checkpoint is not Read DEV acceptance.
+
+The public cold controls now resume three producer-created states: unanswered,
+declined local proposal and confirmed meaning before remapping. Each fresh child
+reuses the exact saved words and decision where present, performs one remap,
+indexes the meaning once through the production accepted-result callback, and
+returns to the ordinary disabled Read review. The existing model summary is a
+separate narration request; it is not a wording rephrase or another mapping.
+Attached-rule coverage is deliberately declined and access remains disabled.
+Preparation uses fictional structural inspection and the native saved Read entry
+stage. It seeds no question, completion, target answer or mapping, and supplies no
+model planning or physical database evidence.
+
+The changed presenter also passed one real terminal child with physical Escape
+at the unanswered question and Enter at the default-No meaning readback. Both
+rounds retain the actual pending records, make zero model requests and leave
+Source and authority unchanged. Independent cold/terminal artifact adjudication
+and the one full eight-worker gate are still required before Read acceptance.
