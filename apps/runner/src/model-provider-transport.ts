@@ -1,5 +1,13 @@
 import type { TaskContextMeter, TaskContextProfile } from "@synapsor-runner/protocol";
 
+/** Optional host-owned allowance for ONE normal authoring episode spanning
+ * presentation, answer mapping and restart. Its persistence belongs to the
+ * existing coordinated authoring checkpoint, never to model arguments. */
+export type AskAuthoringEpisodeBudget = {
+  admitIteration(): Promise<void>;
+  reserveToolBatch(count: number): Promise<void>;
+};
+
 // Acyclic shared definitions for the native adapter and authoring recovery.
 // No request, retry, provider configuration or persistence occurs in this leaf.
 export class AskError extends Error {

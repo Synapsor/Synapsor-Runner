@@ -1,7 +1,7 @@
 import { AskError, completedContentError, completedProviderContentError, recordAuthoringTransportObservation,
-  type AuthoringTransportObservation, type ProviderHttpInput, type ProviderHttpResult, type AskProviderStreamEvent } from "./model-provider-transport.js";
+  type AuthoringTransportObservation, type ProviderHttpInput, type ProviderHttpResult, type AskProviderStreamEvent, type AskAuthoringEpisodeBudget } from "./model-provider-transport.js";
 export { AskError, completedContentError, completedProviderContentError, authoringTransportObservation,
-  type AuthoringTransportObservation, type ProviderHttpInput, type ProviderHttpResult, type AskProviderStreamEvent } from "./model-provider-transport.js";
+  type AuthoringTransportObservation, type ProviderHttpInput, type ProviderHttpResult, type AskProviderStreamEvent, type AskAuthoringEpisodeBudget } from "./model-provider-transport.js";
 import crypto from "node:crypto";
 import dns from "node:dns/promises";
 import http, { type IncomingMessage } from "node:http";
@@ -600,14 +600,6 @@ export function resolveAskProviderConfiguration(
     ...(apiKey ? { apiKey } : {}),
   };
 }
-
-/** Optional host-owned allowance for ONE normal authoring episode spanning
- * presentation, answer mapping and restart. Its persistence belongs to the
- * existing coordinated authoring checkpoint, never to model arguments. */
-export type AskAuthoringEpisodeBudget = {
-  admitIteration(): Promise<void>;
-  reserveToolBatch(count: number): Promise<void>;
-};
 
 export async function runAskProviderTurn(input: {
   configuration: ResolvedAskProviderConfiguration;
