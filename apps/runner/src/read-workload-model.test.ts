@@ -50,7 +50,7 @@ describe("durable Read assistance producer checkpoint", () => {
     const events: string[] = [], requestJson = vi.fn(async () => { events.push("provider"); return response({ clarification_request: request }); });
     await expect(generateModelReadWorkload({ ...setup(requestJson), onCheckpoint: async (value: any) => { checkpoint = structuredClone(value); events.push(value.stage); },
       clarificationHandler: async () => { events.push("handler"); expect(checkpoint?.stage).toBe("waiting"); return undefined; } } as any)).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
-    expect(events).toEqual(["dispatching", "provider", "waiting", "handler"]);
+    expect(events).toEqual(["dispatching", "provider", "dispatching", "waiting", "handler"]);
     expect(checkpoint.pending_question.request).toEqual(request);
     expect(checkpoint.state.call_count).toBe(1);
     const noSend = vi.fn();
@@ -139,8 +139,8 @@ describe("durable Read assistance producer checkpoint", () => {
     await expect(generateModelReadWorkload({ ...setup(valid), onCheckpoint: async (checkpoint, _boundary, result) => {
       seen.push({ checkpoint, result }); if (!checkpoint) throw new Error("OWNED_ACCEPTED_READ_CAS_CHANGED");
     } })).rejects.toThrow("OWNED_ACCEPTED_READ_CAS_CHANGED");
-    expect(seen).toHaveLength(2); expect(seen[0]!.checkpoint?.stage).toBe("dispatching"); expect(seen[0]!.result).toBeUndefined(); expect(seen[1]!.checkpoint).toBeUndefined();
-    expect(seen[1]!.result).toHaveProperty("analysis.status", "ready"); expect(valid).toHaveBeenCalledOnce();
+    expect(seen).toHaveLength(3); expect(seen.slice(0,2).every(event => event.checkpoint?.stage === "dispatching" && event.result === undefined)).toBe(true); expect(seen[2]!.checkpoint).toBeUndefined();
+    expect(seen[2]!.result).toHaveProperty("analysis.status", "ready"); expect(valid).toHaveBeenCalledOnce();
   });
 
   it("retains approved values and the one-value-request limit when a later business question pauses", async () => {
@@ -181,7 +181,7 @@ describe("durable Read assistance producer checkpoint", () => {
     const server = createServer(async (req, res) => { for await (const _chunk of req) {} sends++; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(response({ clarification_request: sends === 1 ? request : followupRequest }).body)); });
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
-    const host = { available: () => true, read: () => state, current: async () => canonicalJsonDigest(checkpoint ?? "owned_read_origin"),
+    const host = { available: () => true, read: () => state, current: async () => canonicalJsonDigest("owned immutable Read target"),
       write: async (value: AuthoringTransportState) => { validateAuthoringTransportState(value); state = structuredClone(value); } };
     const entering = () => withAuthoringGenerationRecovery(() => { configureAuthoringGenerationRecovery(host); return generateModelReadWorkload({
       ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })), onCheckpoint: async value => { checkpoint = structuredClone(value); },
@@ -212,7 +212,7 @@ describe("durable Read assistance producer checkpoint", () => {
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
     const host = { available: () => true, read: () => state,
-      current: async () => canonicalJsonDigest(checkpoint ?? "owned_read_origin"),
+      current: async () => canonicalJsonDigest("owned immutable Read target"),
       write: async (value: AuthoringTransportState) => { validateAuthoringTransportState(value); state = structuredClone(value); } };
     const save = async (next: ReadWorkloadAssistanceCheckpoint | undefined) => {
       if (next?.stage === "waiting" && next.digest !== checkpoint?.digest) state = authoringTransportCheckpoint(authoringQuestionCheckpoint(state,
@@ -258,6 +258,61 @@ describe("durable Read assistance producer checkpoint", () => {
     expect(() => readWorkloadAssistanceCheckpoint({ ...core, state: { ...core.state, relationship_reviews: 4 } })).toThrow("CHECKPOINT_INVALID");
   });
 
+  it("retains exact typed history through dispatch without reopening the decided value request", async () => {
+    let decided: ReadWorkloadAssistanceCheckpoint | undefined; const dispatches: ReadWorkloadAssistanceCheckpoint[] = [];
+    const value = { ...request, question: "May Runner use separately reviewed fulfillment words?" };
+    const sends = vi.fn().mockResolvedValueOnce(response({ value_request: value })).mockResolvedValueOnce(diagnosticResponse("valid"));
+    const result = await generateModelReadWorkload({ ...setup(sends), generatedBoundary: generatedBoundaryWithoutStatusEnum(),
+      valueRequestHandler: async () => ({ state: "without_values" }), onCheckpoint: async cp => {
+        if(cp?.stage === "decided") decided = structuredClone(cp);
+        if(cp?.stage === "dispatching") dispatches.push(structuredClone(cp));
+      } });
+    expect(result.analysis.status).toBe("ready"); expect(sends).toHaveBeenCalledTimes(2);
+    const final = dispatches.at(-1)!;
+    if(!decided || decided.stage !== "decided" || final.stage !== "dispatching") throw new Error("Expected actual decided and dispatching records");
+    expect(final.previous_question).toEqual({ stage: "decided", pending_question: decided.pending_question }); expect(final).not.toHaveProperty("pending_question");
+    const {digest:_d,schema_version:_s,...body}=final, previous = decided.pending_question;
+    expect(() => readWorkloadAssistanceCheckpoint({ ...body, previous_question: { stage: "waiting" as const, pending_question: previous } })).toThrow("CHECKPOINT_INVALID");
+  });
+
+  it("outer controller callback reservation survives a raw save acknowledgement loss without accepting its result", async () => {
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, state: AuthoringTransportState = { version: 1, operations: [] }, sends = 0;
+    const snapshots: ReadWorkloadAssistanceCheckpoint[] = [];
+    const server = createServer(async (req, res) => { for await (const _chunk of req) {} sends++;
+      res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ status: "completed", ...diagnosticResponse("valid").body })); });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
+    const host = { available: () => true, read: () => state, current: async () => canonicalJsonDigest("fixed current workload business input"),
+      write: async (value: AuthoringTransportState) => { validateAuthoringTransportState(value); state = structuredClone(value); } };
+    const entering = (resume: boolean) => withAuthoringGenerationRecovery(() => { configureAuthoringGenerationRecovery(host);
+      return generateModelReadWorkload({ ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })),
+        ...(resume ? { resumeCheckpoint: checkpoint } : {}), onCheckpoint: async value => {
+          checkpoint = structuredClone(value); if (value) snapshots.push(structuredClone(value));
+          if (!resume && value?.stage === "dispatching" && value.state.call_count === 1) throw new Error("OWNED_RAW_COUNTER_ACK_LOST");
+        } }); });
+    try {
+      await expect(entering(false)).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
+      expect(sends).toBe(1); expect(checkpoint).toMatchObject({ stage: "dispatching", state: { call_count: 1 } });
+      expect(state.operations[0]?.state).toBe("partial"); const old = JSON.stringify(state.operations[0]);
+      await withAuthoringGenerationRecovery(async () => { configureAuthoringGenerationRecovery(host); await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(checkpoint!.digest)); });
+      const result = await entering(true); expect(result.analysis.status).toBe("ready"); expect(sends).toBe(2);
+      expect(snapshots.at(-1)?.state.call_count).toBe(2); expect(JSON.stringify(state.operations[0])).toBe(old);
+    } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  });
+  it("outer controller callback limit refuses an exhausted checkpoint before another HTTP request", async () => {
+    let saved: ReadWorkloadAssistanceCheckpoint | undefined;
+    const never = vi.fn();
+    await expect(generateModelReadWorkload({ ...setup(never), onCheckpoint: async value => {
+      if(value?.stage === "dispatching") { saved = value; throw new Error("OWNED_FIRST_DISPATCH_CAPTURED"); }
+    } })).rejects.toThrow("OWNED_FIRST_DISPATCH_CAPTURED"); expect(never).not.toHaveBeenCalled();
+    if(!saved || saved.stage !== "dispatching") throw new Error("Expected the actual initial dispatch checkpoint");
+    const { digest: _digest, schema_version: _schema, ...body } = saved;
+    // Pure controller boundary fixture, not historical evidence or business authority.
+    const exhausted = readWorkloadAssistanceCheckpoint({ ...body, state: { ...body.state, call_count: 8 } });
+    const noHttp = vi.fn(); await expect(generateModelReadWorkload({ ...setup(noHttp), resumeCheckpoint: exhausted }))
+      .rejects.toThrow("READ_WORKLOAD_SUBMISSION_REFUSED"); expect(noHttp).not.toHaveBeenCalled(); expect(exhausted.state.call_count).toBe(8);
+  });
+
   it("records mechanical limits before a native interrupted dispatch and restores them without another redirect", async () => {
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, state: AuthoringTransportState = { version: 1, operations: [] }, sends = 0;
     const mechanical = { resource: request.resource, reason: "Need the opaque selection reference", question: "Which column supplies the opaque selection reference?" };
@@ -286,7 +341,7 @@ describe("durable Read assistance producer checkpoint", () => {
       });
       await expect(entering(true)).rejects.toThrow("READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED");
       expect(sends).toBe(3); expect(JSON.stringify(state.operations[1])).toBe(old);
-      expect(checkpoint?.state.call_count).toBe(1); expect(checkpoint?.state.attempt).toBe(3);
+      expect(checkpoint?.state.call_count).toBe(2); expect(checkpoint?.state.attempt).toBe(3);
     } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
   });
 
@@ -497,7 +552,7 @@ describe("B41 host-owned Read meaning resolution", () => {
     expect(result.authority_granted).toBe(false);
     expect(result.source_database_changed).toBe(false);
     expect(requestJson).toHaveBeenCalledTimes(2);
-    expect(events).toEqual(["dispatching", "local_reply", "waiting", "answer", "decided", "dispatching", "local_reply", "accepted"]);
+    expect(events).toEqual(["dispatching", "local_reply", "dispatching", "waiting", "answer", "decided", "dispatching", "local_reply", "dispatching", "accepted"]);
   });
   it("exposes the same typed pending meaning in a durable headless path before spending a correction", async () => {
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;

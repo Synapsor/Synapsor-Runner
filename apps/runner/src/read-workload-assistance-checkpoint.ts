@@ -55,7 +55,8 @@ export type ReadWorkloadAssistanceCheckpoint = {
   };
   digest: Digest;
 } & ({ stage: "waiting" | "decided"; pending_question: ReadWorkloadAssistanceQuestion; dispatch_question?: never }
-  | { stage: "dispatching"; dispatch_question: string; pending_question?: never });
+  | { stage: "dispatching"; dispatch_question: string; pending_question?: never;
+      previous_question?: { stage: "waiting" | "decided"; pending_question: ReadWorkloadAssistanceQuestion } });
 
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const exact = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).every(k => keys.includes(k));
@@ -134,10 +135,16 @@ function assertAssistanceQuestion(value: unknown, stage: "waiting" | "decided"):
  * decision against its CURRENT catalog and compares exact canonical input. */
 export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkloadAssistanceCheckpoint {
   const fail = () => new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: Preserve the pending Read assistance state; it is malformed or changed.");
-  if (!record(value) || !exact(value, ["schema_version", "input_digest", "boundary_digest", "catalog_digest", "tool_digest", "stage", "pending_question", "dispatch_question", "state", "digest"])
+  if (!record(value) || !exact(value, ["schema_version", "input_digest", "boundary_digest", "catalog_digest", "tool_digest", "stage", "pending_question", "dispatch_question", "previous_question", "state", "digest"])
     || value.schema_version !== "synapsor.read-workload-assistance-checkpoint.v1"
     || ![value.input_digest, value.boundary_digest, value.catalog_digest, value.tool_digest, value.digest].every(digest)
     || !["waiting", "decided", "dispatching"].includes(value.stage as string) || !record(value.state) || (value.stage === "dispatching" ? value.pending_question !== undefined || !text(value.dispatch_question, 64 * 1024) : !record(value.pending_question) || value.dispatch_question !== undefined)) throw fail();
+  if (value.previous_question !== undefined) {
+    const prior = value.previous_question;
+    if (value.stage !== "dispatching" || !record(prior) || !exact(prior, ["stage", "pending_question"])
+      || !["waiting", "decided"].includes(prior.stage as string)) throw fail();
+    assertAssistanceQuestion(prior.pending_question, prior.stage as "waiting" | "decided");
+  }
   const q = record(value.pending_question) ? value.pending_question : {}, s = value.state;
   if (value.stage !== "dispatching") assertAssistanceQuestion(q, value.stage as "waiting" | "decided");
   const flags = ["correction_used", "clarification_from_invalid_naming", "clarification_resolved", "mechanical_clarification_resolved",

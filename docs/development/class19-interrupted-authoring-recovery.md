@@ -41,3 +41,15 @@ disposition, bounded ordinary continuation, and complete lifecycle acceptance.
 A menu or safe pending result alone does not establish successful onboarding,
 editing or a recovered published program. Final settled and installed gates
 must run on the integrated revision; earlier passing results are historical.
+
+Before sending a prospective producer call, the existing raw Resume save keeps
+its reserved count and dispatch inputs without acknowledging a generation.
+A prior real question, raw answer and receipt remain exact inert history,
+validated against their original native association. They do not become the
+new pending question or prove that an interrupted response completed. Lost
+acknowledgement of a saved allowance remains charged on ordinary Resume.
+
+The original wording input must also survive a wording-only interruption.
+A reproduced partial correction changed a bound and its negation on Resume;
+this finding remains open until the shared gate's bounded original-question
+state, typed-question host adapters and independent variants are qualified.

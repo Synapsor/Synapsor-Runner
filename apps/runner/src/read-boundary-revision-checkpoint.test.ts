@@ -33,7 +33,7 @@ it("persists the canonical question before its owner handler and resumes with ze
   expect(first).toHaveBeenCalledOnce();const next=vi.fn(async request=>{expect(JSON.stringify(request.body)).toContain(answer);return response(valid);});
   const stages:string[]=[];
   const result=await generateModelReadBoundaryRevision({...setup(next),resumeCheckpoint:saved,onCheckpoint:async(value:any)=>{if(value)stages.push(value.stage);},clarificationHandler:async()=>{expect(next).not.toHaveBeenCalled();return {state:"answered",answer};}} as any);
-  expect(next).toHaveBeenCalledOnce();expect(stages).toEqual(["waiting","decided","dispatching"]);expect(result.changes).toMatchObject([{field:"status",after:"runner_only"}]);
+  expect(next).toHaveBeenCalledOnce();expect(stages).toEqual(["waiting","decided","dispatching","dispatching"]);expect(result.changes).toMatchObject([{field:"status",after:"runner_only"}]);
 });
 
 it("saved decided answer survives a callback crash without a reprompt or duplicate answer",async()=>{
@@ -196,4 +196,36 @@ it("saves a dispatching revision with no invented question before send and reval
   const resumed = vi.fn(async request => { expect(JSON.stringify(request.body)).toContain(JSON.stringify(saved!.dispatch_question).slice(1,-1)); return response(valid); });
   const result = await generateModelReadBoundaryRevision({ ...setup(resumed), resumeCheckpoint: saved });
   expect(resumed).toHaveBeenCalledOnce(); expect(result.changes).toMatchObject([{ field: "status", after: "runner_only" }]);
+});
+
+
+it("outer controller callback reservation records a revision count before an uncertain raw save", async () => {
+  let saved: ReadBoundaryRevisionCheckpoint | undefined, state: AuthoringTransportState = { version: 1, operations: [] }, sends = 0;
+  const server = createServer(async (req, res) => { for await (const _chunk of req) {} sends++; res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ status: "completed", ...response(valid).body })); });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve)); const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
+  const host = { available: () => true, read: () => state, current: async () => canonicalJsonDigest("fixed current revision business input"),
+    write: async (value: AuthoringTransportState) => { validateAuthoringTransportState(value); state = structuredClone(value); } };
+  try {
+    await expect(withAuthoringGenerationRecovery(() => { configureAuthoringGenerationRecovery(host);
+      return generateModelReadBoundaryRevision({ ...setup((r: Parameters<typeof secureAskJsonRequest>[0]) => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })),
+        instruction: "Keep status private to Runner with no model analysis; preserve other access.", onCheckpoint: async value => {
+          saved = structuredClone(value); if(value?.stage === "dispatching" && value.state.call_count === 1) throw new Error("OWNED_RAW_COUNTER_ACK_LOST");
+        } }); })).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
+    expect(sends).toBe(1); expect(saved).toMatchObject({ stage: "dispatching", state: { call_count: 1 } }); expect(saved).not.toHaveProperty("pending_question");
+    expect(state.operations[0]?.state).toBe("partial"); expect(saved?.state.private_decisions).toEqual([]);
+  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+
+it("retains exact typed history after a revision answer without making it active again", async () => {
+  const {saved}=await paused();let decided: ReadBoundaryRevisionCheckpoint|undefined,dispatch: ReadBoundaryRevisionCheckpoint|undefined;
+  const send=vi.fn(async()=>response(valid)),handler=vi.fn(async()=>({state:"answered" as const,answer}));
+  await generateModelReadBoundaryRevision({...setup(send),resumeCheckpoint:saved,clarificationHandler:handler,onCheckpoint:async cp=>{
+    if(cp?.stage==="decided")decided=structuredClone(cp);if(cp?.stage==="dispatching")dispatch=structuredClone(cp);
+  }});
+  expect(handler).toHaveBeenCalledOnce();expect(send).toHaveBeenCalledOnce();
+  if(!decided || decided.stage!=="decided" || !dispatch || dispatch.stage!=="dispatching")throw new Error("Expected real typed and dispatch records");
+  expect(dispatch.previous_question).toEqual({stage:"decided",pending_question:decided.pending_question});expect(dispatch).not.toHaveProperty("pending_question");
+  const {digest:_d,schema_version:_s,...body}=dispatch, previous=decided.pending_question;
+  expect(()=>readBoundaryRevisionCheckpoint({...body,previous_question:{stage:"waiting" as const,pending_question:previous}})).toThrow("CHECKPOINT_INVALID");
 });

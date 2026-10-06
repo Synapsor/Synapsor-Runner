@@ -391,11 +391,13 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
   let resumedDispatchQuestion: string | undefined;
   let retained: ReadPrerequisiteCheckpoint["pending"] | undefined;
   let retainedStage: "waiting" | "decided" = "waiting";
+  let previousPending: Extract<ReadPrerequisiteCheckpoint,{stage:"dispatching"}>["previous_pending"];
   const save = async (stage: "waiting" | "decided" | "dispatching", dispatchQuestion?: string) => {
+    if (stage !== "dispatching" && retained) previousPending = { stage, pending: structuredClone(retained) };
     if (!input.onCheckpoint || stage !== "dispatching" && !retained) return;
     assertCurrent();
     await input.onCheckpoint(readPrerequisiteCheckpoint({ input_digest: inputDigest, tool_digest: authorityDigest,
-      seed, ...(stage === "dispatching" ? { stage, dispatch_question: dispatchQuestion! } : { stage, pending: retained! }), state: { correction_used: correctionUsed, issue, new_questions: newQuestions,
+      seed, ...(stage === "dispatching" ? { stage, dispatch_question: dispatchQuestion!, ...(previousPending ? { previous_pending: structuredClone(previousPending) } : {}) } : { stage, pending: retained! }), state: { correction_used: correctionUsed, issue, new_questions: newQuestions,
         answers, confirmed_answers: confirmedAnswers, saved_decisions: savedDecisions, questions: [...questions], replayed_decisions: [...replayedDecisions],
         ...(questionedProposal ? { questioned_proposal: questionedProposal } : {}), metrics } }));
     assertCurrent();
@@ -411,6 +413,7 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
     if (cp.input_digest !== inputDigest || cp.tool_digest !== authorityDigest || !isDeepStrictEqual(cp.seed, seed)) throw new Error(
       "READ_PREREQUISITE_CHECKPOINT_STALE: The mapping input, inspected metadata, approved history or model destination changed; no replacement was sent.");
     const s = cp.state;
+    previousPending = cp.stage === "dispatching" ? cp.previous_pending : { stage: cp.stage, pending: structuredClone(cp.pending) };
     if (!isDeepStrictEqual([...answers, ...s.confirmed_answers], s.answers)) invalid("Retained history is not the original approved context plus this mapping's own confirmed answers.");
     for (const a of s.answers) {
       prose(a.question, "Retained business question", MAX_BUSINESS_QUESTION_CHARACTERS);
@@ -418,6 +421,12 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
       if (redactCliErrorMessage(a.question) !== a.question) invalid("Retained business question contains credentials.");
     }
     if (s.questioned_proposal) validateProposal(s.questioned_proposal);
+    if (cp.stage === "dispatching" && cp.previous_pending) {
+      const previous = cp.previous_pending.pending;
+      if (previous.kind === "semantic_confirmation") validateProposal(previous.proposal);
+      else if (previous.request.decision && !businessDecisions.some(d => isDeepStrictEqual(d, previous.request.decision)))
+        invalid("The retained historical business decision no longer has its exact current scope.");
+    }
     if (cp.pending?.kind === "semantic_confirmation") validateProposal(cp.pending.proposal);
     else if (cp.pending && cp.pending.request.decision && !businessDecisions.some(d => isDeepStrictEqual(d, cp.pending.kind === "clarification" && cp.pending.request.decision))) {
       invalid("The retained business decision no longer has its exact current scope.");

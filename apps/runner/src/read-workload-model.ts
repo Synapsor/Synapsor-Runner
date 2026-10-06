@@ -244,13 +244,13 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   let lastSubmission: Record<string, unknown> | undefined;
   let namingCorrectionWorkload: ReturnType<typeof canonicalJsonDigest> | undefined;
   let callCount = 0;
+  let lastDispatchQuestion: string | undefined;
   const relationshipReviewLimit = input.relationshipReviewHandler ? MAX_READ_RELATIONSHIP_REVIEWS : 0;
   const gateway: AskToolGateway = {
     mode: "authoring",
     listTools: () => tools,
     async callTool(nameCalled, args) {
-      callCount += 1;
-      if (nameCalled !== SUBMIT_READ_WORKLOAD_TOOL || callCount > MAX_READ_CLARIFICATIONS + relationshipReviewLimit + 4) {
+      if (nameCalled !== SUBMIT_READ_WORKLOAD_TOOL || callCount >= MAX_READ_CLARIFICATIONS + relationshipReviewLimit + 4) {
         return {
           ok: false,
           value: {
@@ -262,6 +262,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           error_code: "READ_WORKLOAD_SUBMISSION_REFUSED",
         };
       }
+      callCount += 1;
+      if (lastDispatchQuestion) await saveDispatch(lastDispatchQuestion);
       // A new submission must never reuse a rejected earlier candidate.
       workload = undefined;
       analysis = undefined;
@@ -665,7 +667,9 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   };
   const consumedReadTurns: AskTurnResult[] = [];
   const run = async (question: string) => {
-    attempt += 1;
+    if (callCount >= MAX_READ_CLARIFICATIONS + relationshipReviewLimit + 4)
+      throw new Error("READ_WORKLOAD_SUBMISSION_REFUSED: The saved workload callback allowance is exhausted; no further request was sent.");
+    attempt += 1; lastDispatchQuestion = question;
     try {
       assertAssistanceContext();
       await saveDispatch(question);
@@ -734,6 +738,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   let correctionUsed = authoringInterruptedProducerCorrections().correction_used;
   let completion: ReturnType<typeof completedAuthoringQuestionSequence>;
   let pendingAssistance: ReadWorkloadAssistanceQuestion | undefined;
+  let previousQuestion: Extract<ReadWorkloadAssistanceCheckpoint,{stage:"dispatching"}>["previous_question"];
   const assertAssistanceContext = () => {
     if (meaningContext() !== expectedMeaningContext || explorationBoundaryCandidateDigest(mappingBoundary) !== expectedBoundaryDigest
       || readWorkloadCatalog(mappingBoundary, input.principalScopedRootResources).digest !== catalog.digest)
@@ -757,10 +762,10 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     assertAssistanceContext();
     await input.onCheckpoint(readWorkloadAssistanceCheckpoint({ input_digest: inputDigest(), boundary_digest: expectedBoundaryDigest,
       catalog_digest: catalog.digest, tool_digest: authorityDigest, stage: "dispatching", dispatch_question: question,
-      state: controllerState() }), structuredClone(mappingBoundary));
+      ...(previousQuestion ? { previous_question: structuredClone(previousQuestion) } : {}), state: controllerState() }), structuredClone(mappingBoundary));
   };
   const saveAssistance = async (question: ReadWorkloadAssistanceQuestion, stage: "waiting" | "decided") => {
-    pendingAssistance = structuredClone(question);
+    pendingAssistance = structuredClone(question); previousQuestion = { stage, pending_question: structuredClone(question) };
     if (!input.onCheckpoint) return;
     assertAssistanceContext();
     await input.onCheckpoint(readWorkloadAssistanceCheckpoint({ input_digest: inputDigest(), boundary_digest: expectedBoundaryDigest,
@@ -777,6 +782,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       return parsed;
     };
     const s = saved.state, q = saved.pending_question;
+    previousQuestion = saved.stage === "dispatching" ? saved.previous_question : { stage: saved.stage, pending_question: structuredClone(saved.pending_question) };
     const retired = new Set<number>(), replaced = new Set<number>();
     for (const review of s.reviewed_replacements ?? []) {
       const previous = s.clarified_targets[review.previous_index], next = s.clarified_targets[review.next_index];
@@ -834,6 +840,20 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         clarificationRequest = q.request;
       } else mechanicalClarificationRequest = q.request;
     }
+    }
+    if (saved.stage === "dispatching" && saved.previous_question) {
+      const previous = saved.previous_question.pending_question;
+      if (previous.kind === "value") {
+        const request = parseReadValueRequest(previous.request as unknown as Record<string, unknown>, catalog);
+        if (canonicalJsonDigest(request) !== canonicalJsonDigest(previous.request)
+          || previous.decision && canonicalJsonDigest(validateReadValueContextDecision(previous.decision, request)) !== canonicalJsonDigest(previous.decision))
+          throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: Retained historical value target or decision changed.");
+      } else {
+        canonicalRequest(previous.request);
+        if (previous.kind === "clarification" && previous.decision
+          && canonicalJsonDigest(validateReadClarificationDecision(previous.decision)) !== canonicalJsonDigest(previous.decision))
+          throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: Retained historical clarification decision changed.");
+      }
     }
     if (s.resolved_mechanical_request) canonicalRequest(s.resolved_mechanical_request);
     if (s.approved_value_context) {

@@ -149,16 +149,18 @@ export async function generateModelReadBoundaryRevision(input: {
   const businessContext = operatorBusinessContext(catalog.resources);
   let wording = operatorClarificationGate({ stage: "read", context: businessContext });
   let callCount = 0;
+  let lastDispatchQuestion: string | undefined;
   let lastSubmission: Record<string, unknown> | undefined;
   const privateDecisions = new Map<string, ReadBoundaryFieldExposureChange>();
   const gateway: AskToolGateway = {
     mode: "authoring",
     listTools: () => tools,
     async callTool(name, args) {
-      callCount += 1;
       if (name !== SUBMIT_READ_BOUNDARY_REVISION_TOOL) {
         return refusal("This tool is outside the disabled Read revision surface.");
       }
+      callCount += 1;
+      if (lastDispatchQuestion) await checkpoint("dispatching", lastDispatchQuestion);
       lastSubmission = structuredClone(args);
       if (args.relationship_review_request !== undefined) {
         try {
@@ -351,7 +353,7 @@ export async function generateModelReadBoundaryRevision(input: {
       : canonicalJsonDigest({ stale: true }),
   });
   const run = async (question: string) => {
-    await checkpoint("dispatching", question);
+    lastDispatchQuestion = question; await checkpoint("dispatching", question);
     return correctionUsed ? withAuthoringProducerCorrection("semantic",()=>providerTurn(question)) : providerTurn(question);
   };
 
@@ -370,6 +372,7 @@ export async function generateModelReadBoundaryRevision(input: {
   const clarificationAnswers: Array<{ question: string; answer: string }> = [];
   let pending: ReadBoundaryRevisionCheckpoint["pending_question"] | undefined;
   let lastDecided: ReadBoundaryRevisionCheckpoint["pending_question"] | undefined;
+  let previousQuestion: Extract<ReadBoundaryRevisionCheckpoint,{stage:"dispatching"}>["previous_question"];
   const revalidateStaged = async () => {
     if (!reviewedPrerequisite && !reviewedRelationship) return;
     if (!input.revalidateStagedSelections) throw new Error(
@@ -380,10 +383,11 @@ export async function generateModelReadBoundaryRevision(input: {
   };
   const checkpoint = async (stage: "waiting" | "decided" | "dispatching", dispatchQuestion?: string) => {
     if (stage === "decided" && pending) lastDecided = structuredClone(pending);
+    if (stage !== "dispatching" && pending) previousQuestion = { stage, pending_question: structuredClone(pending) };
     if (!input.onCheckpoint || stage !== "dispatching" && !pending) return;
     assertCurrent();
     await input.onCheckpoint(readBoundaryRevisionCheckpoint({ input_digest: inputDigest, boundary_digest: boundaryDigest,
-      catalog_digest: catalog.digest, tool_digest: authorityDigest, ...(stage === "dispatching" ? { stage, dispatch_question: dispatchQuestion! } : { stage, pending_question: pending! }), state: {
+      catalog_digest: catalog.digest, tool_digest: authorityDigest, ...(stage === "dispatching" ? { stage, dispatch_question: dispatchQuestion!, ...(previousQuestion ? { previous_question: structuredClone(previousQuestion) } : {}) } : { stage, pending_question: pending! }), state: {
         call_count: callCount, correction_used: correctionUsed, prerequisite_review_failed: prerequisiteReviewFailed,
         issue: issue.slice(0, 1500), clarification_count: clarificationCount, clarification_answers: clarificationAnswers.slice(-16),
         private_decisions: [...privateDecisions.values()], ...(reviewedPrerequisite ? { reviewed_prerequisite: reviewedPrerequisite } : {}),
@@ -402,6 +406,7 @@ export async function generateModelReadBoundaryRevision(input: {
         || saved.tool_digest !== authorityDigest) throw new Error(
         "READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The original instruction, Read/catalog, model profile or tool surface changed; no replacement was sent.");
       const s = saved.state;
+      previousQuestion = saved.stage === "dispatching" ? saved.previous_question : { stage: saved.stage, pending_question: structuredClone(saved.pending_question) };
       for (const change of s.private_decisions) {
         const field = catalog.resources.find(resource => resource.id === change.resource)?.fields.find(field => field.id === change.field);
         if (!field || field.current_exposure !== change.before || field.roles.includes("trusted_scope")) throw new Error(

@@ -18124,8 +18124,11 @@ describe("public saved-job connection recovery control", () => {
         if (requestJson.mock.calls.length > (replacing ? 3 : 2)) throw new AskError("ASK_CANCELLED", "End this owned mapping control before a separate review", 499);
         const saved = await readBoundaryAuthoringResumeState(f.root, binding);
         if (requestJson.mock.calls.length === 2) {
-          sawAnswer = saved.status === "ready" && saved.value.read_assistance?.stage === "decided"
+          sawAnswer = saved.status === "ready" && saved.value.read_assistance?.stage === "dispatching"
+            && saved.value.read_assistance.previous_question?.stage === "decided"
             && saved.value.owner_handoffs?.at(-1)?.state === "answered";
+          // The new unfinished request reserves its limits before I/O. The
+          // exact prior answer remains durable history, not a new completion.
           expect(JSON.stringify(wire.body)).toContain(replacing ? "Priority means ordinary or urgent." : "The scheduled or completed stage of the selected visit.");
         }
         if (mode === "remap-failed" && requestJson.mock.calls.length === 2) throw new AskError("ASK_CANCELLED", "Retain confirmed question after refused remap", 499);
@@ -18331,7 +18334,7 @@ describe("public saved-job connection recovery control", () => {
         expect((await loadPolicySources(f.root, source.id)).operator_messages ?? []).toEqual([]);
         expect(requestJson).toHaveBeenCalledTimes(2);
         if (mode === "legacy-association") expect(final.value.read).toBeDefined();
-        else { expect(final.value.read).toBeUndefined(); expect(final.value.read_assistance?.stage).toBe("decided"); }
+        else { expect(final.value.read).toBeUndefined(); expect(final.value.read_assistance).toMatchObject({ stage: "dispatching", previous_question: { stage: "decided" } }); }
         expect(noAction).not.toHaveBeenCalled();
         expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
         return;
@@ -18348,7 +18351,8 @@ describe("public saved-job connection recovery control", () => {
         expect(sawAnswer).toBe(true); expect(requestJson).toHaveBeenCalledTimes(2);
         expect(final.value.owner_handoffs?.at(-1)?.state).toBe("answered");
         expect(final.value.operator_questions?.at(-1)?.confirmation?.decision).toBe("new_attributed_decision");
-        expect(final.value.read_assistance?.stage).toBe("decided");
+        expect(final.value.read_assistance).toMatchObject({ stage: "dispatching", previous_question: { stage: "decided",
+          pending_question: { decision: { state: "answered", answer: expectedMeaning } } } });
         expect(final.value.read).toBeUndefined();
         const indexed = (await loadPolicySources(f.root, source.id)).operator_messages ?? [];
         expect(indexed).toHaveLength(mode === "history-full" ? 64 : ["index-save-failed", "source-cas"].includes(mode) ? 1 : 0);
@@ -18372,7 +18376,9 @@ describe("public saved-job connection recovery control", () => {
         if (mode === "replace-yes") {
           expect(requestJson).toHaveBeenCalledTimes(3);
           expect(final.value.read_assistance).toBeUndefined();
-          expect(final.value.read?.assistance_history?.pending_question).toMatchObject({
+          const history = final.value.read?.assistance_history;
+          if (history?.stage !== "dispatching") throw new Error("Expected the completed mapping's exact dispatch history.");
+          expect(history.previous_question?.pending_question).toMatchObject({
             replacement: { confirmed: true }, decision: { state: "answered", answer: "The scheduled or completed stage of the selected visit." } });
         } else {
           expect(requestJson).toHaveBeenCalledTimes(2);
@@ -18386,14 +18392,18 @@ describe("public saved-job connection recovery control", () => {
             expect(requestJson).toHaveBeenCalledTimes(3);
             const restarted = await readBoundaryAuthoringResumeState(f.root, boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle));
             expect(restarted.status).toBe("ready");
-            if (restarted.status === "ready") expect(restarted.value.read?.assistance_history?.pending_question).toMatchObject({ replacement: { confirmed: true } });
+            if (restarted.status === "ready") {
+              const history = restarted.value.read?.assistance_history;
+              if (history?.stage !== "dispatching") throw new Error("Expected the completed mapping's exact dispatch history.");
+              expect(history.previous_question?.pending_question).toMatchObject({ replacement: { confirmed: true } });
+            }
           }
         }
       } else if (mode === "answer") {
         expect(sawAnswer).toBe(true); expect(requestJson).toHaveBeenCalledTimes(2);
         expect(final.value.read_assistance).toBeUndefined(); expect(final.value.read).toBeDefined();
-        expect(final.value.read?.assistance_history).toMatchObject({ stage: "decided",
-          pending_question: { decision: { state: "answered", answer: expectedMeaning } } });
+        expect(final.value.read?.assistance_history).toMatchObject({ stage: "dispatching", previous_question: { stage: "decided",
+          pending_question: { decision: { state: "answered", answer: expectedMeaning } } } });
         expect(final.value.owner_handoffs?.at(-1)).toMatchObject({ state: "answered", actor: "local_installation_operator" });
         if (["native-meaning-retention", "native-literal-retention"].includes(rawMode)) {
           // The answer is newly obtained and confirmed by the current public

@@ -224,6 +224,27 @@ describe("Read assistance actual completion linkage and atomic persistence", () 
       .toThrow("CHECKPOINT_INVALID");
   });
 
+  it("keeps exact prior consent as inert dispatch history and refuses a substituted answer or receipt", async () => {
+    const pair = await completedPair();
+    await writeBoundaryAuthoringResumeState(pair.root, pair.next, { expectedRevisionDigest: pair.base.revision_digest });
+    const answered = decidedPair(pair, { state: "answered", answer: "Reviewed stages" });
+    await writeBoundaryAuthoringResumeState(pair.root, answered.next, { expectedRevisionDigest: pair.next.revision_digest });
+    if (answered.cp.stage !== "decided") throw new Error("Expected the actual answered fixture.");
+    const { digest: _digest, pending_question, ...body } = answered.cp;
+    const raw = readWorkloadAssistanceCheckpoint({ ...body, stage: "dispatching", dispatch_question: "Continue the current reviewed mapping.",
+      previous_question: { stage: "decided", pending_question }, state: { ...body.state, attempt: body.state.attempt + 1 } });
+    const saved = build(raw, { previous: answered.next });
+    await writeBoundaryAuthoringResumeState(pair.root, saved, { expectedRevisionDigest: answered.next.revision_digest });
+    expect(saved.owner_handoffs).toEqual(answered.next.owner_handoffs);
+    expect(saved.generation_recovery).toEqual(answered.next.generation_recovery);
+    for (const bad of [{ ...pending_question, decision: { state: "answered", answer: "Different stages" } },
+      { ...pending_question, completion: { ...pending_question.completion!, response_digest: canonicalJsonDigest("another response") } }]) {
+      expect(() => build(readWorkloadAssistanceCheckpoint({ ...body, stage: "dispatching", dispatch_question: raw.dispatch_question!,
+        previous_question: { stage: "decided", pending_question: bad as ReadWorkloadAssistanceQuestion } }), { previous: answered.next }))
+        .toThrow("RESUME_INVALID");
+    }
+  });
+
   it.each(["clarification", "value", "relationship"] as const)("binds %s to the actual consumer and canonical answered owner record", async kind => {
     const pair = await completedPair(kind);
     expect(pair.base.generation_recovery!.operations[0]!.state).toBe("handled");

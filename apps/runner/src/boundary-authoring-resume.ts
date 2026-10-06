@@ -7,8 +7,9 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { parseReadPrerequisiteBusinessDecisions, type ReadPrerequisiteBusinessDecision } from "./read-prerequisite-decisions.js";
-import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceDecisionAnswer, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
-import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionDecisionAnswer, type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
+import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceCheckpoint, readWorkloadAssistanceDecisionAnswer, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
+import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionCheckpoint, readBoundaryRevisionDecisionAnswer, type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
+import { readPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
 import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import type { AskHistoryTurn } from "./model-ask.js";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
@@ -875,6 +876,13 @@ function assertReadAssistanceHandoff(value: {
   // Native transport history and the owner ledger remain independently checked.
   if (checkpoint.stage === "dispatching") {
     parseOwnerHandoffs(value.owner_handoffs ?? []);
+    const prior = checkpoint.previous_question;
+    if (prior) {
+      const { digest: _digest, dispatch_question: _dispatch, previous_question: _previous, ...body } = checkpoint;
+      // Reuse the existing exact association checks for this inert history.
+      // This validates an old decision; it does not acknowledge the new I/O.
+      assertReadAssistanceHandoff({ ...value, read_assistance: readWorkloadAssistanceCheckpoint({ ...body, ...prior }) });
+    }
     return;
   }
   const question = checkpoint.pending_question;
@@ -934,14 +942,33 @@ function assertReadRevisionHandoff(value: Record<string, unknown>): void {
   const generation = value.generation_recovery as AuthoringTransportState | undefined;
   if (generation) validateAuthoringTransportState(generation);
   const handoffs = parseOwnerHandoffs(value.owner_handoffs ?? []);
-  if (checkpoint.stage === "dispatching") return;
+  if (checkpoint.stage === "dispatching") {
+    const prior = checkpoint.previous_question;
+    if (prior) {
+      const { digest: _digest, dispatch_question: _dispatch, previous_question: _previous, ...body } = checkpoint;
+      assertReadRevisionHandoff({ ...value, pending_read_revision_state: { ...pending,
+        checkpoint: readBoundaryRevisionCheckpoint({ ...body, ...prior }) } });
+    }
+    return;
+  }
   const question = checkpoint.pending_question;
   if (question.kind === "private_prerequisite") {
     if (question.completion) assertAuthoringReadCheckpoint(generation, question.completion,
       { consumer: "read_revision", kind: "private_prerequisite", material_digest: canonicalJsonDigest(question.request) });
     else if (generation) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The private Read request lacks its native completion.");
     const nested = question.nested_checkpoint;
-    if (!nested || nested.stage === "dispatching") return;
+    if (!nested) return;
+    if (nested.stage === "dispatching") {
+      const prior = nested.previous_pending;
+      if (prior) {
+        const { digest: _digest, dispatch_question: _dispatch, previous_pending: _previous, ...body } = nested;
+        const { digest: _outerDigest, ...outer } = checkpoint;
+        assertReadRevisionHandoff({ ...value, pending_read_revision_state: { ...pending,
+          checkpoint: readBoundaryRevisionCheckpoint({ ...outer, pending_question: { ...question,
+            nested_checkpoint: readPrerequisiteCheckpoint({ ...body, ...prior }) } }) } });
+      }
+      return;
+    }
     const p = nested.pending;
     if (p.kind === "semantic_confirmation") {
       if (p.completion) assertAuthoringReadCheckpoint(generation, p.completion,

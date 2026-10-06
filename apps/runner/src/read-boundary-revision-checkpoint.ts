@@ -32,7 +32,8 @@ export type ReadBoundaryRevisionCheckpoint = {
   };
   digest: Digest;
 } & ({ stage: "waiting" | "decided"; pending_question: ReadBoundaryRevisionCheckpointPending; dispatch_question?: never }
-  | { stage: "dispatching"; dispatch_question: string; pending_question?: never });
+  | { stage: "dispatching"; dispatch_question: string; pending_question?: never;
+      previous_question?: { stage: "waiting" | "decided"; pending_question: ReadBoundaryRevisionCheckpointPending } });
 const record=(value:unknown):value is Record<string,unknown>=>!!value && typeof value==="object" && !Array.isArray(value);
 const exact=(value:Record<string,unknown>,keys:string[])=>Object.keys(value).every(key=>keys.includes(key) && value[key]!==undefined);
 const hash=(value:unknown)=>typeof value==="string" && /^sha256:[a-f0-9]{64}$/u.test(value);
@@ -59,10 +60,20 @@ export function readBoundaryRevisionDecisionAnswer(checkpoint:ReadBoundaryRevisi
  * current catalog and retained host selections are revalidated by the producer. */
 export function parseReadBoundaryRevisionCheckpoint(value:unknown):ReadBoundaryRevisionCheckpoint {
   try {if(Buffer.byteLength(JSON.stringify(value))>64*1024 || !jsonShape(value))throw invalid();}catch {throw invalid();}
-  if(!record(value) || !exact(value,["schema_version","input_digest","boundary_digest","catalog_digest","tool_digest","stage","pending_question","dispatch_question","state","digest"])
+  if(!record(value) || !exact(value,["schema_version","input_digest","boundary_digest","catalog_digest","tool_digest","stage","pending_question","dispatch_question","previous_question","state","digest"])
     || value.schema_version!=="synapsor.read-boundary-revision-checkpoint.v1"
     || ![value.input_digest,value.boundary_digest,value.catalog_digest,value.tool_digest,value.digest].every(hash)
     || !["waiting","decided","dispatching"].includes(value.stage as string) || !record(value.state) || (value.stage === "dispatching" ? value.pending_question !== undefined || !text(value.dispatch_question,64*1024) : !record(value.pending_question) || value.dispatch_question!==undefined))throw invalid();
+  if(value.previous_question!==undefined) {
+    const prior=value.previous_question;
+    if(value.stage!=="dispatching" || !record(prior) || !exact(prior,["stage","pending_question"])
+      || !["waiting","decided"].includes(prior.stage as string))throw invalid();
+    // Reuse the original typed parser once with no history or dispatch input.
+    // This local validation neither mints nor persists a receipt.
+    const {digest:_digest,dispatch_question:_dispatch,previous_question:_history,...body}=value;
+    const typed={...body,stage:prior.stage,pending_question:prior.pending_question};
+    parseReadBoundaryRevisionCheckpoint({...typed,digest:canonicalJsonDigest(typed)});
+  }
   const q=record(value.pending_question)?value.pending_question:{},s=value.state;
   if(value.stage!=="dispatching") {
   if(q.kind==="private_prerequisite") {

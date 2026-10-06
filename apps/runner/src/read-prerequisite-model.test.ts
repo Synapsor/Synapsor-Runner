@@ -1171,3 +1171,19 @@ it("saves prerequisite dispatch counters without a question or semantic consent 
   const result = await generateModelReadPrerequisite({ ...f.input, resumeCheckpoint: saved, dependencies: { requestJson: resumed } });
   expect(resumed).toHaveBeenCalledOnce(); expect(f.confirmSemanticSelection).toHaveBeenCalledOnce(); expect(result.state).toBe("reviewed");
 });
+
+
+it("retains exact typed history after a prerequisite answer without repeating its business question", async () => {
+  const f=fixture();let decided:ReadPrerequisiteCheckpoint|undefined,dispatch:ReadPrerequisiteCheckpoint|undefined;
+  const answer="This register is authoritative for this current admission requirement.";
+  const send=model([{clarification_request:{question:"Is this register authoritative for the requirement?",reason:"Source authority requires the operator."}},f.payload]);
+  const handler=vi.fn(async()=>({state:"answered" as const,answer}));
+  const result=await generateModelReadPrerequisite({...f.input,dependencies:{requestJson:send},clarificationHandler:handler,onCheckpoint:async cp=>{
+    if(cp.stage==="decided" && cp.pending.kind==="clarification")decided=structuredClone(cp);if(cp.stage==="dispatching")dispatch=structuredClone(cp);
+  }});
+  expect(result.state).toBe("reviewed");expect(handler).toHaveBeenCalledOnce();expect(send).toHaveBeenCalledTimes(2);expect(f.confirmSemanticSelection).toHaveBeenCalledOnce();
+  if(!decided || decided.stage!=="decided" || decided.pending.kind!=="clarification" || !dispatch || dispatch.stage!=="dispatching")throw new Error("Expected real typed clarification and dispatch records");
+  expect(dispatch.previous_pending).toEqual({stage:"decided",pending:decided.pending});expect(dispatch).not.toHaveProperty("pending");
+  const {digest:_d,schema_version:_s,...body}=dispatch, previous=decided.pending;
+  expect(()=>readPrerequisiteCheckpoint({...body,previous_pending:{stage:"waiting" as const,pending:previous}})).toThrow("CHECKPOINT_INVALID");
+});
