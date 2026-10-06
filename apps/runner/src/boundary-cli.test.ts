@@ -30,6 +30,7 @@ import { loadPolicySources, activePolicySource, newPolicySourceSession, policyTe
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { modelVisibleUserText } from "./test-fixtures/model-visible-frame.js";
 import { derivedScopedResponse } from "./test-fixtures/coverage-derived.js";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import {
@@ -576,6 +577,107 @@ describe("boundary operator-plane CLI", () => {
       expect(noDraft).not.toHaveBeenCalled();
     } finally { await fixture.dispose(); }
   }, 30000);
+
+  it("private Read semantic correction uses the actual statement host and decided producer proof without Source append", async () => {
+    // Reuse the existing synthetic reviewed-disabled two-Action baseline. No
+    // producer question, completion, answer, Read decision or authority is seeded.
+    const fixture = await staleSemanticRevalidationFixture({ currentStateRead: true });
+    const { root, inspection } = fixture;
+    const sourceText = "public.current_access supplies current eligibility for the trusted organization and person. scheduled is positive from effective_from inclusive until effective_until exclusive in database UTC.";
+    const raw = "  This eligibility register is operator-maintained; keep the exact status and effective interval. 🧭  ";
+    const noDraft = vi.fn(async () => { throw new Error("Do not replan the existing reviewed-disabled Actions."); });
+    let calls = 0, semanticReviews = 0, rawPrompts = 0, confirmations = 0;
+    const frames: unknown[] = [], records: unknown[] = [];
+    let sourceBefore: string | undefined, sourceAfter: string | undefined, finalResume: any, observedDecided: any;
+    const resumePath = path.join(root, ".synapsor/boundary-authoring/resume.json");
+    const originalRename = fs.rename.bind(fs);
+    try {
+      await fixture.writeResume(["maintenance.complete_visit", "maintenance.close_visit"], ["Keep the first rule.", "Keep the second rule."]);
+      await fixture.run(noDraft);
+      const context = await loadBoundaryReviewContext(root);
+      const binding = boundaryAuthoringResumeBinding(context.bundle);
+      const prior = await readBoundaryAuthoringResumeState(root, binding);
+      if (prior.status !== "ready") throw new Error("Expected current ordinary saved baseline");
+      const actions = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
+      const source = newPolicySourceSession();
+      source.snapshots = [policyTextSnapshot(Buffer.from(sourceText), "Private-Read-source.txt")]; source.active = 1;
+      source.approvals = [{ digest: source.snapshots[0]!.digest, destination: authoringDestination({provider:"openai",model:"gpt-test"}) }];
+      await savePolicySources(root, source);
+      await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ binding, previous: prior.value,
+        stage:"authority_review", jobIntent:sourceText, provider:"openai",model:"gpt-test", read:prior.value.read, action:prior.value.action,
+        policySourceSession:source.id, pendingReadRevision:"Require the Source-declared private current eligibility condition without changing any Action." }));
+      const sourceDirectory = path.join(root,".synapsor/boundary-authoring/policy-sources");
+      const sourceFiles = async () => Object.fromEntries(await Promise.all((await fs.readdir(sourceDirectory)).sort().map(async name=>[name,await fs.readFile(path.join(sourceDirectory,name),"utf8")])));
+      sourceBefore = JSON.stringify(await sourceFiles());
+      vi.spyOn(fs,"rename").mockImplementation(async(from,to)=>{
+        await originalRename(from,to);
+        if(String(to)!==resumePath)return;
+        const saved=JSON.parse(await fs.readFile(resumePath,"utf8"));
+        const q=saved.operator_questions?.find((q:any)=>q.target.phase==="read_prerequisite_correction" && q.confirmation);
+        const nested=saved.pending_read_revision_state?.checkpoint?.pending_question?.nested_checkpoint;
+        if(q && nested?.stage==="decided") {observedDecided=structuredClone(saved);records.push({resume_bytes:await fs.readFile(resumePath,"utf8"),source_files:await sourceFiles()});}
+      });
+      const session: BoundaryReviewInteractiveSession = {...fixture.session,
+        chooseOption: async(title,_choices,options)=>{
+          if(title==="START BOUNDARY DRAFTING")return "resume";
+          if(title==="REVIEW PRIVATE ACCESS EVIDENCE") {expect(options?.initialValue).toBe("pending");return "allow";}
+          if(title==="CONFIRM ACCESS CONDITION") {expect(options?.initialValue).toBe("pending");return ++semanticReviews===1 ? "revise" : "pending";}
+          if(title==="FINISH ATTACHED RULES REVIEW")return "pause";
+          if(title==="ACTIVATE READ BOUNDARY" || title==="FINISH BOUNDARY REVIEW" || title==="REPLACE ACTIVE READ BOUNDARY")return "finish";
+          throw new Error(`Unexpected private-correction menu: ${title}`);
+        },
+        confirm: async(prompt,options)=>{
+          expect(prompt).toBe("Record this exact statement for the current question?");expect(options?.defaultValue).toBe(false);
+          expect(options?.exactDetails?.lines.join("\n")).toContain(raw.trim());confirmations++;return true;
+        }};
+      const chat=testBoundaryAuthoringChat(session);
+      chat.readOperator=async()=>{rawPrompts++;expect(rawPrompts).toBe(1);return raw;};
+      const requestJson=async(request:any)=>{
+        const body=request.body,text=modelVisibleUserText(body),names=(body.tools??[]).map((tool:any)=>tool.name??tool.function?.name);
+        calls++;expect(calls).toBeLessThanOrEqual(3);frames.push(structuredClone(body));
+        let name:string,args:any;
+        if(names.includes("runner__submit_read_boundary_revision")) {name="runner__submit_read_boundary_revision";args={private_prerequisite_request:{reason:"Map the explicitly required current eligibility condition."}};}
+        else {
+          expect(names).toContain("runner__submit_read_prerequisite");name="runner__submit_read_prerequisite";
+          // The actual transmitted complete catalog, not private fixture state,
+          // supplies the candidate ID and oriented status/date tuple.
+          const lines=text.split("\n");const index=lines.findIndex((line:string,i:number)=>line.startsWith("Candidate sha256:") && lines[i+1]?.includes('"table":"current_access"') && lines[i+2]?.includes('"effective_from_column":"effective_from"') && lines[i+2]?.includes('"effective_until_column":"effective_until"'));
+          expect(index).toBeGreaterThanOrEqual(0);
+          const candidateId=lines[index]!.slice("Candidate ".length);
+          const tuple=JSON.parse(lines[index+2]!.slice("Status/date tuple: ".length).split("; RLS required:")[0]!);
+          expect(tuple.positive_states).toContain("scheduled");expect(text).toContain("current eligibility");
+          if(calls===3) {expect(text).toContain(raw);expect(observedDecided).toBeDefined();}
+          args={candidate_id:candidateId,positive_state:"scheduled",source_description:calls===3 ? "The operator maintains the authoritative current eligibility register." : "The current eligibility register supplies the trusted person's current status.",positive_state_description:"Scheduled is positive from the inclusive effective start until the exclusive effective end in database UTC."};
+        }
+        return {status:200,body:{output:[{type:"function_call",call_id:`private-host-${calls}`,name,arguments:JSON.stringify(args)}]}};
+      };
+      expect(await boundaryReviewCommandInternal(["--project-root",root,"--access","--job-first"],async()=>inspection,session,undefined,
+        {startWithAgentJob:true,boundaryAuthoringChatFactory:()=>chat,actionProjectInspector:async()=>inspection,
+          modelBoundaryJobPlanner:noDraft,modelActionRuleGenerator:noDraft,modelReadWorkloadGenerator:noDraft,
+          modelAuthoringNarrator:async()=>"Keep this private mapping pending; all authority remains disabled.",
+          modelAuthoringSession:{provider:"openai",model:"gpt-test",apiKey:"inert-fixture-only",dependencies:{requestJson}}}),JSON.stringify(vi.mocked(chat.rememberDetails).mock.calls)).toBe(0);
+      finalResume=JSON.parse(await fs.readFile(resumePath,"utf8"));sourceAfter=JSON.stringify(await sourceFiles());
+      expect(calls).toBe(3);expect(semanticReviews).toBe(2);expect(rawPrompts).toBe(1);expect(confirmations).toBe(1);
+      expect(sourceAfter).toBe(sourceBefore);expect(observedDecided).toBeDefined();
+      const q=observedDecided.operator_questions.find((q:any)=>q.target.phase==="read_prerequisite_correction");
+      const h=observedDecided.owner_handoffs.find((h:any)=>h.id===q.handoff_id);
+      expect(q.raw_answer.text).toBe(raw);expect(q.confirmation).toBeDefined();expect(h).toMatchObject({consumer:"read_revision_prerequisite",state:"answered",answer:raw});expect(h.completion).toBeUndefined();
+      const nested=observedDecided.pending_read_revision_state.checkpoint.pending_question.nested_checkpoint;
+      expect(nested).toMatchObject({stage:"decided",pending:{kind:"semantic_confirmation",decision:{state:"revise",instruction:raw}}});
+      expect(nested.state.confirmed_answers).toContainEqual({question:h.question,answer:raw});
+      const op=observedDecided.generation_recovery.operations.find((op:any)=>op.id===nested.pending.completion.operation_id);
+      expect(op.read_checkpoint.decision.digest).toBe(canonicalJsonDigest(nested.pending.decision));
+      expect((await readActionRuleAuthorityDraft(root,actions!.authority.name))!.digest).toBe(actions!.digest);
+      expect(finalResume.read_prerequisite_decisions??[]).toEqual([]);
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      expect(await loadActivatedExplorationBoundaries(root).catch(()=>[])).toEqual([]);expect(noDraft).not.toHaveBeenCalled();
+    } finally {
+      const evidence=process.env.OWNED_PRIVATE_READ_CORRECTION_EVIDENCE;
+      if(evidence){await fs.mkdir(evidence,{recursive:true});await fs.writeFile(path.join(evidence,`private-correction-${crypto.randomUUID()}.json`),JSON.stringify({origin:"EXISTING_SYNTHETIC_DISABLED_BASELINE_ACTUAL_PRIVATE_HOST",root,sourceText,raw,calls,semanticReviews,rawPrompts,confirmations,frames,records,sourceBefore,sourceAfter,finalResume},null,2));}
+      vi.restoreAllMocks();
+      if(!process.env.OWNED_PRIVATE_READ_CORRECTION_EVIDENCE)await fixture.dispose();
+    }
+  },30_000);
 
   it("summarizes reused Read and Action authority instead of echoing the model request", () => {
     const summary = formatCurrentBoundaryAuthoritySummary({

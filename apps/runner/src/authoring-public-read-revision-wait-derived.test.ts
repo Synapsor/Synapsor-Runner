@@ -9,6 +9,8 @@ import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import { ownedProgramInspection } from "./test-fixtures/owned-authoring-program.js";
 import * as delegationSetup from "./delegation-setup.js";
+import { loadPolicySources } from "./authoring-policy-source.js";
+import { modelVisibleJsonLine, modelVisibleUserText } from "./test-fixtures/model-visible-frame.js";
 import * as boundaryMutations from "./boundary-review-mutation.js";
 
 /** One implementer-derived, Source-free public Read revision owner wait.
@@ -22,10 +24,13 @@ const strings=(value:any):string[]=>typeof value==="string" ? [value] : Array.is
   : value && typeof value==="object" ? Object.values(value).flatMap(strings) : [];
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
 
-async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"terminal_invalid"|"committed_read"|"guard_ack_loss") {
+async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"terminal_invalid"|"committed_read"|"guard_ack_loss", withSource=false) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),`owned-public-read-revision-wait-${control}-`));
   const inspection=ownedProgramInspection(),inspect=async()=>structuredClone(inspection);
   const resumeFile=path.join(root,".synapsor/boundary-authoring/resume.json");
+  const sourceFile=path.join(root,"ordinary-read-rules.txt"), sourceText=job;
+  if(withSource) await fs.writeFile(sourceFile,sourceText,{flag:"wx",mode:0o600});
+  let attachmentRead=false,followupSource:any;
   const readResume=async()=>fs.readFile(resumeFile,"utf8").then(text=>JSON.parse(text)).catch(()=>undefined);
   let transcript="",stage:"initial"|"revision"|"reopen"="initial",requests=0,revisionRequests=0,jobReads=0,instructionReads=0,questionReads=0,reopenOffset=0;
   let chosenRevision=false,awaitingClarification=false,followupSeen=false,before:any,waiting:any,paused:any,reopened:any,statementConfirmations=0,statementDetailsRequested=false;
@@ -66,6 +71,7 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
     }
     if(stage==="revision") {instructionReads++;expect(instructionReads).toBe(1);return instruction;}
     if(stage==="reopen")return undefined;
+    if(withSource && !attachmentRead) {attachmentRead=true;return `/attach ${sourceFile}`;}
     jobReads++;expect(jobReads).toBe(1);return job;
   };
   const io:any={write,writeChunk:write,columns:()=>110,isTerminal:()=>false,setStatus:()=>{},clearStatus:()=>{},close:()=>{},onInterrupt:()=>()=>{},
@@ -81,6 +87,8 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
         selected="review";
       }
       else if(choice.title==="CLIENT FOR THIS JOB")selected="later";
+      else if(withSource && choice.title==="SEND ATTACHED RULES") {expect(choice.initialValue).toBe("cancel");selected="send";}
+      else if(withSource && choice.message==="Save this exact attributed input-policy interpretation?") {expect(choice.initialValue).toBe("no");selected="yes";}
       else if(choice.title==="CLIENT INTEGRATION RESPONSIBILITIES")selected="assign";
       else if(choice.message==="Record this exact statement for the current question?") {
         expect(choice.initialValue).toBe("no");
@@ -106,9 +114,21 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
     }};
   const requestJson=async(request:any)=>{
     if(++requests>30)fail("Owned finite response fixture bound exceeded.");
-    const body=request.body,text=strings(body).join("\n"),names=(body.tools??[]).map((tool:any)=>tool.name??tool.function?.name);
+    const body=request.body,text=withSource ? modelVisibleUserText(body) : strings(body).join("\n"),names=(body.tools??[]).map((tool:any)=>tool.name??tool.function?.name);
     let name:string|undefined,args:any,narration:string|undefined;
-    if(names.includes("runner__plan_boundary_job")) {
+    if(withSource && names.includes("runner__propose_operator_decision")) {
+      const q=modelVisibleJsonLine<any>(body,"Current question");
+      expect(q.kind).toBe("input_bounds");expect(q.source_binding).toBeDefined();
+      expect(modelVisibleJsonLine<string>(body,"Complete saved Source text (no truncation)")).toBe(sourceText);
+      name="runner__propose_operator_decision";args={question_id:q.question_id,revision:q.revision,source_reference:q.source_reference,status:"proposal",disposition:"proposed",value:{kind:"input_bounds",requirements:[]}};
+    } else if(withSource && names.includes("runner__review_policy_coverage")) {
+      expect(text).toContain(`1: ${sourceText}`);
+      const refs=modelVisibleJsonLine<string[]>(body,"Exact coverage references (select, do not invent paths)");
+      expect(refs).toContain("/read");
+      const messages=modelVisibleJsonLine<Array<{operator_message_id:number;message:string}>>(body,"Indexed operator messages for supporting clarifications or explicit overrides (not source text or model narration)");
+      const changed=messages.find(entry=>entry.message===answer);
+      name="runner__review_policy_coverage";args={passages:[{start:1,end:1,disposition:changed ? "overridden" : "implemented",interpretation:changed ? "The operator explicitly keeps units private and retains label access." : "The Read returns parcel labels and units with the declared business meanings.",draft_paths:["/read"],...(changed ? {operator_message_id:changed.operator_message_id} : {})}]};
+    } else if(names.includes("runner__plan_boundary_job")) {
       name="runner__plan_boundary_job";args={status:"planned",read_mode:"create",read_intent:job,action_mode:"none",summary:"Prepare a disabled label and units Read; no Action."};
     } else if(names.includes("runner__submit_read_workloads")) {
       name="runner__submit_read_workloads";args={allowed:[{id:"parcel_labels_units",description:"Read parcel labels and units.",plan:{kind:"rows",resource:"studio.parcels",select:["label","units"]}}],forbidden:[],
@@ -121,6 +141,13 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
       else {
         expect(text).toContain(answer);expect(text).toContain(question);
         const saved=await readResume();expect(saved?.conversation).toContainEqual(expect.objectContaining({kind:"clarification",question,answer}));
+        if(withSource) {
+          const sources=await loadPolicySources(root,saved.policy_source_session);
+          expect(sources.operator_messages?.filter(message=>message===answer)).toHaveLength(1);
+          expect(saved.operator_questions.at(-1)).toMatchObject({target:{phase:"read_revision"},raw_answer:{text:answer},confirmation:expect.any(Object)});
+          expect(saved.owner_handoffs.at(-1)).toMatchObject({consumer:"read_revision_clarification",state:"answered",answer});
+          followupSource={resume:structuredClone(saved),sources:structuredClone(sources),body:structuredClone(body)};
+        }
         followupSeen=true;awaitingClarification=false;
         args={status:"revision",resource_changes:[{resource:"studio.parcels",field_exposure:[{field:"units",exposure:"runner_only",model_operations:"none"}]}]};
       }
@@ -128,7 +155,7 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
       const line=text.split("\n").find(line=>line.startsWith("Exact next question: "));
       narration=line ? JSON.parse(line.slice("Exact next question: ".length)) : "The exact Read draft remains disabled; no source query or authority change occurred.";
     } else fail(`Unexpected actual tool surface: ${names.join(", ")}`);
-    responses.push({stage,requests,names,args,bytes:Buffer.byteLength(JSON.stringify(body)),...(name==="runner__submit_read_boundary_revision" ? {encoded_question:text} : {})});
+    responses.push({stage,requests,names,args,...(withSource ? {body:structuredClone(body)} : {}),bytes:Buffer.byteLength(JSON.stringify(body)),...(name==="runner__submit_read_boundary_revision" ? {encoded_question:text} : {})});
     return {status:200,body:{output:name ? [{type:"function_call",call_id:`owned-read-revision-wait-${requests}`,name,arguments:JSON.stringify(args)}]
       : [{type:"message",content:[{type:"output_text",text:narration}]}]}};
   };
@@ -187,7 +214,8 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
       return;
     }
     expect(questionReads,transcript).toBe(1);
-    expect(waiting?.policy_source_session).toBeUndefined();
+    if(withSource) {expect(waiting?.policy_source_session).toBeDefined();expect(followupSource).toBeDefined();}
+    else expect(waiting?.policy_source_session).toBeUndefined();
     if(control==="pause_restart") {
       expect(paused.context.bundle.candidate_digest).toBe(before.bundle.candidate_digest);
       stage="reopen";reopenOffset=transcript.length;
@@ -213,11 +241,15 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
   } finally {
     const evidence=process.env.OWNED_PUBLIC_READ_REVISION_WAIT_EVIDENCE;
     if(evidence) {await fs.mkdir(evidence,{recursive:true});await fs.writeFile(path.join(evidence,`${control}-${randomUUID()}.json`),JSON.stringify({origin:"IMPLEMENTER_DERIVED_PUBLIC_READ_REVISION_WAIT",control,transcript,publicOutput:stdout.mock.calls.map(([chunk])=>String(chunk)).join(""),responses,menus,failures,reads,waiting,paused,reopened,
-      requests,revisionRequests,questionReads,followupSeen,finalResume:await readResume(),finalContext:await loadBoundaryReviewContext(root).catch(error=>({error:String(error)}))},null,2));}
-    await fs.rm(root,{recursive:true,force:true});
+      root,withSource,followupSource,requests,revisionRequests,questionReads,followupSeen,finalResume:await readResume(),finalContext:await loadBoundaryReviewContext(root).catch(error=>({error:String(error)}))},null,2));}
+    if(!withSource) await fs.rm(root,{recursive:true,force:true});
   }
 }
 
 it.each(["healthy","pause_restart","terminal_invalid","committed_read","guard_ack_loss"] as const)("public Read revision preserves the exact model owner question before its consumer: %s",async control=>{
   await publicReadRevisionWait(control);
+},30_000);
+
+it("ordinary public Read-edit appends attached Source testimony before actual producer followup",async()=>{
+  await publicReadRevisionWait("healthy",true);
 },30_000);

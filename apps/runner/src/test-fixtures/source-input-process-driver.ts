@@ -33,7 +33,7 @@ export async function runInputProcess(runtime: InputProcessRuntime, projectRoot:
 
 /** Identical owned-child mechanics for Input, Version and Read. No response, record,
  * assertions or scenario selection crosses this process-only seam. */
-export async function runAuthoringProcess<T extends { pid: number }>(runtime: InputProcessRuntime, fixture: "source-input-process.ts" | "source-version-process.ts" | "source-read-process.ts",
+export async function runAuthoringProcess<T extends { pid: number }>(runtime: InputProcessRuntime, fixture: "source-input-process.ts" | "source-version-process.ts" | "source-read-process.ts" | "source-action-public-process.ts",
   projectRoot: string, mode: "start" | "restart", stop: string, controlFile?: string): Promise<T> {
   const child = spawn(process.execPath, ["--import", path.join(runtime.cwd, "node_modules/tsx/dist/loader.mjs"),
     path.join(runtime.cwd, "apps/runner/src/test-fixtures", fixture), projectRoot, mode, stop,
