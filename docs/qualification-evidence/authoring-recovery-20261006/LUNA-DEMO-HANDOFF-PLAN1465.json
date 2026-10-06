@@ -1,0 +1,68 @@
+{
+  "utc": "2026-10-06T06:55:43.573954+00:00",
+  "status": "PREPARATION_ONLY_NOT_FROZEN_NOT_LAUNCH_ADMISSION",
+  "freeze_prerequisites": [
+    "Final full1461 successful same runtime/source identity and owned group closed.",
+    "Current PG native+selected success, ten offline/package scopes success, twelve structural20/50/64 profiles success.",
+    "Same runtime1444 type/build proof and independent scoped #19 verdict linked with limits."
+  ],
+  "candidate_identity_to_supply_at_freeze": {
+    "runtime_head": "b0ef611091ea11e86c468cdc3d38383c4ef1ecf1",
+    "bundle_sha256": "52b075c7a1caf309e09eabe313b66b06d90eb7f8d6c7f5c2678af9075ffbeff7",
+    "required": [
+      "Actual immutable packed package path and SHA256, installed package content manifest, production Node/dependency identity, verified actual CLI path, frozen git metadata pin/source manifest, gate result identities, exact disclosure masks and no raw test/oracle/ledger mounts."
+    ],
+    "not_established": [
+      "Packed installed candidate identity on current gates",
+      "Installed or Luna behavior"
+    ]
+  },
+  "existing_recipe": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/recovery-triage1402/luna-demo-recipe1455-v1/RECIPE.json",
+  "candidate_db_requirements": [
+    "Fresh owned disposable copy of original Luna stdio recipe00->07, recorded exact SQL/image hashes/order and initialization outcome.",
+    "Separate source/control stores and isolated HOME/cwd/env/config/client/ports from Main, existing demo and other lanes; no reuse/deletion of existing volumes.",
+    "Current live metadata, source identity, RLS/trusted account and principal, reader/writer readiness checked through normal supported routes; credentials never in captures/model payload.",
+    "Historical fixture review/drafts/disabled authorities are not a published starting program; real onboarding begins through ordinary installed flow."
+  ],
+  "operator_facts": "Tester pre-seals fictional business facts and policy oracle. Only actual admitted public Source/schema hints and declared operator answers become model-visible. Private oracle is used to judge, not supply responses or hidden mappings.",
+  "sequence": [
+    "Tester independently installs exact frozen package and verifies actual installed content/CLI/config/dependencies.",
+    "Existing shared scripted/privacy preflight checks exact installed interfaces and known trusted/disclosure/currentness/defaultNo guards. Label all scripted origins; do not call this real-model onboarding.",
+    "Actual guard revision/checkpoint/provider-specific funding route/ledger/reservations/cumulative limits are checked before ONE Terra attempt; no new permission by this plan.",
+    "Ordinary real installed onboarding: planning and Read plus one offered-plan Action; all needed questions/raw answers/mappings/Runner readbacks/explicit decisions; disabled revision then separate authenticated Read/Action activations.",
+    "Exact chosen SDK stdio client invokes four canonical tools against reviewed program. Capture permitted customer view, invalid refusal, valid routine and valid human-exception proposal behavior; proposal is not effect.",
+    "Ordinary one-rule edit using declared LUNA-EDIT-CONTRACT1465. Precise before/after, surviving duties, defaultNo/re-review, explicit save and activation; unresolved policy/meaning stays pending.",
+    "Agent starts a NEW recorded client process/transport after activation. Observe affected valid exception obeying two-reviewer rule and unaffected permitted routine behavior, exact schemas and stale/currentness as applicable. Label new session.",
+    "Only separately reviewed finite disposable execution smoke, within existing supported writer/approval/worker routes, if Source exact scope/terms/version guards and receipts can be established; preserve all unrelated rows. Ordinary save/reopen and truthful future effective date/completion.",
+    "Relevant F3 privacy surfaces and actual Runner readback/saved semantic fidelity recorded from existing captures. Main freezes no further changes; independent verdict states completed/pending/failed/not-reached separately.",
+    "Owner hands-on rehearsal after success shares SAME demo allowance; no second automated sample/reroll."
+  ],
+  "finance": {
+    "sole_paid_operator": "Tester",
+    "allocation": "Actual $20 transferred from uncommitted full50, includes runtime model fees/rehearsal; not new campaign money.",
+    "legacy_hold": "Existing $4 pending plus every other hold/history untouched.",
+    "admission": "CLOSED pending actual demo guard/funding/installed/privacy prerequisites",
+    "unstarted_old_diagnostics": "A/B cancelled and paidfull50 paused NOT_ESTABLISHED; started liabilities preserved",
+    "terminal_failure": "No new sample/reroll. Supported same-job bounded correction/recovery only; unresolved stop reported."
+  },
+  "optional_effect_limit": "Existing writer recipe cannot mark offer status/version consumed. No new grant/handler/companion capability assumed. Reviewer establishes exact supported policy-correct effect and currentness before finite smoke; otherwise report limitation, never manufacture completion.",
+  "report_compact_fields": [
+    "revision/checkpoint/origin",
+    "intended/reached transition",
+    "outcome",
+    "question/readback excerpt",
+    "saved semantic fidelity",
+    "technical rescue",
+    "unnecessary/repeated questions",
+    "calls/cost/time per stage",
+    "cause/friction ID"
+  ],
+  "frozen_findings": "Safety/privacy/integrity blocks affected demo use and is reported Owner. Other findings preserved as B51 inputs, not frozen product patches. Diagnostic/qualifying scope stays separate; no universal demo/release PASS inferred.",
+  "B51_start": "Only after immutable tested DEMO CANDIDATE/gate handoff and Tester independently operating: read designated B51 section/addendum, record actual T0, phase0 separate worktree/install/DB/build/launcher; no candidate change. Specification still unread now.",
+  "performed_by_this_plan": {
+    "tests": 0,
+    "fixtures": 0,
+    "DB_model_paid_calls": 0,
+    "Source_product_authority_mutations": 0
+  }
+}

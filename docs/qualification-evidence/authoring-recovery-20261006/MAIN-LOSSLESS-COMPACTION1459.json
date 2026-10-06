@@ -1,0 +1,22 @@
+{
+  "utc": "2026-10-06T06:21:52.499995+00:00",
+  "scope": "Verified lossless physical compaction of quiescent generated Main test TMP only; historical contents recoverable, no Source/DB/config/oracle/active operation changed",
+  "input": "/var/tmp/synapsor-full1276-owned/decoy-parent/test-root/tmp",
+  "members": 5980,
+  "regular_bytes": 338402452,
+  "archive": "/var/tmp/synapsor-full1276-owned/decoy-parent/test-root/archives/completed-test-tmp1459.tar.gz",
+  "archive_bytes": 58032637,
+  "archive_sha256": "ef157a4b60809868fde8c02387b2ebfb01c7ad9367bcbbe39bf3d52dc96a52b0",
+  "manifest": "/var/tmp/synapsor-full1276-owned/decoy-parent/test-root/archives/completed-test-tmp1459-MANIFEST.json",
+  "manifest_sha256": "6913e67c27f09e78596e297a54c8b0326e949e2457159b33db5de8c9d7ea40eb",
+  "member_hashes_modes_uid_gid_mtime_atime_links_verified": true,
+  "original_before_after_content_metadata_verified": true,
+  "hardlinks_or_unhandled_xattrs_or_special_files": 0,
+  "recreated_empty_tmp_mode": "0o700",
+  "admission": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/MAIN-RESOURCE-DEDUP-ARCHIVE1459.json",
+  "admission_sha256": "1c8cf9d4126b35b3b0becd2ba2188d97d3115585319a0068ce909d09a641e27a",
+  "archive_bound_preserved_bytes": 67108864,
+  "global_cleanup_or_consumption_credit": 0,
+  "paid_or_HTTP_or_DB_calls": 0,
+  "uncertainty": "NONE; archive fully durable before physical compaction"
+}

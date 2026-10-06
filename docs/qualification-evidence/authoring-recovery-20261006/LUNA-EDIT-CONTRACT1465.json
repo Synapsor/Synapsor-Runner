@@ -1,0 +1,51 @@
+{
+  "utc": "2026-10-06T06:51:58.838143+00:00",
+  "status": "RECORDED_BUSINESS_SELECTION_FOR_NEW_SESSION_LUNA_ACCEPTANCE_NOT_EXECUTED",
+  "authority": [
+    {
+      "kind": "direct_Owner_instruction_in_this_conversation",
+      "quote": "B (editing): from journey B’s published program, one plain-language change (\"require two reviewers instead of one; keep everything else\"), ≤$2.50, same rules. Prefer it also feeds the connected-client live-edit check.",
+      "original_scope": "Earlier diagnostic B/Journey B, not a claim that Owner supplied a Luna-specific policy quote."
+    },
+    {
+      "kind": "later_controlling_Owner_scope",
+      "quote": "Demo stage 3–4 = plain-language rule edit → readback → activation → agent starts a NEW MCP session → affected request obeys the new rule, unaffected still works (labelled as a new session). Verify on the frozen build as part of demo acceptance — observation only.",
+      "project": "Owner separately designated existing telecom Luna project, fresh disposable DB and one real customer-service demo."
+    },
+    {
+      "kind": "Main_routine_selection_within_authorized_Luna_edit",
+      "selection": "Use the already Owner-selected two-reviewer business change for valid human-reviewed exceptions in Luna. This is Main’s recorded selection under the general Luna edit authorization, not a fabricated verbatim Luna-specific Owner direction."
+    }
+  ],
+  "baseline_source": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/luna-customer-service-policy.txt",
+    "sha256": "3fcbf73428afe5b8e272d0e5ba13f5266a9c1a2315f616f0440e779046d8d691",
+    "exception_reviewers": 1,
+    "unchanged_historical_source": true
+  },
+  "one_business_change": {
+    "operator_request": "Require two authorized customer-service reviewers for valid exceptions instead of one; keep everything else.",
+    "after_exception_reviewers": 2,
+    "scope": "Existing valid exceptions requiring human review, including otherwise-valid requests routed to human review after an automatic-approval limit."
+  },
+  "surviving_business_duties": [
+    "Routine designated valid offers remain eligible for automatic approval.",
+    "Global ten/account three automatic approvals in a rolling 24-hour period; same approval-record counting and idempotency.",
+    "Eligibility, scope, current starting plan, offer time bounds and all selected offer terms remain mandatory; review does not waive invalidity.",
+    "All unrelated subscription information and customer disclosure restrictions remain intact.",
+    "Approval is not source effect; ordinary separate execution authority and currentness still apply."
+  ],
+  "evidence_contract": "Do not relabel baseline policy line 40 as saying two. Introduce the operator business amendment through the ordinary edit/Source-review route, retain original Source identity and operator-answer evidence separately, obtain precise before/after Runner readback and explicit decision, complete required re-review and explicit activation. An unresolved policy conflict stays pending.",
+  "acceptance": "Tester owns independent oracle. New MCP session explicitly recorded after activation: affected valid exception follows two-reviewer rule, unaffected routine permitted case works. Exact four canonical tool schema comparison and stale/currentness controls remain observed as applicable; no same-connection work.",
+  "feasibility_only": {
+    "Main": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/recovery-triage1402/luna-api-feasibility1461-v1/FEASIBILITY.json",
+    "Tester": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/operator-conversation-development/luna-quorum-inspection1464-v1/REVIEW.md",
+    "installed_behavior": "NOT_ESTABLISHED"
+  },
+  "boundaries": [
+    "No mapping or expected model response seeded. Only declared business request and admitted Source may be model-visible.",
+    "No fixture, model call, DB/authority/Source change or test is performed by this record.",
+    "One frozen candidate and one real Luna attempt, within actually transferred $20/shared rehearsal allowance; no new paid permission or reservation here.",
+    "No safety-boundary waiver, quorum identity invention, new handler/grant or post-freeze product patch."
+  ]
+}

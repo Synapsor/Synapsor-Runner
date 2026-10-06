@@ -1,0 +1,49 @@
+{
+  "utc": "2026-10-06T07:32:43.066557+00:00",
+  "runtime_head": "b0ef611091ea11e86c468cdc3d38383c4ef1ecf1",
+  "bundle_sha256": "52b075c7a1caf309e09eabe313b66b06d90eb7f8d6c7f5c2678af9075ffbeff7",
+  "full1461": "NOT_ESTABLISHED; monitor du sample failure, safe closed groups, source/deps/decoy unchanged, no test verdict",
+  "class19": "Independent shared source scoped PASS; installed/full completed business lifecycle not claimed",
+  "next": "Small offline allocation-harness reproduction/shared fix, finite lossless storage if needed, fresh isolated full gate/currentPG/offline/size then immutable freeze/Luna acceptance/B51 start condition",
+  "scope": "Compact public reports only; no raw orphan/output/financial ledger/oracle/credentials/archive/tarball",
+  "rows": [
+    {
+      "source_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/FINAL-FULL-RESULT1461.json",
+      "backup_path": "docs/qualification-evidence/authoring-recovery-20261006/FINAL-FULL-RESULT1461.json",
+      "sha256": "b46c1c02ea3af2ee7fdfa837f947cfb0f8f6453b85929049d68b7996de6d983a",
+      "bytes": 3496
+    },
+    {
+      "source_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/MAIN-LOSSLESS-COMPACTION1459.json",
+      "backup_path": "docs/qualification-evidence/authoring-recovery-20261006/MAIN-LOSSLESS-COMPACTION1459.json",
+      "sha256": "2078a6ad2edc45c5f0eff48d559582208038d2be8ab88d5946fbb740d61ae165",
+      "bytes": 1511
+    },
+    {
+      "source_path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/operator-conversation-development/class19-independent-verdict1463-v1/REVIEW.md",
+      "backup_path": "docs/qualification-evidence/authoring-recovery-20261006/CLASS19-INDEPENDENT-VERDICT1463.md",
+      "sha256": "3d5bbba41d7e3c71137b86436741e143a910bf8e5d672aaf9d2598509a46b4b6",
+      "bytes": 5098
+    },
+    {
+      "source_path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/operator-conversation-development/class19-public-start-independent1462-v3/REVIEW.md",
+      "backup_path": "docs/qualification-evidence/authoring-recovery-20261006/CLASS19-PUBLIC-START1462.md",
+      "sha256": "99d566df926f9ca0bf9519e5988df0f2027b8c6939fddfeec4fc94e817ff2d07",
+      "bytes": 2972
+    },
+    {
+      "source_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/LUNA-EDIT-CONTRACT1465.json",
+      "backup_path": "docs/qualification-evidence/authoring-recovery-20261006/LUNA-EDIT-CONTRACT1465.json",
+      "sha256": "5bc1b8ae7496108693187f1a87c12662e867fc0d25476a8832ce0d400e13d6e8",
+      "bytes": 4426
+    },
+    {
+      "source_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/LUNA-DEMO-HANDOFF-PLAN1465.json",
+      "backup_path": "docs/qualification-evidence/authoring-recovery-20261006/LUNA-DEMO-HANDOFF-PLAN1465.json",
+      "sha256": "31599fcf3ae61c64fdf9269bbdcbd86562ada195082f6c1d7ae2f43757587f44",
+      "bytes": 6237
+    }
+  ],
+  "frozen": false,
+  "installed_demo_acceptance": "NOT_ESTABLISHED"
+}

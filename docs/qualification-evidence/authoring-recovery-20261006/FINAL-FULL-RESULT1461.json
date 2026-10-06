@@ -1,0 +1,91 @@
+{
+  "global_guard": {
+    "admission": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/MAIN-FULL-ADMISSION1461.json",
+    "admission_sha256": "0874c518afa002e92064889404724929816e972b248a6bb9cf1ad91b92c703d7",
+    "seed": 50989007369,
+    "root_baselines": {
+      "home": 229564416,
+      "output": 0,
+      "oldfull": 3911680,
+      "size": 9043968,
+      "stoppedfull": 53248,
+      "checkout": 822259712,
+      "log": 0,
+      "oldlog": 4096,
+      "oldpg": 21610496
+    },
+    "retained_baseline": 58368000,
+    "main_pg_baseline": 0,
+    "last": {
+      "global_upper_highwater": 51171983881,
+      "Main_owned_highwater": 505532416,
+      "root_highwater": {
+        "home": 412196864,
+        "output": 339968,
+        "oldfull": 3911680,
+        "size": 9043968,
+        "stoppedfull": 53248,
+        "checkout": 822259712,
+        "log": 0,
+        "oldlog": 4096,
+        "oldpg": 21610496
+      },
+      "retained_highwater": 58372096,
+      "retained_latest": {
+        "host_readable_children_allocated": 9949184,
+        "PG_accounted_bytes": 48422912,
+        "root_accounted_bytes": 58372096,
+        "status": "RUNNING_EXACT_OWNED_PG",
+        "owned_container_id": "a9e9ca4fed638d87e6f59872384a1d8709a154f59653873f58568626821d0737",
+        "cleanup_credit": 0,
+        "PG_is_exact_measurement": true
+      },
+      "main_pg_highwater": 0,
+      "main_pg_positive_growth": 0,
+      "free": 61547958272,
+      "no_cleanup_or_consumption_credit": true
+    },
+    "allocation_meter_sha256": "d32e4b0a9b0ce20cd61e2bb6268145bd766bc973c0610e8f24a180e85ff32376",
+    "retained_meter_sha256": "3aef3b00ac4148d596361245cb3a6f0056c1266574b703fa932251f29f3214df",
+    "corrected_seed_event_sha256": "1c8cf9d4126b35b3b0becd2ba2188d97d3115585319a0068ce909d09a641e27a",
+    "no_cleanup_or_consumption_credit": true,
+    "shared_monitor_sha256": "cc5649444e9f46f1aabcae85e3df8c047b29ab41b96e755fdab56c5ca8557d88"
+  },
+  "utc": "2026-10-06T07:29:19.851862+00:00",
+  "exit": -2,
+  "guard_stop": "MONITOR_OR_SIGNAL_FAILURE",
+  "harness_failure": {
+    "type": "CalledProcessError",
+    "message": "Command '['du', '-sB1', '--', '/var/tmp/synapsor-full1276-owned/decoy-parent/test-root']' returned non-zero exit status 1."
+  },
+  "suite_owner": {
+    "pid": 447771,
+    "ppid": 447769,
+    "pgid": 447771,
+    "session": 447771,
+    "start_tick": 1594679,
+    "uid": 1000,
+    "state": "S"
+  },
+  "suite_cleanup": {
+    "observed": true,
+    "sent_SIGINT": true,
+    "suite_closed_independently_verified": true
+  },
+  "checkout_positive_growth_bytes": 0,
+  "exact_allowed_cache_paths": [
+    "node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/results.json"
+  ],
+  "seconds": 3611.4475896719996,
+  "source_before_pin_sha256": "44e1ae1f25b58c6cc84cb955e3bbb04065e54f960011faee26c91cf08036f99d",
+  "source_code_unchanged": true,
+  "source_delta": {},
+  "external_17559_actual_before_after_equal": true,
+  "decoy_parent_retained_equal": true,
+  "home_git_boundary_retained": true,
+  "provider_calls": 0,
+  "counts": null,
+  "capture": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/settled-source-final1461",
+  "same_timeouts_workers_assertions": true,
+  "allocation_meter_sha256": "d32e4b0a9b0ce20cd61e2bb6268145bd766bc973c0610e8f24a180e85ff32376"
+}
