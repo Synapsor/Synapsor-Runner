@@ -1,7 +1,7 @@
 import { findReadMeaningEvidence, isExplicitReadMeaningStatement, explicitReadTaskTargets, ReadMeaningConflictError, isUnknownReadMeaning, type ReadMeaningAttempt, type ReadMeaningEvidence, type ReadMeaningStatement } from "./read-meaning-evidence.js";
 import type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 export type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
-import { isAuthoringGenerationStop, authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
+import { isAuthoringGenerationStop, assertAuthoringGenerationAdmission, authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
   withAuthoringProducerCorrection } from "./authoring-generation-recovery.js";
 import { readWorkloadAssistanceCheckpoint, parseReadWorkloadAssistanceCheckpoint, ReadWorkloadAssistancePausedError,
   type ReadWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceQuestion, type ReadReviewedClarificationReplacement } from "./read-workload-assistance-checkpoint.js";
@@ -669,6 +669,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   const run = async (question: string) => {
     if (callCount >= MAX_READ_CLARIFICATIONS + relationshipReviewLimit + 4)
       throw new Error("READ_WORKLOAD_SUBMISSION_REFUSED: The saved workload callback allowance is exhausted; no further request was sent.");
+    assertAuthoringGenerationAdmission();
     attempt += 1; lastDispatchQuestion = question;
     try {
       assertAssistanceContext();

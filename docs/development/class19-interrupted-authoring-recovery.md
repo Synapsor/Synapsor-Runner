@@ -58,3 +58,16 @@ restores the same target and vocabulary binding; drift refuses continuation.
 The normal completion and explicit confirmation saves remain separate.
 Integrated affected tests pass; independent variants and final qualification
 remain required before this class can be marked fixed.
+
+Final-gate regressions exposed two narrow reservation and material checks.
+The privacy lexer now requires a whole-word `is` copula; it must not infer an
+identity from Runner's prose about tenant isolation. Concrete identity and
+credential assignments remain rejected in every saved field and history.
+
+A known local refusal precedes the producer iteration reservation and Read
+dispatch snapshot. Exact replacement body, producer and context admission
+use the existing recovery controller. Once a reservation is durable, later
+drift or lost acknowledgement keeps its charge. Repeated fenced opens retain
+the same raw answers, dispatch and spent allowance. The original equality
+guards remain unchanged; follow-up fixtures separately inspect the fourth
+confirmed decision and the later fifth dispatch that retains it as history.

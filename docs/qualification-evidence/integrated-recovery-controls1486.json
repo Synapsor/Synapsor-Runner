@@ -1,0 +1,49 @@
+{
+  "checkpoint": "1486",
+  "utc": "2026-10-06T10:40:17.860370+00:00",
+  "base_head": "21bfe2edd9ab22cd5313cfb54eb05c6153b5b214",
+  "status": "INTEGRATED_AFFECTED_NATIVE_CHECKS_PASS_AFTER_TEST_IMPORT_REPAIR_NOT_FREEZE",
+  "batches": {
+    "original17_files": {
+      "pass": 1178,
+      "fail": 14,
+      "skip": 1,
+      "cause": "All14 added checker controls had missing test import; original checks passed."
+    },
+    "corrected_resume_file": {
+      "pass": 68,
+      "fail": 0,
+      "skip": 0
+    },
+    "aggregate_case_identity_verdict": {
+      "pass": 1192,
+      "fail": 0,
+      "skip": 1,
+      "method": "Corrected Resume file replaces original Resume-file outcomes; other16 unchanged tests retained."
+    }
+  },
+  "scope": "native module/loopback fixtures; no CLI/full/installed qualification",
+  "original_three_equality_guards_unchanged": true,
+  "all_owned_groups_closed": true,
+  "source_bytes_modes_and_git_diff_exact_within_each_run": true,
+  "external_provider_calls": 0,
+  "database_calls": 0,
+  "no_allocation_meter": true,
+  "free_floor_bytes": 8589934592,
+  "freeze": false,
+  "class_fixed": false,
+  "remaining": "accepted Read consumption transition preserving dispatch/history; independent withheld controls; type/build/affected public; freshpin/full/PG/offline/package/size",
+  "evidence_sha256": {
+    "RESULT1486.json": "a4e13d415b999ce78b811851707bf26ec647ee58682bf78aba15385e213968ba",
+    "run/results.json": "a7e419427d8e9a6df6cead6b04e981bdaba1033f4b8772f0204a096eb1519d7a",
+    "IMPORT-CAUSE.json": "175e16406e5a5895fd99d3b3b6e3a6f9e61d7d4dbd1f098195f8e53e323972ba",
+    "import-corrected/RESULT1486.json": "21376fe39b54e06fe978f285517aed4d3f97c47115b96570f728e4892caf8225",
+    "import-corrected/run/results.json": "9faa3e896d0a412495b72af88e89574582145bbad25dc202c448617c73301717"
+  },
+  "runtime_module_sha256": {
+    "boundary-authoring-resume.ts": "622f9ccc118b92f33caf48c4ecedc174e5a571c91aa4354061442a9925b5e172",
+    "authoring-generation-recovery.ts": "2d01180e66bbcbab34dedb851c358ee24131d39f9811e6c5d77db987c2f70679",
+    "model-ask.ts": "d2c9961636d5d077b18cc0c9b781dbbd4e04f3a532241b41f17a49e10da0fd75",
+    "read-workload-model.ts": "151d97f63af7fd24bbf9c444db464c947e01abe49f6ae9690f3a933ad7af5e19"
+  }
+}

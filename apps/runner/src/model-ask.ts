@@ -722,8 +722,8 @@ export async function runAskProviderTurn(input: {
     // known admission is refused, that does not make its handling uncertain.
     // A failure above still retains the inspection fence.
     currentCallbackMayHaveRun = false;
-    if (admissionBudget) await checked(() => admissionBudget.admitIteration());
-    const result = await recoverAuthoringGeneration(preparedInput, request);
+    const result = await recoverAuthoringGeneration(preparedInput, request,
+      admissionBudget ? () => checked(() => admissionBudget.admitIteration()) : undefined);
     generationResults.push(result);
     return result;
   });

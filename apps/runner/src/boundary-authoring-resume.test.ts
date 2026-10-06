@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  assertBoundaryAuthoringResumeMaterial,
   buildBoundaryAuthoringResumeState,
   boundaryAuthoringVersionReviews,
   prepareBoundaryActionRevision,
@@ -620,6 +621,27 @@ describe("Boundary authoring resume state", () => {
       jobIntent: "Use tenant_id: acme-corp to review tickets.",
       provider: "openai",
       model: "gpt-test",
+    })).toThrow("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED");
+  });
+
+  it.each([
+    "Never infer customer scope from tenant isolation alone.",
+    "Preserve tenant isolation and resolve each tenant issue through review.",
+    "A principal isolation issue does not establish its business meaning.",
+  ])("keeps privacy copula lexing exact in dispatch checkpoints: %s", (dispatchQuestion) => {
+    expect(() => assertBoundaryAuthoringResumeMaterial({
+      pending_read_revision_state: { checkpoint: { stage: "dispatching", dispatch_question: dispatchQuestion } },
+    })).not.toThrow();
+  });
+
+  it.each([
+    "tenant is acme-corp", "principal is person-123", "tenant = acme-corp", "principal=person-123",
+    "tenant: acme-corp", '"tenant": "acme-corp"', "principal_id: person-123", "tenant is\nacme-corp",
+    "tenant IS acme-corp", "tenant isolation is required. tenant is acme-corp",
+    "A principal issue remains pending. principal_id = person-123",
+  ])("keeps concrete identity fences in dispatch checkpoints: %s", (dispatchQuestion) => {
+    expect(() => assertBoundaryAuthoringResumeMaterial({
+      pending_read_revision_state: { checkpoint: { stage: "dispatching", dispatch_question: dispatchQuestion } },
     })).toThrow("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED");
   });
 

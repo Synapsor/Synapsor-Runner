@@ -151,22 +151,41 @@ describe("lab regression: operator-reviewed follow-up preserves prior answers", 
   const handler = vi.fn(async () => ({ state: "answered", answer: handler.mock.calls.length === 1 ? answer : corrected })), review = vi.fn();
   await expect(generateModelReadWorkload({ ...setup(requestJson), clarificationHandler: handler, clarificationReplacementHandler: review,
    onCheckpoint: async (value: any) => {
-    if (value.pending_question.replacement?.proposed_answer) throw new Error("PROPOSAL_SAVE_FAILED");
+    if (value.stage === "waiting" && value.pending_question.replacement?.proposed_answer) throw new Error("PROPOSAL_SAVE_FAILED");
     durable = structuredClone(value);
    } } as any)).rejects.toThrow("PROPOSAL_SAVE_FAILED");
   expect(durable.pending_question.replacement).not.toHaveProperty("proposed_answer");
   expect(review).not.toHaveBeenCalled(); expect(requestJson).toHaveBeenCalledTimes(2);
  });
  it("counts four responses across replacements and refuses a fifth instead of counting only current targets", async () => {
-  let checkpoint: any;
+  let checkpoint: any, fourthDecision: any;
   const requestJson = vi.fn(async () => reply({ clarification_request: { ...first, question: `Which account choice applies at clarification ${requestJson.mock.calls.length}?` } }));
   const handler = vi.fn(async () => ({ state: "answered", answer: `The purchaser account interpretation ${handler.mock.calls.length}.` }));
   const review = vi.fn(async () => true);
   await expect(generateModelReadWorkload({ ...setup(requestJson), clarificationHandler: handler, clarificationReplacementHandler: review,
-   onCheckpoint: async (value: any) => { checkpoint = structuredClone(value); } } as any)).rejects.toThrow(/CLARIFICATION_REFUSED|ASSISTANCE_REQUEST_REPEATED/);
+   onCheckpoint: async (value: any) => {
+    checkpoint = structuredClone(value);
+    if (value.stage === "decided") fourthDecision = structuredClone(value);
+   } } as any)).rejects.toThrow(/CLARIFICATION_REFUSED|ASSISTANCE_REQUEST_REPEATED/);
   expect(handler).toHaveBeenCalledTimes(4); expect(review).toHaveBeenCalledTimes(3); expect(requestJson).toHaveBeenCalledTimes(5);
-  expect(checkpoint.state.clarified_targets).toHaveLength(3); expect(checkpoint.pending_question.replacement.confirmed).toBe(true);
-  expect(checkpoint.state.reviewed_replacements).toHaveLength(2);
+  // The fourth confirmation is durable before its answer joins the active history.
+  expect(fourthDecision.state.clarified_targets).toHaveLength(3);
+  expect(fourthDecision.pending_question.replacement.confirmed).toBe(true);
+  expect(fourthDecision.state.reviewed_replacements).toHaveLength(2);
+  expect(fourthDecision.state.call_count).toBe(4);
+  // The later fifth dispatch retains that confirmed answer without admitting a fifth answer.
+  expect(checkpoint.stage).toBe("dispatching"); expect(checkpoint.pending_question).toBeUndefined();
+  expect(checkpoint.previous_question).toEqual({ stage: "decided", pending_question: fourthDecision.pending_question });
+  const fourth = { ...fourthDecision.pending_question.request, answer: fourthDecision.pending_question.decision.answer };
+  expect(checkpoint.state.clarified_targets).toEqual([...fourthDecision.state.clarified_targets, fourth]);
+  expect(checkpoint.state.reviewed_replacements).toEqual([...fourthDecision.state.reviewed_replacements, {
+   previous_index: fourthDecision.pending_question.replacement.previous_index,
+   next_index: fourthDecision.state.clarified_targets.length,
+   previous_digest: fourthDecision.pending_question.replacement.previous_digest,
+   next_digest: canonicalJsonDigest(fourth), context_digest: fourthDecision.pending_question.replacement.context_digest,
+   actor: "local_installation_operator",
+  }]);
+  expect(checkpoint.state.call_count).toBe(5); expect(checkpoint.state.attempt).toBe(fourthDecision.state.attempt + 1);
  });
  it("keeps the waiting proposal after a confirmed-save failure and requires review again on restart", async () => {
   const pending = await pendingReview(); let durable = structuredClone(pending);

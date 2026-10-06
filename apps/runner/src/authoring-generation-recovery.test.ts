@@ -106,6 +106,45 @@ describe("producer correction ownership",()=>{
 });
 
 describe("prospective producer controller admission",()=>{
+  it.each(["body", "producer", "context"])("repeated known %s refusal preserves the original episode allowance", async change => {
+    const f = await fixture("B-success"), m = memory(f.endpoint, 0), key = canonicalJsonDigest("exact existing Action producer");
+    const original = { ...input(f.endpoint), authoringInput: { consumer: "action_rule_components" as const, operator_message: "Keep the reviewed outcome." } };
+    await expect(enter(m, async () => {
+      const budget = (await createAuthoringHostEpisodeBudget({ keyDigest: key, conversational: true }))!;
+      try { return await recoverAuthoringGeneration(original, secureAskJsonRequest, () => budget.admitIteration()); }
+      finally { budget.release(); }
+    })).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_UNKNOWN" });
+    await enter(m, async () => permitAuthoringManualRecovery(await prepareAuthoringManualRecovery(canonicalJsonDigest("saved Action checkpoint"))));
+    const request = { ...original, body: structuredClone(original.body), authoringInput: { ...original.authoringInput } };
+    if (change === "body") request.body.input = "A different business request.";
+    if (change === "producer") request.authoringInput.operator_message = "A different owner answer.";
+    if (change === "context") m.drift();
+    const before = structuredClone(m.read());
+    expect(before.episodes![0]!.iterations_used).toBe(1);
+    await enter(m, async () => {
+      const budget = (await createAuthoringHostEpisodeBudget({ keyDigest: key, conversational: true }))!;
+      const admit = vi.fn(() => budget.admitIteration());
+      try {
+        for (let reopened = 0; reopened < 3; reopened++) {
+          await expect(recoverAuthoringGeneration(request, secureAskJsonRequest, admit)).rejects.toMatchObject({ code: "ASK_GENERATION_CONTEXT_CHANGED" });
+          expect(m.read()).toEqual(before);
+        }
+        expect(admit).not.toHaveBeenCalled();
+      } finally { budget.release(); }
+    });
+    expect(f.sends()).toBe(1);
+  });
+  it("keeps a durable producer reservation charged when context changes afterward", async () => {
+    const f = await fixture("healthy"), m = memory(f.endpoint, 0);
+    await expect(enter(m, async () => {
+      const budget = (await createAuthoringHostEpisodeBudget({ keyDigest: canonicalJsonDigest("current producer"), conversational: true }))!;
+      try { return await recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest, async () => {
+        await budget.admitIteration(); m.drift();
+      }); } finally { budget.release(); }
+    })).rejects.toMatchObject({ code: "ASK_GENERATION_CONTEXT_CHANGED" });
+    expect(m.read().episodes![0]!.iterations_used).toBe(1);
+    expect(m.read().operations).toEqual([]); expect(f.sends()).toBe(0);
+  });
   it.each(["episode","iteration"])("a lost %s acknowledgement is terminal before HTTP and reuses exact remaining counters",async failure=>{
     const f=await fixture("healthy"),m=memory(f.endpoint,0),write=m.host.write,key=canonicalJsonDigest("actual current producer input");
     let failed=false;

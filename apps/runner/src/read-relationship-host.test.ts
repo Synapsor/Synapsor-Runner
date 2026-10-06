@@ -413,6 +413,35 @@ describe("public host Read relationship preparation", () => {
     await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({ code: "ENOENT" });
   }, 30_000);
 
+  it("repeated fenced Read restart preserves its saved dispatch and native allowance", async () => {
+    const f = await fixture();
+    const first = await runHost(f, { beforeRequest: async call => {
+      if (call === 2) throw new Error("TEST_PAUSE_AFTER_ONE_SAVED_RELATIONSHIP");
+    } });
+    await expect(first.operation).resolves.toBe(0);
+    expect(first.requestJson).toHaveBeenCalledTimes(2);
+    const saved = await resumeState(f), candidate = (await loadBoundaryReviewContext(f.root)).candidate;
+    expect(saved.status).toBe("ready");
+    if (saved.status !== "ready") throw new Error("Expected the exact retained dispatch.");
+    for (let reopened = 0; reopened < 3; reopened++) {
+      const next = await runHost(f);
+      await expect(next.operation).resolves.toBe(0);
+      expect(next.requestJson).not.toHaveBeenCalled(); expect(next.choices).toEqual([]);
+      expect(next.failures.join("\n")).toContain("unfinished generation");
+      const current = await resumeState(f);
+      expect(current.status).toBe("ready");
+      if (current.status !== "ready") throw new Error("The retained job was lost.");
+      expect(current.value.read_assistance).toEqual(saved.value.read_assistance);
+      expect(current.value.generation_recovery).toEqual(saved.value.generation_recovery);
+      expect(current).toEqual({ ...saved, value: { ...saved.value,
+        updated_at: current.value.updated_at, revision_digest: current.value.revision_digest } });
+      const { revision_digest, ...core } = current.value;
+      expect(revision_digest).toBe(canonicalJsonDigest(core));
+      expect((await loadBoundaryReviewContext(f.root)).candidate).toEqual(candidate);
+    }
+    await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
   it("restarts an ordinarily paused exact-path review and reviews only the remaining one", async () => {
     const f = await fixture();
     let selections = 0;

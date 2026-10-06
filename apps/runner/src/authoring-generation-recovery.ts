@@ -892,15 +892,18 @@ export function assertAuthoringGenerationAdmission(): void {
 /** One generation, never a tool/producer/save retry. The HTTP owner alone mints
  * A/B evidence. Missing evidence cannot turn a dependency/guard error into retry. */
 export async function recoverAuthoringGeneration(input: ProviderHttpInput,
-  request: (input: ProviderHttpInput) => Promise<ProviderHttpResult>): Promise<ProviderHttpResult> {
+  request: (input: ProviderHttpInput) => Promise<ProviderHttpResult>,
+  admitProducerIteration?: () => Promise<void>): Promise<ProviderHttpResult> {
   const admitted = authoringGenerationAdmissionState();
   if (!admitted) {
+    await admitProducerIteration?.();
     try { return await request(input); }
     catch (e) { throw transportStop(authoringTransportObservation(e), e); }
   }
   const {frame, host, initial, manual, interrupted} = admitted;
   if (!host.available()) {
     if (manual || interrupted) return manualRecoveryUnavailable("The saved generation boundary is not current and available. No replacement request was sent.");
+    await admitProducerIteration?.();
     try { return await request(input); }
     catch (e) { throw transportStop(authoringTransportObservation(e), e); }
   }
@@ -916,6 +919,12 @@ export async function recoverAuthoringGeneration(input: ProviderHttpInput,
     || manual.attempts.at(-1)!.no_response_boundary?.destination_digest !== canonicalJsonDigest(input.endpoint.origin)
     || manual.attempts.at(-1)!.no_response_boundary?.model !== body.model
     || canonicalJsonDigest(manual.producer_input ?? null) !== canonicalJsonDigest(input.authoringInput ?? null))) throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
+  // A certain local refusal must not consume the original producer allowance.
+  // Once its reservation is durable, later drift or lost acknowledgement stays charged.
+  if (admitProducerIteration) {
+    await admitProducerIteration();
+    if (await currentRecoveryContext(host) !== context) throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
+  }
   const op: AuthoringTransportOperation = manual ?? {id: interrupted?.replacement_operation_id ?? randomUUID(), request_digest: requestDigest, context_digest: context,
     deadline: new Date(Date.now() + (input.timeoutMs ?? 30_000)).toISOString(), state: "in_flight", attempts: [],
     ...(frame.episode_id ? {episode_id:frame.episode_id} : {}),

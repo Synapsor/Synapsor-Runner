@@ -1300,7 +1300,7 @@ export function assertBoundaryAuthoringResumeMaterial(value: unknown): void {
     // Markdown presentation does not decide whether a value is an identity.
     const plain = text.replace(/[*]/gu, "");
     const concreteIdentity = [...plain.matchAll(
-      /\b(?:tenant|principal)(?:[_ -]?id)?["'`]?\s*(=|:|is)\s*["'`]?([A-Za-z0-9_-]+)/giu,
+      /\b(?:tenant|principal)(?:[_ -]?id)?["'`]?\s*(=|:|is\b)\s*["'`]?([A-Za-z0-9_-]+)/giu,
     )].some((match) => {
       if (/^(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed|unknown|unset|required|outside)$/iu.test(match[2]!)) return false;
       const tail = plain.slice(match.index! + match[0].length);
