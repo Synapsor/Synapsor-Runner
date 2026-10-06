@@ -446,3 +446,35 @@ physical database behavior, real-model planning, activation, installed acceptanc
 or release qualification. No new full run is needed for this documentation
 checkpoint. Remaining-family maps are preparation only; their implementation
 still requires the already-established migration scope or an Owner decision.
+
+## Action business-statement extraction checkpoint
+
+The Owner selected Action review, blocked/recovery, consents/readbacks and editing
+in that order. Slice four moves the existing `reviewBusinessAnswer` lifecycle to
+`authoring-business-statement-host.ts`; the superseded inline owner and structured
+question branches of the broad direct answer recorder are removed. The remaining
+direct recorder serves its other existing consumers. The presenter answers a
+derived exact binding with raw words, a decision, or the three distinct retained
+answer operations: Keep, Review and Replace. No persisted cursor, store, model
+allowance, permission or alternative question engine is added.
+
+The host owns captured testimony, attributed local readback, default-No and
+handoff/history updates. Action producers, completion/journal accounting,
+compilers, whole-policy review and publication remain their existing owners.
+Ordinary Read editing and private prerequisite clarification/correction use a
+pure decision adapter. Ordinary statements append to Source before the Resume
+acceptance acknowledgement. Private prerequisite statements never append to
+policy Source. Initial Read's accepted-remap/index ordering is unchanged.
+
+Types, 24 new local host/binding controls, 455 affected existing logic controls
+and nine existing public CLI cases pass at this checkpoint. The local host tests
+use real short project exclusion and literal port-file writes, but establish no
+native producer, accepted Action or fresh-process caller proof. Genuine public
+cold completion and failure companions, spent-state restart, Read-edit adapters,
+a small production terminal sample, independent adjudication and the single
+eight-worker full gate remain required. Slice four is not yet DEV accepted.
+
+Luna STOP1560 is candidate finding #20, with a frozen-source reproduction being
+prepared separately. Its proposed cause remains unproven; no frozen patch or
+recovery admission change belongs in this extraction. Any reproduced fix follows
+in the blocked/recovery slice after Action review.

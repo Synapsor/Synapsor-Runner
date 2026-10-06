@@ -3,8 +3,7 @@ import { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary
 export { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
 import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, authoringActionCheckpoint, authoringReadCheckpoint, authoringReadDecisionCheckpoint, assertAuthoringReadCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, authoringInterruptedRecoveryNeeded, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
-import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, leaveOperatorQuestionPending,
-  operatorQuestionReadback, presentOperatorQuestion, proposeOperatorAnswer, reopenOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
+import { createOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import { isUnknownReadMeaning } from "./read-meaning-evidence.js";
 import { operatorBusinessContext, operatorBusinessLabel, operatorBusinessReadback, presentOperatorClarification,
   type OperatorBusinessContext } from "./authoring-operator-presentation.js";
@@ -15,6 +14,8 @@ import { assertSourceInputRootBinding, createSourceInputHost } from "./authoring
 import { runVersionConversation } from "./authoring-version-conversation.js";
 import { createVersionQuestionHost } from "./authoring-version-host.js";
 import { createReadMeaningHost } from "./authoring-read-meaning-host.js";
+import { createBusinessStatementHost } from "./authoring-business-statement-host.js";
+import { prepareReadBusinessStatementDecision } from "./authoring-business-statement-read-decision.js";
 import type { ReadMeaningInteraction, ReadMeaningInteractionResponse } from "./authoring-read-meaning-interaction.js";
 import { actionRuleAuthoringCheckpoint, actionLogicalTurnMaterialDigest, assertActionLogicalTurnJournalAdvance,
   type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
@@ -4849,61 +4850,12 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     return handoff;
   });
   const recordOwnerAnswer = async (handoff: AuthoringOwnerHandoff, answer: string,
-    options?: { policyMeaning?: false; remember?: false; question?: { id: string; digest: `sha256:${string}` } }) => mutateOwnerHandoff(async permit => {
+    options?: { policyMeaning?: false; remember?: false }) => mutateOwnerHandoff(async permit => {
     const current = await ownerQuestionContext(permit, handoff.consumer);
     const pending = ownerHandoffs.at(-1);
     if (handoff.state !== "waiting" || pending?.state !== "waiting" || pending.id !== handoff.id || pending.digest !== handoff.digest
       || handoff.scope_digest !== ownerQuestionScope() || handoff.context_digest !== current) {
       throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The question's Source, permissions or job changed. Its answer was not accepted; inspect the saved context before continuing.");
-    }
-    const confirmingQuestion = options?.question ? operatorQuestions.find(q => q.id === options.question!.id) : undefined;
-    if (options?.question && (!confirmingQuestion || confirmingQuestion.digest !== options.question.digest
-      || confirmingQuestion.handoff_id !== handoff.id || confirmingQuestion.raw_answer?.text !== answer
-      || confirmingQuestion.proposal?.disposition !== "proposed" || confirmingQuestion.disposition)) throw new PolicySourceChangedError();
-    let decidedRead: ReadBoundaryRevisionCheckpoint | undefined;
-    if (options?.question && handoff.consumer === "read_revision_prerequisite") {
-      const checkpoint = pendingReadRevisionState?.checkpoint, parent = checkpoint?.pending_question;
-      const nested = parent?.kind === "private_prerequisite" ? parent.nested_checkpoint : undefined;
-      const correction = confirmingQuestion?.target.phase === "read_prerequisite_correction";
-      if (!checkpoint || checkpoint.stage === "dispatching" || parent?.kind !== "private_prerequisite" || !nested || nested.stage !== "waiting") throw new PolicySourceChangedError();
-      if (correction ? nested.pending.kind !== "semantic_confirmation" || handoff.completion !== undefined
-        : nested.pending.kind !== "clarification" || nested.pending.request.question !== handoff.question
-          || canonicalJsonDigest(nested.pending.completion ?? null) !== canonicalJsonDigest(handoff.completion ?? null))
-        throw new PolicySourceChangedError();
-      const { digest: _nestedDigest, schema_version: _nestedVersion, ...body } = nested;
-      const exchange = { question: handoff.question, answer };
-      const decision = body.pending.kind === "clarification" ? body.pending.request.decision : undefined;
-      const saved = decision && { decision_id: decision.decision_id, applicability_digest: decision.applicability_digest,
-        question: decision.question, answer };
-      if (saved) readPrerequisiteDecisions = parseReadPrerequisiteBusinessDecisions([
-        ...readPrerequisiteDecisions.filter(record => record.decision_id !== saved.decision_id), saved]);
-      const decided = readPrerequisiteCheckpoint({ ...body, stage: "decided",
-        pending: body.pending.kind === "clarification"
-          ? { ...body.pending, decision: { state: "answered", answer } }
-          : { ...body.pending, decision: { state: "revise", instruction: answer } },
-        state: { ...body.state, answers: [...body.state.answers, exchange],
-          confirmed_answers: [...body.state.confirmed_answers, exchange],
-          ...(body.pending.kind === "semantic_confirmation" ? { questioned_proposal: body.pending.proposal,
-            questions: body.state.questions.filter(q => !readPrerequisiteDecisions.some(d => d.question.trim().toLowerCase() === q)) } : {}),
-          saved_decisions: saved ? parseReadPrerequisiteBusinessDecisions([
-            ...body.state.saved_decisions.filter(record => record.decision_id !== saved.decision_id), saved]) : body.state.saved_decisions } });
-      if (decided.pending?.kind === "semantic_confirmation" && decided.pending.completion)
-        generationRecovery = authoringReadDecisionCheckpoint(generationRecovery, decided.pending.completion,
-          decided.pending.proposal, decided.pending.decision);
-      const { digest: _outerDigest, schema_version: _outerVersion, ...outer } = checkpoint;
-      decidedRead = readBoundaryRevisionCheckpoint({ ...outer,
-        pending_question: { ...parent, nested_checkpoint: decided } });
-    }
-    if (options?.question && handoff.consumer === "read_revision_clarification") {
-      const checkpoint = pendingReadRevisionState?.checkpoint;
-      if (!checkpoint || checkpoint.stage !== "waiting" || checkpoint.pending_question.kind !== "clarification" || checkpoint.pending_question.question !== handoff.question
-        || canonicalJsonDigest(checkpoint.pending_question.completion ?? null) !== canonicalJsonDigest(handoff.completion ?? null))
-        throw new PolicySourceChangedError();
-      const { digest: _digest, schema_version: _version, ...body } = checkpoint;
-      decidedRead = readBoundaryRevisionCheckpoint({ ...body, stage: "decided",
-        pending_question: { ...checkpoint.pending_question, decision: { state: "answered", answer } },
-        state: { ...body.state, clarification_count: body.state.clarification_count + 1,
-          clarification_answers: [...body.state.clarification_answers, { question: handoff.question, answer }].slice(-16) } });
     }
     // The recorder must not run before this applicability check. Append the
     // accepted statement under the SAME exclusion and the displayed Source CAS.
@@ -4917,10 +4869,6 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if (handoff.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
       ownerHandoffCheckpoint(handoff), { digest: canonicalJsonDigest(next), operator_messages: [answer] });
     ownerHandoffs[ownerHandoffs.length - 1] = next;
-    if (options?.question) {
-      operatorQuestions[operatorQuestions.indexOf(confirmingQuestion!)] = confirmOperatorAnswer(confirmingQuestion!);
-    }
-    if (decidedRead) pendingReadRevisionState = { ...pendingReadRevisionState!, checkpoint: decidedRead };
     if (options?.remember !== false) {
       if (handoff.consumer === "policy_clarification" || handoff.consumer.startsWith("read_revision_")) rememberModelAuthoringClarification(authoringConversation, handoff.question, answer);
       else rememberModelAuthoringTurn(authoringConversation, handoff.question, answer);
@@ -4928,114 +4876,69 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     await persistAuthoringResume(handoff.consumer === "planning" ? "planning" : handoff.consumer === "policy_clarification" || handoff.consumer.startsWith("read_revision_") ? "authority_review" : "read_mapping", permit);
     if (resumePersistenceBlocked) throw checkpointSaveFailure("The owner answer");
   });
-  /** Adapt ordinary Action / Read-edit handlers to the existing exact-word
-   * question contract. The owning producer still maps the confirmed statement
-   * and validates its draft; this adapter creates no typed policy-line proof,
-   * model allowance, database meaning or authority. */
+  /** The producer still maps testimony and validates the disabled draft. This
+   * wiring only presents the shared host and connects the existing writers. */
   const reviewBusinessAnswer = async (options: {
     question: string; stage: "action_drafting" | "authority_review";
     handoff?: AuthoringOwnerHandoff; businessContext: OperatorBusinessContext;
     producerQuestionDigest?: `sha256:${string}`;
     privateCorrection?: boolean;
     assertCurrent(permit?: ProjectAuthorityMutationPermit): Promise<void>; prompt(displayed: string): Promise<string | undefined>;
-  }): Promise<string | undefined> => {
-    await options.assertCurrent();
-    let h = options.handoff ?? ownerHandoffs.at(-1);
-    if (!options.handoff && options.producerQuestionDigest && h?.state === "answered"
-      && h.consumer === "policy_clarification" && h.question === options.question) {
-      const acknowledged = operatorQuestions.filter(q => q.handoff_id === h!.id
-        && q.continuation === "action_rule_review").sort((a, b) => a.revision - b.revision).at(-1);
-      const association = acknowledged?.evidence.find(e => e.id === "action-producer-question");
-      if (acknowledged && (!association || association.digest === options.producerQuestionDigest)) {
-        // The answer is durable but the producer still has the same question.
-        // Do not invent a new drafting episode or append the statement twice.
-        // Recovering an uncertain cross-checkpoint save remains an inspection
-        // path; this presentation adapter does not refresh Source fingerprints.
-        throw new Error("ACTION_OPERATOR_ANSWER_CHECKPOINT_INCOMPLETE: The answer is already recorded but its producer question is still pending. Inspect the preserved checkpoint; no question, answer or model allowance was replayed.");
+  }): Promise<string | undefined> => createBusinessStatementHost({
+    question: options.question, stage: options.stage, handoff: options.handoff,
+    producerQuestionDigest: options.producerQuestionDigest, privateCorrection: options.privateCorrection,
+    assertCurrent: options.assertCurrent,
+    access: {
+      readQuestions: () => operatorQuestions, readHandoffs: () => ownerHandoffs,
+      readRecovery: () => generationRecovery, readConversationTurns: () => authoringConversation?.turns,
+      readCheckpointDigest: () => pendingReadRevisionState?.checkpoint?.digest,
+      scopeDigest: ownerQuestionScope, contextDigest: ownerQuestionContext, mutate: mutateOwnerHandoff,
+      install: update => {
+        if (update.questions) operatorQuestions = update.questions;
+        if (update.handoffs) ownerHandoffs = update.handoffs;
+        if (update.recovery) generationRecovery = update.recovery;
+        if (update.readCheckpoint) pendingReadRevisionState = { ...pendingReadRevisionState!, checkpoint: update.readCheckpoint };
+        if (update.readDecisions) readPrerequisiteDecisions = update.readDecisions;
+        if (update.conversationTurns && authoringConversation)
+          authoringConversation.turns.splice(0, authoringConversation.turns.length, ...update.conversationTurns);
+      },
+      save: async (permit, stage, subject) => {
+        await persistAuthoringResume(stage, permit);
+        if (resumePersistenceBlocked) throw checkpointSaveFailure(subject);
+      },
+      appendSourceStatement: async (permit, answer) => {
+        const sources = authoringConversation?.policySources;
+        if (sources && activePolicySource(sources)) await appendPolicySourceOperatorMessage(input.projectRoot, sources,
+          answer, { permit, expectedDigest: canonicalJsonDigest(sources) });
+      },
+      prepareReadDecision: async (_permit, handoff, question, answer) => prepareReadBusinessStatementDecision({
+        handoff, question, answer, checkpoint: pendingReadRevisionState?.checkpoint,
+        decisions: readPrerequisiteDecisions, recovery: generationRecovery }),
+      checkpointFailure: checkpointSaveFailure,
+    },
+    interact: async view => {
+      if (view.kind === "question") {
+        const displayed = presentOperatorClarification(view.text,
+          { stage: options.handoff ? "read" : "action", context: options.businessContext });
+        return { kind: "answer", binding: view.binding, raw: await options.prompt(displayed) ?? null };
       }
-    }
-    if (!options.handoff && h?.state === "waiting" && (h.consumer !== "policy_clarification" || h.question !== options.question))
-      throw checkpointSaveFailure("The exact Action business question");
-    if (!h || h.state !== "waiting") h = await persistOwnerQuestion(options.question, "policy_clarification");
-    let savedHandoff = h;
-    const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
-      await options.assertCurrent(permit);
-      const latest = ownerHandoffs.at(-1);
-      if (latest?.state !== "waiting" || latest.id !== savedHandoff.id || latest.digest !== savedHandoff.digest
-        || latest.scope_digest !== ownerQuestionScope()
-        || latest.context_digest !== await ownerQuestionContext(permit, latest.consumer)) throw new PolicySourceChangedError();
-    };
-    let q = operatorQuestions.filter(q => q.handoff_id === h!.id).sort((a, b) => a.revision - b.revision).at(-1);
-    const save = async (next: OperatorQuestion, expected?: `sha256:${string}`) => mutateOwnerHandoff(async permit => {
-      await assertCurrent(permit);
-      const old = operatorQuestions.find(q => q.id === next.id);
-      if (expected ? old?.digest !== expected : Boolean(old)) throw new PolicySourceChangedError();
-      if (old) operatorQuestions[operatorQuestions.indexOf(old)] = next; else operatorQuestions.push(next);
-      await persistAuthoringResume(options.stage, permit);
-      if (resumePersistenceBlocked) throw checkpointSaveFailure("The exact business statement");
-      q = next;
-    });
-    if (!q) {
-      const read = h.consumer.startsWith("read_revision_");
-      const privateRead = h.consumer === "read_revision_prerequisite";
-      await save(presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(), revision: 1, handoff_id: h.id,
-        kind: "attributed_meaning", scope_digest: h.scope_digest, context_digest: h.context_digest,
-        target: { phase: privateRead ? options.privateCorrection ? "read_prerequisite_correction" : "read_prerequisite" : read ? "read_revision" : "action_rule_components", ...(read ? { resource: "current-reviewed-read-edit" } : {}), outcomes: [] },
-        material: ["This records only your statement for this exact question. Runner must still map and validate the resulting disabled draft.",
-          "It does not override the attached policy, prove database behavior, grant access or enable execution."],
-        evidence: [{ id: "current-owner-question", digest: h.digest },
-          ...(options.producerQuestionDigest ? [{ id: "action-producer-question", digest: options.producerQuestionDigest }] : [])],
-        continuation: read ? "read_mapping" : "action_rule_review" }), h.question));
-    }
-    if (q!.disposition) {
-      const choice = await input.session.chooseOption?.("SAVED BUSINESS STATEMENT", [
-        { value: "keep", label: "Keep this decision pending" },
-        { value: "review", label: "Review the retained answer" },
-        { value: "replace", label: "Answer again; retain the earlier words" },
-      ], { initialValue: "keep", reviewOnly: true, context: operatorBusinessReadback(operatorQuestionReadback(q!), options.businessContext) });
-      if (choice === "replace" && q!.raw_answer) {
-        const previous = q!;
-        // Retain the declined/unknown words as history, not policy meaning or
-        // an accepted decision. A blank answer retains the same waiting handoff.
-        if (previous.raw_answer!.text.trim() && !options.handoff) {
-          await recordOwnerAnswer(savedHandoff, previous.raw_answer!.text, { policyMeaning: false, remember: false });
-          savedHandoff = await persistOwnerQuestion(options.question, savedHandoff.consumer);
-        }
-        await save(presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(), revision: previous.revision + 1,
-          handoff_id: savedHandoff.id, kind: previous.kind, scope_digest: savedHandoff.scope_digest,
-          context_digest: savedHandoff.context_digest, target: previous.target, material: previous.material,
-          evidence: [{ id: "current-owner-question", digest: savedHandoff.digest },
-            ...previous.evidence.filter(e => e.id === "action-producer-question")], continuation: previous.continuation }), savedHandoff.question));
-      } else {
-        if (choice !== "review") return undefined;
-        await save(reopenOperatorQuestion(q!), q!.digest);
+      if (view.kind === "pending") {
+        const choice = await input.session.chooseOption?.("SAVED BUSINESS STATEMENT", [
+          { value: "keep", label: "Keep this decision pending" },
+          { value: "review", label: "Review the retained answer" },
+          { value: "replace", label: "Answer again; retain the earlier words" },
+        ], { initialValue: "keep", reviewOnly: true,
+          context: operatorBusinessReadback([...view.lines], options.businessContext) });
+        return { kind: "pending", binding: view.binding,
+          choice: choice === "review" || choice === "replace" ? choice : "keep" };
       }
-    }
-    if (!q!.raw_answer) {
-      const displayed = presentOperatorClarification(q!.presentation!.text,
-        { stage: options.handoff ? "read" : "action", context: options.businessContext });
-      const raw = await options.prompt(displayed);
-      await assertCurrent();
-      if (raw === undefined) { await save(leaveOperatorQuestionPending(q!, "cancelled"), q!.digest); return undefined; }
-      await save(captureOperatorAnswer(q!, raw), q!.digest);
-    }
-    const raw = q!.raw_answer!.text;
-    if (!raw.trim() || isUnknownReadMeaning(raw) || options.handoff && raw.length > (options.handoff.consumer === "read_revision_prerequisite" ? 8_000 : 1_000)) {
-      await save(leaveOperatorQuestionPending(q!, "unknown"), q!.digest); return undefined;
-    }
-    if (options.handoff?.consumer === "read_revision_prerequisite") validateReadPrerequisiteBusinessAnswer(raw);
-    if (!q!.proposal) await save(proposeOperatorAnswer(q!, { question_id: q!.id, revision: q!.revision,
-      answer_id: q!.raw_answer!.id, disposition: "proposed", value: { kind: "attributed_meaning" } }), q!.digest);
-    const exact = operatorQuestionReadback(q!);
-    const yes = await input.session.confirm("Record this exact statement for the current question?", {
-      defaultValue: false, context: operatorBusinessReadback(exact, options.businessContext),
-      exactDetails: { title: "EXACT BUSINESS STATEMENT", lines: [savedHandoff.question, ...exact] },
-    });
-    await assertCurrent();
-    if (yes !== true) { await save(leaveOperatorQuestionPending(q!, yes === undefined ? "cancelled" : "declined"), q!.digest); return undefined; }
-    await recordOwnerAnswer(savedHandoff, raw, { question: { id: q!.id, digest: q!.digest } });
-    return raw;
-  };
+      const yes = await input.session.confirm("Record this exact statement for the current question?", {
+        defaultValue: view.defaultValue, context: operatorBusinessReadback([...view.lines], options.businessContext),
+        exactDetails: { title: "EXACT BUSINESS STATEMENT", lines: [view.question, ...view.lines] },
+      });
+      return { kind: "decision", binding: view.binding, accepted: yes ?? null };
+    },
+  }).review();
   // The model conversation is populated only after this menu. Read the saved
   // source session itself so a confirmed interpretation remains publicly
   // revisitable after restart, before provider selection or egress.
