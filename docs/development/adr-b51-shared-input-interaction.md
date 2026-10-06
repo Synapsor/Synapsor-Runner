@@ -1,8 +1,8 @@
 # ADR B51: share the Input interaction boundary
 
 Status: Input slice1 accepted at `d80782e9`; Version slice2 accepted for DEV
-integration at `c3ebdfa5`. Initial Read meaning is the next slice on the separate
-B51 branch. Release acceptance is separate.
+integration at `c3ebdfa5`; initial Read slice3 accepted at `75b2cb3d` on the
+separate B51 branch. Release acceptance is separate.
 Source inspected: `62e4bf54c3cb6ab9f58f423991f0c121d6e760ad`.
 T0: 2026-10-06T14:31:23Z. This work follows frozen candidate1508 and
 independent Tester installed acceptance starting. Demo verification has priority.
@@ -414,3 +414,35 @@ at the unanswered question and Enter at the default-No meaning readback. Both
 rounds retain the actual pending records, make zero model requests and leave
 Source and authority unchanged. Independent cold/terminal artifact adjudication
 and the one full eight-worker gate are still required before Read acceptance.
+
+## Initial Read DEV integration
+
+The dedicated independent reviewer accepted exact Read candidate `75b2cb3d`
+(production extraction `d24a7ef0`) after its original twelve-row oracle, types,
+affected existing public controls, five genuine fresh-process pairs and the small
+production terminal sample. The raw-save loss companion performs a real durable
+rename before losing its acknowledgement; a distinct fresh process reuses the
+exact raw event without another prompt or initial generation. Its before-write
+companion preserves the last acknowledged state and asks once on restart. Both
+return through accepted remapping, one Source meaning index and ordinary disabled
+Read review. Counter exhaustion has native durable regression evidence; no separate
+exhausted fresh-process negative was executed or claimed.
+
+The single unfiltered eight-worker gate passed 9,126 tests, with zero failures and
+576 skips across 445 files. All original package-tail commands and six launcher
+shutdown controls passed. Vitest took 957.41 seconds; the outer wrapper took
+992.37 seconds. Owned processes closed naturally, with no retry or quarantine.
+The independent closure audit verified all 8,440 tracked source members against
+Git and the pre-run seal, all 17,729 private dependency members and the actual
+445-file reporter inventory. The historical dependency origin differs only in
+one existing Vitest cache file. Ignored-build inventory is post-run only: there
+was no fresh full-specific pre-run ignored-build manifest, and no before/after
+byte equality is claimed. Actual prebuild and mandatory final build/freshness
+checks passed. The frozen demo source and bundle remain exact.
+
+`FINAL-READ-DEV-APPENDIX.json` in the independent Read review evidence records the
+exact verdict and scoped limitations. This establishes DEV integration, not
+physical database behavior, real-model planning, activation, installed acceptance
+or release qualification. No new full run is needed for this documentation
+checkpoint. Remaining-family maps are preparation only; their implementation
+still requires the already-established migration scope or an Owner decision.
