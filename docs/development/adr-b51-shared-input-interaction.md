@@ -227,9 +227,17 @@ append can invalidate a prior Review selection; its intended positive continuati
 remains a separate open route investigation. This passing persistence assertion
 does not turn that refusal into task completion.
 
-This is a development checkpoint, not accepted delivery. Complete positive
-onboarding and selected-baseline editing, remaining independent route verdicts,
-final gates and installed acceptance remain required. The earlier 88 assertions
+The public onboarding fixture now completes ordinary two-Action planning, the
+missing Input answer and explicit confirmation, both Action drafts, Source
+coverage and client duties through reviewed disabled authority. Its successful
+responses use actual transmitted question IDs, Source text, work-unit contracts
+and declared operator facts. Both independently declared reviewer arrangements
+remain distinct; no activation or Source effect is claimed. The helper passed
+this case and the unchanged healthy control; independent replay is pending.
+
+This is a development checkpoint, not accepted delivery. Selected-baseline
+editing, independent route verdicts, final gates and installed acceptance remain
+required. The earlier 88 assertions
 retain their limited scope. Controlled successful replies in the new restart
 fixtures derive references from actual transmitted frames and declared answers.
 Version blank/unknown handling already exists; the added Version raw-save
