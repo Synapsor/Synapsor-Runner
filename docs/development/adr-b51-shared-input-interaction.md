@@ -1,7 +1,7 @@
 # ADR B51: share the Input interaction boundary
 
-Status: Owner approved one Input-only implementation slice; development and
-independent acceptance are in progress on the separate B51 branch.
+Status: Input slice1 accepted for DEV integration at `d80782e9`; Owner-authorized
+Version slice2 starts next on the separate B51 branch. Release acceptance is separate.
 Source inspected: `62e4bf54c3cb6ab9f58f423991f0c121d6e760ad`.
 T0: 2026-10-06T14:31:23Z. This work follows frozen candidate1508 and
 independent Tester installed acceptance starting. Demo verification has priority.
@@ -12,7 +12,7 @@ The frozen candidate remains unchanged. All same-connection live-edit work is st
 Keep the existing Input controller and durable records. Extract its CLI host
 transitions into one production adapter, and derive typed interaction views from
 those records. The CLI and an internal headless test adapter must submit responses
-to the same handlers. The next slice covers Input in onboarding and editing only.
+to the same handlers. The accepted Input slice covers onboarding and editing only.
 Those entry routes already share `ensureInputPolicyAgenda` and the same controller;
 this consolidates the inline host transitions and their CLI/headless-test use.
 
@@ -277,3 +277,23 @@ retain their limited scope. Controlled successful replies in the new restart
 fixtures derive references from actual transmitted frames and declared answers.
 Version blank/unknown handling already exists; the added Version raw-save
 interruption work is characterization only, with no Version product change.
+
+## Input DEV integration and next slice
+
+The dedicated independent reviewer accepted the exact Input candidate `d80782e9`
+after types, completed scoped public routes, production-host cold restart and
+return-to-caller controls, negative companions, and the one four-worker whole
+package run: 9,076 passed, zero failed and 576 skipped across all 440 files. Every
+required package-tail command completed successfully. Private generated bundle
+content stayed exact; three `.mjs` modes changed from 0664 to 0600 under the
+launcher umask, and the existing Vitest cache changed. These private DEV effects
+are preserved and do not establish immutable release artifact equivalence.
+
+This closes Input DEV integration only. Named delivery still requires the
+settled release gates and independent installed acceptance. Frozen demo candidate
+`62e4bf54` remains untouched. Version slice2 may now consolidate its actual inline
+host transitions using the existing controller and owning Action budget; blank
+and unknown answers already remain pending and are characterization, not fixes.
+The dedicated reviewer owns its separately presealed variants and exact-pin DEV
+verdict. Positive fresh-process return through the Action producer must be observed
+without fabricating completion, Source proof, authority or an extra allowance.
