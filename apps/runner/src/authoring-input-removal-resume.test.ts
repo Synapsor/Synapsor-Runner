@@ -24,7 +24,8 @@ afterEach(async () => {
 // a two-Action authority and exact removal; the real conversation controller
 // creates the waiting question. No accepted handoff, answer, report or generation
 // state is injected. Only structural inspection, operator IO and replies are local.
-it.each(['removal_eof','blank','unknown','root_unknown','action_drift'] as const)('reopens the real saved Input decision without planning or renewal: %s', async mode => {
+it.each(['removal_eof','blank','unknown','root_unknown','action_drift','confirmed_review_currentness_refusal'] as const)('reopens the real saved Input decision without planning or renewal: %s', async mode => {
+  const completed = mode === 'confirmed_review_currentness_refusal';
   const repeatedKeep = mode !== 'removal_eof', rootUnknown = mode === 'root_unknown', answeredUnknown = mode === 'unknown' || mode === 'action_drift', actionDrift = mode === 'action_drift';
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'input-removal-resume-')); roots.push(root);
   const inspection = ownedProgramInspection(), inspect = async () => structuredClone(inspection);
@@ -67,12 +68,13 @@ it.each(['removal_eof','blank','unknown','root_unknown','action_drift'] as const
   const readResume = async () => JSON.parse(await fs.readFile(resumeFile,'utf8'));
   const actualQuestion = 'How short or long may the caller note be?';
   let stage:'review'|'keep'|'resume'='review', transcript='', reads=0, responses=0, savedChoices=0;
+  let downstreamInterrupted = false, inputConfirmations = 0;
   let interrupt:(()=>void)|undefined;
   const write=(text:string)=>{transcript+=text;};
   const io:any={write,writeChunk:write,columns:()=>110,isTerminal:()=>false,setStatus:()=>{},clearStatus:()=>{},close:()=>{},
     onInterrupt:(handler:()=>void)=>{interrupt=handler;return()=>{interrupt=undefined;};},
     review:async(title:string,lines:string[])=>write(`\n${title}\n${lines.join('\n')}\n`),
-    read:async()=>{reads++;expect((await readResume()).owner_handoffs.at(-1)).toMatchObject({consumer:'input_policy',state:'waiting',question:actualQuestion});if(repeatedKeep&&reads===1)return answeredUnknown?'I do not know the maximum. Keep this decision pending.':'  ';interrupt?.();return undefined;},
+    read:async()=>{reads++;expect((await readResume()).owner_handoffs.at(-1)).toMatchObject({consumer:'input_policy',state:'waiting',question:actualQuestion});if(completed&&reads===1)return '  The caller note must contain 1 through 64 UTF-16 units, counting spaces.\t ';if(repeatedKeep&&reads===1)return answeredUnknown?'I do not know the maximum. Keep this decision pending.':'  ';interrupt?.();return undefined;},
     readConversation:async()=>io.read(),
     choose:async(choice:any)=>{
       write(`\nCHOICE ${choice.title}: ${choice.options.map((o:any)=>o.value).join(',')}\n`);
@@ -81,6 +83,7 @@ it.each(['removal_eof','blank','unknown','root_unknown','action_drift'] as const
       if(choice.title==='USE THE SAVED ATTACHMENT')return 'continue';
       if(choice.title==='SEND ATTACHED RULES'){expect(choice.initialValue).toBe('cancel');return 'send';}
       if(choice.title==='SAVED INPUT-POLICY DECISION'){savedChoices++;expect(choice.initialValue).toBe('keep');return stage==='keep'?'keep':'answer';}
+      if(completed && choice.message==='Save this exact attributed input-policy interpretation?'){expect(choice.initialValue).toBe('no');inputConfirmations++;return 'yes';}
       if(values.includes('yes')&&/Send this Boundary-authoring conversation|Allow the assistant to send|reviewed structural context/.test(choice.message)){
         expect(choice.initialValue).toBe('no');return 'yes';
       }
@@ -90,11 +93,16 @@ it.each(['removal_eof','blank','unknown','root_unknown','action_drift'] as const
     responses++;
     const body=request.body,names=(body.tools??[]).map((t:any)=>t.name??t.function?.name);
     if(!names.length)return {status:200,body:{status:'completed',output:[{type:'message',content:[{type:'output_text',text:'The parcel setup remains pending.'}]}]}};
+    if(completed && !names.includes('runner__propose_operator_decision')) {
+      expect((await loadPolicySources(root,sources.id))?.input_policy_reviews?.at(-1)?.decision).toBe('confirmed');
+      downstreamInterrupted = true; throw new Error('CONTROLLED_DOWNSTREAM_REVIEW_INTERRUPTION_AFTER_INPUT_ACK');
+    }
     expect(names).toEqual(['runner__propose_operator_decision']);
     const text=JSON.stringify(body);
     const lines=(body.input??[]).flatMap((item:any)=>typeof item.content==='string'?item.content.split('\n'):[]);
     const line=lines.find((line:string)=>line.startsWith('Current question: '));
     expect(line,text).toBeDefined();const q=JSON.parse(line.slice('Current question: '.length));
+    if(completed && q.raw_answer) return {status:200,body:{status:'completed',output:[{type:'function_call',call_id:'declared-input-answer',name:names[0],arguments:JSON.stringify({question_id:q.question_id,revision:q.revision,answer_id:q.answer_id,status:'proposal',disposition:'proposed',value:{kind:'input_bounds',requirements:[{outcomes:q.target.outcomes,input:'note',start:1,end:2,min_length:1,max_length:64}]}})}]}};
     if(rootUnknown||q.raw_answer)return {status:200,body:{status:'completed',output:[{type:'function_call',call_id:'owned-unknown-input',name:names[0],arguments:JSON.stringify({
       question_id:q.question_id,revision:q.revision,...(q.raw_answer?{answer_id:q.answer_id}:{source_reference:q.source_reference}),status:'proposal',disposition:'pending'})}]}};
     return {status:200,body:{status:'completed',output:[{type:'function_call',call_id:'owned-input-resume',name:names[0],arguments:JSON.stringify({
@@ -106,7 +114,24 @@ it.each(['removal_eof','blank','unknown','root_unknown','action_drift'] as const
     modelAuthoringSession:{provider:'openai',model:'owned-input-resume-local',apiKey:'inert-fixture-only',dependencies:{requestJson}},
     actionProjectInspector:inspect,boundaryAuthoringChatFactory:(selection:any)=>createBoundaryAuthoringChat({...selection,io,color:false,streamLineDelayMs:0})};
   expect(await boundaryReviewCommand(['--project-root',root,'--access','--job-first','--review-rules'],inspect,outer,undefined,options)).toBe(0);
-  const pending=await readResume();expect(reads,transcript).toBe(rootUnknown?0:1);
+  const pending=await readResume();
+  if(completed){
+    const question=pending.operator_questions.at(-1);
+    expect(inputConfirmations,transcript).toBe(1); expect(question.confirmation).toBeDefined();
+    expect(question.raw_answer.text).toBe('  The caller note must contain 1 through 64 UTF-16 units, counting spaces.\t ');
+    expect(pending.owner_handoffs.at(-1).state).toBe('answered');
+    const source=await loadPolicySources(root,sources.id);
+    expect(source?.input_policy_reviews).toHaveLength(1);
+    expect(source?.input_policy_reviews?.at(-1)?.question_reference?.digest).toBe(question.digest);
+    // Initial local selection predates this first-ever Input append. Keep its
+    // refusal observable; only a new explicit Review may select currentness.
+    expect(downstreamInterrupted,transcript).toBe(false);
+    expect(transcript).toContain('POLICY_REVIEW_CONTEXT_CHANGED');
+    expect((await readActionRuleAuthorityDraft(root,draft.authority.name))?.digest).toBe(draft.digest);
+    expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+    return;
+  }
+  expect(reads,transcript).toBe(rootUnknown?0:1);
   if(rootUnknown)expect(pending.owner_handoffs??[]).toEqual([]);
   else expect(pending.owner_handoffs.at(-1)).toMatchObject({consumer:'input_policy',state:answeredUnknown?'answered':'waiting',question:actualQuestion});
   expect(pending.pending_policy_review).toBeUndefined();
