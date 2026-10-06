@@ -5,7 +5,8 @@ export function modelVisibleUserText(body: unknown): string {
     throw new Error("TEST_MODEL_VISIBLE_RESPONSES_FRAME_REQUIRED");
   return body.input.filter(item => item?.role === "user").map(item => {
     if (typeof item.content === "string") return item.content;
-    if (Array.isArray(item.content)) return item.content.map(part => typeof part?.text === "string" ? part.text : "").join("\n");
+    if (Array.isArray(item.content)) return item.content.map((part: unknown) =>
+      part && typeof part === "object" && "text" in part && typeof part.text === "string" ? part.text : "").join("\n");
     throw new Error("TEST_MODEL_VISIBLE_USER_TEXT_REQUIRED");
   }).join("\n");
 }

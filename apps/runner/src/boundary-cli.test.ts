@@ -5946,7 +5946,7 @@ describe("boundary operator-plane CLI", () => {
       });
       let committedRaw: any;
       const realWrite = authoringResumePersistence.writeBoundaryAuthoringResumeState;
-      let checkpoint: ReturnType<typeof vi.spyOn> | undefined;
+      let checkpoint: { mockRestore(): void } | undefined;
       try {
         await fixture.writeResume(["maintenance.complete_visit", "maintenance.close_visit"],
           ["Keep first rule.", "Keep second rule.", "Prepare one additional follow-up, with its business reviewer still pending."]);
@@ -5965,7 +5965,7 @@ describe("boundary operator-plane CLI", () => {
           return result;
         });
         await expect(run()).resolves.toBe(0);
-        checkpoint.mockRestore(); checkpoint = undefined;
+        checkpoint?.mockRestore(); checkpoint = undefined;
         expect(interrupted).toBe(true);
         const stopped = await read(), marker = stopped.action.checkpoint.pending_version;
         const q = stopped.operator_questions.find((q: any) => q.id === marker.question_id);
