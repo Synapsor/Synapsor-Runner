@@ -1,0 +1,27 @@
+{
+  "utc": "2026-10-06T11:20:45.365830+00:00",
+  "runtime_product_head": "cc4f0ac36f9b1b71d11656e02237358395df1896",
+  "scope": "Test-only exact saved request/outcome readback binding replaces stale caption; no product/guard/limit changes",
+  "triage": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/remaining-four-postcommit1492-v1/TEST-ONLY-DRAFT-v2.json",
+  "triage_sha256": "18dcc6a5cb9ee587bad2a97085900f62d26a2dfe45c924f4c612833413bd3b09",
+  "tester_review": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/operator-conversation-development/postcommit1492-v2-independent-v1/REVIEW.md",
+  "tester_review_sha256": "435bf6c58e1283ff149482579357c9df47c3c10b8aeb70bb16fd0decf5106e21",
+  "exact_four_result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/integrated-public4-1493-v1/RESULT1493.json",
+  "exact_four_result_sha256": "0e60ecb2935ddf629660405194a99f54db03b4859eb47a127c2e7b3c81368416",
+  "exact_four_selection": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/integrated-public4-1493-v1/EXACT-SELECTION.json",
+  "counts": {
+    "pass": 3,
+    "fail": 1,
+    "filtered": 434
+  },
+  "result": "PARTIAL; postcommit_edit_current extra changed-draft menu requires causal inspection; no count assertion relaxed",
+  "original82_repaired": 81,
+  "original82_remaining": 1,
+  "native1490": "1199P0F1S separate actual broad run",
+  "source_unchanged": true,
+  "owned_groups_closed": true,
+  "no_allocation_meter": true,
+  "floor_bytes": 8589934592,
+  "provider_or_source_DB_calls": 0,
+  "full_freeze_installed_luna": "NOT_ESTABLISHED"
+}

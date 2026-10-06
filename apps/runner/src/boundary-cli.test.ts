@@ -9174,7 +9174,13 @@ describe("boundary operator-plane CLI", () => {
               expect(options?.initialValue).toBe("pause");
               expect(options?.displayContext).toBe(true);
               expect(_choices.map(choice => choice.value)).toEqual(["details", "keep_current", "edit_current", "pause"]);
-              expect(options?.context?.join("\n")).toContain("Pending instruction:");
+              const retainedRevision = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"))
+                .pending_action_revision;
+              expect(retainedRevision?.outcome).toBe(original.outcome);
+              const retainedRequest = retainedRevision?.instruction;
+              expect(retainedRequest).toEqual(expect.any(String));
+              expect(retainedRequest.length).toBeGreaterThan(0);
+              expect(options?.context?.join("\n")).toContain(retainedRequest);
               expect(revise).toHaveBeenCalledOnce();
               return pendingReviewMenus++ === 0 ? "details" : competingPendingRevision ? "pause" : rebasePendingRevision ? "edit_current" : "keep_current";
             }
