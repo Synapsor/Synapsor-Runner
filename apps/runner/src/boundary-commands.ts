@@ -4380,7 +4380,7 @@ function generationRevisionMeaning(revision: BoundaryAuthoringResumeState["pendi
   if (!revision?.checkpoint) return revision ?? null;
   return { ...revision, checkpoint: generationActionMeaning({ intent: revision.instruction, checkpoint: revision.checkpoint })!.checkpoint };
 }
-async function boundaryGenerationContext(projectRoot: string, resume: BoundaryAuthoringResumeState,
+export async function boundaryGenerationContext(projectRoot: string, resume: BoundaryAuthoringResumeState,
   permit?: ProjectAuthorityMutationPermit): Promise<`sha256:${string}`> {
   const context = await loadBoundaryReviewContext(projectRoot);
   const actions = await readActionRuleAuthorityRevisionBaseline(projectRoot, permit);

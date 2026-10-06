@@ -54,6 +54,7 @@ import {
   boundaryActivateCommand as boundaryActivateCommandInternal,
   boundaryReviewCommand as boundaryReviewCommandInternal,
   boundaryAuthoringResumeBinding,
+  boundaryGenerationContext,
   formatBoundaryChatReviewSummary,
   formatCurrentBoundaryAuthoritySummary,
   formatFocusedBoundaryActivationReview,
@@ -18641,8 +18642,9 @@ describe("public saved-job connection recovery control", () => {
       const context = await loadBoundaryReviewContext(f.root), binding = boundaryAuthoringResumeBinding(context.bundle);
       const before = buildBoundaryAuthoringResumeState({binding, stage: "action_drafting", jobIntent: "Keep the exact existing job.",
         provider: "openai", model: "gpt-test", action: {intent: "Keep the current work.", strategy: "rule_derived"}});
-      const current = canonicalJsonDigest({binding, candidate: context.candidate, source: null, model: before.model,
-        permission: null, action: before.action, revision: null, request: null, removal: null});
+      // Use the host-owned identity shared by ordinary authoring and Source
+      // review, rather than a second, obsolete fixture-only identity shape.
+      const current = await boundaryGenerationContext(f.root, before);
       let recovery: AuthoringTransportState = {version: 1, operations: []};
       await withAuthoringGenerationRecovery(async () => {
         configureAuthoringGenerationRecovery({available: () => true, read: () => recovery,
