@@ -13,6 +13,7 @@ import { reviewSourceInputPolicy } from "./authoring-input-policy-operation.js";
 import { runSourceInputConversation } from "./authoring-input-policy-conversation.js";
 import { assertSourceInputRootBinding, createSourceInputHost } from "./authoring-input-host.js";
 import { runVersionConversation } from "./authoring-version-conversation.js";
+import { createVersionQuestionHost } from "./authoring-version-host.js";
 import { actionRuleAuthoringCheckpoint, actionLogicalTurnMaterialDigest, assertActionLogicalTurnJournalAdvance,
   type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { sourceInputFidelity } from "./authoring-input-policy.js";
@@ -7082,141 +7083,74 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       const prepared = request.staged ?? (marker && stageVersionQuestion({ context: request.context,
         resource: marker.resource, field: marker.field }));
       if (!prepared) throw stale();
-      if (!marker) {
-        if (!request.completion) throw stale();
-        await coordinated(async permit => {
-          const cp = settings.read(), turn = cp?.logical_turns?.at(-1);
-          if (!turn || turn.completed || cp?.pending_version || ownerHandoffs.at(-1)?.state === "waiting") throw stale();
-          const h = createOwnerHandoff({ consumer: "version_maintenance", question: prepared.question,
-            scope_digest: ownerQuestionScope(), context_digest: await ownerQuestionContext(permit, "version_maintenance"),
-            completion: request.completion });
-          generationRecovery = authoringQuestionCheckpoint(generationRecovery, ownerHandoffCheckpoint(h));
-          const q = createOperatorQuestion({ id: randomUUID(), revision: 1, handoff_id: h.id, kind: "writer_maintenance",
-            scope_digest: h.scope_digest, context_digest: h.context_digest,
-            target: { phase: "changed_record_protection", resource: prepared.review.resource, field: prepared.review.field,
-              outcomes: pendingActionRevision ? [pendingActionRevision.outcome] : [...resumeAction?.intended_outcomes ?? []] },
-            material: ["This check prevents a prepared change from overwriting a record that another application has changed.",
-              "Your statement records planned, unverified counter maintenance. It grants no Read or execution permission."],
-            evidence: [{ id: "version-structure", digest: prepared.review.proof_digest }], continuation: "version_mapping" });
-          ownerHandoffs.push(h); operatorQuestions.push(q);
-          await request.savePendingVersion({ turn_id: turn.id, root_question_id: q.id, question_id: q.id,
-            handoff_id: h.id, resource: prepared.review.resource, field: prepared.review.field, proof_digest: prepared.review.proof_digest },
-            { question: h.question, operator_message: request.checkpoint().operator_messages?.at(-1) ??
-                (pendingActionRevision?.instruction ?? resumeAction?.checkpoint?.pending_question?.operator_message ?? resumeAction?.intent ?? jobIntent!),
-              ...(authoringConversation?.policySources?.snapshots.length ? { policy_source_digest: canonicalJsonDigest(authoringConversation.policySources) } : {}),
-              completion: request.completion }, request.completion);
-        });
-      }
-      const readQuestion = () => {
-        const current = settings.read()?.pending_version;
-        const q = current && operatorQuestions.find(q => q.id === current.question_id);
-        if (!current || !q) throw stale();
-        return q;
-      };
-      const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
-        await assertFresh(permit);
-        const cp = settings.read(), current = cp?.pending_version, q = readQuestion();
-        if (!cp || !current || current.resource !== prepared.review.resource || current.field !== prepared.review.field
-          || current.proof_digest !== prepared.review.proof_digest || q.scope_digest !== ownerQuestionScope()
-          || q.context_digest !== await ownerQuestionContext(permit, "version_maintenance")) throw stale();
-        const freshProof = prepareActionVersionField({ context: request.context, resource: current.resource,
-          field: current.field, inspection: settings.inspection, generationLock: settings.generationLock });
-        if (canonicalJsonDigest(freshProof.review) !== canonicalJsonDigest(prepared.review)) throw stale();
-        assertActionVersionQuestionHandoff({ generation_recovery: generationRecovery,
-          owner_handoffs: ownerHandoffs, operator_questions: operatorQuestions }, cp);
-      };
-      const persistQuestion = async (q: OperatorQuestion, expected: string, completion?: AuthoringOwnerHandoff["completion"],
-        options?: { rawCheckpoint: true }) =>
-        coordinated(async permit => {
-          await assertCurrent(borrowedPermit);
-          const previous = readQuestion(), cp = settings.read()!;
-          if (previous.digest !== expected || previous.id !== q.id) throw stale();
-          operatorQuestions[operatorQuestions.indexOf(previous)] = q;
-          if (options?.rawCheckpoint) {
-            if (completion) throw stale();
+      const businessContext = operatorBusinessContext(request.context.builtCatalog.authoring.resources);
+      const host = await createVersionQuestionHost({ question: prepared.question, review: prepared.review,
+        outcomes: pendingActionRevision ? [pendingActionRevision.outcome] : [...resumeAction?.intended_outcomes ?? []],
+        completion: request.completion,
+        initialPendingQuestion: { operator_message: request.checkpoint().operator_messages?.at(-1) ??
+          (pendingActionRevision?.instruction ?? resumeAction?.checkpoint?.pending_question?.operator_message ?? resumeAction?.intent ?? jobIntent!),
+          ...(authoringConversation?.policySources?.snapshots.length ? { policy_source_digest: canonicalJsonDigest(authoringConversation.policySources) } : {}) },
+        access: {
+          readQuestions: () => operatorQuestions,
+          readHandoffs: () => ownerHandoffs,
+          readRecovery: () => generationRecovery,
+          readConversationTurns: () => authoringConversation?.turns,
+          readCheckpoint: settings.read,
+          scopeDigest: ownerQuestionScope,
+          contextDigest: permit => ownerQuestionContext(permit, "version_maintenance"),
+          assertFresh,
+          assertPreparedProof: current => {
+            const freshProof = prepareActionVersionField({ context: request.context, resource: current.resource,
+              field: current.field, inspection: settings.inspection, generationLock: settings.generationLock });
+            if (canonicalJsonDigest(freshProof.review) !== canonicalJsonDigest(prepared.review)) throw stale();
+          },
+          mutate: coordinated,
+          install: update => {
+            if (update.questions) operatorQuestions = update.questions;
+            if (update.handoffs) ownerHandoffs = update.handoffs;
+            if (Object.prototype.hasOwnProperty.call(update, "recovery")) generationRecovery = update.recovery;
+            if (update.conversationTurns && authoringConversation)
+              authoringConversation.turns.splice(0, authoringConversation.turns.length, ...update.conversationTurns);
+          },
+          savePendingVersion: request.savePendingVersion,
+          saveRawCheckpoint: async permit => {
             await persistAuthoringResume(settings.stage, permit, false);
             if (resumePersistenceBlocked) throw checkpointSaveFailure("The counter question wording input");
-          } else await request.savePendingVersion(cp.pending_version!, cp.pending_question!, completion);
-        });
-      const initial = readQuestion();
+          },
+        },
+        interact: async (view, assertCurrent) => {
+          if (view.kind === "question") {
+            await assertCurrent(); await input.authoringChat!.streamModel([view.text]);
+            const raw = await input.authoringChat!.readOperator?.(undefined, assertCurrent,
+              { recordPolicyAnswer: false, preserveWhitespace: true });
+            return { kind: "answer", binding: view.binding, raw: raw ?? null };
+          }
+          if (view.kind === "readback") {
+            await assertCurrent();
+            const accepted = await input.session.confirm("Record this planned counter maintenance for the current setup?", {
+              defaultValue: false, context: operatorBusinessReadback([...view.lines], businessContext),
+              exactDetails: { title: "CURRENT COUNTER STATEMENT", lines: [...view.lines] },
+            });
+            return { kind: "decision", binding: view.binding, accepted: accepted ?? null };
+          }
+          const choice = await input.session.chooseOption?.("SAVED CHANGED-RECORD QUESTION", [
+            { value: "keep", label: "Keep this decision pending" },
+            { value: "answer", label: view.hasRawAnswer ? "Answer again; keep the earlier answer" : "Answer the saved question" },
+          ], { initialValue: "keep", reviewOnly: true, context: operatorBusinessReadback([...view.material], businessContext) });
+          return { kind: "pending", binding: view.binding, choice: choice === "answer" ? "answer" : "keep" };
+        },
+      });
+      const initial = host.ports.readQuestion();
       const result = await runVersionConversation({ binding: { ...prepared.review,
         scope_digest: initial.scope_digest, context_digest: initial.context_digest, outcomes: initial.target.outcomes },
-        rootQuestionId: settings.read()!.pending_version!.root_question_id,
+        rootQuestionId: host.rootQuestionId,
         session: settings.session, actionLogicalTurnBudget: request.episodeBudget, reserveCorrection: request.reserveCorrection,
-        businessContext: operatorBusinessContext(request.context.builtCatalog.authoring.resources),
-        egressAcknowledged: true, env: process.env, signal: input.authoringChat?.signal,
-        ports: { readQuestion, assertCurrent: () => assertCurrent(),
-          saveQuestion: persistQuestion,
-          recordRawAnswer: (q, raw, expected) => coordinated(async () => {
-            await assertCurrent(borrowedPermit);
-            const previous = readQuestion(), cp = settings.read()!;
-            const h = ownerHandoffs.find(h => h.id === previous.handoff_id);
-            if (previous.digest !== expected || previous.id !== q.id || !h || h.state !== "waiting") throw stale();
-            const captured = captureOperatorAnswer(previous, raw);
-            if (raw.trim()) {
-              const answered = answerOwnerHandoff(h, raw, h.context_digest);
-              if (h.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
-                ownerHandoffCheckpoint(h), { digest: canonicalJsonDigest(answered), operator_messages: [raw] });
-              ownerHandoffs[ownerHandoffs.indexOf(h)] = answered;
-              rememberModelAuthoringTurn(authoringConversation, previous.presentation!.text, raw);
-            }
-            operatorQuestions[operatorQuestions.indexOf(previous)] = captured;
-            await request.savePendingVersion(cp.pending_version!, cp.pending_question!);
-            return captured;
-          }),
-          resumePending: async q => {
-            await assertCurrent();
-            const choice = await input.session.chooseOption?.("SAVED CHANGED-RECORD QUESTION", [
-              { value: "keep", label: "Keep this decision pending" },
-              { value: "answer", label: q.raw_answer ? "Answer again; keep the earlier answer" : "Answer the saved question" },
-             ], { initialValue: "keep", reviewOnly: true, context: operatorBusinessReadback([...q.material,
-              ...(q.presentation ? [q.presentation.text] : []), ...(q.raw_answer ? ["Your saved words:", q.raw_answer.text] : []),
-              "Earlier answers and the remaining allowance are retained. This choice changes no permissions."], operatorBusinessContext(request.context.builtCatalog.authoring.resources)) });
-            if (choice !== "answer") return "keep";
-            if (!q.raw_answer) {
-              await persistQuestion(reopenOperatorQuestion(q), q.digest);
-              return "reopen";
-            }
-            return coordinated(async () => {
-              await assertCurrent(borrowedPermit);
-              const previous = readQuestion(), cp = settings.read()!;
-              const oldH = ownerHandoffs.find(h => h.id === previous.handoff_id);
-              if (previous.digest !== q.digest || previous.confirmation || previous.terminal_failure
-                || !previous.disposition || !previous.presentation || !oldH) throw stale();
-              let h = oldH;
-              if (previous.raw_answer!.text.trim()) {
-                if (oldH.state !== "answered" || oldH.answer !== previous.raw_answer!.text
-                  || oldH.actor !== previous.raw_answer!.actor || ownerHandoffs.at(-1)?.state === "waiting") throw stale();
-                h = createOwnerHandoff({ consumer: "version_maintenance", question: previous.presentation.text,
-                  scope_digest: previous.scope_digest, context_digest: previous.context_digest });
-                ownerHandoffs.push(h);
-              } else if (oldH.state !== "waiting") throw stale();
-              const next = presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(),
-                revision: previous.revision + 1, handoff_id: h.id, kind: "writer_maintenance",
-                scope_digest: previous.scope_digest, context_digest: previous.context_digest,
-                target: previous.target, material: previous.material, evidence: previous.evidence,
-                continuation: "version_mapping" }), previous.presentation.text);
-              operatorQuestions.push(next);
-              await request.savePendingVersion({ ...cp.pending_version!, question_id: next.id, handoff_id: h.id }, cp.pending_question!);
-              return "replace" as const;
-            });
-          },
-          prompt: async (text, options) => {
-            await assertCurrent(); await input.authoringChat!.streamModel([text]);
-            return input.authoringChat!.readOperator?.(undefined, () => assertCurrent(), { recordPolicyAnswer: false, ...options });
-          },
-          confirm: async (lines, options) => {
-            await assertCurrent();
-            return input.session.confirm("Record this planned counter maintenance for the current setup?", {
-              ...options, context: operatorBusinessReadback(lines, operatorBusinessContext(request.context.builtCatalog.authoring.resources)),
-              exactDetails: { title: "CURRENT COUNTER STATEMENT", lines },
-            });
-          },
-        } });
+        businessContext, egressAcknowledged: true, env: process.env, signal: input.authoringChat?.signal,
+        ports: host.ports });
       if (result.state !== "confirmed") return undefined;
       await coordinated(async permit => {
-        await assertCurrent(permit);
-        if (readQuestion().digest !== result.question.digest || !result.question.confirmation) throw stale();
+        await host.assertCurrent(permit);
+        if (host.ports.readQuestion().digest !== result.question.digest || !result.question.confirmation) throw stale();
         reviewedVersionFields = [...reviewedVersionFields.filter(r => r.resource !== prepared.review.resource), prepared.review];
         settings.onReviewed?.(prepared);
         await persistAuthoringResume(settings.stage, permit);

@@ -1,6 +1,7 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { OperatorQuestion } from "./authoring-operator-question.js";
 import { PolicySourceChangedError } from "./authoring-policy-source.js";
+import type { AuthoringQuestionInteraction, AuthoringQuestionResponse } from "./authoring-question-interaction.js";
 
 type Digest = `sha256:${string}`;
 /** A derived expectation, never a stored cursor or a permission. Budget changes
@@ -17,17 +18,8 @@ export type InputInteractionBinding = {
   proposal_digest?: Digest;
 };
 
-export type InputInteraction =
-  | { kind: "question"; binding: InputInteractionBinding; text: string; material: readonly string[];
-      preserveWhitespace: true; recordPolicyAnswer: false }
-  | { kind: "readback"; binding: InputInteractionBinding; lines: readonly string[]; defaultValue: false }
-  | { kind: "pending"; binding: InputInteractionBinding; material: readonly string[];
-      sourceInterpretation: boolean; canAnswer: boolean; defaultValue: "keep" };
-
-export type InputInteractionResponse =
-  | { kind: "answer"; binding: InputInteractionBinding; raw: string | null }
-  | { kind: "decision"; binding: InputInteractionBinding; accepted: boolean | null }
-  | { kind: "pending"; binding: InputInteractionBinding; choice: "keep" | "answer" };
+export type InputInteraction = AuthoringQuestionInteraction<InputInteractionBinding, { sourceInterpretation: boolean }>;
+export type InputInteractionResponse = AuthoringQuestionResponse<InputInteractionBinding>;
 
 export function inputInteractionBinding(root: OperatorQuestion, question: OperatorQuestion): InputInteractionBinding {
   const semantic = (q: OperatorQuestion): Digest => {

@@ -297,3 +297,33 @@ and unknown answers already remain pending and are characterization, not fixes.
 The dedicated reviewer owns its separately presealed variants and exact-pin DEV
 verdict. Positive fresh-process return through the Action producer must be observed
 without fabricating completion, Source proof, authority or an extra allowance.
+
+## Version slice2 implementation checkpoint
+
+Version now uses `authoring-version-host.ts` for its actual question creation,
+raw-answer save, handoff and generation association, pending reopen/replacement,
+and the existing protected checkpoint callbacks. The corresponding inline
+lifecycle implementations are removed from `reviewVersionQuestion`. The Action
+producer still owns Source/Read/schema/role checks, prepared Version proof,
+checkpoint completion, reviewed-field adoption and return to Action drafting.
+`runVersionConversation` retains its existing interpretation, default-No, blank
+and unknown handling, correction allowance and owning Action logical-turn budget.
+
+Input and Version share only derived interaction view/response types. Their
+bindings and production hosts remain stage specific; no new dispatcher, stored
+progress, pool, actor, authority or recovery path is introduced. Version responses
+are bound to the exact Action turn, root, question revision/digest, pending marker,
+context, scope and proposed statement. The presenter supplies words or choices
+through that host; it cannot save or complete a generation.
+
+The prototype passed the existing controller/Resume contracts and new binding
+controls (86 assertions), plus eight affected public Version cases covering
+confirmation and return to the next ordinary Action question, decline, EOF,
+terminal mapping, interrupted raw-save acknowledgement, and answer replacement.
+The two successful public fake responders now read identities and structural
+options from actual transmitted frames; saved artifacts remain verdict inputs
+only. Call-count, decline, unknown, history and authority assertions are unchanged.
+These public cases invoke a new public call in one process; they do not establish
+a cold-process public restart. Dedicated independent cold/caller/negative review
+and the one isolated full run are still required before Version DEV integration.
+Frozen demo candidate `62e4bf54` is unchanged.

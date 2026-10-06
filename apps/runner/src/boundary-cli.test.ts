@@ -5826,17 +5826,24 @@ describe("boundary operator-plane CLI", () => {
         physical++;
         const names = request.body.tools?.map((tool: any) => tool.name) ?? [];
         if (names.includes("runner__propose_operator_decision")) {
-          const saved = await read(), marker = saved.action.checkpoint.pending_version;
-          const q = saved.operator_questions.find((q: any) => q.id === marker.question_id);
-          const args = !q.presentation ? { question_id: q.id, revision: q.revision, status: "needs_information", question: wording }
-            : { question_id: q.id, revision: q.revision, status: "proposal",
-              answer_id: posture === "map-terminal" ? crypto.randomUUID() : q.raw_answer.id,
+          const q = modelVisibleJsonLine<{ question_id: string; revision: number;
+            presented_question?: string; answer_id?: string; raw_answer?: string }>(request.body, "Current question");
+          const args = !q.presented_question ? { question_id: q.question_id, revision: q.revision, status: "needs_information", question: wording }
+            : { question_id: q.question_id, revision: q.revision, status: "proposal",
+              answer_id: posture === "map-terminal" ? crypto.randomUUID() : q.answer_id,
               disposition: "proposed", value: { kind: "writer_maintenance", maintenance: "all_writers_increment" } };
           return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
             name: "runner__propose_operator_decision", arguments: JSON.stringify(args) }] } };
         }
-        if (physical === 1) return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
-          name: "runner__review_version_field", arguments: JSON.stringify({ resource: "public.service_visits", field: "c09" }) }] } };
+        if (physical === 1) {
+          const catalog = modelVisibleJsonLine<{ resources: Array<{ name: string; version_field_options?: string[] }> }>(
+            request.body, "Current normalized structural catalog");
+          const resource = catalog.resources.find(resource => resource.name === "public.service_visits");
+          expect(resource?.version_field_options).toContain("c09");
+          return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
+            name: "runner__review_version_field", arguments: JSON.stringify({ resource: resource!.name,
+              field: resource!.version_field_options!.find(field => field === "c09") }) }] } };
+        }
         return { status: 200, body: { status: "completed", output: [{ type: "message",
           content: [{ type: "output_text", text: ordinaryQuestion }] }] } };
       });
@@ -6061,16 +6068,23 @@ describe("boundary operator-plane CLI", () => {
       physical++;
       const names = request.body.tools?.map((tool: any) => tool.name) ?? [];
       if (names.includes("runner__propose_operator_decision")) {
-        const saved = await read(), marker = saved.action.checkpoint.pending_version;
-        const q = saved.operator_questions.find((q: any) => q.id === marker.question_id);
-        const args = !q.presentation ? { question_id: q.id, revision: q.revision, status: "needs_information", question: wording }
-          : { question_id: q.id, revision: q.revision, status: "proposal", answer_id: q.raw_answer.id,
+        const q = modelVisibleJsonLine<{ question_id: string; revision: number;
+          presented_question?: string; answer_id?: string; raw_answer?: string }>(request.body, "Current question");
+        const args = !q.presented_question ? { question_id: q.question_id, revision: q.revision, status: "needs_information", question: wording }
+          : { question_id: q.question_id, revision: q.revision, status: "proposal", answer_id: q.answer_id,
             disposition: "proposed", value: { kind: "writer_maintenance", maintenance: "all_writers_increment" } };
         return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
           name: "runner__propose_operator_decision", arguments: JSON.stringify(args) }] } };
       }
-      if (physical === 1) return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
-        name: "runner__review_version_field", arguments: JSON.stringify({ resource: "public.service_visits", field: "c09" }) }] } };
+      if (physical === 1) {
+        const catalog = modelVisibleJsonLine<{ resources: Array<{ name: string; version_field_options?: string[] }> }>(
+          request.body, "Current normalized structural catalog");
+        const resource = catalog.resources.find(resource => resource.name === "public.service_visits");
+        expect(resource?.version_field_options).toContain("c09");
+        return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
+          name: "runner__review_version_field", arguments: JSON.stringify({ resource: resource!.name,
+            field: resource!.version_field_options!.find(field => field === "c09") }) }] } };
+      }
       return { status: 200, body: { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: ordinaryQuestion }] }] } };
     });
     const run = () => fixture.run(generateModelActionRuleDraft, async () => fixture.inspection, {
