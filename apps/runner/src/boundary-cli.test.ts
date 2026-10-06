@@ -138,6 +138,7 @@ import {
 import { readDelegationDraft } from "./delegation-setup.js";
 import { readBoundaryAuthoringResumeState, buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import * as authoringResumePersistence from "./boundary-authoring-resume.js";
+import { modelVisibleJsonLine } from "./test-fixtures/model-visible-frame.js";
 import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.js";
 import { policyReviewReadiness } from "./authoring-review-readiness.js";
 import { boundaryCommand } from "./guided-start.js";
@@ -5912,16 +5913,20 @@ describe("boundary operator-plane CLI", () => {
       const requestJson = vi.fn(async (request: any) => {
         physical++;
         const names = request.body.tools?.map((tool: any) => tool.name) ?? [];
-        if (physical === 1 && names.includes("runner__review_version_field")) return {
-          status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
-            name: "runner__review_version_field", arguments: JSON.stringify({ resource: "public.service_visits", field: "c09" }) }] },
-        };
+        if (physical === 1 && names.includes("runner__review_version_field")) {
+          const catalog = modelVisibleJsonLine<{ resources: Array<{ name: string; version_field_options?: string[] }> }>(
+            request.body, "Current normalized structural catalog");
+          const resource = catalog.resources.find(resource => resource.name === "public.service_visits");
+          expect(resource?.version_field_options).toContain("c09");
+          return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
+            name: "runner__review_version_field", arguments: JSON.stringify({ resource: resource!.name,
+              field: resource!.version_field_options!.find(field => field === "c09") }) }] } };
+        }
         if (physical === 2 && names.includes("runner__propose_operator_decision")) {
-          const saved = await read(), marker = saved.action.checkpoint.pending_version;
-          const q = saved.operator_questions.find((q: any) => q.id === marker.question_id);
+          const q = modelVisibleJsonLine<{ question_id: string; revision: number; raw_answer?: string }>(request.body, "Current question");
           expect(q.raw_answer).toBeUndefined();
           return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: crypto.randomUUID(),
-            name: "runner__propose_operator_decision", arguments: JSON.stringify({ question_id: q.id,
+            name: "runner__propose_operator_decision", arguments: JSON.stringify({ question_id: q.question_id,
               revision: q.revision, status: "needs_information", question: wording }) }] } };
         }
         throw new Error("B51_VERSION_CHARACTERIZATION_UNEXPECTED_PROVIDER_REQUEST");
