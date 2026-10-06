@@ -259,8 +259,20 @@ without Source adoption or authority. Native pending status is expected here;
 this intentional pending control is not a completed positive task. It is a
 same-process public replay, separate from the cold production-host controls.
 
-This is a development checkpoint, not accepted delivery. Genuine terminal
-controls, final gates and installed acceptance remain required. The earlier 88 assertions
+The genuine terminal control also passed independent artifact adjudication.
+It uses the default production presenter, a real Unix PTY and physical Escape,
+Enter on default No, and Enter on default Keep through three public Resume
+invocations. Exact raw whitespace and the faithful bounds proposal survive the
+explicit decline; cancellation and Keep perform no mapping or allowance debit.
+Saved Source and Read semantics remain exact and no Action or activation exists.
+The ordinary scripted preparation retains its actual unanswered native root.
+This is pending-safety coverage in one terminal child, not positive adoption or
+cold-process public onboarding evidence. Independent review checked the actual
+screens, code and disk artifacts without launching a second terminal replay.
+Nested preparation cache is confined to its owned capture directory.
+
+This is a development checkpoint, not accepted delivery. Final settled gates and
+installed acceptance remain required. The earlier 88 assertions
 retain their limited scope. Controlled successful replies in the new restart
 fixtures derive references from actual transmitted frames and declared answers.
 Version blank/unknown handling already exists; the added Version raw-save
