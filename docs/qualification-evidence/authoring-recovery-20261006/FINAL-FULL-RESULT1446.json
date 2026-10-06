@@ -1,0 +1,78 @@
+{
+  "global_guard": {
+    "admission": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/MAIN-FULL-ADMISSION1451.json",
+    "admission_sha256": "091654f99930ec865c3c775ff8fd9e43fb5cc77c5ed42203728dc8329c738997",
+    "seed": 51454517769,
+    "root_baselines": {
+      "home": 431611904,
+      "output": 0,
+      "oldfull": 3911680,
+      "size": 9043968,
+      "checkout": 822067200,
+      "log": 0
+    },
+    "retained_baseline": 57851904,
+    "last": {
+      "global_upper_highwater": 51548418569,
+      "Main_owned_highwater": 538050560,
+      "root_highwater": {
+        "home": 525041664,
+        "output": 53248,
+        "oldfull": 3911680,
+        "size": 9043968,
+        "checkout": 822067200,
+        "log": 0
+      },
+      "retained_highwater": 58269696,
+      "retained_latest": {
+        "host_readable_children_allocated": 9846784,
+        "PG_accounted_bytes": 48422912,
+        "root_accounted_bytes": 58269696,
+        "status": "RUNNING_EXACT_OWNED_PG",
+        "owned_container_id": "a9e9ca4fed638d87e6f59872384a1d8709a154f59653873f58568626821d0737",
+        "cleanup_credit": 0,
+        "PG_is_exact_measurement": true
+      },
+      "free": 61469921280
+    },
+    "retained_meter_sha256": "3aef3b00ac4148d596361245cb3a6f0056c1266574b703fa932251f29f3214df",
+    "no_cleanup_or_consumption_credit": true
+  },
+  "utc": "2026-10-06T05:51:08.075828+00:00",
+  "exit": -2,
+  "guard_stop": "MONITOR_OR_SIGNAL_FAILURE",
+  "harness_failure": {
+    "type": "AssertionError",
+    "message": "GLOBAL_RETAINED_CAP"
+  },
+  "suite_owner": {
+    "pid": 352139,
+    "ppid": 352137,
+    "pgid": 352139,
+    "session": 352139,
+    "start_tick": 1261542,
+    "uid": 1000,
+    "state": "S"
+  },
+  "suite_cleanup": {
+    "observed": true,
+    "sent_SIGINT": true,
+    "suite_closed_independently_verified": true
+  },
+  "checkout_positive_growth_bytes": 0,
+  "exact_allowed_cache_paths": [
+    "node_modules/.vite/vitest/da39a3ee5e6b4b0d3255bfef95601890afd80709/results.json"
+  ],
+  "seconds": 1051.0769510040009,
+  "source_before_pin_sha256": "2f44acf1e528b9ed6881cce5668a7df42660270dc7fb95bdbc3c7d03e19f8ac7",
+  "source_code_unchanged": true,
+  "source_delta": {},
+  "external_17559_actual_before_after_equal": true,
+  "decoy_parent_retained_equal": true,
+  "home_git_boundary_retained": true,
+  "provider_calls": 0,
+  "counts": null,
+  "capture": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/settled-source-final1446",
+  "same_timeouts_workers_assertions": true,
+  "allocation_meter_sha256": "d32e4b0a9b0ce20cd61e2bb6268145bd766bc973c0610e8f24a180e85ff32376"
+}

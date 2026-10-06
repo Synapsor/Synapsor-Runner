@@ -1,0 +1,33 @@
+{
+  "utc": "2026-10-06T06:11:57.972023+00:00",
+  "scope": "Compact public checkpoint only; no raw logs, private oracles, model ledger, credentials or configuration copied",
+  "runtime_product": "b0ef611091ea11e86c468cdc3d38383c4ef1ecf1",
+  "bundle_sha256": "52b075c7a1caf309e09eabe313b66b06d90eb7f8d6c7f5c2678af9075ffbeff7",
+  "records": [
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/CLASS19-UNIT-HISTORY1443.json",
+      "copy": "docs/qualification-evidence/authoring-recovery-20261006/CLASS19-UNIT-HISTORY1443.json",
+      "sha256": "bc71ca12881bd6ce0b72d6806cfbd8db7a5f98d42414b74bc80ac5b33f887e7e"
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/CLASS19-PUBLIC-HISTORY1444.json",
+      "copy": "docs/qualification-evidence/authoring-recovery-20261006/CLASS19-PUBLIC-HISTORY1444.json",
+      "sha256": "3cfbd8d7cec03b095a521093b449a4c03b16c7de6750ae98f4a2c0007b3ea791"
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/FINAL-FULL-RESULT1446.json",
+      "copy": "docs/qualification-evidence/authoring-recovery-20261006/FINAL-FULL-RESULT1446.json",
+      "sha256": "44b1c9bd60085be4c9e3bdfab0ee11ee97a41c86b2d37bad86290d9291f247ae"
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/CLEAN-LIVE-EDIT-RESOURCE1457.json",
+      "copy": "docs/qualification-evidence/authoring-recovery-20261006/CLEAN-LIVE-EDIT-RESOURCE1457.json",
+      "sha256": "fc70eba52603dd82fff2468b3a3cc0fd61d135c6ebc9e05ccf7e620fe95c3599"
+    }
+  ],
+  "handoff_sha256": "6c9b8bc9e696bc6ffb13fd9d3b63745ff2b1a17036d8d9f0ea25478a8e2110c9",
+  "class_fixed": false,
+  "frozen": false,
+  "full1446": "NOT ESTABLISHED: preserved resource stop/no test result",
+  "overnight_usage_percent_used": 44
+}

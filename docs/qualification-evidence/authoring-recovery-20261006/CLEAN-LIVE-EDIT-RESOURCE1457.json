@@ -1,0 +1,137 @@
+{
+  "utc": "2026-10-06T06:10:29.366462+00:00",
+  "event": "Accounting-only duplicate retained-PG projection correction after full1446 resource stop; no fixture/gate/model/DB launched",
+  "prior_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/CLEAN-LIVE-EDIT-RESOURCE1448.json",
+  "prior_sha256": "f8f6497f8c2c800ac4ab8ba5bfe0a0814d0a2f2f49dcd6db8b2b33d7a3fa95c9",
+  "prior_upper_bytes": 50905321993,
+  "additional_fresh_namespace_bound_bytes": 67108864,
+  "upper_bytes": 50653663753,
+  "cap_bytes": 51539607552,
+  "free_bytes": 61454561280,
+  "floor_bytes": 8589934592,
+  "admitted": true,
+  "actual_measure": {
+    "new_root_allocated": 58286080,
+    "PG_allocated": 48422912,
+    "trace_allocated": 2039808,
+    "project_allocated": 2113536,
+    "HOME_tmp_allocated": 8192,
+    "Main_aggregate_conservative": 621703168,
+    "global_upper_conservative": 50192413193,
+    "free": 61454561280,
+    "cleanup_credit": 0
+  },
+  "prospective_global_upper_conservative": 51296977417,
+  "all_previous_holds": {
+    "Main": 1073741824,
+    "Tester": 805306368,
+    "Helper": 134217728,
+    "Original": 167772160
+  },
+  "cleanup_credit": 0,
+  "consumption_credit": 0,
+  "unchanged_category_caps": {
+    "PG": 268435456,
+    "projects_combined": 33554432,
+    "HOME_tmp_combined": 67108864,
+    "trace_stop": 25165824,
+    "scripts_metadata_combined": 16777216,
+    "root_stop": 402653184,
+    "Main_aggregate_stop": 805306368
+  },
+  "fresh_namespace": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/retained-a771-live1379-v1/clean-review1448-v1",
+  "fresh_members": [
+    "project",
+    "home",
+    "tmp",
+    "captures"
+  ],
+  "all_members_inside_64MiB": true,
+  "previous_namespaces_still_counted": [
+    "project",
+    "project1402",
+    "clean1423-v1"
+  ],
+  "new_and_previous_category_measure_required": true,
+  "source": "immutable1376 SourceONLYRO plus pinned dependencies/all mandatory masks, no Tester parent/private oracle/Main source mount",
+  "provider_calls_allowed": 0,
+  "prior_retained_calls": 10,
+  "retained_outer_call_limit": 24,
+  "retained_remaining_before_new_launch": 14,
+  "no_fresh_native_counter_credit": true,
+  "scope": "Fresh ordinary model REVIEW unchanged imported Read and two Actions against whole Source; establishes clean connected baseline only, not original program-planning/full50 PASS.",
+  "native_whole_Source_inventory_Read_review_and_publication_required": true,
+  "old_v2_request": "NOT ESTABLISHED; preserved and never retargeted",
+  "independent_release_required": "exact changed packet/graph/self-tests, followed by Tester all42-ledger/config/authority/Source baseline before SDK",
+  "measure_notes": "First read-only import used relative __file__ and refused exact namespace equality; absolute path invocation passed. No model/app/DB mutation/fixture occurred.",
+  "metadata_only_write_bound_bytes": 16777216,
+  "duplicate_projection_removed_bytes": 268435456,
+  "cap_or_native_counter_change": false,
+  "measured_main_bytes": 643313664,
+  "exact_pg_sample": {
+    "host_readable_children_allocated": 9863168,
+    "PG_allocated": 48422912,
+    "actual_root_allocated": 58286080,
+    "closedstatus": "OPEN_OWNED_PG",
+    "owned_container_id": "a9e9ca4fed638d87e6f59872384a1d8709a154f59653873f58568626821d0737",
+    "owned_container_name": "/synapsor-retained-a771-1379",
+    "source_image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+    "root_stop_bytes": 402653184,
+    "cleanup_credit": 0
+  },
+  "strongest_pre_correction_upper_bytes": 51548635657,
+  "stopped_full_result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/FINAL-FULL-RESULT1446.json",
+  "stopped_full_result_sha256": "44b1c9bd60085be4c9e3bdfab0ee11ee97a41c86b2d37bad86290d9291f247ae",
+  "stopped_full_original_outcome": "NOT ESTABLISHED; resource stop and all history preserved",
+  "duplicate_proof": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/PARALLEL-RESOURCE-RETAINED1387.json",
+      "sha256": "f3d778e7f6feb0bc6ec8f8462c2cef2f37601f30e39db87b53040744c330209c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/PARALLEL-RESOURCE-PG1387.json",
+      "sha256": "f65728992d58ca52dc32477934a1460544d29a4bfc1258e29dfd7d314f15bf0d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/PARALLEL-RESOURCE-RESUME1394.json",
+      "sha256": "ae370274ed2fc20a7bac735c9fe3a4e9c6c6250bfb5ddafffa5814e697b211c5"
+    }
+  ],
+  "preserved": {
+    "original_retained_PG256": 268435456,
+    "distinct_Main_gate_PG128": 134217728,
+    "all_four_future_holds": {
+      "Main": 1073741824,
+      "Tester": 805306368,
+      "Helper": 134217728,
+      "Original": 167772160
+    },
+    "old_and_new_fresh_namespaces64_each": true,
+    "unknown_inaccessible_and_historical_highwater_margins": true,
+    "full1446_positive_growth": {
+      "global_upper_highwater": 51548418569,
+      "Main_owned_highwater": 538050560,
+      "root_highwater": {
+        "home": 525041664,
+        "output": 53248,
+        "oldfull": 3911680,
+        "size": 9043968,
+        "checkout": 822067200,
+        "log": 0
+      },
+      "retained_highwater": 58269696,
+      "retained_latest": {
+        "host_readable_children_allocated": 9846784,
+        "PG_accounted_bytes": 48422912,
+        "root_accounted_bytes": 58269696,
+        "status": "RUNNING_EXACT_OWNED_PG",
+        "owned_container_id": "a9e9ca4fed638d87e6f59872384a1d8709a154f59653873f58568626821d0737",
+        "cleanup_credit": 0,
+        "PG_is_exact_measurement": true
+      },
+      "free": 61469921280
+    },
+    "financial_holds_and_global_model_counts": "UNCHANGED"
+  },
+  "independent_review": "Tester and action_gap_prepare independently traced exact same CID/mount/root and extra-again256; both confirmed correction only. No approval/counter reset or history cleanup."
+}
