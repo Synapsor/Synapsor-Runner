@@ -233,7 +233,9 @@ coverage and client duties through reviewed disabled authority. Its successful
 responses use actual transmitted question IDs, Source text, work-unit contracts
 and declared operator facts. Both independently declared reviewer arrangements
 remain distinct; no activation or Source effect is claimed. The helper passed
-this case and the unchanged healthy control; independent replay is pending.
+this case and the unchanged healthy control. Independent replay also passed:
+actual saved Source, Resume and authority agree; both native activation selectors
+remain absent. This establishes the scoped scripted onboarding route only.
 
 This is a development checkpoint, not accepted delivery. Selected-baseline
 editing, independent route verdicts, final gates and installed acceptance remain
