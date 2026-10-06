@@ -4546,7 +4546,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       if(savedRoot)throw new PolicySourceChangedError();
       return;
     }
-    const {store}=await inputPolicyContext();
+    const {context:inputContext,store}=await inputPolicyContext();
     if(savedRoot){
       const binding=savedRoot.source_binding;
       const currentRoot=operatorQuestions.find(q=>q.id===savedRoot.id);
@@ -4630,7 +4630,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           throw new PolicySourceChangedError();
       };
       const result=await runSourceInputConversation({projectRoot:input.projectRoot,sources,session:selectedResumeModel,outcomes,store,
-        businessContext:operatorBusinessContext(context.candidate.pack.resources),
+        businessContext:operatorBusinessContext(inputContext.candidate.pack.resources),
         actor:localInteractiveActor(),egressAcknowledged:modelEgressAcknowledged,ports:{readQuestions,assertCurrent:assertInputCurrent,
           saveQuestion:async(next,expected,options)=>mutateOwnerHandoff(async permit=>{
             await assertInputCurrent(permit);
@@ -4691,7 +4691,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               {value:'answer',label:q.source_binding?'Review the saved interpretation again':'Answer the saved question'},
             ],{initialValue:'keep',reviewOnly:true,displayContext:true,context:operatorBusinessReadback([...q.material,
               ...(q.presentation?[q.presentation.text]:[]),...(q.raw_answer?[`Previous answer (retained): ${JSON.stringify(q.raw_answer.text)}`]:[]),
-              'Earlier questions and answers stay recorded. This choice grants no permission and does not renew the allowance.'],operatorBusinessContext(context.candidate.pack.resources))});
+              'Earlier questions and answers stay recorded. This choice grants no permission and does not renew the allowance.'],operatorBusinessContext(inputContext.candidate.pack.resources))});
             if(choice!=='answer')return 'keep';
             return mutateOwnerHandoff(async permit=>{
               await assertInputCurrent(permit);
@@ -4729,14 +4729,14 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             await assertInputCurrent();
             if(input.authoringChat?.readOperator){
               input.authoringChat.rememberDetails('INPUT QUESTION DETAILS',readQuestions().root.material);
-              input.authoringChat.runner('Before you answer',operatorBusinessReadback(readQuestions().root.material,operatorBusinessContext(context.candidate.pack.resources)));
+              input.authoringChat.runner('Before you answer',operatorBusinessReadback(readQuestions().root.material,operatorBusinessContext(inputContext.candidate.pack.resources)));
               await input.authoringChat.streamModel(text.split(/\r?\n/u));
               return (await input.authoringChat.readOperator(undefined,()=>assertInputCurrent(),{recordPolicyAnswer:false,...options}))??null;
             }
             return (await input.session.promptText(text,{context:readQuestions().root.material,recordPolicyAnswer:false,...options}))??null;
           },
           confirm:async(lines,options)=>(await input.session.confirm('Save this exact attributed input-policy interpretation?',{
-            context:operatorBusinessReadback(lines,operatorBusinessContext(context.candidate.pack.resources)),...options,exactDetails:{title:'CURRENT INPUT INTERPRETATION',lines},
+            context:operatorBusinessReadback(lines,operatorBusinessContext(inputContext.candidate.pack.resources)),...options,exactDetails:{title:'CURRENT INPUT INTERPRETATION',lines},
           }))??null,
         }});
       if(result.state==='pending')throw new Error('SOURCE_INPUT_REQUIREMENT_PENDING: The saved input-policy decision is still pending. Its question and actual answers remain saved; existing access and Actions are unchanged.');
