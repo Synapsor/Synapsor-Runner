@@ -1,0 +1,48 @@
+{
+  "status": "COMPLETED_FAILED_GATE",
+  "tested_git_head": "c4486f4dbdfd744b3a35745c6705d4e821412fb5",
+  "product_head": "b0ef611091ea11e86c468cdc3d38383c4ef1ecf1",
+  "bundle_sha256": "52b075c7a1caf309e09eabe313b66b06d90eb7f8d6c7f5c2678af9075ffbeff7",
+  "counts": {
+    "numTotalTests": 9608,
+    "numPassedTests": 8950,
+    "numFailedTests": 82,
+    "numPendingTests": 576,
+    "success": false
+  },
+  "seconds": 3894.7294614950006,
+  "guard_stop": null,
+  "harness_failure": null,
+  "minimum_free_bytes": 61305831424,
+  "source_code_unchanged": true,
+  "external_dependencies_unchanged": true,
+  "workspace_aliases_unchanged": true,
+  "raw_result_sha256": "9870e9673398e5721ba04e5d1cad68d90a259ef742c9cf16c06dd789babff2d3",
+  "terminal_result_sha256": "818b8efa54473f0d098a5fcb381231103be616d390816bbf27064085922592fb",
+  "failed_files": [
+    {
+      "file": "apps/runner/src/action-rule-model.test.ts",
+      "failed": 2
+    },
+    {
+      "file": "apps/runner/src/authoring-public-read-revision-wait-derived.test.ts",
+      "failed": 5
+    },
+    {
+      "file": "apps/runner/src/boundary-cli.test.ts",
+      "failed": 72
+    },
+    {
+      "file": "apps/runner/src/read-relationship-host.test.ts",
+      "failed": 1
+    },
+    {
+      "file": "apps/runner/src/read-workload-reviewed-followup.test.ts",
+      "failed": 2
+    }
+  ],
+  "freeze": false,
+  "later_gates": "NOT_LAUNCHED",
+  "cause_classification": "UNDER_READ_ONLY_TRIAGE",
+  "provider_calls": 0
+}
