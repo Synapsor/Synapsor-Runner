@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { explicitReadTaskTargets, findReadMeaningEvidence, normalizeReadMeaningEvidence } from "./read-meaning-evidence.js";
+import { explicitReadTaskTargets, findReadMeaningEvidence, normalizeReadMeaningEvidence, readResourceDefinitionPhrases } from "./read-meaning-evidence.js";
 
 const catalog = { resources: [{ id: "warehouse.dispatch_items", fields: [{ id: "kappa" }, { id: "reason" }] }] };
 const target = { resource: "warehouse.dispatch_items", field: "kappa" };
@@ -101,5 +101,30 @@ describe("exact current Read meaning associations", () => {
     if (kind === "wrong_digest") evidence.context_digest = "bad";
     if (kind === "missing_version") delete evidence.reference.source_version;
     expect(() => normalizeReadMeaningEvidence([evidence])).toThrow("MEANING_EVIDENCE_INVALID");
+  });
+});
+
+describe("same-line current definitions with qualified catalog identities", () => {
+  const currentCatalog = { resources: [{ id: "service.requests", fields: [{ id: "status" }] }, { id: "archive.cases", fields: [{ id: "status" }] }] };
+  const evidenceFor = (text: string, resource: string, field?: string) => findReadMeaningEvidence({ target: { resource, ...(field ? { field } : {}) }, catalog: currentCatalog,
+    statements: [{ origin: "policy_source", text, source_digest: canonicalJsonDigest(text), source_id: "declared-current-source", source_version: 1 }],
+    answers: [], context_digest, requested_use_digest })!;
+  it("shares exact resource sentence separation without rewriting the Source reference", () => {
+    const text = "service.requests represents customer cases. archive.cases represents archived records.";
+    const evidence = evidenceFor(text, "service.requests");
+    expect(evidence.reference).toMatchObject({ text, source_digest: canonicalJsonDigest(text), start_line: 1, end_line: 1 });
+    expect(readResourceDefinitionPhrases(evidence, currentCatalog)).toEqual(["customer cases"]);
+    expect(readResourceDefinitionPhrases(evidenceFor(text, "archive.cases"), currentCatalog)).toEqual(["archived records"]);
+  });
+  it("recognizes a following exact qualified field while preserving repeated consistent definitions", () => {
+    const text = "service.requests.status means the current workflow stage. archive.cases.status means the historical outcome. service.requests.status means the current workflow stage.";
+    expect(evidenceFor(text, "service.requests", "status").reference.text).toBe(text);
+  });
+  it.each([
+    ["service.requests represents customer cases at revision 1.25.", "customer cases at revision 1.25"],
+    ["service.requests represents customer cases.unknown.records remains uninspected.", "customer cases.unknown.records remains uninspected"],
+    ["service.requests represents customer cases. unknown.records remains uninspected.", "customer cases. unknown.records remains uninspected"],
+  ])("does not invent another boundary for %s", (text, meaning) => {
+    expect(readResourceDefinitionPhrases(evidenceFor(text, "service.requests"), currentCatalog)).toEqual([meaning]);
   });
 });

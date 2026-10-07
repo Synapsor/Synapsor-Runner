@@ -216,11 +216,11 @@ describe("field-only Source restrictions preserve public root Reads", () => {
 });
 
 describe("requested business areas through current attributed Source mappings", () => {
-  it.each(["substitution", "excluded_addition", "duplicate_labels", "duplicate_definitions", "duplicate_definitions_answer", "unresolved_phrase", "source_disambiguation", "source_outside_homonyms", "source_outside_single_homonym"])("preserves native scope for %s", async scenario => {
-    const ids = scenario === "source_outside_single_homonym" ? ["service.requests", "archive.cases"] : scenario === "source_outside_homonyms" ? ["service.requests", "archive.cases", "audit.cases"] : scenario === "source_disambiguation" ? ["current.accounts", "archive.accounts"] : ["current.member_cards", "archive.old_cards", "current.invoices"];
+  it.each(["substitution", "excluded_addition", "duplicate_labels", "duplicate_definitions", "duplicate_definitions_answer", "unresolved_phrase", "source_disambiguation", "source_outside_homonyms", "source_outside_single_homonym", "source_outside_homonyms_same_line"])("preserves native scope for %s", async scenario => {
+    const ids = scenario === "source_outside_single_homonym" ? ["service.requests", "archive.cases"] : scenario.startsWith("source_outside_homonyms") ? ["service.requests", "archive.cases", "audit.cases"] : scenario === "source_disambiguation" ? ["current.accounts", "archive.accounts"] : ["current.member_cards", "archive.old_cards", "current.invoices"];
     const boundary = scopeBoundary(ids);
     const request = scenario.startsWith("source_outside_") ? "Read customer cases." : scenario === "source_disambiguation" ? "Read customer accounts." : "Read customer memberships.";
-    const source = scenario.startsWith("source_outside_") ? "service.requests represents customer cases." : scenario.startsWith("duplicate_definitions") ? "current.member_cards represents customer memberships.\narchive.old_cards represents customer memberships."
+    const source = scenario === "source_outside_homonyms_same_line" ? "service.requests represents customer cases. archive.cases represents archived records. audit.cases represents audit history." : scenario.startsWith("source_outside_") ? "service.requests represents customer cases." : scenario.startsWith("duplicate_definitions") ? "current.member_cards represents customer memberships.\narchive.old_cards represents customer memberships."
       : scenario === "unresolved_phrase" ? "current.member_cards represents current member records."
       : scenario === "source_disambiguation"
       ? "current.accounts represents customer accounts.\narchive.accounts represents archived records."
