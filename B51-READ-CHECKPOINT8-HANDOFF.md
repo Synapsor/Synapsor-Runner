@@ -1,13 +1,13 @@
-# PAUSED — Read checkpoint8
-- Owner explicitly paused; no work resumes until Owner says resume. No usage monitoring/self-stop.
-- W `/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6d`; branch `codex/b51-read-checkpoint8-20261007`.
-- Basee9 contains accepted6d765; WIP product `4949e687d91a4f7248e819ed95a4d532dd1be813` privately pushed, NOT accepted.
-- Old inline `persistReadAssistance` moved to `authoring-read-assistance-checkpoint-host.ts`; native mutation/rollback/writers remain caller ports.
-- Baseline23 producer+3 genuinecold PASS; extracted genuinecold3 PASS/0FAIL at4949 (30.47s); types/newhostcontrols/full NOTRUN.
-- Public Reviewer2 preseal read only; privateoracle unread. Candidate differential/verdict pending.
-- Accepted6d fe0d bundle preserved externally before same-pathreuse; oldref/rawfull/cache untouched.
-- Record: /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-read-checkpoint8-dev1609/DEV-RECORD.json.
-- Exact next after Ownerresume: `python3 '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-read-checkpoint8-dev1609/run-focused.py' extracted-checkpoint apps/runner/src/read-workload-model.test.ts -t 'durable Read assistance producer checkpoint'`.
-- Then types/narrow host fault/currentness controls and independentreview; no newengine/format/budget or delayedSource timing changes.
-- All own test/model/build groups closed; no Read8 containers/DB/provider. Baseline44 separately OWNER_INTERRUPTED, notPASS.
--7full ownership is recoveryhelper; never edit consents6c. Candidate2/frozen62 unchanged; same-connection STOP/no paid.
+# ACTIVE — Read checkpoint8
+- W `/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6d`; branch codex/b51-read-checkpoint8-20261007; basee9 alreadyincludesaccepted6d765.
+- Overnight usage checks eachcheckpoint/30min:95% nonewlong;97% safeclose/handoff/privatepush/clean stop. Latest4%used.
+- Extracted only initial persistReadAssistance coordinator; native producers/writers/currentness/rollback/budgets unchanged; old inline owner removed.
+- Host API createReadAssistanceCheckpointHost({access}).persist(checkpoint,currentBoundary,accepted?), explicitundefined clearing; no newpersistedstate.
+- Baseline23producer+3coldPASS; finalaffected141PASS/0FAIL, types0; new6hostcontrols include dispatchsave/acceptedACKloss/stalebindings/actualcompletion association.
+- Existing cold3 exercise ordinarypublicRead return; mockedport unit controls are not independent accept/installed/fullReadjourney.
+- Reviewer2 publicpreseal fixed; candidate differential/verdict and onefull stillpending; privateoracle unread.
+- Accepted6d oldref/rawfull/cache retained; fe0d bundle preserved externally before reuse; current compiledoutputs are own types, not packagedruntime proof.
+- Compact record `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-read-checkpoint8-dev1609/DEV-RECORD.json`; raw native outputs adjacent, priorfailures/history retained.
+- Next: Reviewer2 fixedcandidate controls; own exacttypepostcommit ifneeded, full onlyafter7 and Maincoordination; no duplicatebaseline campaign.
+- Helperfocusedgroupsclosed; separate original44 baseline8e successor runningPGID2569124/outer25908 at1worker, oldinterruptedroot preserved.
+-7full5 is recoveryhelper inconsents6c; never edit there. Candidate2/frozen62 untouched; same-connection STOP/paidCLOSED/no freeze.
