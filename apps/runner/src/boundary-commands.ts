@@ -17,7 +17,8 @@ import { assertSourceInputRootBinding, createSourceInputHost } from "./authoring
 import { runVersionConversation } from "./authoring-version-conversation.js";
 import { createVersionQuestionHost } from "./authoring-version-host.js";
 import { presentSourceInputInteraction, presentVersionInteraction, presentReadMeaningInteraction,
-  presentBusinessStatementInteraction, rememberActionQuestionDetails, promptActionBusinessQuestion } from "./authoring-question-presenter.js";
+  presentBusinessStatementInteraction, rememberActionQuestionDetails, promptActionBusinessQuestion,
+  presentMetadataEgress, rememberSavedMetadataEgress } from "./authoring-question-presenter.js";
 import { createReadMeaningHost } from "./authoring-read-meaning-host.js";
 import { createBusinessStatementHost } from "./authoring-business-statement-host.js";
 import { prepareReadBusinessStatementDecision } from "./authoring-business-statement-read-decision.js";
@@ -5102,37 +5103,16 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   const confirmModelEgress = async (session: ActionModelSuggestionSession) => {
     const privateCondition = (await loadBoundaryReviewContext(input.projectRoot)).candidate.read_prerequisite;
     const privateDigest = privateCondition ? canonicalJsonDigest(privateCondition) : undefined;
-    const exact = [
-      `Provider: ${boundaryModelLabel(session)}`,
-      ...(session.provider === "openai_compatible" ? [`Destination: ${authoringDestination(session)}`] : []),
-      ...(session.provider === "openrouter" ? [`Destination: ${OPENROUTER_EGRESS}.`] : []),
-      "Sends: the job you type, its read and proposal intents, and reviewed structural metadata.",
-      "For verified Actions, structural metadata may include Runner-only field names, types, relationships, roles, and schema-declared ENUM/CHECK allowlists needed to draft private verification rules.",
-      ...(privateCondition ? ["Existing private Read evidence is also included for policy review. Exact mapping (metadata and reviewed meaning only):",
-        ...JSON.stringify(privateCondition, null, 2).split("\n"), `Private Read metadata fingerprint: ${privateDigest}`] : []),
-      "Later in this same job, business-policy answers and reviewed-name clarifications you type may be sent for translation into an exact draft.",
-      "Never sent automatically: rows, observed values, credentials, endpoint URLs, SQL, or trusted tenant/principal values.",
-      "Runner-only field metadata is not added to model-facing Read authority and its row values remain private.",
-      "Observed values require their own exact preview and permission. Model output remains untrusted and cannot activate, approve, apply, or write.",
-      "Bounded requests: one short welcome, job planning, Read mapping, Action mapping, concise validated chat replies, and one correction only after a refusal.",
-    ];
-    input.authoringChat?.rememberDetails("MODEL METADATA EGRESS", exact);
-    const accepted = await input.session.confirm(
-      `Send this Boundary-authoring conversation and reviewed structural context to ${boundaryModelLabel(session)}?`,
-      {
-        defaultValue: false,
-        context: [
-          `Provider: ${boundaryModelLabel(session)}`,
-          ...(session.provider === "openai_compatible" ? [`Destination: ${authoringDestination(session)}`] : []),
-          ...(session.provider === "openrouter" ? [`Destination: ${OPENROUTER_EGRESS}.`] : []),
-          "Sends: your job and business answers + reviewed structural metadata.",
-          "Verified Actions may include private verification field names/types, but never their row values.",
-          ...(privateCondition ? ["Includes the saved private access-check mapping. View exact Runner details to inspect its source, fields and reviewed meaning before allowing this model transfer."] : []),
-          "Does not send: rows, observed values, SQL, credentials, or trusted identity values.",
-          "Model suggestions remain untrusted. Choose View exact Runner details now for the complete egress record; later /details shows the latest validation.",
-        ],
+    const accepted = await presentMetadataEgress({
+      session: input.session, chat: input.authoringChat,
+      view: { providerLabel: boundaryModelLabel(session),
+        ...(session.provider === "openai_compatible" ? { destination: authoringDestination(session) } : {}),
+        ...(session.provider === "openrouter" ? { destination: `${OPENROUTER_EGRESS}.` } : {}),
+        ...(privateCondition ? { privateRead: {
+          mappingLines: JSON.stringify(privateCondition, null, 2).split("\n"), fingerprint: privateDigest!,
+        } } : {}),
       },
-    );
+    });
     if (!accepted) return accepted;
     if (canonicalJsonDigest((await loadBoundaryReviewContext(input.projectRoot)).candidate.read_prerequisite ?? null)
       !== canonicalJsonDigest(privateCondition ?? null)) throw new Error("PRIVATE_READ_METADATA_CHANGED: The private access mapping changed during permission review. Review the current mapping before sending it; nothing was transferred.");
@@ -5401,14 +5381,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           : availableResume.private_read_metadata_digest === undefined);
       if (reusingExactSavedConsent) {
         modelEgressAcknowledged = true;
-        input.authoringChat.rememberDetails("MODEL METADATA EGRESS", [
-          `Provider: ${boundaryModelLabel(routeSelectedModel)}`,
-          "Reusing the explicit metadata permission saved with this interrupted job.",
-          "The permission is bound to this provider/model and the unchanged Boundary generation, schema, and database-role posture.",
-          "Starting a new job, changing the model, or changing reviewed database authority requires a new permission.",
-          "Never sent automatically: rows, observed values, credentials, endpoint URLs, SQL, or trusted tenant/principal values.",
-          "Model output remains untrusted and cannot activate, approve, apply, or write.",
-        ]);
+        rememberSavedMetadataEgress({ providerLabel: boundaryModelLabel(routeSelectedModel), chat: input.authoringChat });
       }
       while (!modelEgressAcknowledged) {
         modelEgressAcknowledged = await confirmModelEgress(preselectedMappingSession) === true;

@@ -33,17 +33,17 @@ describe("private Read condition disabled revisions", () => {
           interval: "[effective_from,effective_until)", clock: "database_utc" },
         semantic_consent: { source_description: "Registrar-maintained current admission record.", positive_state_description: "Only admitted is positive admission.", confirmed: true },
       }, inspection, previous.candidate);
-      await commitExactBoundaryCandidateMutation(root, await prepareReadPrerequisiteRevision({ projectRoot: root,
+      if (allowed !== "changed") await commitExactBoundaryCandidateMutation(root, await prepareReadPrerequisiteRevision({ projectRoot: root,
         previous: previous.candidate, prerequisite, bindings: previous.bundle.mutation_bindings,
         actor: "synthetic-unit-reviewer", schemaInspector: async () => inspection }));
       const saved = await loadBoundaryReviewContext(root);
-      const details = vi.fn();
+      const details = vi.fn(), onAuthoringResult = vi.fn();
       const narrator = vi.fn(async () => "What should change?");
       const mapper = vi.fn();
       const confirm = vi.fn(async (prompt: string, options?: { context?: string[] }) => {
         expect(prompt).toContain("reviewed structural context");
-        expect(options?.context?.join(" ")).toContain("saved private access-check mapping");
-        expect(details).toHaveBeenCalledWith("MODEL METADATA EGRESS", expect.arrayContaining([
+        if (allowed !== "changed") expect(options?.context?.join(" ")).toContain("saved private access-check mapping");
+        if (allowed !== "changed") expect(details).toHaveBeenCalledWith("MODEL METADATA EGRESS", expect.arrayContaining([
           expect.stringContaining('"table": "admissions"'),
           expect.stringContaining('"unique_constraint": "admissions_subject_key"'),
           expect.stringContaining("Registrar-maintained current admission record."),
@@ -52,14 +52,10 @@ describe("private Read condition disabled revisions", () => {
         expect(mapper).not.toHaveBeenCalled();
         expect(options).toMatchObject({ defaultValue: false });
         if (allowed === "changed") {
-          const replacement = prepareReviewedReadCurrentStatePrerequisite({
-            ...prerequisite,
-            semantic_consent: { ...prerequisite.semantic_consent,
-              source_description: "New registrar-maintained meaning awaiting this model's permission." },
-          }, inspection, saved.candidate);
           await commitExactBoundaryCandidateMutation(root, await prepareReadPrerequisiteRevision({ projectRoot: root,
-            previous: saved.candidate, prerequisite: replacement, bindings: saved.bundle.mutation_bindings,
+            previous: saved.candidate, prerequisite, bindings: saved.bundle.mutation_bindings,
             actor: "synthetic-unit-reviewer", schemaInspector: async () => inspection }));
+          expect((await loadBoundaryReviewContext(root)).candidate.read_prerequisite).toEqual(prerequisite);
           return true;
         }
         return allowed;
@@ -80,12 +76,14 @@ describe("private Read condition disabled revisions", () => {
         progress: async (_message, operation) => operation(), close: vi.fn(),
       };
       const result = boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], async () => inspection, session, undefined, {
-        startWithAgentJob: true,
+        startWithAgentJob: true, onAuthoringResult,
         modelAuthoringSession: { provider: "anthropic", model: "new-provider-model", apiKey: "synthetic-key" },
         modelAuthoringNarrator: narrator, modelReadWorkloadGenerator: mapper, boundaryAuthoringChatFactory: () => chat,
       });
-      if (allowed === "changed") await expect(result).rejects.toThrow("PRIVATE_READ_METADATA_CHANGED");
-      else expect(await result).toBe(0);
+      expect(await result).toBe(0);
+      if (allowed === "changed") expect(onAuthoringResult).toHaveBeenCalledWith(expect.objectContaining({
+        tone: "warning", lines: expect.arrayContaining([expect.stringContaining("PRIVATE_READ_METADATA_CHANGED")]),
+      }));
       expect(confirm).toHaveBeenCalledOnce();
       // Metadata permission alone does not start generation. The operator
       // cancelled the new job prompt, so neither path opens a narrator.
@@ -93,7 +91,7 @@ describe("private Read condition disabled revisions", () => {
       expect(mapper).not.toHaveBeenCalled();
       const current = (await loadBoundaryReviewContext(root)).candidate;
       if (allowed === "changed") expect(current.read_prerequisite?.semantic_consent.source_description)
-        .toBe("New registrar-maintained meaning awaiting this model's permission.");
+        .toBe("Registrar-maintained current admission record.");
       else expect(current).toEqual(saved.candidate);
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toThrow();
     } finally { await fs.rm(root, { recursive: true, force: true }); }

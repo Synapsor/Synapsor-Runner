@@ -3,6 +3,8 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import type { BoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { ModelAuthoringConversation } from "./model-authoring-conversation.js";
+import { showPolicyAttachmentPreview, showPolicyAttachmentTransfer, choosePolicyAttachmentTransfer,
+  showPolicyAttachmentReady, choosePolicyAttachmentReview, type PolicyAttachmentView } from "./authoring-question-presenter.js";
 import { policyCoverageSection } from "./authoring-policy-coverage.js";
 import { reviewSectionLines } from "./read-boundary-review-view.js";
 import { activePolicySource, authoringDestination, policyTextLines, policyTextSnapshot, readPolicyTextFile,
@@ -40,29 +42,17 @@ export function installPolicySourceCommands(input: {
     await appendPolicySourceOperatorMessage(input.root,sources,answer,{expectedDigest});
     await input.onChange();
   });
-  const show = async (source: PolicyTextSnapshot) => {
-    await chat.session.showReviewDetails?.(`${source.name} v${source.version}`, [
-      `${source.bytes} bytes | ${source.lines} lines | ${source.digest}`,
-      ...policyTextLines(source.text).map((line, index) => `${index + 1} | ${line}`),
-      "Untrusted business context. This text grants no authority and is never evaluated by the runtime.",
-    ]);
-  };
+  const attachmentView = (source: PolicyTextSnapshot): PolicyAttachmentView => ({
+    name: source.name, version: source.version, bytes: source.bytes, lines: source.lines,
+    digest: source.digest, textLines: policyTextLines(source.text),
+  });
+  const show = (source: PolicyTextSnapshot) => showPolicyAttachmentPreview({ view: attachmentView(source), session: chat.session });
   const replace = async (source: PolicyTextSnapshot, target = input.destination(), offerReview = true): Promise<boolean | "reviewed"> => {
     const session = conversation.policySources!;
     const destination = authoringDestination(target);
-    chat.checkpoint("Review attached rules", [
-      `${source.name} v${source.version} | ${source.bytes} bytes | ${source.lines} lines (complete)`,
-      `Destination: ${destination}`,
-      "Sends this text with the reviewed schema, existing draft and business conversation. Prior metadata permission does not cover this new source.",
-      "Snapshot retained locally in .synapsor/boundary-authoring/policy-sources (owner-only). /rules can view or permanently remove it; runtime requests never include this source.",
-    ]);
+    showPolicyAttachmentTransfer({ view: attachmentView(source), destination, chat });
     while (true) {
-      // Local menu deliberately bypasses model permission narration: unapproved text cannot leave through an explanation request.
-      const decision = await choose?.("SEND ATTACHED RULES", [
-        { value: "send", label: "Use this complete text with the named model" },
-        { value: "view", label: "Preview every line locally" },
-        { value: "cancel", label: "Cancel; keep current rules and draft" },
-      ], { initialValue: "cancel" });
+      const decision = await choosePolicyAttachmentTransfer(chat.session);
       if (decision === "view") { await show(source); continue; }
       if (decision !== "send") return false;
       const next = structuredClone(session);
@@ -72,12 +62,8 @@ export function installPolicySourceCommands(input: {
       await savePolicySources(input.root, next);
       Object.assign(session, next);
       await input.onChange();
-      chat.checkpoint("Rules ready for this conversation", [`${source.name} v${source.version}; previous source versions are retained locally until removed.`,
-        "No draft or authority has changed yet. The model must translate and Runner must validate any revision; unsupported rules remain review concerns."]);
-      if (offerReview && input.hasDraft?.() && input.reviewCurrent && await choose?.("USE THE SAVED ATTACHMENT", [
-        { value: "review", label: "Review this saved job against the attached rules" },
-        { value: "continue", label: "Return to the conversation; keep the current draft" },
-      ], { initialValue: "continue", reviewOnly: true }) === "review") {
+      showPolicyAttachmentReady({ view: attachmentView(source), chat });
+      if (offerReview && input.hasDraft?.() && input.reviewCurrent && await choosePolicyAttachmentReview(chat.session) === "review") {
         await input.reviewCurrent(); return "reviewed";
       }
       return true;

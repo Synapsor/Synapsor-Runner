@@ -1,0 +1,92 @@
+{
+  "baseline-original": {
+    "exit": 0,
+    "stop": null,
+    "seconds": 9.657303810119629,
+    "pgid": 2341151,
+    "owned_live": [],
+    "free_bytes": 129540038656,
+    "head": "a5b28dc8347a26bf4d822469d1c08cc09c0ce34a",
+    "counts": {
+      "numPassedTests": 43,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "native_report_sha256": "0a64413981123fae862b62d0a043dbdffae541d98b7e6894f34e38bca3b1ea09",
+    "evidence_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-consents6c-implementation-restored/baseline-original"
+  },
+  "baseline-characterization": {
+    "exit": 1,
+    "stop": null,
+    "seconds": 9.036336898803711,
+    "pgid": 2342204,
+    "owned_live": [],
+    "free_bytes": 129530286080,
+    "head": "a5b28dc8347a26bf4d822469d1c08cc09c0ce34a",
+    "counts": {
+      "numPassedTests": 49,
+      "numFailedTests": 1,
+      "numPendingTests": 0
+    },
+    "native_report_sha256": "d12f0c40692f62f4a60ded62ec56d9d34e590b9fceba8af3bec94446debb2bb4",
+    "evidence_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-consents6c-implementation-restored/baseline-characterization"
+  },
+  "baseline-characterization-v2": {
+    "exit": 0,
+    "stop": null,
+    "seconds": 9.239917039871216,
+    "pgid": 2345383,
+    "owned_live": [],
+    "free_bytes": 129488449536,
+    "head": "19df540fe2ed238f938326dbbd8ffa159e1718c2",
+    "counts": {
+      "numPassedTests": 50,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "native_report_sha256": "5b1ac58b608fc0b4d5a3dff7c1eb2273bc91a50685de3b81f1dfa27da71e48d6",
+    "evidence_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-consents6c-implementation-restored/baseline-characterization-v2"
+  },
+  "extracted-focused": {
+    "exit": 0,
+    "stop": null,
+    "seconds": 9.452360391616821,
+    "pgid": 2347014,
+    "owned_live": [],
+    "free_bytes": 129487405056,
+    "head": "19df540fe2ed238f938326dbbd8ffa159e1718c2",
+    "counts": {
+      "numPassedTests": 62,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "native_report_sha256": "a59660d2550b8a32692152c03bfac4b01129914264a92e4feb479781a9bdcaee",
+    "evidence_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-consents6c-implementation-restored/extracted-focused"
+  },
+  "extracted-types": {
+    "exit": 0,
+    "stop": null,
+    "seconds": 36.67711019515991,
+    "pgid": 2347525,
+    "owned_live": [],
+    "free_bytes": 129453715456,
+    "head": "19df540fe2ed238f938326dbbd8ffa159e1718c2",
+    "evidence_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-consents6c-implementation-restored/extracted-types"
+  },
+  "extracted-public": {
+    "exit": 0,
+    "stop": null,
+    "seconds": 18.661720752716064,
+    "pgid": 2349152,
+    "owned_live": [],
+    "free_bytes": 129449861120,
+    "head": "19df540fe2ed238f938326dbbd8ffa159e1718c2",
+    "counts": {
+      "numPassedTests": 2,
+      "numFailedTests": 0,
+      "numPendingTests": 19
+    },
+    "native_report_sha256": "a8a2dfb823fd20f57ca3b2c40cb3006f780fe41b5adb026909daa2478625773f",
+    "evidence_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-consents6c-implementation-restored/extracted-public"
+  }
+}

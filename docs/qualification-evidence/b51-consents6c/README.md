@@ -1,0 +1,7 @@
+# 6c focused extraction checkpoint
+This is presentation extraction evidence, not a full-suite or independent acceptance verdict.
+The unchanged baseline passed 43 tests. Added characterization first preserved a 49-pass/1-fail fixture error: the existing private prerequisite is immutable through that edit route and public errors return a notice. The corrected ordinary absent-to-prepared mapping transition occurs during the actual permission wait, requires the exact native refusal notice and zero generation; 50 baseline tests pass.
+After extraction: 62 focused tests, typecheck, and two existing public nested attachment/review controls pass. Skipped public cases are filter exclusions, not completed coverage.
+Metadata and Source attachment remain separate host permissions. Mapping currentness, exact destination approvals, save-before-memory/onChange, optional review callbacks, and saved Resume reuse conditions stay in their hosts. Declined navigation, permission narration, activation and slice7 are untouched.
+The first pre-restoration baseline has no result: Owner confirmed app automatic worktree cleanup removed it. Its external capture is preserved. The restored locked worktree has private copied dependencies and self-resolved aliases; no donor mutation.
+See SCOPED-RESULTS.json for exact external native records and closure. No provider, physical DB, paid request or full suite was started.

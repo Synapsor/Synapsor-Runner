@@ -184,3 +184,116 @@ export async function promptActionBusinessQuestion(input: {
   }
   return input.session.promptText(input.displayed, { context: ["BUSINESS QUESTION"], recordPolicyAnswer: false, preserveWhitespace: true });
 }
+
+
+/** Egress views contain only material already selected by their host. Rendering
+ * has no Source, provider, permission-cache or persistence capability. */
+export interface MetadataEgressView {
+  readonly providerLabel: string;
+  readonly destination?: string;
+  readonly privateRead?: { readonly mappingLines: readonly string[]; readonly fingerprint: string };
+}
+
+export async function presentMetadataEgress(input: {
+  view: MetadataEgressView; session: Pick<Session, "confirm">; chat?: Pick<Chat, "rememberDetails">;
+}): Promise<boolean | undefined> {
+  const { view } = input;
+  const destination = view.destination === undefined ? [] : [`Destination: ${view.destination}`];
+  input.chat?.rememberDetails("MODEL METADATA EGRESS", [
+    `Provider: ${view.providerLabel}`,
+    ...destination,
+    "Sends: the job you type, its read and proposal intents, and reviewed structural metadata.",
+    "For verified Actions, structural metadata may include Runner-only field names, types, relationships, roles, and schema-declared ENUM/CHECK allowlists needed to draft private verification rules.",
+    ...(view.privateRead ? ["Existing private Read evidence is also included for policy review. Exact mapping (metadata and reviewed meaning only):",
+      ...view.privateRead.mappingLines, `Private Read metadata fingerprint: ${view.privateRead.fingerprint}`] : []),
+    "Later in this same job, business-policy answers and reviewed-name clarifications you type may be sent for translation into an exact draft.",
+    "Never sent automatically: rows, observed values, credentials, endpoint URLs, SQL, or trusted tenant/principal values.",
+    "Runner-only field metadata is not added to model-facing Read authority and its row values remain private.",
+    "Observed values require their own exact preview and permission. Model output remains untrusted and cannot activate, approve, apply, or write.",
+    "Bounded requests: one short welcome, job planning, Read mapping, Action mapping, concise validated chat replies, and one correction only after a refusal.",
+  ]);
+  return input.session.confirm(
+    `Send this Boundary-authoring conversation and reviewed structural context to ${view.providerLabel}?`, {
+      defaultValue: false,
+      context: [
+        `Provider: ${view.providerLabel}`,
+        ...destination,
+        "Sends: your job and business answers + reviewed structural metadata.",
+        "Verified Actions may include private verification field names/types, but never their row values.",
+        ...(view.privateRead ? ["Includes the saved private access-check mapping. View exact Runner details to inspect its source, fields and reviewed meaning before allowing this model transfer."] : []),
+        "Does not send: rows, observed values, SQL, credentials, or trusted identity values.",
+        "Model suggestions remain untrusted. Choose View exact Runner details now for the complete egress record; later /details shows the latest validation.",
+      ],
+    });
+}
+
+export function rememberSavedMetadataEgress(input: {
+  providerLabel: string; chat: Pick<Chat, "rememberDetails">;
+}): void {
+  input.chat.rememberDetails("MODEL METADATA EGRESS", [
+    `Provider: ${input.providerLabel}`,
+    "Reusing the explicit metadata permission saved with this interrupted job.",
+    "The permission is bound to this provider/model and the unchanged Boundary generation, schema, and database-role posture.",
+    "Starting a new job, changing the model, or changing reviewed database authority requires a new permission.",
+    "Never sent automatically: rows, observed values, credentials, endpoint URLs, SQL, or trusted tenant/principal values.",
+    "Model output remains untrusted and cannot activate, approve, apply, or write.",
+  ]);
+}
+
+export interface PolicyAttachmentView {
+  readonly name: string;
+  readonly version: number;
+  readonly bytes: number;
+  readonly lines: number;
+  readonly digest: string;
+  readonly textLines: readonly string[];
+}
+
+export async function showPolicyAttachmentPreview(input: {
+  view: PolicyAttachmentView; session: Pick<BoundaryReviewInteractiveSession, "showReviewDetails">;
+}): Promise<void> {
+  const { view } = input;
+  await input.session.showReviewDetails?.(`${view.name} v${view.version}`, [
+    `${view.bytes} bytes | ${view.lines} lines | ${view.digest}`,
+    ...view.textLines.map((line, index) => `${index + 1} | ${line}`),
+    "Untrusted business context. This text grants no authority and is never evaluated by the runtime.",
+  ]);
+}
+
+export function showPolicyAttachmentTransfer(input: {
+  view: PolicyAttachmentView; destination: string; chat: Pick<BoundaryAuthoringChat, "checkpoint">;
+}): void {
+  const { view } = input;
+  input.chat.checkpoint("Review attached rules", [
+    `${view.name} v${view.version} | ${view.bytes} bytes | ${view.lines} lines (complete)`,
+    `Destination: ${input.destination}`,
+    "Sends this text with the reviewed schema, existing draft and business conversation. Prior metadata permission does not cover this new source.",
+    "Snapshot retained locally in .synapsor/boundary-authoring/policy-sources (owner-only). /rules can view or permanently remove it; runtime requests never include this source.",
+  ]);
+}
+
+/** Deliberately direct local session ports: unapproved text must never enter a
+ * model permission narration just because the operator inspects a consent. */
+export async function choosePolicyAttachmentTransfer(session: Pick<Session, "chooseOption">): Promise<string | undefined> {
+  return session.chooseOption?.("SEND ATTACHED RULES", [
+    { value: "send", label: "Use this complete text with the named model" },
+    { value: "view", label: "Preview every line locally" },
+    { value: "cancel", label: "Cancel; keep current rules and draft" },
+  ], { initialValue: "cancel" });
+}
+
+export function showPolicyAttachmentReady(input: {
+  view: PolicyAttachmentView; chat: Pick<BoundaryAuthoringChat, "checkpoint">;
+}): void {
+  input.chat.checkpoint("Rules ready for this conversation", [
+    `${input.view.name} v${input.view.version}; previous source versions are retained locally until removed.`,
+    "No draft or authority has changed yet. The model must translate and Runner must validate any revision; unsupported rules remain review concerns.",
+  ]);
+}
+
+export async function choosePolicyAttachmentReview(session: Pick<Session, "chooseOption">): Promise<string | undefined> {
+  return session.chooseOption?.("USE THE SAVED ATTACHMENT", [
+    { value: "review", label: "Review this saved job against the attached rules" },
+    { value: "continue", label: "Return to the conversation; keep the current draft" },
+  ], { initialValue: "continue", reviewOnly: true });
+}

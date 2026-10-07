@@ -1,0 +1,17 @@
+{
+  "worktree": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c",
+  "head": "a5b28dc8347a26bf4d822469d1c08cc09c0ce34a",
+  "source_restore": "MAIN-WORKTREE-RESTORE1599/SOURCE-RESTORE.json",
+  "private_root": "/var/tmp/synapsor-consents6c-restored-owned/decoy-parent/test-root",
+  "read_only_donor": "/home/sandesh-tiwari/.codex/worktrees/b51-consents6c-dev-review/synapsor-runner",
+  "package_dist_files": 699,
+  "provider_DB_paid": 0,
+  "floor_bytes": 8589934592,
+  "free_bytes": 129540087808,
+  "old_baseline_preserved": true,
+  "previous_resource_sha256": "0725a4f3a4d2162df38230199fbcc3d363f00326c07d8e85c0f82b44510dec71",
+  "owner_confirmed_interruption_cause": "Codex app Automatically delete old worktrees keep15 burst; Owner disabled or raised it. Historical first baseline remains NOT_ESTABLISHED.",
+  "restored_registration": "locked outside app-managed worktree directory",
+  "private_dependency_origin_manifest_sha256": "ec4e80c8c3e3de33dde980603c6cee955b0841497236484e7684671295f165a8",
+  "private_dependency_manifest_sha256": "1ea412818ee31a4905f7fc1885f99abb9c883248f3f95de1c84c351763beb3e3"
+}
