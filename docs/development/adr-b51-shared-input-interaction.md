@@ -6,6 +6,10 @@ separate B51 branch. Release acceptance is separate.
 Source inspected: `62e4bf54c3cb6ab9f58f423991f0c121d6e760ad`.
 T0: 2026-10-06T14:31:23Z. This work follows frozen candidate1508 and
 independent Tester installed acceptance starting. Demo verification has priority.
+The existing 72-hour B51 window ends 2026-10-09T14:31:23Z; its 48-hour settled-
+source target is 2026-10-08T14:31:23Z. Neither T0 nor the allowance is reset by
+the named candidate-2 checkpoint. The separate earlier demo qualification
+deadline and its conditional extension remain distinct from this B51 window.
 The frozen candidate remains unchanged. All same-connection live-edit work is stopped.
 
 ## Decision

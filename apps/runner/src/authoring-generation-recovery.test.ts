@@ -180,6 +180,54 @@ describe("exact linked Source producer handoff",()=>{
   });
 });
 
+describe("additive recovery owner format",()=>{
+  it.each(["action_rule_components","authoring_turn","policy_coverage"] as const)("round-trips %s ownership and refuses malformed metadata",async consumer=>{
+    const f=await fixture("healthy"),m=memory(f.endpoint,0);
+    let origin: NonNullable<ProviderHttpInput["authoringInput"]>;
+    await enter(m,async()=>{
+      const budget=(await createAuthoringHostEpisodeBudget({keyDigest:canonicalJsonDigest({consumer}),conversational:false}))!;
+      origin=consumer==="action_rule_components"
+        ? {consumer,operator_message:"Keep the reviewed choice.",logical_turn_id:"11111111-1111-4111-8111-111111111111"}
+        : consumer==="authoring_turn" ? {consumer,episode_id:budget.ownerId}
+        : {consumer,episode_id:"22222222-2222-4222-8222-222222222222",context_digest:canonicalJsonDigest("declared Source context"),submission_number:1};
+      try {
+        const result=await recoverAuthoringGeneration({...input(f.endpoint),authoringInput:origin},secureAskJsonRequest,()=>budget.admitIteration());
+        await authoringGenerationHandled([result]);
+      } finally {budget.release();}
+    });
+    const saved=m.read(),encoded=JSON.stringify(saved),reloaded=JSON.parse(encoded) as AuthoringTransportState;
+    validateAuthoringTransportState(reloaded);
+    expect(JSON.stringify(reloaded)).toBe(encoded);
+    expect(reloaded.operations[0]!.producer_input).toEqual(origin!);
+    expect(f.sends()).toBe(1);
+    expect(f.bodies.every(body=>!body.includes(JSON.stringify(origin!)))).toBe(true);
+    // Omitted metadata is a valid historical record, not permission to remove
+    // ownership from an already recorded new operation.
+    const legacy=structuredClone(reloaded);delete legacy.operations[0]!.producer_input;
+    const legacyBytes=JSON.stringify(legacy);validateAuthoringTransportState(legacy);
+    expect(JSON.stringify(legacy)).toBe(legacyBytes);
+    expect(()=>assertAuthoringTransportAdvance(reloaded,legacy)).toThrow("BOUNDARY_AUTHORING_RESUME_INVALID");
+    const invalidOrigins: unknown[]=[null,[],{consumer:"unknown_owner"},{...origin!,unrecognized_owner:"not accepted"}];
+    if(consumer==="action_rule_components") {
+      const oldAction=structuredClone(reloaded);
+      delete (oldAction.operations[0]!.producer_input as {logical_turn_id?:string}).logical_turn_id;
+      validateAuthoringTransportState(oldAction); // Existing pre-slice Action shape.
+      invalidOrigins.push({...origin!,operator_message:undefined},{...origin!,logical_turn_id:"borrowed-turn"});
+    } else {
+      invalidOrigins.push({...origin!,episode_id:undefined},{...origin!,episode_id:"borrowed-episode"});
+      if(consumer==="authoring_turn") invalidOrigins.push({...origin!,episode_id:"33333333-3333-4333-8333-333333333333"});
+      else invalidOrigins.push({...origin!,context_digest:undefined},{...origin!,context_digest:"wrong-context"},
+        {...origin!,submission_number:undefined},{...origin!,submission_number:0},{...origin!,submission_number:4});
+    }
+    for(const malformed of invalidOrigins) {
+      const wrong=structuredClone(reloaded);
+      wrong.operations[0]!.producer_input=malformed as NonNullable<ProviderHttpInput["authoringInput"]>;
+      expect(()=>validateAuthoringTransportState(wrong)).toThrow("BOUNDARY_AUTHORING_RESUME_INVALID");
+    }
+    expect(JSON.stringify(m.read())).toBe(encoded);
+  });
+});
+
 describe("prospective producer controller admission",()=>{
   it.each(["body", "producer", "context"])("repeated known %s refusal preserves the original episode allowance", async change => {
     const f = await fixture("B-success"), m = memory(f.endpoint, 0), key = canonicalJsonDigest("exact existing Action producer");

@@ -476,6 +476,7 @@ export function assertAuthoringTransportAdvance(previous: AuthoringTransportStat
     const current = next.operations[index]!;
     if (current.id !== old.id || current.request_digest !== old.request_digest || current.context_digest !== old.context_digest
       || current.deadline !== old.deadline || current.episode_id !== old.episode_id
+      || canonicalJsonDigest(current.producer_input ?? null) !== canonicalJsonDigest(old.producer_input ?? null)
       || canonicalJsonDigest(current.recovery_of ?? null) !== canonicalJsonDigest(old.recovery_of ?? null)
       || disposedOperation(previous,old.id) && canonicalJsonDigest(current) !== canonicalJsonDigest(old)) throw invalid();
     if (current.attempts.length < old.attempts.length) throw invalid();
