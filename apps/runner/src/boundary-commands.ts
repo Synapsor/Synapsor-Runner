@@ -8,8 +8,7 @@ import { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary
 export { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
 import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, authoringActionCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, authoringInterruptedRecoveryNeeded, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
-import { createOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
-import { isUnknownReadMeaning } from "./read-meaning-evidence.js";
+import { type OperatorQuestion } from "./authoring-operator-question.js";
 import { operatorBusinessContext, operatorBusinessLabel, operatorBusinessReadback, presentOperatorClarification,
   type OperatorBusinessContext } from "./authoring-operator-presentation.js";
 import { randomUUID } from "node:crypto";
@@ -342,8 +341,7 @@ import {
   type ReadBoundaryFieldExposure,
   type ModelReadBoundaryRevisionResult,
 } from "./read-boundary-revision-model.js";
-import { readBoundaryRevisionCheckpoint,
-  type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
+import { type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
 import { assertReviewedReadCurrentStatePrerequisite } from "./read-prerequisite.js";
 import { parseReadPolicySettings } from "./read-boundary-policy-revision.js";
 import { ReadRelationshipUnavailableError, assertReviewedReadRelationshipRetained, reviewReadRelationship, validateReviewedReadRelationship } from "./read-relationship-review.js";
@@ -427,7 +425,7 @@ import { prepareReadPrerequisiteRevision } from "./read-prerequisite-revision.js
 import { reviewReadPrerequisiteMetadata, reviewReadPrerequisiteSelection } from "./read-prerequisite-consent.js";
 import { loadReadPrerequisiteSourceReview } from "./read-prerequisite-source-review.js";
 import { generateModelReadPrerequisite, validateReadPrerequisiteBusinessAnswer } from "./read-prerequisite-model.js";
-import { readPrerequisiteCheckpoint, type ReadPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
+import { type ReadPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
 import { parseReadPrerequisiteBusinessDecisions, type ReadPrerequisiteBusinessDecision } from "./read-prerequisite-decisions.js";
 
 const REVIEWED_SHAPE_LIMIT_FLAGS = [
