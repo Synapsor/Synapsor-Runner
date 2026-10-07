@@ -1,5 +1,5 @@
-import { exactOnlyReadResourceIds, requestedReadResourceAssociations } from "./read-requested-scope.js";
-import { findReadMeaningEvidence, isExplicitReadMeaningStatement, explicitReadTaskTargets, ReadMeaningConflictError, isUnknownReadMeaning, type ReadMeaningAttempt, type ReadMeaningEvidence, type ReadMeaningStatement } from "./read-meaning-evidence.js";
+import { exactOnlyReadResourceIds, resolveRequestedReadScope } from "./read-requested-scope.js";
+import { findReadMeaningEvidence, readResourceDefinitionPhrases, isExplicitReadMeaningStatement, explicitReadTaskTargets, ReadMeaningConflictError, isUnknownReadMeaning, type ReadMeaningAttempt, type ReadMeaningEvidence, type ReadMeaningStatement } from "./read-meaning-evidence.js";
 import type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 export type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 import { isAuthoringGenerationStop, assertAuthoringGenerationAdmission, authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
@@ -467,10 +467,20 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       // The complete operator request is retained independently of the bounded
       // routing question. Check real allowed plans, including reviewed related
       // paths; forbidden examples cannot satisfy a requested public workload.
-      const requestedResources = requestedReadResourceAssociations(originalNamingSources.join("\n"), catalog.resources.map(resource => resource.id));
+      const requestedResources = resolveRequestedReadScope({ original: originalNamingSources.join("\n"), resources: catalog.resources,
+        definitions: catalog.resources.flatMap(resource => {
+          const evidence = currentMeaning({ resource: resource.id });
+          return evidence ? [{ resource: resource.id, phrases: readResourceDefinitionPhrases(evidence, catalog) }] : [];
+        }), statements: activeMeaningStatements().map(statement => statement.text) });
       const requiredResources = requestedResources.required;
       const allowedResources = new Set(workloadNamingEntries({ allowed: args.allowed }, catalog)
         .flatMap(entry => isRecord(entry) && isRecord(entry.plan) && typeof entry.plan.resource === "string" ? [entry.plan.resource] : []));
+      const excludedResources = requestedResources.excluded.filter(resource => allowedResources.has(resource));
+      if (excludedResources.length) {
+        workloadValidationBlockers = [`READ_WORKLOAD_EXCLUDED_RESOURCE: Current operator/Source instructions exclude ${excludedResources.join(", ")}. Do not add that access or treat a routing summary as permission.`];
+        return { ok: false, error_code: "READ_WORKLOAD_EXCLUDED_RESOURCE", value: { blockers: workloadValidationBlockers,
+          authority_granted: false, source_query_executed: false, source_database_changed: false } };
+      }
       for (const alternatives of requestedResources.ambiguous) {
         const reason = `The requested record name matches more than one inspected resource: ${alternatives.join(", ")}. Confirm the intended business records before accepting this mapping.`;
         const answered = activeClarifiedTargets().filter(answer => !answer.field && answer.reason === reason

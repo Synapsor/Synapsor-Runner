@@ -60,6 +60,14 @@ function explicitReadStatements(clause: string, target: ReadMeaningTarget, catal
 export function isExplicitReadMeaningStatement(clause: string, target: ReadMeaningTarget, catalog: ReadMeaningCatalog): boolean {
   return explicitReadStatements(clause, target, catalog).length > 0;
 }
+/** Exact definition phrases from already host-resolved current evidence. These
+ * are attributable naming aliases, not inferred synonyms or access decisions. */
+export function readResourceDefinitionPhrases(evidence: ReadMeaningEvidence, catalog: ReadMeaningCatalog): string[] {
+  if (evidence.field !== undefined) return [];
+  return evidence.reference.text.split(/;|(?<=[.!?])\s+(?=[A-Z])/u)
+    .flatMap(clause => explicitReadStatements(clause, { resource: evidence.resource }, catalog))
+    .filter(claim => claim.kind === "definition").map(claim => claim.meaning);
+}
 export class ReadMeaningConflictError extends Error {
   constructor(readonly evidence: ReadMeaningEvidence[]) {
     super("READ_WORKLOAD_MEANING_CONFLICT: Current explicit statements differ; no reviewed precedence was established. Keep them visible and ask for a new attributed interpretation.");

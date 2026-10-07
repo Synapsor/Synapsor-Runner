@@ -27,6 +27,57 @@ export function requestedReadResourceAssociations(jobIntent: string, availableRe
     && grouped.get(candidate.words.join(" "))!.length === 1)), ambiguous };
 }
 
+/** Current host-resolved definitions can associate an exact business phrase
+ * with an inspected ID. Catalog labels only identify collisions; they never
+ * establish a mapping. Unsupported prose is not an inferred scope decision. */
+export function resolveRequestedReadScope(input: {
+  original: string;
+  resources: readonly { id: string; label?: string }[];
+  definitions: readonly { resource: string; phrases: readonly string[] }[];
+  statements: readonly string[];
+}): { required: string[]; excluded: string[]; ambiguous: string[][] } {
+  const ids = input.resources.map(resource => resource.id);
+  const base = requestedReadResourceAssociations(input.original, ids);
+  const words = normalizedSemanticWords(readOrientedJobText(input.original));
+  const phraseMatches = (phrase: string, inWords = words) => {
+    const phraseWords = normalizedSemanticWords(phrase);
+    return phraseWords.length > 0 && containsWordSequence(inWords, phraseWords);
+  };
+  const attributed = input.definitions.filter(definition => ids.includes(definition.resource)
+    && definition.phrases.some(phrase => phraseMatches(phrase))).map(definition => definition.resource);
+  const required = new Set([...base.required, ...attributed]);
+  const groups = [...base.ambiguous];
+  const labels = new Map<string, string[]>();
+  for (const resource of input.resources) if (resource.label && phraseMatches(resource.label)) {
+    const key = normalizedSemanticWords(resource.label).join(" ");
+    labels.set(key, [...(labels.get(key) ?? []), resource.id]);
+  }
+  groups.push(...[...labels.values()].filter(group => group.length > 1));
+  const ambiguous = groups.filter(group => {
+    // Only actual current attributable definitions resolve a label/name
+    // collision. A merely mentioned ID or model-selected plan cannot.
+    const resolved = group.filter(id => attributed.includes(id));
+    if (resolved.length === 1) { required.add(resolved[0]!); return false; }
+    return true;
+  }).filter((group, index, all) => all.findIndex(other => JSON.stringify(other) === JSON.stringify(group)) === index);
+  const excluded = new Set<string>();
+  for (const text of [input.original, ...input.statements]) {
+    for (const clause of unquotedRequest(text).split(/[;\n]|(?<=[.!?])\s+/u)) {
+      const negative = /^\s*(?:do\s+not|don['’]t|never)\s+(?:read|show|list|include|expose)\s+(.+?)\.?\s*$/iu.exec(clause)
+        ?? /^\s*exclude\s+(.+?)\.?\s*$/iu.exec(clause)
+        ?? /^\s*(.+?)\s+(?:is|are)\s+(?:excluded|not\s+requested)\.?\s*$/iu.exec(clause);
+      if (!negative) continue;
+      const negativeWords = normalizedSemanticWords(negative[1]!);
+      // Exact root references only: a private resource.field prohibition
+      // does not prohibit the resource's other, public fields.
+      const tokens = negative[1]!.match(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu) ?? [];
+      for (const id of ids) if (tokens.includes(id)) excluded.add(id);
+      for (const definition of input.definitions) if (definition.phrases.some(phrase => phraseMatches(phrase, negativeWords))) excluded.add(definition.resource);
+    }
+  }
+  return { required: [...required], excluded: [...excluded], ambiguous };
+}
+
 /** A literal, complete identity list is the one upper bound this helper can
  * establish without interpreting business prose. Unrecognized clauses remain
  * unresolved; never turn a partial keyword match into a complete allowlist. */
