@@ -342,6 +342,12 @@ export function assessSemanticSupervisedWriterPosture(
       addAllowed(targetRelation, ["select", operation]);
       addRequired(targetRelation, "select");
       addRequired(targetRelation, operation);
+      // PostgreSQL semantic INSERT checks the target's native retry identity
+      // with SELECT FOR UPDATE. Declare its real minimum locking privilege;
+      // the model effect remains INSERT and broad UPDATE remains unreviewed.
+      if (source.engine === "postgres" && operation === "insert") {
+        lockColumns.set(targetRelation, target.primary_key);
+      }
       if (operation === "update") {
         const fields = updateColumns.get(targetRelation) ?? new Set<string>();
         envelope.allowed_fields.forEach((field) => fields.add(field.name));

@@ -52,7 +52,7 @@ export function actionRuleRlsReadiness(input: {
   if (input.connection === "writer") {
     mutationRelations.add(`${input.compiled.target_resource.schema}.${input.compiled.target_resource.table}`);
     add(input.compiled.target_resource.schema, input.compiled.target_resource.table,
-      ["SELECT", input.compiled.effect_envelope.operation === "insert" ? "INSERT" : "UPDATE"]);
+      input.compiled.effect_envelope.operation === "insert" ? ["SELECT", "INSERT", "UPDATE"] : ["SELECT", "UPDATE"]);
     for (const effect of input.compiled.atomic_updates ?? []) {
       mutationRelations.add(`${effect.target_resource.schema}.${effect.target_resource.table}`);
       add(effect.target_resource.schema, effect.target_resource.table, ["SELECT", "UPDATE"]);
@@ -76,9 +76,10 @@ export function actionRuleRlsReadiness(input: {
       role_is_table_owner: posture.current_role_is_owner !== false,
       role_can_assume_table_owner: posture.current_role_can_assume_owner !== false,
       policies, required_operations: [...operations], tenant_setting: scope.tenant_setting,
-      ...(input.connection === "writer" && !mutationRelations.has(relation)
-        && input.compiled.bindings.some(binding => singletonLocks.has(binding.binding)
-          && `${binding.resource.schema}.${binding.resource.table}` === relation) ? { update_purpose: "row_lock" as const } : {}),
+      ...(input.connection === "writer" && (input.compiled.effect_envelope.operation === "insert"
+        && relation === `${input.compiled.target_resource.schema}.${input.compiled.target_resource.table}`
+        || !mutationRelations.has(relation) && input.compiled.bindings.some(binding => singletonLocks.has(binding.binding)
+          && `${binding.resource.schema}.${binding.resource.table}` === relation)) ? { update_purpose: "row_lock" as const } : {}),
       ...(principalRequired.has(relation) ? { principal_setting: scope.principal_setting } : {}) });
     return errors.map(code => ({ relation, reason: code === "POSTGRES_RLS_FORCE_DISABLED"
       ? "FORCE ROW LEVEL SECURITY is required but not enabled. An administrator must review this table's filtering, enable FORCE only after review, then rescan and revalidate the saved job. Additional writer grants alone do not fix this."
