@@ -352,6 +352,20 @@ export async function authoringInterruptedProducerInput<C extends NonNullable<Pr
     throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
   return structuredClone(op.producer_input) as Extract<NonNullable<ProviderHttpInput["authoringInput"]>, {consumer:C}>;
 }
+/** Prospective generic provenance must not alter an exact historical request.
+ * Preserve a selected old NULL origin; native context/request equality still
+ * decides whether the reconstructed replacement is admissible. */
+export function authoringFallbackProducerInput(ownerId: string): ProviderHttpInput["authoringInput"] {
+  const state=storage.getStore()?.host?.read();
+  if (state) {
+    validateAuthoringTransportState(state);
+    const linked=state.interrupted_dispositions?.find(d=>d.status==="permitted");
+    const selected=linked ? state.operations.find(o=>o.id===linked.operation_id)
+      : state.operations.find(o=>o.manual_recovery?.status==="permitted" && !disposedOperation(state,o.id));
+    if (selected && !selected.producer_input) return undefined;
+  }
+  return {consumer:"authoring_turn",episode_id:ownerId};
+}
 function manualRecoveryUnavailable(message: string): never {
   throw new AskError("ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE", message, 409);
 }

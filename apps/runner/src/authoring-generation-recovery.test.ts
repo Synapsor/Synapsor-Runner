@@ -106,6 +106,39 @@ describe("producer correction ownership",()=>{
 });
 
 describe("exact linked Source producer handoff",()=>{
+  it("preserves an original NULL producer origin for an exact legacy manual request",async()=>{
+    const f=await fixture("B-refusal-narration-chat"),m=memory(f.endpoint,0),tools:never[]=[];
+    const authorityDigest=askToolSurfaceDigest(tools);
+    const configuration=resolveAskProviderConfiguration({provider:"openai_compatible",model:"DERIVED",api_key:"local-only",base_url:f.endpoint.origin+"/v1",
+      authority_digest:authorityDigest,egress_acknowledged:true},{},new Date());
+    const gateway={mode:"authoring" as const,listTools:()=>tools,close:async()=>{},
+      callTool:async()=>{throw new Error("No tool is declared for this transport control.");}};
+    const options={configuration,authorityDigest,gateway,tools,history:[],question:"Inspect the retained pending task.",
+      signal:new AbortController().signal,allowToolFreeAuthoringResponse:true};
+    let captured:ProviderHttpInput|undefined;
+    // Capture the actual normal request construction without sending. Native
+    // transport below records the historical untagged origin; no saved state
+    // or ended response is edited/imported to emulate the old producer.
+    await expect(runAskProviderTurn({...options,dependencies:{requestJson:async request=>{
+      captured={...request,signal:new AbortController().signal};
+      throw new AskError("ASK_PROVIDER_REQUEST_INVALID","DERIVED offline request capture",400);
+    }}})).rejects.toMatchObject({code:"ASK_PROVIDER_REQUEST_INVALID"});
+    const original={...captured!,authoringInput:undefined};
+    const key=canonicalJsonDigest({authority:authorityDigest,required_tool:null,tools:[]});
+    await expect(enter(m,async()=>{
+      const budget=(await createAuthoringHostEpisodeBudget({keyDigest:key,conversational:false}))!;
+      try{return await recoverAuthoringGeneration(original,secureAskJsonRequest,()=>budget.admitIteration());}
+      finally{budget.release();}
+    })).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_UNKNOWN"});
+    expect(m.read().operations[0]!.producer_input).toBeUndefined();
+    const oldRequest=m.read().operations[0]!.request_digest,owner=m.read().operations[0]!.episode_id;
+    await enter(m,async()=>{await permitAuthoringManualRecovery(await prepareAuthoringManualRecovery(canonicalJsonDigest("saved revision")));});
+    await enter(m,()=>runAskProviderTurn({...options,dependencies:{requestJson:secureAskJsonRequest}}));
+    expect(f.sends()).toBe(2);expect(m.read().operations).toHaveLength(1);
+    expect(m.read().operations[0]).toMatchObject({request_digest:oldRequest,episode_id:owner,manual_recovery:{status:"admitted"}});
+    expect(m.read().operations[0]!.producer_input).toBeUndefined();
+    expect(m.read().episodes).toHaveLength(1);expect(m.read().episodes![0]!.iterations_used).toBe(2);
+  });
   it("uses the original Source round and fallback counters; another origin refuses before charge",async()=>{
     const f=await fixture("B-success"),m=memory(f.endpoint,0),key=canonicalJsonDigest("coverage tools");
     const origin={consumer:"policy_coverage" as const,episode_id:"11111111-1111-4111-8111-111111111111",

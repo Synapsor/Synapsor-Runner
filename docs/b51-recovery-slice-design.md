@@ -35,6 +35,11 @@ generic turns record their actual fallback-owner identity at the existing reques
 wrapper; this host-only record is never transmitted. Exhausted or unavailable owners expose retained-work inspection
 and truthful separate-job guidance, never fabricate a completed step.
 
+Prospective generic tags are not backfilled onto a permitted historical exact
+replacement. The old NULL producer origin remains NULL while normal request,
+context, destination and budget checks remain exact. This avoids invalidating an
+otherwise identical pre-change manual request merely by adding new metadata.
+
 Typed Action continuation additionally binds its exact recorded logical turn;
 another unfinished Action turn cannot supply its allowance. Connection retry
 policy remains its existing separate administration path. No publication,

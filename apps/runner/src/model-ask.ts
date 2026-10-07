@@ -18,7 +18,7 @@ import {
 import type { AskIntentCheckMode } from "./ask-intent-preferences.js";
 import { askPlanSyntaxRepair, matchesAskPlanSyntaxRepair, type AskPlanSyntaxRepair } from "./ask-plan-recovery.js";
 import { isFixedOpenRouterModel, OPENROUTER_CHAT_ENDPOINT } from "./hosted-provider-settings.js";
-import { recoverAuthoringGeneration, authoringGenerationHandled, authoringGenerationFailed, authoringQuestionCompletion, authoringQuestionSequenceCompletion, createAuthoringHostEpisodeBudget, suspendAuthoringHostEpisodeBudget, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
+import { recoverAuthoringGeneration, authoringGenerationHandled, authoringGenerationFailed, authoringQuestionCompletion, authoringQuestionSequenceCompletion, createAuthoringHostEpisodeBudget, suspendAuthoringHostEpisodeBudget, authoringFallbackProducerInput, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { coverageToolDeclarationIssue } from "./authoring-coverage-tool-profile.js";
 
 const DEFAULT_REMOTE_TIMEOUT_SECONDS = 30;
@@ -706,9 +706,9 @@ export async function runAskProviderTurn(input: {
   };
   let currentCallbackMayHaveRun = false;
   const requestJson: NonNullable<AskProviderDependencies["requestJson"]> = (requestInput) => checked(async () => {
+    const producerInput=input.authoringInput ?? (hostEpisode ? authoringFallbackProducerInput(hostEpisode.ownerId) : undefined);
     const preparedInput = { ...requestInput, signal, contextMeasurement,
-      ...(input.authoringInput ? {authoringInput: input.authoringInput}
-        : hostEpisode ? {authoringInput: {consumer:"authoring_turn" as const,episode_id:hostEpisode.ownerId}} : {}) };
+      ...(producerInput ? {authoringInput:producerInput} : {}) };
     if (input.gateway.mode !== "authoring") return request(preparedInput);
     await authoringGenerationHandled(generationResults);
     // A completed preceding callback remains historical progress. If the next
