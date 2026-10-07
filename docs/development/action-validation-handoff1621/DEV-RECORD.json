@@ -161,12 +161,25 @@
         "numFailedTests": 0,
         "numPendingTests": 0
       }
+    },
+    "full-failure-two-files": {
+      "exit": 0,
+      "stop": null,
+      "seconds": 276.292475938797,
+      "pgid": 2879762,
+      "owned_live": [],
+      "free_bytes": 115655843840,
+      "head": "de07f2fe1192d573a66cdf23cf59b4750544b4a1",
+      "tests": {
+        "numPassedTests": 444,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      }
     }
   },
   "open": [
-    "Independent variant verdict pending",
-    "One full package suite pending Main admission",
-    "Original1620 third validation remains NOT_ESTABLISHED; no replay or counters changed"
+    "Reviewer final fixture-head acceptance and fresh settled full8 pending",
+    "Original1620 validation remains NOT_ESTABLISHED; old run/counters unchanged"
   ],
   "usage_checkpoint_used_percent": 62,
   "proof_notes": [
@@ -177,6 +190,16 @@
     "Shared stop controls35 pass;197 filtered tests are unexecuted, not accepted skips. Action/checkpoint222 pass with1 preexisting pending.",
     "Existing compiled phase gate and whole-batch recovery completion remain untouched. Compatible only; incomplete contract does not gain early successful stop. No allowance/reset, activation or Source/privacy assurance change.",
     "The eight-file callsite batch inherited an invalid90s aggregate wrapper cap: preserved TIMEOUT/exit-2/no vitest JSON or per-file result. Successor removes only aggregate cap, retains exact native deadlines/floor/closure.",
-    "Actual completed callsite batch176P4F; three Source declaration rows left obsolete terminal narration queued and concurrent winner call count2 became1 (loser0/CAS rejection intact). Only those two fixture lines changed; two affected files pass. Six other files not rerun."
-  ]
+    "Actual completed callsite batch176P4F; three Source declaration rows left obsolete terminal narration queued and concurrent winner call count2 became1 (loser0/CAS rejection intact). Only those two fixture lines changed; two affected files pass. Six other files not rerun.",
+    "Full first attempt3 failures classified as obsolete narration fixtures. Removed exactly3 terminal response items and encodedSizes6\u21925; all queue empty/limit1/digestchange/invalid-body/normalized-result/surviving-duty/currentness assertions unchanged.",
+    "Two boundary state mismatches arose after stale inner queue assertions prevented producer return; caller catch preserves prior state. This is source-backed inference, not an observed inner diagnostic from full log.",
+    "Affected full two-file rerun444P0F0S/276.292s/no guard/owned_live[]. No product diff after17d; final settledfull remains separately owed."
+  ],
+  "failed_full": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-action-validation-full1621/compact-dev/DEV-RECORD.json",
+    "tests": "9316P3F576S",
+    "source": "de07f2fe1192d573a66cdf23cf59b4750544b4a1",
+    "tails": "NOTREACHED",
+    "closure_notes": "e1c1036257c8928dd81c3267191f9e947ca50780"
+  }
 }

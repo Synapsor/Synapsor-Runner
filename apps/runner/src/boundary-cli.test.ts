@@ -5780,7 +5780,6 @@ describe("boundary operator-plane CLI", () => {
           { type: "function_call", call_id: "limit", name: "runner__submit_approval_policy_draft",
             arguments: JSON.stringify({ status: "draft", ...request.existingDraft!.approval, shared_limits: limits, changed_fields: ["shared_limits"] }) },
           { type: "function_call", call_id: "validate", name: "runner__validate_action_draft", arguments: "{}" },
-          { type: "message", role: "assistant", content: [{ type: "output_text", text: "The account limit is now one; all other settings are retained." }] },
         ];
         const result = await generateModelActionRuleDraft({ ...request, approvalLimitsOnly: true,
           session: { ...request.session, dependencies: { requestJson: async () => {
@@ -9536,7 +9535,6 @@ describe("boundary operator-plane CLI", () => {
                   class_name: "unmarked_replacement", required_role: "unmarked_reviewer", shared_limits: [],
                   required_approvals: 2, changed_fields: ["required_approvals"] }) },
               { type: "function_call", call_id: "validate", name: "runner__validate_action_draft", arguments: "{}" },
-              { type: "message", role: "assistant", content: [{ type: "output_text", text: "Only the reviewer count changed to two." }] },
             ];
             const bodies: string[] = [];
             const result = await generateModelActionRuleDraft({ ...input,

@@ -191,8 +191,7 @@ describe("owned complete public structured program", () => {
         call("runner.submit_effect_envelope_draft", { status: "draft", ...effect, changed_fields: ["allowed_fields"] }),
         call("runner.submit_action_rule_draft", { status: "draft", ...rule, changed_fields: ["inputs"] }),
         call("runner.submit_approval_policy_draft", { status: "draft", ...approval, changed_fields: [] }),
-        call("runner.validate_action_draft", {}),
-        { status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text: "The disabled edit is prepared. External duties are not verified." }] }] } }];
+        call("runner.validate_action_draft", {})];
       const encodedSizes: number[] = [];
       const result = await generateModelActionRuleDraft({ session: { ...session, conversation, dependencies: { requestJson: async request => {
         const encoded = JSON.stringify(request.body); encodedSizes.push(Buffer.byteLength(encoded));
@@ -216,7 +215,7 @@ describe("owned complete public structured program", () => {
       expect(result.compiled.draft.effect.allowed_fields[0]!.maximum).toBe(6);
       expect(result.compiled.draft.approval).toEqual(existingDraft.approval);
       expect(result).toMatchObject({ authority_granted: false, source_database_changed: false });
-      expect(steps).toEqual([]); expect(encodedSizes).toHaveLength(6); expect(Math.max(...encodedSizes)).toBeLessThan(1024 * 1024);
+      expect(steps).toEqual([]); expect(encodedSizes).toHaveLength(5); expect(Math.max(...encodedSizes)).toBeLessThan(1024 * 1024);
       if (process.env.OWNED_STUDIO_REQUEST_SUMMARY) await fs.writeFile(process.env.OWNED_STUDIO_REQUEST_SUMMARY, JSON.stringify({
         origin: "OWNED_OFFLINE_ACTUAL_ENCODER_COMPONENT", schema_version: "helper.authoring-program-encoder.v1", source_digest: source.digest,
         complete_selected_intents: selected.length, current_intent_index: 36, requests: encodedSizes.map((bytes, index) => ({ index, utf8_body_bytes: bytes })),
