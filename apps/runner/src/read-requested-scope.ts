@@ -79,7 +79,7 @@ export function resolveRequestedReadScope(input: {
       const negativeWords = normalizedSemanticWords(negative[1]!);
       // Exact root references only: a private resource.field prohibition
       // does not prohibit the resource's other, public fields.
-      const tokens = negative[1]!.match(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu) ?? [];
+      const tokens: string[] = negative[1]!.match(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu) ?? [];
       for (const id of ids) if (tokens.includes(id)) excluded.add(id);
       for (const definition of input.definitions) if (definition.phrases.some(phrase => phraseMatches(phrase, negativeWords))) excluded.add(definition.resource);
     }
