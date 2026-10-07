@@ -486,7 +486,7 @@ describe("identity-bound routing/loader and predicate scope",()=>{
     const rule={status:"draft",name:f.next.name,outcome:f.next.outcome,require:f.next.require,derive:f.next.derive,ttl_seconds:f.next.ttl_seconds,review:f.next.review};
     const steps=[tool("runner__submit_verification_boundary_draft",{status:"draft",...verification}),tool("runner__submit_action_rule_draft",rule),
       tool("runner__validate_action_draft",{}),tool("runner__submit_verification_boundary_draft",{status:"draft",...f.next.verification}),
-      tool("runner__validate_action_draft",{}),{status:200,body:{output:[{type:"message",role:"assistant",content:[{type:"output_text",text:"The exact declaration compiles; current Source review remains pending."}]}]}}];
+      tool("runner__validate_action_draft",{})];
     const result=await generateModelActionRuleDraft({intent:"Repair only the exact current Source nomination.",builtCatalog:f.context.builtCatalog,
       readBoundary:f.context.readBoundary,readBoundaryDigest:f.context.readBoundaryDigest,egressAcknowledged:true,env:{OPENAI_API_KEY:"owned-offline-test-key"},
       workUnitCorrection:{draft:f.compiled.draft,assessment:f.assessment},onCheckpoint:async()=>{},

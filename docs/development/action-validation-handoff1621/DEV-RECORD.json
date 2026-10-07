@@ -124,6 +124,43 @@
       "owned_live": [],
       "free_bytes": 115955220480,
       "head": "0ad9ea078f90256047e7573e918a2b76e3ab19b1"
+    },
+    "existing-callsites": {
+      "exit": -2,
+      "stop": "TIMEOUT",
+      "seconds": 90.09843683242798,
+      "pgid": 2840334,
+      "owned_live": [],
+      "free_bytes": 115871793152,
+      "head": "17d64350d2982931c8ed086ff33fd78fc8edb906"
+    },
+    "existing-callsites-native-deadlines": {
+      "exit": 1,
+      "stop": null,
+      "seconds": 182.58686351776123,
+      "pgid": 2842615,
+      "owned_live": [],
+      "free_bytes": 115805974528,
+      "head": "17d64350d2982931c8ed086ff33fd78fc8edb906",
+      "tests": {
+        "numPassedTests": 176,
+        "numFailedTests": 4,
+        "numPendingTests": 0
+      }
+    },
+    "changed-callsites": {
+      "exit": 0,
+      "stop": null,
+      "seconds": 3.6476004123687744,
+      "pgid": 2845887,
+      "owned_live": [],
+      "free_bytes": 115805626368,
+      "head": "17d64350d2982931c8ed086ff33fd78fc8edb906",
+      "tests": {
+        "numPassedTests": 118,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      }
     }
   },
   "open": [
@@ -138,6 +175,8 @@
     "Existing tests remove only obsolete queued final narration/count expectations. Unchanged-draft deep equality, changed_phases=[], authority=false and source_database_changed=false remain. Callback fields cannot be asserted through a nonexistent next provider request.",
     "Initial file run33 narration-related failures and later1 accidental incomplete-count expectation failure are preserved; incomplete count restored3, no runtime/safety change.",
     "Shared stop controls35 pass;197 filtered tests are unexecuted, not accepted skips. Action/checkpoint222 pass with1 preexisting pending.",
-    "Existing compiled phase gate and whole-batch recovery completion remain untouched. Compatible only; incomplete contract does not gain early successful stop. No allowance/reset, activation or Source/privacy assurance change."
+    "Existing compiled phase gate and whole-batch recovery completion remain untouched. Compatible only; incomplete contract does not gain early successful stop. No allowance/reset, activation or Source/privacy assurance change.",
+    "The eight-file callsite batch inherited an invalid90s aggregate wrapper cap: preserved TIMEOUT/exit-2/no vitest JSON or per-file result. Successor removes only aggregate cap, retains exact native deadlines/floor/closure.",
+    "Actual completed callsite batch176P4F; three Source declaration rows left obsolete terminal narration queued and concurrent winner call count2 became1 (loser0/CAS rejection intact). Only those two fixture lines changed; two affected files pass. Six other files not rerun."
   ]
 }

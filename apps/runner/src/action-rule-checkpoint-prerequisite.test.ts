@@ -387,7 +387,7 @@ describe("retained public-origin collection checkpoint prerequisites", () => {
     expect(rejected.reason.message).toContain("BOUNDARY_AUTHORING_RESUME_CHANGED");
     expect(store.components).toEqual(first.f.checkpoint.components);
     expect(store.reviewed_private_sources).toHaveLength(1);
-    expect([first.requestJson.mock.calls.length, second.requestJson.mock.calls.length].sort()).toEqual([0, 2]);
+    expect([first.requestJson.mock.calls.length, second.requestJson.mock.calls.length].sort()).toEqual([0, 1]);
   });
 
   it("asks fresh consent for new metadata on resume, rather than reusing an old private proof", async () => {
