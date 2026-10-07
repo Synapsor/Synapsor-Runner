@@ -16,11 +16,11 @@ import { runSourceInputConversation } from "./authoring-input-policy-conversatio
 import { assertSourceInputRootBinding, createSourceInputHost } from "./authoring-input-host.js";
 import { runVersionConversation } from "./authoring-version-conversation.js";
 import { createVersionQuestionHost } from "./authoring-version-host.js";
-import { presentSourceInputInteraction, presentVersionInteraction } from "./authoring-question-presenter.js";
+import { presentSourceInputInteraction, presentVersionInteraction, presentReadMeaningInteraction,
+  presentBusinessStatementInteraction, rememberActionQuestionDetails, promptActionBusinessQuestion } from "./authoring-question-presenter.js";
 import { createReadMeaningHost } from "./authoring-read-meaning-host.js";
 import { createBusinessStatementHost } from "./authoring-business-statement-host.js";
 import { prepareReadBusinessStatementDecision } from "./authoring-business-statement-read-decision.js";
-import type { ReadMeaningInteraction, ReadMeaningInteractionResponse } from "./authoring-read-meaning-interaction.js";
 import { actionRuleAuthoringCheckpoint, actionLogicalTurnMaterialDigest, assertActionLogicalTurnJournalAdvance,
   type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { sourceInputFidelity } from "./authoring-input-policy.js";
@@ -3315,39 +3315,6 @@ function withBoundaryModelProgress<T>(
     : operation();
 }
 
-async function presentReadMeaningInteraction(input: {
-  session: BoundaryReviewInteractiveSession;
-  model: ActionModelSuggestionSession;
-  businessContext?: OperatorBusinessContext;
-  view: ReadMeaningInteraction;
-}): Promise<ReadMeaningInteractionResponse> {
-  const { view } = input;
-  if (view.kind === "question") {
-    const raw = await input.session.promptText(presentOperatorClarification(view.text,
-      { stage: "read", context: input.businessContext, target: view.request }), {
-      preserveWhitespace: true, recordPolicyAnswer: false,
-      context: readMeaningQuestionMaterial(input.model, view.request, input.businessContext, view.previous),
-    });
-    return { kind: "answer", binding: view.binding, raw: raw ?? null };
-  }
-  if (view.kind === "readback") {
-    const decline = view.purpose === "decline", replacement = view.purpose === "replacement";
-    const accepted = await input.session.confirm(decline ? "Decline this Read question? No keeps it pending."
-      : replacement ? "Use this new answer as the current interpretation?" : "Record these exact words as the meaning for this task?", {
-      defaultValue: false,
-      context: decline ? ["This is a local decision, not business meaning or a model request. No keeps the exact saved question available to answer on Resume."]
-        : operatorBusinessReadback([...view.lines], input.businessContext),
-      exactDetails: { title: decline ? "CURRENT READ QUESTION" : replacement ? "CURRENT READ MEANING REPLACEMENT" : "CURRENT READ MEANING", lines: [...view.lines] },
-    });
-    return { kind: "decision", binding: view.binding, accepted: accepted ?? null };
-  }
-  const choice = await input.session.chooseOption?.("SAVED MEANING IS STILL PENDING", [
-    { value: "keep", label: "Keep this meaning pending [recommended]", detail: "The earlier response stays saved; no meaning or model request is inferred." },
-    { value: "review", label: "Review the saved answer", detail: "Reopen its exact readback without asking again or adopting it automatically." },
-    ...(view.canReplace ? [{ value: "replace", label: "Replace the answer", detail: "Answer this same question again; retain the earlier words and review the new response explicitly." }] : []),
-  ], { initialValue: "keep", context: [...view.material] });
-  return { kind: "pending", binding: view.binding, choice: choice === "review" || choice === "replace" ? choice : "keep" };
-}
 
 function readMeaningQuestionMaterial(model: ActionModelSuggestionSession, request: ModelReadClarificationRequest,
   businessContext?: OperatorBusinessContext, previous?: ModelReadClarificationRequest & { answer: string }): string[] {
@@ -4897,28 +4864,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         decisions: readPrerequisiteDecisions, recovery: generationRecovery }),
       checkpointFailure: checkpointSaveFailure,
     },
-    interact: async view => {
-      if (view.kind === "question") {
-        const displayed = presentOperatorClarification(view.text,
-          { stage: options.handoff ? "read" : "action", context: options.businessContext });
-        return { kind: "answer", binding: view.binding, raw: await options.prompt(displayed) ?? null };
-      }
-      if (view.kind === "pending") {
-        const choice = await input.session.chooseOption?.("SAVED BUSINESS STATEMENT", [
-          { value: "keep", label: "Keep this decision pending" },
-          { value: "review", label: "Review the retained answer" },
-          { value: "replace", label: "Answer again; retain the earlier words" },
-        ], { initialValue: "keep", reviewOnly: true,
-          context: operatorBusinessReadback([...view.lines], options.businessContext) });
-        return { kind: "pending", binding: view.binding,
-          choice: choice === "review" || choice === "replace" ? choice : "keep" };
-      }
-      const yes = await input.session.confirm("Record this exact statement for the current question?", {
-        defaultValue: view.defaultValue, context: operatorBusinessReadback([...view.lines], options.businessContext),
-        exactDetails: { title: "EXACT BUSINESS STATEMENT", lines: [view.question, ...view.lines] },
-      });
-      return { kind: "decision", binding: view.binding, accepted: yes ?? null };
-    },
+    interact: view => presentBusinessStatementInteraction({ view, stage: options.handoff ? "read" : "action",
+      session: input.session, businessContext: options.businessContext, prompt: options.prompt }),
   }).review();
   // The model conversation is populated only after this menu. Read the saved
   // source session itself so a confirmed interpretation remains publicly
@@ -7720,7 +7667,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       save: async (permit, subject) => { await persistAuthoringResume("read_mapping", permit);
         if (resumePersistenceBlocked) throw checkpointSaveFailure(subject); },
       checkpointFailure: checkpointSaveFailure,
-    }, interact: view => presentReadMeaningInteraction({ session: readAssistanceSession, model: mappingSession,
+    }, interact: view => presentReadMeaningInteraction({ session: readAssistanceSession,
+      questionMaterial: view.kind === "question" ? readMeaningQuestionMaterial(mappingSession, view.request,
+        operatorBusinessContext(mappingBoundary.pack.resources), view.previous) : [],
       businessContext: operatorBusinessContext(mappingBoundary.pack.resources), view }),
     answerTooLarge: () => input.session.present?.("READ MEANING REMAINS PENDING", [
       "Your complete answer is saved. This Read mapping accepts at most 1,000 text units; no part was shortened or adopted. Resume to supply a shorter answer for this same question."], "warning") });
@@ -8484,8 +8433,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                   };
                   // This is the authoring model's own turn. Follow-up questions
                   // return to the same tool-enabled conversation, not a narrator.
-                  input.authoringChat?.rememberDetails("CURRENT ACTION QUESTION", [question,
-                    "This question has not changed a saved draft. The model can prepare supported metadata relationships itself; source rows are not available here."]);
+                  rememberActionQuestionDetails({ phase: "draft", question, chat: input.authoringChat });
                   return reviewBusinessAnswer({ question, stage: "action_drafting",
                     ...((preserveProgramRevisionAgenda ? pendingActionRevision?.checkpoint : resumeAction?.checkpoint)?.pending_question
                       ? { producerQuestionDigest: canonicalJsonDigest({
@@ -8494,13 +8442,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                         question: (preserveProgramRevisionAgenda ? pendingActionRevision?.checkpoint : resumeAction?.checkpoint)!.pending_question }) } : {}),
                     businessContext: operatorBusinessContext(semanticActionCatalog!.authoring.resources),
                     assertCurrent: assertAnswerCurrent,
-                    prompt: async displayed => {
-                      if (input.authoringChat?.readOperator) {
-                        await input.authoringChat.streamModel(displayed.split(/\r?\n/u));
-                        return input.authoringChat.readOperator(undefined, assertAnswerCurrent, { recordPolicyAnswer: false, preserveWhitespace: true });
-                      }
-                      return input.session.promptText(displayed, { context: ["BUSINESS QUESTION"], recordPolicyAnswer: false, preserveWhitespace: true });
-                    } });
+                    prompt: displayed => promptActionBusinessQuestion({ phase: "draft", displayed,
+                      session: input.session, chat: input.authoringChat, assertCurrent: assertAnswerCurrent }) });
                 },
               }),
             );
@@ -10632,7 +10575,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         reservedOutcomes: semanticActionAuthorityDraft!.authority.rules.map((other) => other.rule.outcome)
           .filter((outcome) => outcome !== before.rule.outcome),
         egressAcknowledged: true, askClarification: async (question) => {
-          chat.rememberDetails("ACTION EDIT QUESTION DETAILS", [question]);
+          rememberActionQuestionDetails({ phase: "edit", question, chat });
           return reviewBusinessAnswer({ question, stage: "authority_review",
             ...(pendingActionRevision?.checkpoint?.pending_question ? { producerQuestionDigest: canonicalJsonDigest({
               intent: pendingActionRevision.checkpoint.intent_digest, context: pendingActionRevision.checkpoint.context_digest,
@@ -10641,10 +10584,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             assertCurrent: async permit => {
               await assertAuthoringResumeCurrent({ revision: { outcome: before.rule.outcome, instruction,
                 ...(operatorStatements ? { operator_statements: operatorStatements } : {}), baseline_digest: canonicalJsonDigest(before.draft) } }, false, permit);
-            }, prompt: async displayed => {
-              await chat.streamModel([displayed]);
-              return chat.readOperator?.(undefined, undefined, { recordPolicyAnswer: false, preserveWhitespace: true });
-            } });
+            }, prompt: displayed => promptActionBusinessQuestion({ phase: "edit", displayed, session: input.session, chat }) });
         },
         ...versionPorts,
       }));
