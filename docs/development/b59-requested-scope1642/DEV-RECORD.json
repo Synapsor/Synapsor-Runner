@@ -1,0 +1,205 @@
+{
+  "task": "B59 requested scope",
+  "base": "d9f8635509a32093ae952314175f21116ef2faa9",
+  "characterization_head": "ec41461c",
+  "status": "WIP_LOWER_BOUND_COVERAGE_207_PASS_TYPES0_NOT_FULL_B59_ACCEPTANCE",
+  "T0": "2026-10-07T21:51:08Z",
+  "scope_cutoff": "2026-10-09T21:51:08Z",
+  "window_end": "2026-10-10T21:51:08Z",
+  "runtime_edits": true,
+  "boundary_commands_lease": false,
+  "root": "/var/tmp/synapsor-b59-requested-scope1642-owned",
+  "cwd": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c",
+  "policy": "Explicit Owner PAUSE; no usage monitoring; paid closed; no database/provider/full suite",
+  "baseline_build": {
+    "exit": 0,
+    "stop": null,
+    "seconds": 46.0818076133728,
+    "pgid": 3529960,
+    "owned_live": [],
+    "free_bytes": 102759108608,
+    "head": "ec41461c1da3d70730151242e1272bb4105cc070"
+  },
+  "baseline": {
+    "exit": 1,
+    "stop": null,
+    "seconds": 2.8399240970611572,
+    "pgid": 3531447,
+    "owned_live": [],
+    "free_bytes": 102757330944,
+    "head": "ec41461c1da3d70730151242e1272bb4105cc070"
+  },
+  "baseline_counts": {
+    "pass": 68,
+    "fail": 1,
+    "failed_contract": "Harmless active-offer paraphrase is rejected as omitted area"
+  },
+  "public_contract": {
+    "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/candidate4-public-preseal-contract.json",
+    "sha256": "2f818efcbbbb6bed37769aa3800ae3b4b79e56574fb8dbfd1fe71a4235b13a04"
+  },
+  "oracle_exposure": {
+    "cause": "Main originally mislabeled ce332 private preseal as public; corrected afterward",
+    "read": "All15 B59 variant/expected/required_observation bodies B59-01..15; no B60/B61 bodies",
+    "timing": "Existing declared-facts ec414 fixture committed and baseline executed before exposure; no subsequent fixture/runtime changes",
+    "use": "Design discussion only; never used as responder input",
+    "independence": "Main notified; Reviewer must replace exposed withheld controls before independent verdict; exposed controls cannot receive hidden credit"
+  },
+  "head": "545486c180258d62743594fd1bd6a87d05ab83fc",
+  "open_items": [
+    "Semantic unrequested expansion/exclusion and reviewed-label association need actual native consumer proof; current lower-bound check is not complete semantic coverage",
+    "Ambiguous same-name resources are left unresolved, not guessed; end-to-end business-question path still to qualify",
+    "Original request/Source/currentness/Resume consumer characterization still pending",
+    "Independent replacement hidden controls required after mistaken private-preseal exposure; no independent verdict",
+    "No fullsuite/integration; boundary-commands.ts remains Main-owned unchanged"
+  ],
+  "captures": {
+    "baseline-build-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/baseline-build-v1/RESULT.json",
+      "sha256": "c0b3f1bbf689a61df0481a5f8f7b1aa1b17e4d1d5afd1f387658fbd45062acdd",
+      "exit": 0,
+      "stop": null,
+      "seconds": 46.0818076133728,
+      "pgid": 3529960,
+      "owned_live": [],
+      "free_bytes": 102759108608,
+      "head": "ec41461c1da3d70730151242e1272bb4105cc070"
+    },
+    "baseline-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/baseline-v1/RESULT.json",
+      "sha256": "20ea56f37c434b498e5421d8002dd4f46f4fa8721b3555028db7ed03b9d98377",
+      "exit": 1,
+      "stop": null,
+      "seconds": 2.8399240970611572,
+      "pgid": 3531447,
+      "owned_live": [],
+      "free_bytes": 102757330944,
+      "head": "ec41461c1da3d70730151242e1272bb4105cc070",
+      "tests": {
+        "numPassedTests": 68,
+        "numFailedTests": 1,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "47247f9e482e90e6e7acd4212e999167ac3a7a6c02bda10775eadfbc46179a84"
+    },
+    "workload-baseline-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/workload-baseline-v1/RESULT.json",
+      "sha256": "10ed26376c4f74cb20f82cd19c1d1392002bb26e371ca370bf73cb073916c830",
+      "exit": 1,
+      "stop": null,
+      "seconds": 3.048029899597168,
+      "pgid": 3534429,
+      "owned_live": [],
+      "free_bytes": 102714818560,
+      "head": "4f113486b80fd383ddcc032f758729d8d6567df8",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 1,
+        "numPendingTests": 3
+      },
+      "vitest_sha256": "a966a0e01b19106c5454f532a45f5253571967f1af17fd20d91baf7dc90a784b"
+    },
+    "workload-baseline-v2": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/workload-baseline-v2/RESULT.json",
+      "sha256": "935c05c43eb93d42944597c601b7421f0347851186df79fef74e1141c624f08a",
+      "exit": 1,
+      "stop": null,
+      "seconds": 3.4444754123687744,
+      "pgid": 3535051,
+      "owned_live": [],
+      "free_bytes": 102714204160,
+      "head": "4f113486b80fd383ddcc032f758729d8d6567df8",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 1,
+        "numPendingTests": 3
+      },
+      "vitest_sha256": "aae4761f680e617f6e36079739d75a864bcd3a8546fb44e5c03ab40125041338"
+    },
+    "workload-baseline-v3": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/workload-baseline-v3/RESULT.json",
+      "sha256": "142e39650c8342b1d736c84fedd25518131ac6e42e43fc888abd090b501a4dd5",
+      "exit": 1,
+      "stop": null,
+      "seconds": 3.449463129043579,
+      "pgid": 3535906,
+      "owned_live": [],
+      "free_bytes": 102690803712,
+      "head": "4f113486b80fd383ddcc032f758729d8d6567df8",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 1,
+        "numPendingTests": 3
+      },
+      "vitest_sha256": "a8c021ce601e45b9c945619b8afd221b1f392b83eb871ae7ee185d35e62d7483"
+    },
+    "first-fix-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/first-fix-v1/RESULT.json",
+      "sha256": "2d91cc8f41af91ea411d3789a885ec8848b51b115fe9031104acff8fa018f3a2",
+      "exit": 1,
+      "stop": null,
+      "seconds": 5.2408671379089355,
+      "pgid": 3538176,
+      "owned_live": [],
+      "free_bytes": 102688837632,
+      "head": "661e779fa002664a843e931aaa83a061343d6046",
+      "tests": {
+        "numPassedTests": 201,
+        "numFailedTests": 1,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "c604ecd23bc230c7ec90eed650cf808930511133343291eebf96154c654da4b9"
+    },
+    "association-before-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/association-before-v1/RESULT.json",
+      "sha256": "8c98f8eff011c4261103721e0fd201264cafb32887aa799489a6c556d521f4a0",
+      "exit": 1,
+      "stop": null,
+      "seconds": 0.6574380397796631,
+      "pgid": 3543065,
+      "owned_live": [],
+      "free_bytes": 102634745856,
+      "head": "5b1f417b8e0960865415eb83cce0825a89bbd66d",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 4,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "f2f8733a302ba9cbd9654d72aff897492addf1957d0d6641044083b7808cb885"
+    },
+    "association-after-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/association-after-v1/RESULT.json",
+      "sha256": "8571010c253842531fe61b81eb2d75e4106d00f0b9f77968a177563fd514728e",
+      "exit": 0,
+      "stop": null,
+      "seconds": 6.238771915435791,
+      "pgid": 3544288,
+      "owned_live": [],
+      "free_bytes": 102596014080,
+      "head": "5b1f417b8e0960865415eb83cce0825a89bbd66d",
+      "tests": {
+        "numPassedTests": 207,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "4de73807895603ea229264017d90dbc0150b1beff514f88dc09f57677818e627"
+    },
+    "types-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/types-v1/RESULT.json",
+      "sha256": "928c4b02312dd70fb3b21e73edfbdd8a004256f0d28cb84175a509c3a3c099c6",
+      "exit": 0,
+      "stop": null,
+      "seconds": 22.059757709503174,
+      "pgid": 3547684,
+      "owned_live": [],
+      "free_bytes": 102623637504,
+      "head": "545486c180258d62743594fd1bd6a87d05ab83fc"
+    }
+  },
+  "test_definition_notes": [
+    "workload-baseline-v1/v2 fail pretarget on missing synthetic catalog arrays/maps, preserved",
+    "workload-baseline-v3 genuinely resolves incomplete workload (expected-refusal assertion fails)",
+    "first-fix-v1 uses runtime working diff later committed5b1f, fixedhead661;201P1 obsolete summary-only assertion F",
+    "association-after-v1 uses working changes later committed545486;207P0F; types-v1 runs committed545486"
+  ]
+}
