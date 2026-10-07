@@ -1054,9 +1054,9 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     }
     const result = await runAskProviderTurn({
       ...(mediatedVersion ? { actionLogicalTurnBudget: owningBudget } : {}),
-      // A structured business question is a human handoff, not permission for
-      // another autonomous drafting call to guess its answer.
-      stopAfterAuthoringToolBatch: () => Boolean(stagedVersion || clarification),
+      // A question or a compatible host-validated draft returns to Runner.
+      // The whole batch is consumed first; the compiled gate refuses later edits.
+      stopAfterAuthoringToolBatch: () => Boolean(stagedVersion || clarification || compiled?.client_compatibility.compatible),
       authoringInput: {consumer: "action_rule_components", operator_message: operatorMessage,
         ...(program ? {program_resume_revision: program.resume_revision as `sha256:${string}`} : {}),
         ...(mediatedVersion ? {logical_turn_id: logicalTurns!.at(-1)!.id} : {})},
@@ -1108,7 +1108,10 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       continue;
     }
     const expressionRefusal = !compiled && diagnostics.some(item => item.code === "ACTION_RULE_EXPRESSION_KIND_INVALID");
-    let response = [
+    const compiledMessage = compiled?.client_compatibility.compatible
+      ? "The Action draft is ready for review."
+      : undefined;
+    let response = compiledMessage ?? [
       ...(expressionRefusal ? ["Runner validation: an invalid generated expression remains in the disabled draft. No valid expression was accepted; this does not establish a compiler capability limitation. Resume the saved draft to repair its representation and validate it. No authority or source data changed.", "Model response (not a compiler finding):"] : []),
       clarification || result.answer.trim() || "What would you like to clarify before continuing?",
     ].join("\n\n");
@@ -1122,7 +1125,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       await completeOrdinaryTurn("compiled_draft", result);
       return {
       state: "ready", compiled, provider: input.session.provider, model: input.session.model,
-      message: result.answer, correction_used: correctionUsed, clarification_count: clarificationCount,
+      message: compiledMessage ?? result.answer, correction_used: correctionUsed, clarification_count: clarificationCount,
       authority_granted: false, source_database_changed: false,
       work_unit_source_review: workUnitSourceStatus,
       ...(usage ? { usage } : {}),

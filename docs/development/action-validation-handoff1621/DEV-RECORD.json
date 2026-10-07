@@ -1,0 +1,143 @@
+{
+  "base": "61215142e3c813512109c92f92fa93c7b1939087",
+  "wip_failing_before": "0ad9ea078f90256047e7573e918a2b76e3ab19b1",
+  "scope": "Native Action producer compatible validation yields to Runner without extra narration; structural disabled review only.",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-action-validation-handoff1621",
+  "runs": {
+    "failing-before": {
+      "exit": 1,
+      "stop": null,
+      "seconds": 4.056884527206421,
+      "pgid": 2828340,
+      "owned_live": [],
+      "free_bytes": 115960569856,
+      "head": "0ad9ea078f90256047e7573e918a2b76e3ab19b1",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 1,
+        "numPendingTests": 191
+      }
+    },
+    "failing-before-final-declared": {
+      "exit": 1,
+      "stop": null,
+      "seconds": 3.252748727798462,
+      "pgid": 2835354,
+      "owned_live": [],
+      "free_bytes": 115957489664,
+      "head": "0ad9ea078f90256047e7573e918a2b76e3ab19b1",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 1,
+        "numPendingTests": 193
+      }
+    },
+    "failing-before-semantic-final": {
+      "exit": 1,
+      "stop": null,
+      "seconds": 3.646012544631958,
+      "pgid": 2837166,
+      "owned_live": [],
+      "free_bytes": 115955474432,
+      "head": "0ad9ea078f90256047e7573e918a2b76e3ab19b1",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 1,
+        "numPendingTests": 193
+      }
+    },
+    "focused-new3": {
+      "exit": 0,
+      "stop": null,
+      "seconds": 3.8469841480255127,
+      "pgid": 2831300,
+      "owned_live": [],
+      "free_bytes": 115959730176,
+      "head": "0ad9ea078f90256047e7573e918a2b76e3ab19b1",
+      "tests": {
+        "numPassedTests": 3,
+        "numFailedTests": 0,
+        "numPendingTests": 191
+      }
+    },
+    "action-model-file": {
+      "exit": 1,
+      "stop": null,
+      "seconds": 5.255505323410034,
+      "pgid": 2831912,
+      "owned_live": [],
+      "free_bytes": 115959361536,
+      "head": "0ad9ea078f90256047e7573e918a2b76e3ab19b1",
+      "tests": {
+        "numPassedTests": 160,
+        "numFailedTests": 33,
+        "numPendingTests": 1
+      }
+    },
+    "action-model-file-v2": {
+      "exit": 1,
+      "stop": null,
+      "seconds": 4.83306360244751,
+      "pgid": 2834413,
+      "owned_live": [],
+      "free_bytes": 115958312960,
+      "head": "0ad9ea078f90256047e7573e918a2b76e3ab19b1",
+      "tests": {
+        "numPassedTests": 192,
+        "numFailedTests": 1,
+        "numPendingTests": 1
+      }
+    },
+    "affected-semantic-final": {
+      "exit": 0,
+      "stop": null,
+      "seconds": 6.4482738971710205,
+      "pgid": 2837289,
+      "owned_live": [],
+      "free_bytes": 115955359744,
+      "head": "0ad9ea078f90256047e7573e918a2b76e3ab19b1",
+      "tests": {
+        "numPassedTests": 222,
+        "numFailedTests": 0,
+        "numPendingTests": 1
+      }
+    },
+    "shared-stop-contract": {
+      "exit": 0,
+      "stop": null,
+      "seconds": 2.4342854022979736,
+      "pgid": 2836437,
+      "owned_live": [],
+      "free_bytes": 115956871168,
+      "head": "0ad9ea078f90256047e7573e918a2b76e3ab19b1",
+      "tests": {
+        "numPassedTests": 35,
+        "numFailedTests": 0,
+        "numPendingTests": 197
+      }
+    },
+    "types": {
+      "exit": 0,
+      "stop": null,
+      "seconds": 10.85259747505188,
+      "pgid": 2836737,
+      "owned_live": [],
+      "free_bytes": 115955220480,
+      "head": "0ad9ea078f90256047e7573e918a2b76e3ab19b1"
+    }
+  },
+  "open": [
+    "Independent variant verdict pending",
+    "One full package suite pending Main admission",
+    "Original1620 third validation remains NOT_ESTABLISHED; no replay or counters changed"
+  ],
+  "usage_checkpoint_used_percent": 62,
+  "proof_notes": [
+    "Matching final declared-facts regression run overlays only exact base612 action-rule-model.ts, restoring patched bytes in finally; real allowance admission fails at call13 after12 genuine calls.",
+    "Three added producer controls cover successful call12, known whole-batch later-edit refusal, and compiler-refused call12. Business facts appear in actual visible operator intent; real compiler/Input/Source callbacks remain.",
+    "Existing tests remove only obsolete queued final narration/count expectations. Unchanged-draft deep equality, changed_phases=[], authority=false and source_database_changed=false remain. Callback fields cannot be asserted through a nonexistent next provider request.",
+    "Initial file run33 narration-related failures and later1 accidental incomplete-count expectation failure are preserved; incomplete count restored3, no runtime/safety change.",
+    "Shared stop controls35 pass;197 filtered tests are unexecuted, not accepted skips. Action/checkpoint222 pass with1 preexisting pending.",
+    "Existing compiled phase gate and whole-batch recovery completion remain untouched. Compatible only; incomplete contract does not gain early successful stop. No allowance/reset, activation or Source/privacy assurance change."
+  ]
+}

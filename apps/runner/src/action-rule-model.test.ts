@@ -145,7 +145,7 @@ describe("conversational Action authoring tools", () => {
     expect(checkpoint?.components.verification).toBeDefined();
     expect(initial.catalog.resources[0]!.version_field).toBeUndefined();
     const resumed = [call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
-      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Ready for review.")];
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {})];
     const actual = await converseActionRuleDraft({ ...requestInput(async () => resumed.shift()!), builtCatalog: initial,
       reviewVersionField, checkpoint, askClarification: async () => "One billing reviewer." });
     expect(reviewVersionField.mock.calls[1]?.[0]).toMatchObject({ previousReview: review });
@@ -197,7 +197,7 @@ describe("conversational Action authoring tools", () => {
       onCheckpoint: async value => { checkpoint = value; }, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
     const before = structuredClone(checkpoint);
     const resumed = [call("runner.inspect_action_draft", {}), call("runner.submit_approval_policy_draft"),
-      call("runner.validate_action_draft", {}), say("The updated access and saved action validate.")];
+      call("runner.validate_action_draft", {})];
     const requests: string[] = [];
     const result = await converseActionRuleDraft({ ...requestInput(async request => {
       requests.push(JSON.stringify(request.body)); return resumed.shift()!;
@@ -284,7 +284,7 @@ describe("conversational Action authoring tools", () => {
         ...(scenario === "public_read_changed" ? { readBoundaryDigest: canonicalJsonDigest("unauthorized new public access") } : {}) };
     });
     const steps = [call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
-      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Ready for review.")];
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {})];
     const request = vi.fn(async () => steps.shift()!);
     let saved: ActionRuleAuthoringCheckpoint | undefined;
     const result = converseActionRuleDraft({ ...requestInput(request), checkpoint, revalidateSavedComponents: true,
@@ -379,7 +379,7 @@ describe("conversational Action authoring tools", () => {
     const question = () => structured ? call("runner.submit_action_rule_draft", { status: "clarification", question: technical }) : say(technical);
     const steps = [question(), question(), call("runner.submit_verification_boundary_draft"),
       call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
-      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("The disabled draft is prepared.")];
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {})];
     const requests: string[] = [], onStream = vi.fn();
     const input = requestInput(async request => {
       requests.push(JSON.stringify(request.body));
@@ -486,23 +486,61 @@ describe("conversational Action authoring tools", () => {
       return { input, events, requestJson, queues, readCheckpoint, state: () => state, onCheckpoint, stageVersionQuestion,
         saveVersion, boundary, review, tracked, question: () => question! };
     }
+    const declaredPauseIntent = "For billing.accounts, only an active account without a risk hold may request pausing. "
+      + "Set only status to paused, proposal-only, with no direct execution. Require one billing_reviewer for every proposal, "
+      + "no automatic shared limits, and a 300-second proposal lifetime. Read the subject account under its existing trusted scope.";
     it("hands the twelfth validated Action batch to Runner without a thirteenth narration call", async () => {
       const f = controlled();
       for (const name of ["runner.submit_verification_boundary_draft", "runner.submit_effect_envelope_draft",
         "runner.submit_action_rule_draft", "runner.submit_approval_policy_draft"]) f.queues.push(call(name));
       for (let i = 0; i < 7; i += 1) f.queues.push(call("runner.inspect_action_draft", {}));
       f.queues.push(call("runner.validate_action_draft", {}));
-      const result = await f.tracked(() => converseActionRuleDraft({ ...f.input, onCheckpoint: f.onCheckpoint,
+      const result = await f.tracked(() => converseActionRuleDraft({ ...f.input, intent: declaredPauseIntent, onCheckpoint: f.onCheckpoint,
         stageVersionQuestion: f.stageVersionQuestion, reviewVersionQuestion: f.saveVersion,
         assertLogicalTurnBoundary: f.boundary }));
       expect(result.state).toBe("ready");
       expect(result.compiled.client_compatibility.compatible).toBe(true);
+      expect(result.message).toMatch(/review/i);
+      expect(result.message).not.toContain("tool batch");
       expect(result.authority_granted).toBe(false); expect(result.source_database_changed).toBe(false);
       expect(f.requestJson).toHaveBeenCalledTimes(12); expect(f.queues).toEqual([]);
       const turn = f.readCheckpoint().logical_turns!.at(-1)!;
       expect(turn).toMatchObject({ iterations_used: 12, tool_calls_used: 12, completed: { kind: "compiled_draft" } });
       const completion = turn.completed!.completion;
       expect(f.state()!.operations.find(op => op.id === completion.operation_id)?.state).toBe("checkpointed");
+    });
+    it("consumes the full validated batch while preserving the existing later-edit refusal", async () => {
+      const f = controlled("openai_compatible");
+      for (const name of ["runner.submit_verification_boundary_draft", "runner.submit_effect_envelope_draft",
+        "runner.submit_action_rule_draft", "runner.submit_approval_policy_draft"]) f.queues.push(call(name));
+      const changed = { ...payloadFor("runner.submit_approval_policy_draft"), required_approvals: 2 };
+      f.queues.push({ status: 200, body: { output: [call("runner.validate_action_draft", {}),
+        call("runner.submit_approval_policy_draft", changed), call("runner.validate_action_draft", { unexpected: true })]
+        .flatMap(response => response.body.output).map((tool, index) => ({ ...tool, call_id: `final-batch-${index}` })) } });
+      const result = await f.tracked(() => converseActionRuleDraft({ ...f.input, intent: declaredPauseIntent,
+        onCheckpoint: f.onCheckpoint, stageVersionQuestion: f.stageVersionQuestion,
+        reviewVersionQuestion: f.saveVersion, assertLogicalTurnBoundary: f.boundary }));
+      expect(result.compiled.draft.approval.required_approvals).toBe(1);
+      expect(f.readCheckpoint().components.approval).toMatchObject({ required_approvals: 1 });
+      expect(f.readCheckpoint().logical_turns!.at(-1)).toMatchObject({ iterations_used: 5, tool_calls_used: 7,
+        completed: { kind: "compiled_draft" } });
+      expect(f.requestJson).toHaveBeenCalledTimes(5); expect(f.queues).toEqual([]);
+      expect(f.state()!.operations.every(operation => operation.state === "checkpointed")).toBe(true);
+    });
+    it("does not hand off a compiler-refused twelfth Action validation as a ready draft", async () => {
+      const f = controlled();
+      f.queues.push(call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+        call("runner.submit_action_rule_draft", rulePayload(eligiblePredicate("not_a_reviewed_binding"))),
+        call("runner.submit_approval_policy_draft"));
+      for (let i = 0; i < 7; i += 1) f.queues.push(call("runner.inspect_action_draft", {}));
+      f.queues.push(call("runner.validate_action_draft", {}));
+      await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, intent: declaredPauseIntent,
+        onCheckpoint: f.onCheckpoint, stageVersionQuestion: f.stageVersionQuestion,
+        reviewVersionQuestion: f.saveVersion, assertLogicalTurnBoundary: f.boundary })))
+        .rejects.toMatchObject({ code: "ASK_LOOP_LIMIT_EXCEEDED" });
+      expect(f.readCheckpoint().logical_turns!.at(-1)).toMatchObject({ iterations_used: 12, tool_calls_used: 12 });
+      expect(f.readCheckpoint().logical_turns!.at(-1)!.completed).toBeUndefined();
+      expect(f.requestJson).toHaveBeenCalledTimes(12); expect(f.queues).toEqual([]);
     });
     it("consumes the actual Version batch before outside UI, preserving pending counters across restart", async () => {
       const f = controlled(); f.queues.push(call("runner.review_version_field", { resource: f.review.resource, field: f.review.field }));
@@ -920,7 +958,7 @@ describe("conversational Action authoring tools", () => {
         onCheckpoint: async c => {checkpoint = structuredClone(c);}, askClarification: async () => undefined})).rejects.toThrow("CANCELLED");
       let state: AuthoringTransportState = {version: 1, operations: []};
       const bodies: unknown[] = [], responses = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
-        call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Disabled draft prepared.")];
+        call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {})];
       let sends = 0;
       const server = createServer(async (req, res) => {
         const parts: Buffer[] = []; for await (const part of req) parts.push(Buffer.from(part));
@@ -1184,7 +1222,7 @@ describe("conversational Action authoring tools", () => {
       { id: "overall", kind: "count", scope: "boundary", maximum: 6, window_seconds: 86400, capability: baseline.outcome },
       { id: "organization", kind: "count", scope: "tenant", maximum: 2, window_seconds: 86400, capability: baseline.outcome },
     ];
-    const steps = [call("runner.validate_action_draft", {}), say("The original shared limits validate unchanged.")];
+    const steps = [call("runner.validate_action_draft", {})];
     const result = await converseActionRuleDraft({ ...requestInput(async () => {
       if (!steps.length) throw new Error("Role glossary incorrectly requested an extra quota");
       return steps.shift()!;
@@ -1404,7 +1442,7 @@ describe("conversational Action authoring tools", () => {
       call("runner.submit_effect_envelope_draft", failure === "valid" ? effect : invalidEffect),
       call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"),
       ...(failure === "valid" ? [] : [call("runner.validate_action_draft", {}), call("runner.submit_effect_envelope_draft", effect)]),
-      call("runner.validate_action_draft", {}), say("The disabled revision is ready for review.")];
+      call("runner.validate_action_draft", {})];
     const requests: string[] = [];
     const result = await converseActionRuleDraft({ ...requestInput(async request => {
       requests.push(JSON.stringify(request.body));
@@ -1470,7 +1508,7 @@ describe("conversational Action authoring tools", () => {
       aliases: ["pause my account", "temporary billing pause"] };
     const steps = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
       call("runner.submit_action_rule_draft", { ...payloadFor("runner.submit_action_rule_draft"), discovery }),
-      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("The disabled billing pause is ready for review.")];
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {})];
     const requests: string[] = [];
     const result = await converseActionRuleDraft(requestInput(async (request) => {
       requests.push(JSON.stringify(request.body)); return steps.shift()!;
@@ -1491,7 +1529,7 @@ describe("conversational Action authoring tools", () => {
     const steps = [call("runner.submit_action_rule_draft", { ...payloadFor("runner.submit_action_rule_draft"),
       discovery: changed, review: { ...baseline.review, then: "Set the account status to paused." },
       changed_fields: editDiscovery ? ["discovery"] : ["review.then"] }),
-      call("runner.validate_action_draft", {}), say("The same disabled rule remains ready for review.")];
+      call("runner.validate_action_draft", {})];
     const result = await converseActionRuleDraft({ ...requestInput(async () => steps.shift()!), existingDraft: baseline,
       intent: editDiscovery ? "Let clients find this by pause my account. Keep all rules unchanged." : "Update only the effect description to say Set the account status to paused. Keep client wording and all rules unchanged." });
     expect(result.compiled.draft.discovery).toEqual(editDiscovery ? changed : baseline.discovery);
@@ -1512,7 +1550,7 @@ describe("conversational Action authoring tools", () => {
     const wrong = { ...policy, shared_limits: policy.shared_limits.map((limit) => ({ ...limit, capability: "billing.pause_account" })) };
     const steps = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
       call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft", wrong), call("runner.validate_action_draft", {}),
-      call("runner.submit_approval_policy_draft", policy), call("runner.validate_action_draft", {}), say("Both actions use one shared allowance.")];
+      call("runner.submit_approval_policy_draft", policy), call("runner.validate_action_draft", {})];
     const requests: string[] = [];
     const askClarification = vi.fn(async () => undefined);
     const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
@@ -1528,7 +1566,7 @@ describe("conversational Action authoring tools", () => {
   it("repairs an incomplete tool submission internally instead of asking the operator to submit draft components", async () => {
     const missing = "The draft is missing the `effect`, `rule`, and `approval` components. Please submit these through the corresponding tools to complete the action rule.";
     const steps = [say(missing), call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
-      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("The disabled draft is ready for review.")];
+      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {})];
     const requests: string[] = [];
     const askClarification = vi.fn(async () => { throw new Error("Mechanical work reached the operator"); });
     const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
@@ -1558,7 +1596,7 @@ describe("conversational Action authoring tools", () => {
   ])("continues saved drafting progress without asking for another operator turn: %s", async (progress) => {
     const steps = [call("runner.submit_verification_boundary_draft"), say(progress),
       call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
-      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Ready for review.")];
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {})];
     const requests: string[] = [];
     const onStream = vi.fn();
     const askClarification = vi.fn(async () => { throw new Error("Progress is not a business question"); });
@@ -1659,7 +1697,7 @@ describe("conversational Action authoring tools", () => {
     expect(checkpoint!.components.verification).toMatchObject({ name: modelDraft().verification.name });
 
     const recovery = [call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
-      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Prepared for review.")];
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {})];
     const resumed = await converseActionRuleDraft({ ...input, checkpoint,
       session: { ...input.session, dependencies: { requestJson: async () => recovery.shift()! } },
     });
@@ -1676,7 +1714,7 @@ describe("conversational Action authoring tools", () => {
     const approval = { status: "draft", ...baseline.approval, shared_limits: limits };
     const steps = [call("runner.submit_approval_policy_draft", { ...approval, required_role: "another_reviewer", changed_fields: ["shared_limits", "required_role"] }),
       call("runner.validate_action_draft", {}), call("runner.submit_approval_policy_draft", { ...approval, changed_fields: ["shared_limits", "required_role"] }),
-      call("runner.validate_action_draft", {}), say("The joint limits are repaired; the remaining policy is unchanged.")];
+      call("runner.validate_action_draft", {})];
     const requests: string[] = [];
     const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
       requests.push(JSON.stringify(request.body)); return steps.shift()!;
@@ -1690,12 +1728,12 @@ describe("conversational Action authoring tools", () => {
     expect(steps).toEqual([]);
   });
 
-  it.each([false, true])("holds unvalidated business text until the question handler and defers owned compiled recaps (%s)", async (deferCompletionMessage) => {
+  it.each([false, true])("holds unvalidated business text until the question handler and returns a local review message (%s)", async (deferCompletionMessage) => {
     const question = "Who should review valid requests?";
     const recap = "The disabled pause draft is prepared for review.";
     const steps = [say(question), call("runner.submit_verification_boundary_draft"),
       call("runner.submit_approval_policy_draft"), call("runner.submit_action_rule_draft"),
-      call("runner.submit_effect_envelope_draft"), call("runner.validate_action_draft", {}), say(recap)];
+      call("runner.submit_effect_envelope_draft"), call("runner.validate_action_draft", {})];
     const onStream = vi.fn();
     const input = requestInput(async (request) => {
       const step = steps.shift()!;
@@ -1710,9 +1748,11 @@ describe("conversational Action authoring tools", () => {
       askClarification, deferCompletionMessage });
     expect(onStream).toHaveBeenCalledWith(expect.objectContaining({ text: question, operator_text: false }));
     expect(askClarification).toHaveBeenCalledWith(question);
-    expect(onStream).toHaveBeenCalledWith(expect.objectContaining({ text: recap, operator_text: !deferCompletionMessage }));
+    expect(onStream).not.toHaveBeenCalledWith(expect.objectContaining({ text: recap }));
     expect(askClarification).toHaveBeenCalledTimes(1);
-    expect(result.message).toBe(recap);
+    expect(result.message).toMatch(/review/i);
+    expect(result.message).not.toContain("tool batch");
+    expect(result.state).toBe("ready");
     expect(result.authority_granted).toBe(false);
     expect(result.source_database_changed).toBe(false);
     expect(steps).toEqual([]);
@@ -1745,7 +1785,7 @@ describe("conversational Action authoring tools", () => {
     }
     const steps = [...(resume ? [] : componentCalls), call("runner.validate_action_draft", {}),
       call("runner.submit_effect_envelope_draft", { ...payloadFor("runner.submit_effect_envelope_draft"), writeback: "supervised" }),
-      call("runner.validate_action_draft", {}), say("Execution configuration is drafted; separate operator review is still required.")];
+      call("runner.validate_action_draft", {})];
     const requests: string[] = [];
     const askClarification = vi.fn();
     const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
@@ -1851,7 +1891,6 @@ describe("conversational Action authoring tools", () => {
       call("runner.submit_action_rule_draft"),
       call("runner.submit_effect_envelope_draft"),
       call("runner.validate_action_draft", {}),
-      say("The draft requires one billing reviewer."),
     ];
     const requestJson = vi.fn(async (request) => { requests.push(JSON.stringify(request.body)); return steps.shift()!; });
     const answers = ["Why?", "Billing reviewers", "", "Yes, one billing reviewer"];
@@ -1861,7 +1900,7 @@ describe("conversational Action authoring tools", () => {
     expect(askClarification).toHaveBeenCalledTimes(4);
     expect(requests[4]).not.toContain("I have not supplied a decision");
     expect(askClarification.mock.calls[2]).toEqual(askClarification.mock.calls[3]);
-    expect(requests).toHaveLength(9);
+    expect(requests).toHaveLength(8);
     expect(requests[4]).toContain("Yes, one billing reviewer");
     expect(requests[4]).toContain("billing.pause_account_verification");
   });
@@ -1870,7 +1909,7 @@ describe("conversational Action authoring tools", () => {
     const baseline = (await generateModelActionRuleDraft(requestInput(phaseResponder([])))).compiled.draft;
     const before = structuredClone(baseline);
     const requests: string[] = [];
-    const steps = [call("runner.validate_action_draft", {}), say("The existing draft already uses one billing reviewer; no rule changed.")];
+    const steps = [call("runner.validate_action_draft", {})];
     const askClarification = vi.fn(async () => { throw new Error("The business answer is already supplied."); });
     const result = await converseActionRuleDraft({ ...requestInput(async request => {
       requests.push(JSON.stringify(request.body)); return steps.shift()!;
@@ -1881,8 +1920,8 @@ describe("conversational Action authoring tools", () => {
     expect(result.clarification_count).toBe(0);
     expect(result.authority_granted).toBe(false);
     expect(result.source_database_changed).toBe(false);
-    expect(requests.at(-1)).toContain('draft_changed');
-    expect(requests.at(-1)).toContain("No revision was saved");
+    expect(requests).toHaveLength(1);
+    expect(steps).toEqual([]);
     expect(askClarification).not.toHaveBeenCalled();
   });
 
@@ -1891,7 +1930,6 @@ describe("conversational Action authoring tools", () => {
     const steps = [
       call("runner.submit_approval_policy_draft", { ...payloadFor("runner.submit_approval_policy_draft"), required_approvals: 2, changed_fields: ["required_approvals"] }),
       call("runner.validate_action_draft", {}),
-      say("The revised draft requires two distinct billing reviewers."),
     ];
     const requestJson = vi.fn(async () => steps.shift()!);
     const result = await converseActionRuleDraft({
@@ -1901,7 +1939,7 @@ describe("conversational Action authoring tools", () => {
     expect(result.revision?.changed_phases).toEqual(["approval"]);
     expect(result.compiled.draft.effect).toEqual(existing.compiled.draft.effect);
     expect(result.compiled.approval_class.required_approvals).toBe(2);
-    expect(requestJson).toHaveBeenCalledTimes(3);
+    expect(requestJson).toHaveBeenCalledTimes(2);
   });
 
   it("applies an explicitly revised input bound without losing other rule or approval settings", async () => {
@@ -1929,7 +1967,7 @@ describe("conversational Action authoring tools", () => {
     const steps = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
       call("runner.submit_action_rule_draft", faulty), call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}),
       call("runner.submit_action_rule_draft", { ...payloadFor("runner.submit_action_rule_draft"), inputs: [] }),
-      call("runner.validate_action_draft", {}), say("The pause draft is ready; Runner checks stale records privately.")];
+      call("runner.validate_action_draft", {})];
     const askClarification = vi.fn();
     const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
       requests.push(JSON.stringify(request.body)); return steps.shift()!;
@@ -1966,7 +2004,7 @@ describe("conversational Action authoring tools", () => {
     const steps = [...(resume ? [] : initialSteps),
       call("runner.submit_approval_policy_draft", { ...payloadFor("runner.submit_approval_policy_draft"), required_approvals: 2, changed_fields: ["required_approvals"] }),
       call("runner.reopen_prepared_action", selection), // An identical retry must not discard the edit.
-      call("runner.validate_action_draft", {}), say("One pause action, with two billing reviewers. Review activation next.")];
+      call("runner.validate_action_draft", {})];
     const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
       requests.push(JSON.stringify(request.body)); return steps.shift()!;
     }), ...common, ...(resume ? { checkpoint, askClarification: async () => "Keep the same action with two billing reviewers." } : {}) });
@@ -2057,12 +2095,12 @@ describe("conversational Action authoring tools", () => {
     expect(checkpoint?.components.verification).toBeDefined();
     const resumedSteps = [
       call("runner.submit_approval_policy_draft"), call("runner.submit_action_rule_draft"),
-      call("runner.submit_effect_envelope_draft"), call("runner.validate_action_draft", {}), say("The paused draft is ready."),
+      call("runner.submit_effect_envelope_draft"), call("runner.validate_action_draft", {}),
     ];
     const requestJson = vi.fn(async () => resumedSteps.shift()!);
     const resumed = await converseActionRuleDraft({ ...requestInput(requestJson), checkpoint, askClarification: async () => "One billing reviewer." });
     expect(resumed.state).toBe("ready");
-    expect(requestJson).toHaveBeenCalledTimes(5);
+    expect(requestJson).toHaveBeenCalledTimes(4);
     const staleRequest = vi.fn();
     await expect(converseActionRuleDraft({
       ...requestInput(staleRequest), checkpoint, readBoundaryDigest: `sha256:${"f".repeat(64)}`,
