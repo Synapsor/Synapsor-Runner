@@ -297,3 +297,58 @@ export async function choosePolicyAttachmentReview(session: Pick<Session, "choos
     { value: "continue", label: "Return to the conversation; keep the current draft" },
   ], { initialValue: "continue", reviewOnly: true });
 }
+
+/** Exact disabled-edit presentation. The caller supplies differences from its
+ * current native baseline and owns validation, currentness, Save and ACK. */
+export async function presentActionEditSave(input: {
+  session: Pick<Session, "confirm">;
+  chat?: Pick<Chat, "rememberDetails">;
+  instruction: string;
+  exactChanges: string[];
+}): Promise<boolean | undefined> {
+  const { session, chat, instruction, exactChanges } = input;
+  chat?.rememberDetails("EXACT DISABLED ACTION EDIT", exactChanges);
+  return session.confirm("Save this exact disabled Action edit?", { defaultValue: false, context: [
+    `Requested edit: ${instruction}`, ...exactChanges,
+    "Confirm only the requested changes. A model's changed-fields list does not authorize additional privacy, effect, approval or time-limit changes.",
+    "Decline to keep the request pending and preserve the saved rules. Read, Action and execution activation remain separate."],
+    exactDetails: { title: "EXACT DISABLED ACTION EDIT", lines: exactChanges } });
+}
+
+/** The operator already requested this disabled Source reconciliation. Display
+ * its full native before/after without adding a second primary Save consent. */
+export function rememberRequestedActionRevision(input: {
+  chat: Pick<Chat, "rememberDetails">;
+  differences: readonly string[];
+  before: unknown;
+  after: unknown;
+}): void {
+  input.chat.rememberDetails("Exact Action revision", [
+    ...input.differences, "Before:", ...JSON.stringify(input.before, null, 2).split("\n"),
+    "After:", ...JSON.stringify(input.after, null, 2).split("\n"),
+  ]);
+}
+
+/** Return only the operator's explicit disposition. This does not persist it,
+ * fulfill an edit, replace a baseline or grant activation authority. */
+export async function presentUnchangedActionRequest(input: {
+  session: Pick<Session, "confirm" | "chooseOption">;
+  instruction: string;
+  current: { outcome: string; require: unknown; approval: unknown };
+}): Promise<"confirmed_current" | "cancelled" | undefined> {
+  const { session, instruction, current: draft } = input;
+  if (!await session.confirm("Close this Action request with the current rule unchanged?", {
+    defaultValue: false,
+    context: ["The compiled business policy is unchanged. A new explanation or digest does not prove this request was fulfilled.",
+      `Pending request: ${instruction}`, `Outcome: ${draft.outcome}`, `Current eligibility: ${JSON.stringify(draft.require)}`,
+      `Current approval: ${JSON.stringify(draft.approval)}`,
+      "Choose No to keep the edit pending. Closing requires a separate explicit reason; no replacement will be saved."],
+  })) return undefined;
+  const choice = await session.chooseOption?.("UNCHANGED ACTION REQUEST", [
+    { value: "pending", label: "Keep the edit pending" },
+    { value: "confirmed_current", label: "The displayed current rule already satisfies my request" },
+    { value: "cancelled", label: "Cancel this edit request; keep the current rule" },
+  ], { initialValue: "pending", reviewOnly: true, displayContext: true,
+    context: ["This records your disposition only. It does not prove a new edit, publish rules or discard other unfinished work.", `Request: ${instruction}`] });
+  return choice === "confirmed_current" || choice === "cancelled" ? choice : undefined;
+}

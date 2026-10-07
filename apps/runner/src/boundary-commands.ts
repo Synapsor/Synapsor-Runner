@@ -18,7 +18,8 @@ import { runVersionConversation } from "./authoring-version-conversation.js";
 import { createVersionQuestionHost } from "./authoring-version-host.js";
 import { presentSourceInputInteraction, presentVersionInteraction, presentReadMeaningInteraction,
   presentBusinessStatementInteraction, rememberActionQuestionDetails, promptActionBusinessQuestion,
-  presentMetadataEgress, rememberSavedMetadataEgress } from "./authoring-question-presenter.js";
+  presentMetadataEgress, rememberSavedMetadataEgress, presentActionEditSave,
+  rememberRequestedActionRevision, presentUnchangedActionRequest } from "./authoring-question-presenter.js";
 import { createReadMeaningHost } from "./authoring-read-meaning-host.js";
 import { createBusinessStatementHost } from "./authoring-business-statement-host.js";
 import { prepareReadBusinessStatementDecision } from "./authoring-business-statement-read-decision.js";
@@ -8545,7 +8546,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         if (semanticActionRevisionBaseline && !resumedOutcome && !revalidatedActionOutcomes
           && semanticActionPolicyDigest(semanticActionRevisionBaseline) === semanticActionPolicyDigest(semanticActionModelDraft)) {
           if (sourceRepair) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
-          const resolution = await confirmUnchangedActionRequest(input.session, semanticIntent, semanticActionRevisionBaseline);
+          const resolution = await presentUnchangedActionRequest({ session: input.session, instruction: semanticIntent, current: semanticActionRevisionBaseline });
           if (resolution) {
             pendingActionRevision = undefined;
             resumeAction = { ...resumeAction!, intent: semanticIntent, outcome: semanticActionRevisionBaseline.outcome,
@@ -8566,12 +8567,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         if (semanticActionRevisionBaseline && !resumedOutcome && !revalidatedActionOutcomes
           && semanticActionPolicyDigest(semanticActionRevisionBaseline) !== semanticActionPolicyDigest(semanticActionModelDraft)) {
           const exactChanges = actionRuleEditDifferenceLines(semanticActionRevisionBaseline, semanticActionModelDraft);
-          input.authoringChat?.rememberDetails("EXACT DISABLED ACTION EDIT", exactChanges);
-          if (!await input.session.confirm("Save this exact disabled Action edit?", { defaultValue: false, context: [
-            `Requested edit: ${semanticIntent}`, ...exactChanges,
-            "Confirm only the requested changes. A model's changed-fields list does not authorize additional privacy, effect, approval or time-limit changes.",
-            "Decline to keep the request pending and preserve the saved rules. Read, Action and execution activation remain separate."],
-            exactDetails: { title: "EXACT DISABLED ACTION EDIT", lines: exactChanges } })) {
+          if (!await presentActionEditSave({ session: input.session, chat: input.authoringChat,
+            instruction: semanticIntent, exactChanges })) {
             await persistAuthoringResume("action_drafting");
             return boundaryAssistResult(boundaryAssistBackNotice("The proposed differences were not accepted. The edit remains pending; no changed candidate was saved."));
           }
@@ -10565,7 +10562,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       if (revised.compiled.rule.outcome !== before.rule.outcome) throw new Error("The revision must preserve this exact outcome. No duplicate or active authority was changed.");
       if (semanticActionPolicyDigest(before.draft) === semanticActionPolicyDigest(revised.compiled.draft)) {
         if (sourceRepair) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
-        const resolution = await confirmUnchangedActionRequest(input.session, pendingActionRevision!.instruction, before.draft);
+        const resolution = await presentUnchangedActionRequest({ session: input.session, instruction: pendingActionRevision!.instruction, current: before.draft });
         if (!resolution) {
           await persistAuthoringResume("authority_review");
           chat.checkpoint("Action edit still pending", ["The rule is unchanged. Resume this edit to correct it or explicitly close the request after review."], "warning");
@@ -10580,10 +10577,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       if (revised.message) await chat.streamModel(revised.message.split(/\r?\n/u));
       // The operator already requested this disabled revision. Validate and save
       // it here; enabling the replacement remains an explicit later decision.
-      chat.rememberDetails("Exact Action revision", [
-        ...diff, "Before:", ...JSON.stringify(before.draft, null, 2).split("\n"),
-        "After:", ...JSON.stringify(revised.compiled.draft, null, 2).split("\n"),
-      ]);
+      rememberRequestedActionRevision({ chat, differences: diff,
+        before: before.draft, after: revised.compiled.draft });
       const sourceChecked = await sourceRepair?.finish(revised);
       if (sourceChecked) revised.work_unit_source_review = sourceChecked.status;
       const saved = sourceChecked?.proposed ?? await actionRuleAuthorityDraftFromCompiled(input.projectRoot, revised.compiled, undefined, {
@@ -13216,24 +13211,6 @@ async function loadActionRuleRevisionBaseline(input: {
 function semanticActionPolicyDigest(draft: ActionRuleModelDraftV1): `sha256:${string}` {
   const { review: _review, ...policy } = draft;
   return canonicalJsonDigest(policy);
-}
-
-async function confirmUnchangedActionRequest(session: BoundaryReviewInteractiveSession, instruction: string,
-  draft: ActionRuleModelDraftV1): Promise<"confirmed_current" | "cancelled" | undefined> {
-  if (!await session.confirm("Close this Action request with the current rule unchanged?", {
-    defaultValue: false,
-    context: ["The compiled business policy is unchanged. A new explanation or digest does not prove this request was fulfilled.",
-      `Pending request: ${instruction}`, `Outcome: ${draft.outcome}`, `Current eligibility: ${JSON.stringify(draft.require)}`,
-      `Current approval: ${JSON.stringify(draft.approval)}`,
-      "Choose No to keep the edit pending. Closing requires a separate explicit reason; no replacement will be saved."],
-  })) return undefined;
-  const choice = await session.chooseOption?.("UNCHANGED ACTION REQUEST", [
-    { value: "pending", label: "Keep the edit pending" },
-    { value: "confirmed_current", label: "The displayed current rule already satisfies my request" },
-    { value: "cancelled", label: "Cancel this edit request; keep the current rule" },
-  ], { initialValue: "pending", reviewOnly: true, displayContext: true,
-    context: ["This records your disposition only. It does not prove a new edit, publish rules or discard other unfinished work.", `Request: ${instruction}`] });
-  return choice === "confirmed_current" || choice === "cancelled" ? choice : undefined;
 }
 
 function semanticActionRevisionDiffLines(
