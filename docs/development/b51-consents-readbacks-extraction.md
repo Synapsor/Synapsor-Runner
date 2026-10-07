@@ -43,6 +43,17 @@ the exact saved question and counters. Source bytes and inactive authority stay
 unchanged. No provider, HTTP responder, database, publication or activation.
 Version physical terminal/cold-process presenter adoption is not claimed.
 
+Positive Input adoption is a separate additional proof. The unchanged public
+onboarding fixture passes once with the original 8e boundary module projected
+read-only and once with c8's actual extracted presenter. The exact default-No
+readback receives explicit Yes, preserves the raw/proposal, appends one confirmed
+Source review (`verified:false`) and saves an answered owner handoff. The next
+native Action receives the confirmed bounds; ordinary continuation completes
+reviewed disabled Read and two Actions. Both runs retain the original 23
+in-process callback frames and root budget 2/2. This is distinct from the earlier
+declined/Keep sample and remains non-activation, non-cold-process evidence.
+[Positive result seal](</home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-consents6-dev1579-v1/public-input-positive-v1/RESULT-SEAL.json>).
+
 Detailed seals and raw results:
 [slice evidence](</home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-consents6-dev1579-v1/AFTER-RESULT-SEAL.json>).
 Independent Reviewer verdict and this slice's ONE full8 gate remain pending;
