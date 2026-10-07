@@ -2,7 +2,7 @@
   "task": "B59 requested scope",
   "base": "d9f8635509a32093ae952314175f21116ef2faa9",
   "characterization_head": "ec41461c",
-  "status": "WIP_LOWER_BOUND_COVERAGE_207_PASS_TYPES0_NOT_FULL_B59_ACCEPTANCE",
+  "status": "WIP_209_FOCUSED_PLUS_NATIVE_RESUME1_TYPES0_NOT_FINAL_ACCEPTANCE",
   "T0": "2026-10-07T21:51:08Z",
   "scope_cutoff": "2026-10-09T21:51:08Z",
   "window_end": "2026-10-10T21:51:08Z",
@@ -45,13 +45,12 @@
     "use": "Design discussion only; never used as responder input",
     "independence": "Main notified; Reviewer must replace exposed withheld controls before independent verdict; exposed controls cannot receive hidden credit"
   },
-  "head": "545486c180258d62743594fd1bd6a87d05ab83fc",
+  "head": "e6a92aef46b0af8b1fc945dc78b199ab47b1e1ca",
   "open_items": [
-    "Semantic unrequested expansion/exclusion and reviewed-label association need actual native consumer proof; current lower-bound check is not complete semantic coverage",
-    "Ambiguous same-name resources are left unresolved, not guessed; end-to-end business-question path still to qualify",
-    "Original request/Source/currentness/Resume consumer characterization still pending",
-    "Independent replacement hidden controls required after mistaken private-preseal exposure; no independent verdict",
-    "No fullsuite/integration; boundary-commands.ts remains Main-owned unchanged"
+    "Final policy review does not explicitly receive original job/workload scope as distinct evidence; Main hotspot hook proposal pending coordination with B60",
+    "Literal exact-only upper bound and same-name ambiguity questions do not claim general English policy completeness",
+    "Genuine private/excluded field, Source refinement and different reviewed-label consumer qualification remains owed",
+    "No fullsuite/integration/independent acceptance; replacement hidden cases after mislabeled private15-case exposure required"
   ],
   "captures": {
     "baseline-build-v1": {
@@ -194,6 +193,102 @@
       "owned_live": [],
       "free_bytes": 102623637504,
       "head": "545486c180258d62743594fd1bd6a87d05ab83fc"
+    },
+    "expansion-before-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/expansion-before-v1/RESULT.json",
+      "sha256": "2e6d6caa219b5e2dc693f0d19f08696a92fcc4419eaebaefbbe66740389db5b2",
+      "exit": 1,
+      "stop": null,
+      "seconds": 3.0355708599090576,
+      "pgid": 3550325,
+      "owned_live": [],
+      "free_bytes": 102615158784,
+      "head": "a82f5104c15003df4e2a78cb0d4a820c95fc9ceb",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 1,
+        "numPendingTests": 5
+      },
+      "vitest_sha256": "b669ab0064fb00aeb80e3edb3bef66ae1f3adbab50eee53938e5777355bb2199"
+    },
+    "expansion-after-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/expansion-after-v1/RESULT.json",
+      "sha256": "b90cd54ba88919343e48f9eb589b379ac37be89288a9267d583d949fde79f73a",
+      "exit": 0,
+      "stop": null,
+      "seconds": 5.454915285110474,
+      "pgid": 3551842,
+      "owned_live": [],
+      "free_bytes": 102569746432,
+      "head": "a82f5104c15003df4e2a78cb0d4a820c95fc9ceb",
+      "tests": {
+        "numPassedTests": 208,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "fb591a09fac082aab987b70d4aa8132757c73e79b85cb67271e2a4189d9f8aac"
+    },
+    "ambiguity-before-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/ambiguity-before-v1/RESULT.json",
+      "sha256": "c76a69b204d38e058d240937ac345a3422300f9d6bf1aa75f5eb4e9e1428631d",
+      "exit": 1,
+      "stop": null,
+      "seconds": 3.441136360168457,
+      "pgid": 3554925,
+      "owned_live": [],
+      "free_bytes": 102612369408,
+      "head": "a82f5104c15003df4e2a78cb0d4a820c95fc9ceb",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 1,
+        "numPendingTests": 6
+      },
+      "vitest_sha256": "ddbee1cea4eb77c0cb9f7a1ea69acae3425868818b3898088719d48416128bf8"
+    },
+    "ambiguity-after-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/ambiguity-after-v1/RESULT.json",
+      "sha256": "77cb43fa420c769e50597ca5fc1aaccd17644937fb305c08d5ba38d4d8d9b2f0",
+      "exit": 0,
+      "stop": null,
+      "seconds": 5.443601608276367,
+      "pgid": 3556792,
+      "owned_live": [],
+      "free_bytes": 102574100480,
+      "head": "a82f5104c15003df4e2a78cb0d4a820c95fc9ceb",
+      "tests": {
+        "numPassedTests": 209,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "24ceb2e9c3ea06f41655dfb12a5cc3ff8da12c58094b1460c167cd25d55c0ba0"
+    },
+    "scope-resume-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/scope-resume-v1/RESULT.json",
+      "sha256": "1bff42ad144e56656a94b600bb90432343739feeec0fe157a70b74f2683ec613",
+      "exit": 0,
+      "stop": null,
+      "seconds": 3.2477214336395264,
+      "pgid": 3559029,
+      "owned_live": [],
+      "free_bytes": 102610161664,
+      "head": "a82f5104c15003df4e2a78cb0d4a820c95fc9ceb",
+      "tests": {
+        "numPassedTests": 1,
+        "numFailedTests": 0,
+        "numPendingTests": 7
+      },
+      "vitest_sha256": "10346af4c70242f6e945b3a12eccc9985adb9555a6eff6a7b151d83ea4ea774f"
+    },
+    "types-v2": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/types-v2/RESULT.json",
+      "sha256": "457bf984d107e889d0093cb526c15d3a538643f36ffee60fd335d1d4522dc1e5",
+      "exit": 0,
+      "stop": null,
+      "seconds": 22.660244941711426,
+      "pgid": 3560837,
+      "owned_live": [],
+      "free_bytes": 102564540416,
+      "head": "e6a92aef46b0af8b1fc945dc78b199ab47b1e1ca"
     }
   },
   "test_definition_notes": [
@@ -201,5 +296,12 @@
     "workload-baseline-v3 genuinely resolves incomplete workload (expected-refusal assertion fails)",
     "first-fix-v1 uses runtime working diff later committed5b1f, fixedhead661;201P1 obsolete summary-only assertion F",
     "association-after-v1 uses working changes later committed545486;207P0F; types-v1 runs committed545486"
+  ],
+  "runtime_contract": [
+    "summary comparison removed; actual allowed workloads must contain required original-request identities, including genuine related projections",
+    "quoted/negative references do not establish requested resources; exact schema identity preserved, no synonym additions",
+    "only a complete literal inspected-ID only-list supplies deterministic upper scope; other prose is not converted to a blanket allowlist",
+    "same-name ambiguity reuses existing native clarification/current checkpoint; no new state schema/store/lifecycle/budget",
+    "original job remains persisted/currentness-bound independently of routing summary;500 limit remains unchanged"
   ]
 }
