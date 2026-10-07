@@ -187,6 +187,46 @@ describe("original requested Read scope versus routing summary", () => {
 
 });
 
+
+describe("requested business areas through current attributed Source mappings", () => {
+  it.each(["substitution", "excluded_addition", "duplicate_labels", "source_disambiguation"])("preserves native scope for %s", async scenario => {
+    const ids = scenario === "source_disambiguation" ? ["current.accounts", "archive.accounts"] : ["current.member_cards", "archive.old_cards", "current.invoices"];
+    const boundary = scopeBoundary(ids);
+    const request = scenario === "source_disambiguation" ? "Read customer accounts." : "Read customer memberships.";
+    const source = scenario === "source_disambiguation"
+      ? "current.accounts represents customer accounts.\narchive.accounts represents archived records."
+      : "current.member_cards represents customer memberships.\narchive.old_cards represents archived memberships.\nDo not read archive.old_cards.";
+    if (scenario === "duplicate_labels") for (const r of boundary.pack.resources.slice(0,2)) r.label="Customer memberships";
+    const conversation=createModelAuthoringConversation(), policy=newPolicySourceSession();
+    // The collision-only case deliberately has no attributed root meaning.
+    if (scenario !== "duplicate_labels") {
+      const snapshot=policyTextSnapshot(Buffer.from(source),"Rules.txt");policy.snapshots.push(snapshot);policy.active=snapshot.version;
+      policy.approvals.push({digest:snapshot.digest,destination:authoringDestination({provider:"openai",model:"declared-scope-fixture"})});
+      conversation.policySources=policy;
+    }
+    const targets=scenario === "substitution" ? ["current.invoices"] : scenario === "excluded_addition" ? ["current.member_cards","archive.old_cards"] : [ids[0]!];
+    const requestJson=vi.fn(async (wire:{body:unknown})=>{
+      expect(JSON.stringify(wire.body)).toContain(request);
+      if(scenario!=="duplicate_labels")for(const line of source.split("\n"))expect(JSON.stringify(wire.body)).toContain(line);
+      return {status:200,body:{output:[{type:"function_call",call_id:"declared_area",name:"runner__submit_read_workloads",
+        arguments:JSON.stringify({allowed:targets.map((resource,index)=>({id:`area_${index}`,description:"Read the requested business status",plan:{kind:"rows",resource,select:["status"]}})),forbidden:[]})}]}};
+    });
+    const question=vi.fn(async()=>({state:"declined" as const})), accepted=vi.fn();
+    const operation=generateModelReadWorkload({name:"source_area",generatedBoundary:boundary,allowedQuestions:[request],operatorNamingContext:request,
+      conversation,provider:"openai",model:"declared-scope-fixture",apiKey:"local-fixture-only",egressAcknowledged:true,deferNarration:true,
+      dependencies:{requestJson},clarificationHandler:question,onCheckpoint:async(_c,_b,result)=>{if(result)accepted(result);}});
+    if(scenario==="source_disambiguation"){
+      const result=await operation;expect(result.analysis.status).toBe("ready");expect(question).not.toHaveBeenCalled();expect(accepted).toHaveBeenCalledOnce();
+      expect(result.workload.allowed.map(entry=>entry.plan.resource)).toEqual(["current.accounts"]);
+    }else if(scenario==="duplicate_labels"){
+      await expect(operation).rejects.toThrow("READ_WORKLOAD_CLARIFICATION_DECLINED");expect(question).toHaveBeenCalledOnce();expect(accepted).not.toHaveBeenCalled();
+    }else{
+      await expect(operation).rejects.toThrow(scenario==="substitution" ? "READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED" : "READ_WORKLOAD_EXCLUDED_RESOURCE");
+      expect(accepted).not.toHaveBeenCalled();
+    }
+  });
+});
+
 function scopeBoundary(ids = resources): ExplorationBoundaryDraft {
   return {
       schema_version: "synapsor.exploration-boundary.v1", activation: "disabled_unreviewed",
