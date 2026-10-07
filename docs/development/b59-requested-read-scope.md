@@ -176,3 +176,16 @@ Source definitions remain ambiguous. No synonym or new semantic inference is
 introduced. The actual native positive and four focused invariants pass with the
 five-file affected batch (281P0F0S); the genuine0P1F before capture is preserved.
 This does not establish arbitrary phrase equivalence or universal exclusions.
+
+## Single implicit homonym uses the same coverage rule
+
+With only `archive.cases` plus the Source-defined `service.requests`, the old
+helper still required the unique archive basename. The declared native positive
+failed with REQUIRED_RESOURCE_OMITTED twice (0P1F), now preserved. The same word
+coverage predicate now suppresses this IMPLICIT requirement only when all of its
+basename occurrences are covered by the uniquely attributable Source phrase.
+An explicit qualified ID or field reference, another uncovered occurrence, and
+an attributable requested target remain required. Catalog labels cannot provide
+that coverage. Five-file focused result:287P0F0S. This successor lives on
+`codex/b59-requested-scope-homonym-20261007`; the prior844244/89acc branch and
+900d review records remain immutable. No boundary/policy-evidence edits.
