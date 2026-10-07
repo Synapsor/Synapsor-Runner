@@ -43,3 +43,25 @@ additional controls cover actual omitted/excluded/unrequested areas and another
 schema, then original-request/Resume preservation. Characterization runs only
 after an own source-fresh build in isolated outside-home HOME/TMP with a populated
 decoy and plain 8GiB free floor; no database, provider, or full suite.
+
+## Actual characterization
+
+Own source-fresh d9f bundle/type/freshness closed 0. Planning baseline: 68 pass,
+1 expected failure; the declared active-offer paraphrase consumed the existing
+correction and still failed lexical completeness. Original 500/501 checks passed.
+A separate actual workload producer control demonstrates the converse: all seven
+areas are in the retained original request and summary, but six valid plans are
+returned as ready when the offer workload is absent. Its first two setup failures
+(missing required synthetic catalog arrays/maps) are preserved separately; only
+v3 reaches the missing-workload assertion. No production/runtime code changed.
+
+Main initially mislabeled the reviewer's ce332 private case file as public. All
+15 B59 case bodies were read after the initial declared-facts fixture/run. This
+was reported immediately; those cases cannot count as hidden acceptance and must
+be replaced by the reviewer. No private case was used as a responder input. The
+correct public contract is candidate4-public-preseal-contract.json, SHA256
+2f818efcbbbb6bed37769aa3800ae3b4b79e56574fb8dbfd1fe71a4235b13a04.
+
+Native logs/results and current compact record are retained externally under
+`b59-requested-scope1642` in the existing qualification evidence root. Tests use
+only declared synthetic metadata and the actual transmitted production request.

@@ -59,8 +59,10 @@ describe("original requested Read scope versus routing summary", () => {
       pack: { name: "studio_review", resources: resources.map(id => ({
         id, schema: "studio", table: id.split(".")[1]!, primary_key: "id", tenant_key: "tenant_id", principal_key: "principal_id",
         field_types: { id: "uuid", tenant_id: "text", principal_id: "text", status: "text" },
+        field_enums: {},
         selectable_fields: ["status"], filterable_fields: {}, sortable_fields: [], groupable_fields: [],
-        aggregate_measures: [], kept_out_fields: ["id", "tenant_id", "principal_id"], relationships: [],
+        aggregate_measures: [], count_distinct_fields: [], time_bucket_fields: {},
+        kept_out_fields: ["id", "tenant_id", "principal_id"], relationships: [],
         minimum_cohort_size: 5, suppression_aware_totals: true,
       })) }, budgets: structuredClone(DEFAULT_REVIEWED_EXPLORATION_BUDGETS), unresolved_decisions: [],
     };
