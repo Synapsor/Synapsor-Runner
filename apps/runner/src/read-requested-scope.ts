@@ -3,10 +3,15 @@
  * interpretation, or a replacement for native meaning/Source review. Never
  * derive it from a model routing summary. Recompute against current metadata.
  */
-export function requestedReadResourceIds(jobIntent: string, availableResourceIds: string[], readOnlyText = false): string[] {
-  if (!availableResourceIds.length) return [];
-  const readText = readOnlyText ? jobIntent : readOrientedJobText(jobIntent);
-  if (!readText) return [];
+export function requestedReadResourceIds(jobIntent: string, availableResourceIds: string[]): string[] {
+  return requestedReadResourceAssociations(jobIntent, availableResourceIds).required;
+}
+
+export function requestedReadResourceAssociations(jobIntent: string, availableResourceIds: string[]): {
+  required: string[]; ambiguous: string[][];
+} {
+  const readText = readOrientedJobText(jobIntent);
+  if (!availableResourceIds.length || !readText) return { required: [], ambiguous: [] };
   const qualified = [...readText.matchAll(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu)].map(match => match[0]);
   const explicit = new Set(availableResourceIds.filter(id => qualified.some(token => token === id || token.startsWith(`${id}.`))));
   // A qualified reference cannot fall back to the same table in another schema.
@@ -15,9 +20,22 @@ export function requestedReadResourceIds(jobIntent: string, availableResourceIds
     .filter(candidate => candidate.words.length && (containsWordSequence(words, candidate.words)
       || candidate.words.filter(token => !RESOURCE_MENTION_STOP_WORDS.has(token)).length > 0
         && containsWordSequence(words, candidate.words.filter(token => !RESOURCE_MENTION_STOP_WORDS.has(token)))));
-  return availableResourceIds.filter(id => explicit.has(id) || candidates.some(candidate => candidate.id === id
-    && candidates.filter(other => other.words.join(" ") === candidate.words.join(" ")).length === 1));
+  const grouped = new Map<string, string[]>();
+  for (const candidate of candidates) grouped.set(candidate.words.join(" "), [...(grouped.get(candidate.words.join(" ")) ?? []), candidate.id]);
+  const ambiguous = [...grouped.values()].filter(ids => ids.length > 1 && !ids.some(id => explicit.has(id)));
+  return { required: availableResourceIds.filter(id => explicit.has(id) || candidates.some(candidate => candidate.id === id
+    && grouped.get(candidate.words.join(" "))!.length === 1)), ambiguous };
+}
 
+/** A literal, complete identity list is the one upper bound this helper can
+ * establish without interpreting business prose. Unrecognized clauses remain
+ * unresolved; never turn a partial keyword match into a complete allowlist. */
+export function exactOnlyReadResourceIds(text: string, availableResourceIds: readonly string[]): string[] | undefined {
+  const match = /^\s*(?:read|show|list)\s+only\s+(.+?)\.?\s*$/iu.exec(text);
+  if (!match) return undefined;
+  const terms = match[1]!.split(/\s*,\s*|\s+and\s+/iu).filter(Boolean);
+  if (!terms.length || terms.some(term => !availableResourceIds.includes(term))) return undefined;
+  return [...new Set(terms)];
 }
 
 function readOrientedJobText(jobIntent: string): string {
@@ -104,4 +122,3 @@ const RESOURCE_MENTION_STOP_WORDS = new Set([
   "system",
   "table",
 ]);
-
