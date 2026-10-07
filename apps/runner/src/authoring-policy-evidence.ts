@@ -25,6 +25,36 @@ import { preparePrivateActionSource } from "./action-rule-resource-review.js";
 import type { DerivedEffectEnvelopeSpecV1 } from "@synapsor/spec";
 import type { AskProvider } from "./model-ask.js";
 import { planReviewPrerequisite, ReviewResolutionError } from "./authoring-review-resolution.js";
+import { READ_WORKLOAD_RECORD_VERSION, type ReadWorkloadView } from './read-workloads.js';
+
+/** The host restores these from the existing saved job and immutable analysis.
+ * A routing summary or generated plan is not requested scope or permission. */
+export type RequestedReadReviewInput = {
+  jobIntent: string; readIntent?: string; pendingJobRevision?: string; workload?: ReadWorkloadView;
+};
+function requestedReadReviewEvidence(input: RequestedReadReviewInput, read: ExplorationBoundaryDraft) {
+  const currentRead = explorationBoundaryCandidateDigest(read), workload = input.workload;
+  if (workload) {
+    const digest = canonicalJsonDigest({schema_version:READ_WORKLOAD_RECORD_VERSION,
+      generated_boundary_digest:workload.generated_boundary_digest,source:workload.source,analysis:workload.analysis});
+    if (digest !== workload.analysis_digest || workload.analysis_id !== `rw_${digest.slice(7,39)}`)
+      throw new Error('READ_WORKLOAD_RECORD_TAMPERED: Requested scope review requires the exact immutable saved analysis.');
+  }
+  return {
+    original_job: input.jobIntent, routing_read_summary: input.readIntent ?? null,
+    pending_change: input.pendingJobRevision ?? null, selected_read_digest: currentRead,
+    workload: workload ? {
+      analysis_id:workload.analysis_id,analysis_digest:workload.analysis_digest,generated_boundary_digest:workload.generated_boundary_digest,
+      state:workload.state,analyzed_candidate_digest:workload.analysis.candidate_digest ?? null,
+      analyzed_candidate_matches_selected:workload.analysis.candidate_digest === currentRead,
+      reviewed_candidate_digest:workload.review?.candidate_digest ?? null,
+      reviewed_candidate_matches_selected:workload.review?.candidate_digest === currentRead,
+      allowed:workload.analysis.allowed,forbidden:workload.analysis.forbidden,authority_atoms:workload.analysis.authority_atoms,
+      authority_granted:false as const,source_query_executed:false as const,
+    } : null,
+    meaning:'The original operator request and any explicit pending change establish requested scope. The routing summary is only a bounded aid. Saved workload plans and descriptions are proposals, not business meaning or permission; a historical analyzed/reviewed candidate cannot substitute for the selected current Read. Compare actual selected access with the entire request, applicable attached Source and exact reviewed mappings. Resource counts, labels and added model prose do not prove completeness. Unresolved associations remain questions, not accepted authority.',
+  };
+}
 
 /** Policy and counter evidence is bound to the reviewed reader, not the
  * writer-enriched inspection used to compile Actions. Never substitute writer
@@ -120,6 +150,7 @@ function inspectedReadScopes(read: ExplorationBoundaryDraft, source?: PolicySour
  * runtime identities, rows, credentials or model assertions belong here. */
 export function policyCoverageDraft(input: {
   client?: string;
+  requestedRead?: RequestedReadReviewInput;
   reviewStoreDigest?: string;
   transactionStoreDigest?: string;
   inputStoreDigest?: string;
@@ -398,6 +429,7 @@ export function policyCoverageDraft(input: {
     read: input.read,
     actions: actions.map((action) => action.draft),
     runner_evidence: {
+      ...(input.requestedRead ? {requested_read_scope:requestedReadReviewEvidence(input.requestedRead,input.read)} : {}),
       // Exact revision identity from the selected authoritative review subject,
       // separate from the phase description used by the model.
       action_revision: input.authority ? {

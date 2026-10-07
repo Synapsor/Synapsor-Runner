@@ -730,7 +730,7 @@ export function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextS
 
 export async function removePolicySources(root: string, session: PolicySourceSession): Promise<void> {
   await fs.unlink(sourcePath(root, session.id)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
-  session.snapshots = []; session.approvals = []; delete session.active; delete session.operator_messages; delete session.coverage; delete session.coverage_authority_digest; delete session.application_assignments; delete session.read_interpretations; delete session.counting_decisions; delete session.scoped_disclosure_reviews; delete session.source_transaction_reviews; delete session.input_policy_reviews; delete session.source_transaction_scope_reviews;
+  session.snapshots = []; session.approvals = []; delete session.active; delete session.operator_messages; delete session.coverage; delete session.coverage_authority_digest; delete session.application_assignments; delete session.read_interpretations; delete session.counting_decisions; delete session.scoped_disclosure_reviews; delete session.source_transaction_reviews; delete session.input_policy_reviews; delete session.source_transaction_scope_reviews; delete session.receipt_requirement_reviews;
 }
 
 export type CountingDecision = {

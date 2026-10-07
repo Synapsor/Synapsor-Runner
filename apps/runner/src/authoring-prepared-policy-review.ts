@@ -9,7 +9,7 @@ import { planReviewPrerequisite, ReviewResolutionError, type ReviewPrerequisiteR
 import { CoverageComponentError, coverageFinding } from './authoring-coverage-feedback.js';
 import { SourceTransactionScopeError } from './authoring-source-transaction-scope.js';
 import { planCoverageResolution } from './authoring-review-resolution.js';
-import { currentReceiptRequirement, receiptRequirementReviewTarget } from './authoring-receipt-requirement.js';
+import { currentReceiptRequirement, pendingReceiptRequirement, receiptRequirementReviewTarget } from './authoring-receipt-requirement.js';
 import { CoverageReceiptConfigurationError } from './authoring-coverage-feedback.js';
 import { randomUUID } from "node:crypto";
 import { authoringInterruptedProducerInput } from "./authoring-generation-recovery.js";
@@ -202,7 +202,8 @@ export async function ensurePreparedPolicyCoverage(input: {
       ...(retainedDutyPlan.counterHistory??[]).map(record=>record.context_digest),
       ...(retainedDutyPlan.crossSource?[retainedDutyPlan.crossSource.base.context_digest]:[])]} : {}),
     ...(prospective ? {prospective_withdrawal:canonicalJsonDigest(prospective)} : {}) });
-  const pendingReceipt = receiptRequirementReviewTarget(source, sources.coverage_episodes ?? [], key);
+  const pendingReceipt = pendingReceiptRequirement(source,draftRecord,sources)
+    ?? receiptRequirementReviewTarget(source, sources.coverage_episodes ?? [], key);
   if (pendingReceipt && !currentReceiptRequirement(source, pendingReceipt, draftRecord, sources)) {
     state.attemptKey = key;
     const finding = coverageFinding(new CoverageReceiptConfigurationError('source_requirement_unestablished'),

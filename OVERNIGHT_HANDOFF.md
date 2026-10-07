@@ -3,8 +3,8 @@
 3. Candidate3 d9f86355/bundle3905a2d1 and candidate2/62 artifacts, both paid jobs, receipts/history/holds untouched. [Freeze](</home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/DEMO-CANDIDATE3-READ-CLOCK-FREEZE1634.json>).
 4. Main B60 root branch codex/b60-owner-requirement-20261007 BASE exactd9f; owns boundary hotspot. Old docs5d379541 product baseline preserved, not used for repairs.
 5. B60: Owner answer reached model; generic Source54 rejected before receipt-selection validation. Separate business obligation, explicit Runner-ledger selection, capability and actual completion.
-6. B60 WIP e502c20b plus native adapter: 244 focused PASS/1 live-model skip, types0; independent CLI/Resume/old-package controls next; docs/development/b60-receipt-requirement-DEV.json.
-7. B59 a73927eb under Reviewer2; three semantic scope gaps + false ambiguity found, helper repairing; Main owns original-job/workload coverage hook; no lexical guesses/new pools.
+6. B60 WIP9 native adapter/recovery + full-job/workload hook:347 affected PASS/1 live-model skip, types0; independent CLI/Resume/old-package controls next; docs/development/b60-receipt-requirement-DEV.json.
+7. B59 fixed1985bf13/269PASS/types0 under Reviewer2; field/root exclusion bound check next; Main full-job/workload hook done; no lexical guesses/new pools.
 8. B61 ab91163d separate DEV: first INSERT/retry/duplicates/scope/revocation checks pass; real lost-COMMIT worker crash, Source applied/local pending; stopped, no replay or executor patch.
 9. Reviewer2 canonical /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/REVIEWER2-SLICE8-DEV.json; independent presealed cases; scripted responders only actual requests + declared facts.
 10. Serial integration B60/B59 + strictly necessary dependency; focused/types early; ONE settled full/type/liveDB/offline/package + composed Luna and studio edit/restart on final authoring pin.

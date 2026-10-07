@@ -25,7 +25,7 @@ import { createReadMeaningHost } from "./authoring-read-meaning-host.js";
 import { createBusinessStatementHost } from "./authoring-business-statement-host.js";
 import { receiptRequirementCheckpoint } from './authoring-receipt-requirement-host.js';
 import { currentReceiptRequirement, receiptRequirementDependencies, receiptRequirementQuestionContext,
-  receiptRequirementReviewTarget, receiptRequirementSourceBinding, receiptRequirementQuestionTarget } from './authoring-receipt-requirement.js';
+  receiptRequirementReviewTarget, receiptRequirementSourceBinding, receiptRequirementQuestionTarget, pendingReceiptRequirement } from './authoring-receipt-requirement.js';
 import { prepareReadBusinessStatementDecision } from "./authoring-business-statement-read-decision.js";
 import { actionRuleAuthoringCheckpoint, actionLogicalTurnMaterialDigest, assertActionLogicalTurnJournalAdvance,
   type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
@@ -6985,6 +6985,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let policySourceInspection: Awaited<ReturnType<typeof inspectPolicyReviewSource>> | undefined;
   let receiptRequirementPending = false;
   const currentPolicyCoverageDraft = (authority: ActionRuleAuthorityReviewSubjectV1 | undefined = semanticActionAuthorityDraft) => policyCoverageDraft({ client: intendedClient, read: context.candidate, decisions: context.bundle.decisions,
+    requestedRead:{jobIntent:(canonicalJobIntent ?? jobIntent)!,readIntent:mappedReadIntent,
+      ...(pendingJobRevision ? {pendingJobRevision} : {}),...(workload ? {workload} : {})},
     inputStoreDigest:scopedDisclosureStoreDigest(undefined,context.bundle.mutation_bindings.authoring),
     ...(authoringConversation?.policySources?.scoped_disclosure_reviews?.length
       ? {reviewStoreDigest:scopedDisclosureStoreDigest(countingDomain,context.bundle.mutation_bindings.authoring)} : {}),
@@ -10589,12 +10591,15 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const sources = authoringConversation?.policySources, source = activePolicySource(sources);
     if (!sources || !source || !modelAssistSession) return false;
     const handoff = ownerHandoffs.at(-1), waiting = handoff?.state === 'waiting';
-    const savedQuestion = waiting ? operatorQuestions.filter(q => q.handoff_id === handoff.id).at(-1) : undefined;
-    if (waiting && savedQuestion && savedQuestion.kind !== 'receipt_requirement') return false;
     const store = scopedDisclosureStoreDigest(undefined, context.bundle.mutation_bindings.authoring);
     if (!store) return false;
+    const savedQuestion = waiting ? operatorQuestions.filter(q => q.handoff_id === handoff.id).at(-1)
+      : operatorQuestions.filter(q => q.kind === 'receipt_requirement' && q.scope_digest === ownerQuestionScope()
+        && receiptRequirementQuestionTarget(q,source,sources.id,store)).at(-1);
+    if (waiting && savedQuestion && savedQuestion.kind !== 'receipt_requirement') return false;
     const retained = savedQuestion && sources.receipt_requirement_reviews?.filter(r => r.question.id === savedQuestion.id).at(-1);
     const target = retained ?? (savedQuestion && receiptRequirementQuestionTarget(savedQuestion, source, sources.id, store))
+      ?? pendingReceiptRequirement(source,currentPolicyCoverageDraft(),sources)
       ?? receiptRequirementReviewTarget(source, sources.coverage_episodes ?? [], policyAttemptKey);
     if (!target || retained && (retained.source_session !== sources.id || retained.source_digest !== source.digest)) return false;
     await refreshPolicyCoverageEvidence();
@@ -10626,6 +10631,18 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         await persistAuthoringResume('authority_review', permit);
         if (resumePersistenceBlocked) throw checkpointSaveFailure('The receipt requirement decision');
       } });
+    if (savedQuestion?.confirmation && savedQuestion.receipt_selection?.dependencies_digest === dependencies) {
+      // Resume may have acknowledged the real explicit decision before the
+      // cross-file Source projection failed. Finish only that missing write;
+      // no answer, confirmation or provider turn is replayed.
+      await mutateOwnerHandoff(async permit => {
+        const current = await ownerQuestionContext(permit,'policy_clarification',receiptRequirementQuestionContext(sources),sources);
+        if (savedQuestion.scope_digest !== ownerQuestionScope() || savedQuestion.context_digest !== current)
+          throw new PolicySourceChangedError();
+        await checkpoint.saved(permit);
+      });
+      return Boolean(currentReceiptRequirement(source,target,currentPolicyCoverageDraft(),sources));
+    }
     const answer = await reviewBusinessAnswer({
       question: 'What establishes that a change is complete, and how should an unapplied request be described?',
       stage: 'authority_review', businessContext: operatorBusinessContext(context.candidate.pack.resources), assertCurrent,
@@ -12395,7 +12412,14 @@ async function reviewSavedBoundaryPolicyInner(input: {
       } catch { /* Deployment evidence unavailable, not verified. */ }
     }
     const selectedStore = scopedDisclosureStoreDigest(domain,context.bundle.mutation_bindings.authoring);
+    const requestedWorkload = resume.read ? await readReadWorkloadAnalysis({projectRoot:input.projectRoot,
+      analysisId:resume.read.analysis_id,generatedBoundary:context.candidate}) : undefined;
+    if (requestedWorkload && requestedWorkload.analysis_digest !== resume.read!.analysis_digest)
+      throw new Error('BOUNDARY_AUTHORING_RESUME_CHANGED: The saved Read analysis no longer matches this authoring checkpoint.');
     const currentDraft = () => policyCoverageDraft({ client: resume.intended_client, read: context.candidate, decisions: context.bundle.decisions,
+      requestedRead:{jobIntent:resume.job_intent,readIntent:resume.read_intent,
+        ...(resume.pending_job_revision ? {pendingJobRevision:resume.pending_job_revision} : {}),
+        ...(requestedWorkload ? {workload:requestedWorkload} : {})},
       actions: [], authority, source: sourceInspection, reviewedVersionFields: boundaryAuthoringVersionReviews(resume),
       policySources: input.sources, countingDomain: domain, executionReview, receiptConfiguration,
       ...((input.localDisclosure || input.sources.scoped_disclosure_reviews?.length) ? {reviewStoreDigest:selectedStore} : {}),

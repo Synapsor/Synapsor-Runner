@@ -145,14 +145,25 @@ export function receiptRequirementPreparedContext(session: Session, store: strin
       requirement: r.requirement ?? null, selection: r.selection,
       assurance: 'operator_interpretation_only' as const, verified: false as const })) };
 }
-export function currentReceiptRequirement(source: Source, span: { start: number; end: number }, draft: unknown,
-  session?: Session): (Meaning & { mode: 'runner_ledger' | 'source_db'; decision_digest: string }) | undefined {
+function currentSourceReceiptReviews(source: Source, draft: unknown, session?: Session): ReceiptRequirementReview[] {
   const prepared = object(object(draft).runner_evidence).receipt_requirement;
   if (!session || !prepared || !sha(prepared.store_digest)
-    || canonicalJsonDigest(prepared) !== canonicalJsonDigest(receiptRequirementPreparedContext(session, prepared.store_digest))) return undefined;
-  const latest = (session.receipt_requirement_reviews ?? []).filter(r => r.source_session === session.id
-    && r.source_digest === source.digest && r.store_digest === prepared.store_digest && r.start === span.start && r.end === span.end
-    && r.end <= source.lines && r.source_excerpt === source.text.split(/\r\n|\r|\n/u).slice(r.start - 1, r.end).join('\n')).at(-1);
+    || canonicalJsonDigest(prepared) !== canonicalJsonDigest(receiptRequirementPreparedContext(session, prepared.store_digest))) return [];
+  return (session.receipt_requirement_reviews ?? []).filter(r => r.source_session === session.id
+    && r.source_digest === source.digest && r.store_digest === prepared.store_digest && r.end <= source.lines
+    && r.source_excerpt === source.text.split(/\r\n|\r|\n/u).slice(r.start - 1, r.end).join('\n'));
+}
+/** A saved pending decision is its own durable barrier. Its projection changes
+ * the full review key; the old failed coverage episode need not share that key. */
+export function pendingReceiptRequirement(source: Source, draft: unknown, session?: Session): ReceiptRequirementReview | undefined {
+  const latest = new Map<string, ReceiptRequirementReview>();
+  for (const review of currentSourceReceiptReviews(source,draft,session)) latest.set(`${review.start}:${review.end}`,review);
+  return [...latest.values()].find(review => review.decision === 'pending'
+    && review.dependencies_digest === receiptRequirementDependencies(draft));
+}
+export function currentReceiptRequirement(source: Source, span: { start: number; end: number }, draft: unknown,
+  session?: Session): (Meaning & { mode: 'runner_ledger' | 'source_db'; decision_digest: string }) | undefined {
+  const latest = currentSourceReceiptReviews(source,draft,session).filter(r => r.start === span.start && r.end === span.end).at(-1);
   return latest?.decision === 'confirmed' && latest.requirement && latest.dependencies_digest === receiptRequirementDependencies(draft)
     ? { ...latest.requirement, mode: latest.selection.mode, decision_digest: latest.digest } : undefined;
 }

@@ -13,10 +13,13 @@ import { currentReceiptRequirement, receiptRequirementDependencies, receiptRequi
   receiptRequirementQuestionContext, receiptRequirementSourceBinding } from './authoring-receipt-requirement.js';
 import { withProjectAuthorityMutation } from './project-authority-mutation.js';
 import type { ProviderHttpInput } from './model-ask.js';
+import { authoringDestination } from './authoring-policy-source.js';
+import { ensurePreparedPolicyCoverage } from './authoring-prepared-policy-review.js';
+import { createModelAuthoringConversation } from './model-authoring-conversation.js';
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, {recursive:true,force:true}); });
-async function fixture() {
+async function fixture(options:{failConfirmationProjectionOnce?:boolean}={}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'receipt-host-')); roots.push(root);
   const source = policyTextSnapshot(Buffer.from('Describe a change as complete only from its trusted completion receipt.'), 'declared-policy.txt');
   const sources = newPolicySourceSession(); sources.snapshots = [source]; sources.active = source.version;
@@ -55,10 +58,12 @@ async function fixture() {
       mutate:operation=>withProjectAuthorityMutation(root,operation),install:update=>{state={...state,...update};},
       save:async(_permit,_stage,subject)=>{parseOperatorQuestions(state.questions,state.handoffs!,state.recovery);
         assertOperatorQuestionsAdvance(saved.questions!,state.questions!); await fs.writeFile(file,JSON.stringify(state));saved=structuredClone(state);
+        if(options.failConfirmationProjectionOnce && state.questions?.at(-1)?.confirmation){
+          options.failConfirmationProjectionOnce=false;throw new Error('Declared interruption after native confirmation save');}
         events.push(subject);await checkpoint.saved(_permit);},
       appendSourceStatement:async()=>{throw new Error('Receipt answers must stay separate from Source text.');},
       prepareReadDecision:async()=>({}),checkpointFailure:subject=>new Error(subject)},interact}).review();
-  return {root,source,sources,prepared,invoke,requests,events,inspect:()=>structuredClone(state),
+  return {root,source,sources,prepared,invoke,requests,events,checkpoint,inspect:()=>structuredClone(state),
     restart:async()=>{state=JSON.parse(await fs.readFile(file,'utf8'));saved=structuredClone(state);Object.assign(sources,await loadPolicySources(root,sources.id));}};
 }
 function findQuestionText(value:unknown):string {
@@ -97,4 +102,33 @@ it('decline and cancellation remain pending; Review accepts the same retained ma
   expect(currentReceiptRequirement(f.source,{start:1,end:1},f.prepared(),f.sources)).toBeUndefined();
   expect(await f.invoke(async view=>view.kind==='pending'?{kind:'pending',binding:view.binding,choice:'review'}:respond('unused')(view))).toBe(clear);
   expect(f.requests).toHaveLength(1);expect(f.inspect().questions).toHaveLength(1);
+});
+it.each(['before-answer','after-vague-answer'] as const)('restarts %s at the saved receipt decision, without opening another coverage episode',async point=>{
+  const f=await fixture();
+  if(point==='before-answer')await f.invoke(async view=>({kind:'answer',binding:view.binding,raw:null}));
+  else await f.invoke(respond('Some kind of record, I guess.'));
+  await f.restart();
+  const calls:unknown[]=[];
+  const conversation=createModelAuthoringConversation();conversation.policySources=f.sources;
+  const modelSession={provider:'openai' as const,model:'declared-offline-model',apiKey:'inert-controlled-credential',conversation,
+    dependencies:{requestJson:async(request:ProviderHttpInput)=>{calls.push(request.body);throw new Error('Unexpected full coverage request');}}};
+  f.sources.approvals=[{digest:f.source.digest,destination:authoringDestination(modelSession)}];
+  await savePolicySources(f.root,f.sources);
+  const before=structuredClone(f.sources);
+  await expect(ensurePreparedPolicyCoverage({projectRoot:f.root,sources:f.sources,modelSession,
+    operatorSession:{confirm:async()=>false} as never,currentDraft:f.prepared as never,
+    authorityDigest:canonicalJsonDigest('declared current authority'),clarifications:[],assertCurrent:async()=>{},state:{}}))
+    .rejects.toMatchObject({plan:expect.objectContaining({recommended:'receipt_requirement_review'})});
+  expect(calls).toHaveLength(0);expect(f.sources).toEqual(before);
+});
+it('finishes only a missing Source projection after a durable native confirmation, without remapping or reconfirming',async()=>{
+  const f=await fixture({failConfirmationProjectionOnce:true});
+  await expect(f.invoke(respond(clear))).rejects.toThrow('Declared interruption after native confirmation save');
+  await f.restart();const native=f.inspect();
+  expect(native.questions!.at(-1)?.confirmation).toBeDefined();
+  expect(f.sources.receipt_requirement_reviews!.at(-1)?.decision).toBe('pending');
+  await withProjectAuthorityMutation(f.root,permit=>f.checkpoint.saved(permit));
+  expect(currentReceiptRequirement(f.source,{start:1,end:1},f.prepared(),f.sources)?.mode).toBe('runner_ledger');
+  expect(f.inspect()).toEqual(native);expect(f.requests).toHaveLength(1);
+  expect(native.questions!.at(-1)?.budget?.iterations_used).toBe(1);
 });

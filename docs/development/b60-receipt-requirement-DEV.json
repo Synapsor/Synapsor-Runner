@@ -5,24 +5,32 @@
   "T0": "2026-10-07T21:51:08Z",
   "product": "existing shared business-question host; attributed receipt meaning, current configuration applicability, append-only Source/Resume history",
   "failing_before": {
-    "receipt_resolution": "1 pass / 1 fail at 9291ab82; preserved /var/tmp/synapsor-main-b60-20261007-owned/evidence/failing-before.log"
+    "receipt_resolution": "1 pass / 1 fail at 9291ab82; preserved /var/tmp/synapsor-main-b60-20261007-owned/evidence/failing-before.log",
+    "restart_barrier": "3 pass / 2 fail on exact6d2 product + declared tests; restart-barrier-before-v3.log; prior harness response-shape mistakes preserved separately",
+    "requested_scope_consumer": "0 pass / 2 fail before full original-job/workload hook; requested-read-evidence-before.log"
   },
   "checks": {
     "focused_wip8": "244 pass / 0 fail / 1 skip (live model admission opt-in; paid closed)",
     "types_wip8": "exit 0",
-    "commands": "isolated HOME/TMP vitest ten affected files maxWorkers=1 test/hookTimeout=20000; corepack pnpm typecheck",
+    "commands": "isolated HOME/TMP vitest affected files maxWorkers=1 test/hookTimeout=20000; corepack pnpm typecheck",
     "logs": "/var/tmp/synapsor-main-b60-20261007-owned/evidence/",
     "harness_fixes": [
       "short inert credential corrected",
       "request capture clones body only, retaining non-cloneable transport hooks"
-    ]
+    ],
+    "focused_wip9": "347 pass / 0 fail / 1 skip in two disjoint affected batches (15 files); live model admission opt-in remains closed",
+    "types_wip9": "exit 0"
   },
   "open": [
-    "native CLI/Resume adapter independent variants",
-    "Source-only older package preservation/refusal control",
-    "full original requested scope + exact workload final consumer hook",
-    "B59 semantic association gaps",
-    "final integrated gates/composed Luna/studio"
+    "independent exact native CLI/Resume variants",
+    "actual older Source-only package preservation/refusal control",
+    "B59 semantic association independent variants + field/root exclusion bound",
+    "final accepted integrated gates/composed Luna/studio"
   ],
-  "paid": "CLOSED; no calls/reservations/ledger change"
+  "paid": "CLOSED; no calls/reservations/ledger change",
+  "changes_wip9": [
+    "pending Source decisions stop coverage independently of their original episode key; whole final key unchanged",
+    "finish only missing Source projection from an acknowledged native confirmation, under currentness/CAS, no replay/remap/reconfirmation",
+    "original job + actual saved workload restored for final and saved Review consumers; routing summary is not authority"
+  ]
 }
