@@ -163,3 +163,16 @@ existing native private select/filter/group/measure controls remain unchanged.
 Five affected files now pass276/0/0. This is not a new parser for arbitrary field
 privacy instructions: native typed restrictions and ordinary meaning review still
 own those semantics. Before/after captures and prior1985 remain preserved.
+
+## Exact Source phrase covering unrelated basename collisions
+
+The declared positive `Read customer cases` with current Source
+`service.requests represents customer cases` and unrelated `archive.cases` /
+`audit.cases` reproduced a false SCOPE_AMBIGUOUS refusal before any question.
+Only generic basename occurrences fully covered by a uniquely attributed exact
+current definition phrase are now suppressed. An additional uncovered basename
+occurrence still asks; explicit qualified IDs remain bound; conflicting current
+Source definitions remain ambiguous. No synonym or new semantic inference is
+introduced. The actual native positive and four focused invariants pass with the
+five-file affected batch (281P0F0S); the genuine0P1F before capture is preserved.
+This does not establish arbitrary phrase equivalence or universal exclusions.

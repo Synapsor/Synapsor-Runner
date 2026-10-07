@@ -45,9 +45,9 @@
     "use": "Design discussion only; never used as responder input",
     "independence": "Main notified; Reviewer must replace exposed withheld controls before independent verdict; exposed controls cannot receive hidden credit"
   },
-  "head": "900d09db8682d7fd8b0af62dfe79a44deeec33e0",
+  "head": "89acc3911e4e7c30f22fd495dd1da1dfdc3acc02",
   "open_items": [
-    "Reviewer2 independent verdict including narrow900d field-negative successor; old1985 preserved",
+    "Reviewer2 independent verdict including89acc exact attributed homonym successor; prior1985/900d fixed",
     "Main-owned transient original-job + exact saved-workload final coverage hook",
     "Integrated affected/types/full qualification; not authorized or run by this lane",
     "No universal arbitrary-English semantic completeness claim"
@@ -554,6 +554,51 @@
       "owned_live": [],
       "free_bytes": 101585481728,
       "head": "900d09db8682d7fd8b0af62dfe79a44deeec33e0"
+    },
+    "attributed-homonym-before-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/attributed-homonym-before-v1/RESULT.json",
+      "sha256": "49683ce7aa84f57d9dcd1a9cb3a5e335e8d101c361d75c7b688c3d99baf04454",
+      "exit": 1,
+      "stop": null,
+      "seconds": 2.8466529846191406,
+      "pgid": 3618640,
+      "owned_live": [],
+      "free_bytes": 100628029440,
+      "head": "10bfaf2a9b8ee9244af7b0cc60be6be1f338d305",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 1,
+        "numPendingTests": 23
+      },
+      "vitest_sha256": "df6e9aff1cbb145426c454c4de1909977082d914332d10062cd8dc362adbe54b"
+    },
+    "attributed-homonym-after-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/attributed-homonym-after-v1/RESULT.json",
+      "sha256": "cf15ace81fc3e49e29f512efde197ab3f15556e62c4bf0e8a396b0faba9f7bb8",
+      "exit": 0,
+      "stop": null,
+      "seconds": 5.448121070861816,
+      "pgid": 3619690,
+      "owned_live": [],
+      "free_bytes": 100629991424,
+      "head": "10bfaf2a9b8ee9244af7b0cc60be6be1f338d305",
+      "tests": {
+        "numPassedTests": 281,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "3dd71b3b0be27b53f34b09317d615525212971bebaa4f8c9c882a1c9675a0031"
+    },
+    "attributed-homonym-types-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/attributed-homonym-types-v1/RESULT.json",
+      "sha256": "b3b4e0375a8f3ae50214468a15ae7b39f8528a97cf2ffe91007b492406caa919",
+      "exit": 0,
+      "stop": null,
+      "seconds": 21.858142375946045,
+      "pgid": 3620431,
+      "owned_live": [],
+      "free_bytes": 100628291584,
+      "head": "89acc3911e4e7c30f22fd495dd1da1dfdc3acc02"
     }
   },
   "test_definition_notes": [
@@ -571,11 +616,11 @@
     "same-name ambiguity reuses existing native clarification/current checkpoint; no new state schema/store/lifecycle/budget",
     "original job remains persisted/currentness-bound independently of routing summary;500 limit remains unchanged"
   ],
-  "current_test_head": "900d09db8682d7fd8b0af62dfe79a44deeec33e0",
-  "runtime_head": "900d09db8682d7fd8b0af62dfe79a44deeec33e0",
+  "current_test_head": "89acc3911e4e7c30f22fd495dd1da1dfdc3acc02",
+  "runtime_head": "89acc3911e4e7c30f22fd495dd1da1dfdc3acc02",
   "consumer_scope": {
-    "native": "Final five-file276P0F0S; all previous consumer and source-association captures retained",
-    "types": "0/22.266s committed900d",
+    "native": "Final five-file281P0F0S; all prior failures/results retained",
+    "types": "0/21.858s committed89acc",
     "permission_setup": "Source text approval and disabled candidate restrictions are declared belowUI inputs, not a newly exercised consent UI",
     "not_proven": [
       "Reviewer2 replacement independent variants on final1985",
@@ -605,5 +650,17 @@
     "after": "276P0F0S five-file run uses working diff committed900d; types0/22.266s exact900d",
     "preserved": "prior1985 and all previous captures; existing typed field restriction tests unchanged",
     "limits": "not an arbitrary field privacy parser; no format/budget/currentness/permission change"
+  },
+  "attributed_homonym_correction": {
+    "before": "0P1F native SCOPE_AMBIGUOUS twice/no question; current Source customer cases\u2192service.requests, unrelated archive.cases/audit.cases",
+    "fix": "suppress only generic basename occurrences fully covered by uniquely attributable exact current definition phrase",
+    "invariants": [
+      "separately requested uncovered basename remains ambiguous",
+      "explicit qualified IDs remain bound",
+      "conflicting current definitions remain ambiguous",
+      "metadata labels remain nonproof"
+    ],
+    "after": "281P0F0S five files working diff committed89acc; types0/21.858s at89acc",
+    "independent_scope": "Reviewer feedback on prior1985/900d exclusion variant observed SCOPE_AMBIGUOUS only, not exact exclusion detection; independent final successor verdict pending"
   }
 }
