@@ -50,7 +50,7 @@ describe("original requested Read scope versus routing summary", () => {
     expect(probe.frames[0]).toContain(original);
   });
 
-  it("refuses an actual missing requested workload even when the routing summary lists every area", async () => {
+  it.each(["studio.usage_daily", "studio.plan_change_offers"])("refuses actual missing %s even when the routing summary lists every area", async omitted => {
     const boundary: ExplorationBoundaryDraft = {
       schema_version: "synapsor.exploration-boundary.v1", activation: "disabled_unreviewed",
       deployment_profile: "staging", source: "local_postgres", compiler_version: "1.7.0", spec_version: "1.9.0",
@@ -75,7 +75,7 @@ describe("original requested Read scope versus routing summary", () => {
       expect(wire).toContain(original);
       return { status: 200, body: { output: [{ type: "function_call", call_id: `map_${bodies.length}`,
         name: "runner__submit_read_workloads", arguments: JSON.stringify({
-          allowed: resources.slice(0, -1).map((resource, index) => ({ id: `read_${index}`, description: `Read ${resource} status`,
+          allowed: resources.filter(resource => resource !== omitted).map((resource, index) => ({ id: `read_${index}`, description: `Read ${resource} status`,
             plan: { kind: "rows", resource, select: ["status"] } })), forbidden: [],
         }) }] } };
     });

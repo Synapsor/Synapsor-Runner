@@ -695,7 +695,7 @@ describe("model Boundary job planning", () => {
     });
   });
 
-  it("repairs a job split that silently omits one explicitly requested reviewed read area", async () => {
+  it("retains the full request when a routing summary does not repeat every area", async () => {
     let attempt = 0;
     const requests: string[] = [];
     const requestJson = vi.fn(async (request) => {
@@ -761,13 +761,15 @@ describe("model Boundary job planning", () => {
 
     expect(result).toMatchObject({
       state: "planned",
-      correction_used: true,
+      correction_used: false,
       read_mode: "create",
-      read_intent: expect.stringContaining("recent usage"),
+      read_intent: "Let the authenticated customer read their own account, subscription, service lines, invoices, payments, billing preferences, and support cases.",
     });
-    expect(requestJson).toHaveBeenCalledTimes(2);
-    expect(requests[1]).toContain("telecom.usage_daily");
-    expect(requests[1]).toContain("omitted explicitly requested reviewed reads");
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(requests[0]).toContain("telecom.usage_daily");
+    expect(requests[0]).toContain("recent usage");
+    // Actual omitted usage/offer plans are refused by the native workload
+    // producer in boundary-requested-read-scope.test.ts, not by prose shape.
   });
 
   it("returns one model clarification rather than inventing a source field", async () => {

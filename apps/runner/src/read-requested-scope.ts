@@ -7,25 +7,22 @@ export function requestedReadResourceIds(jobIntent: string, availableResourceIds
   if (!availableResourceIds.length) return [];
   const readText = readOnlyText ? jobIntent : readOrientedJobText(jobIntent);
   if (!readText) return [];
-  const words = normalizedSemanticWords(readText);
-  const resourceWords = availableResourceIds.map((id) => ({
-    id,
-    words: normalizedSemanticWords(id.split(".").at(-1) ?? id),
-  }));
-  return resourceWords.flatMap(({ id, words: candidateWords }) => {
-    if (!candidateWords.length) return [];
-    const fullNameMatched = containsWordSequence(words, candidateWords);
-    // A single coincidentally unique word is not an explicit table request:
-    // "services" does not establish service_lines, nor "change" plan offers.
-    // Ambiguous business concepts belong to the metadata-aware mapper.
-    const meaningfulWords = candidateWords.filter((token) => !RESOURCE_MENTION_STOP_WORDS.has(token));
-    return fullNameMatched || meaningfulWords.length > 0 && containsWordSequence(words, meaningfulWords) ? [id] : [];
-  });
+  const qualified = [...readText.matchAll(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu)].map(match => match[0]);
+  const explicit = new Set(availableResourceIds.filter(id => qualified.some(token => token === id || token.startsWith(`${id}.`))));
+  // A qualified reference cannot fall back to the same table in another schema.
+  const words = normalizedSemanticWords(readText.replace(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu, " "));
+  const candidates = availableResourceIds.map(id => ({ id, words: normalizedSemanticWords(id.split(".").at(-1) ?? id) }))
+    .filter(candidate => candidate.words.length && (containsWordSequence(words, candidate.words)
+      || candidate.words.filter(token => !RESOURCE_MENTION_STOP_WORDS.has(token)).length > 0
+        && containsWordSequence(words, candidate.words.filter(token => !RESOURCE_MENTION_STOP_WORDS.has(token)))));
+  return availableResourceIds.filter(id => explicit.has(id) || candidates.some(candidate => candidate.id === id
+    && candidates.filter(other => other.words.join(" ") === candidate.words.join(" ")).length === 1));
+
 }
 
 function readOrientedJobText(jobIntent: string): string {
-  const fragments = jobIntent
-    .split(/(?<=[.!?;])\s+/u)
+  const fragments = unquotedRequest(jobIntent)
+    .split(/(?<=[.!?;])\s+|(?:,\s*|\s+)(?:and|but)\s+(?=(?:(?:do\s+not|don't|never|not)\s+)?(?:read|view|inspect|show|list|include)\b)/iu)
     .flatMap((sentence) => {
       // "Keep the same Read Boundary" names preserved authority, not a
       // request to expose the private verification facts later in the clause.
@@ -39,6 +36,17 @@ function readOrientedJobText(jobIntent: string): string {
       return [actionConnector ? afterRead.slice(0, actionConnector.index) : afterRead];
     });
   return fragments.join(" ");
+}
+
+function unquotedRequest(text: string): string {
+  const chars = [...text];
+  let end: string | undefined;
+  return chars.map((char, index) => {
+    if (end) { if (char === end) end = undefined; return char === "\n" ? "\n" : " "; }
+    const apostrophe = /['’]/u.test(char) && /[\p{L}\p{N}]/u.test(chars[index - 1] ?? "") && /[\p{L}\p{N}]/u.test(chars[index + 1] ?? "");
+    if (!apostrophe && /["'“‘`]/u.test(char)) { end = char === "“" ? "”" : char === "‘" ? "’" : char; return " "; }
+    return char;
+  }).join("");
 }
 
 function isPreservedReadBoundaryMention(sentence: string, index: number): boolean {
