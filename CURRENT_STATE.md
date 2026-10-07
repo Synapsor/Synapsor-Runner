@@ -1,14 +1,15 @@
-1. ACTIVE Owner-authorized B59/B60 + parallel B61; normal Owner pause only, no usage monitoring; paid CLOSED until candidate4 frozen/accepted.
-2. Repair T0=2026-10-07T21:51:08Z; scope closes Oct9T21:51:08Z; finish by Oct10T21:51:08Z (caps, finish earlier).
-3. Candidate3 d9f86355/bundle3905a2d1 and candidate2/62 artifacts, both paid jobs, receipts/history/holds untouched. [Freeze](</home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/DEMO-CANDIDATE3-READ-CLOCK-FREEZE1634.json>).
-4. Main B60 root branch codex/b60-owner-requirement-20261007 BASE exactd9f; owns boundary hotspot. Old docs5d379541 product baseline preserved, not used for repairs.
-5. B60: Owner answer reached model; generic Source54 rejected before receipt-selection validation. Separate business obligation, explicit Runner-ledger selection, capability and actual completion.
-6. B60 WIP9 native adapter/recovery + full-job/workload hook:347 affected PASS/1 live-model skip, types0; independent CLI/Resume/old-package controls next; docs/development/b60-receipt-requirement-DEV.json.
-7. B59 fixed1985bf13/269PASS/types0 under Reviewer2; field/root exclusion bound check next; Main full-job/workload hook done; no lexical guesses/new pools.
-8. B61 ab91163d separate DEV: first INSERT/retry/duplicates/scope/revocation checks pass; real lost-COMMIT worker crash, Source applied/local pending; stopped, no replay or executor patch.
-9. Reviewer2 canonical /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/REVIEWER2-SLICE8-DEV.json; independent presealed cases; scripted responders only actual requests + declared facts.
-10. Serial integration B60/B59 + strictly necessary dependency; focused/types early; ONE settled full/type/liveDB/offline/package + composed Luna and studio edit/restart on final authoring pin.
-11. One candidate4, independent exact installed acceptance; at most one pre-paid replacement for in-scope installed failure. B61 not automatically part of candidate4.
-12. Sole Tester Replacement01a117fd offline paid plan 701b8b54; Luna total≤$35, held upper15.27063125 inclunknown1.2693125, available19.72936875; no paid/count/reservation now.
-13. Historical real setup/effect/receipt scopedPASS; real edit/NEWsession NOTREACHED. [Stop](</home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/MAIN-LUNA-FRESH2-CLARIFY-STOP1645.json>); B57 Ask legacy-profile seam open; old D create remains failed/no retry.
-14. Max2heavy/8workers, separate HOME/TMP/DBs, free disk≥8GiB/no allocation meter; backup-only commit+push all WIP/reviewer work. [Plan](</home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/MAIN-PARALLEL-QUEUE1632.json>).
+1. ACTIVE bounded B59/B60 repair + parallel B61; Owner pauses explicitly; paid CLOSED until candidate4 frozen/independently accepted.
+2. T0=2026-10-07T21:51:08Z; scope closes Oct9T21:51:08Z, end cap Oct10T21:51:08Z; finish earlier when done.
+3. Candidate3 d9f86355/bundle3905a2d1 and older frozen artifacts, paid jobs/history/holds remain untouched; DEMO-CANDIDATE3-READ-CLOCK-FREEZE1634.json.
+4. Main codex/b60-owner-requirement-20261007 product e882bfab, base d9f86355; sole boundary-commands hotspot owner; native recovery/full original-job/workload hook.
+5. B60 347 affected PASS/1 live-model opt-in skip, types0; independent31 scoped native checks satisfied; whole public CLI proof pending, no blanket acceptance.
+6. B60 shared question/raw/map/exact default-No/readback/save/Resume retains meaning/configuration/capability/performed-completion distinctions; docs/development/b60-receipt-requirement-DEV.json.
+7. B59 coherent9312a520/docs284edb31 on codex/b59-requested-scope-homonym-20261007:293PASS/types0; Reviewer2 scoped Source-definition ACCEPT, remaining native continuation controls pending.
+8. Ask strictly necessary governed-Read dependency28e724e4:30PASS/types0 and scoped static review; no legacy fallback for bound empty/revoked store, no new authority.
+9. B61 eb608c27 separate: first INSERT/retry/duplicate/scope controls; actual lost-COMMIT Source applied/local pending/worker crash preserved, stopped; MAIN-B61-LOST-COMMIT-REVIEW1647.json.
+10. Independent reviewers b57 + Reviewer2; public CLI helper b48; B59 helper prepares final gate harness only; no private oracle supplied to responder.
+11. Serial integration only after independent verdict; ONE final full/type/liveDB/offline/package + composed Luna/studio edit-restart exact final pin; candidate4 B59/B60+strict dependencies only.
+12. All44 live-DB manifest rows retained; Four119/120 and Fifty1159/1400 cap-limited/held, no reset or transferred pass; eligible42 final-pin checks, explicit per-file skip reasons.
+13. Sole Tester Replacement01a117fd; Luna total≤$35, held upper15.27063125 inclunknown1.2693125, available19.72936875; ledger542 unchanged/no paid/count/reservation.
+14. Real setup/effect/receipt scopedPASS; real edit/NEWsession NOTREACHED. MAIN-LUNA-FRESH2-CLARIFY-STOP1645.json; candidate4 needs independent exact installed acceptance.
+15. Max2heavy/8workers, isolated resources/0700 runtime; free disk≥8GiB/no allocation meter; backup-only commit+push all WIP/reviewer/harness work; E/MAIN-ACTIVE-HANDOFF1648.md.
