@@ -56,7 +56,7 @@ it("lets native Try Ask reach default-declined egress with four tools and no pro
   const p=await project(), requestJson=vi.fn(), close=vi.fn(async()=>undefined), consent=vi.fn(async()=>false);
   await expect(tryAsk(["Read the reviewed student credits.","--project-root",p.root,"--config",p.config_path,"--store",p.store_path,"--provider","openai","--model","fixture"],{
     env:{OPENAI_API_KEY:"local-fixture-only"},providerDependencies:{requestJson},confirmEgress:consent,
-    gatewayFactory:async()=>({listTools:async()=>tools,callTool:async()=>{throw new Error("No tool execution authorized");},close}),
+    gatewayFactory:async()=>({mode:"authoring" as const,listTools:async()=>tools,callTool:async()=>{throw new Error("No tool execution authorized");},close}),
   })).rejects.toMatchObject({code:"ASK_EGRESS_CONSENT_DECLINED"});
   expect(consent).toHaveBeenCalledOnce();expect(requestJson).not.toHaveBeenCalled();expect(close).toHaveBeenCalledOnce();
 });
@@ -72,6 +72,38 @@ it("observes native revocation and never restores it from stale legacy exports",
   await expect(authority(p)).rejects.toMatchObject({code:"ASK_AUTHORING_AUTHORITY_UNAVAILABLE"});
   await expect(resolveActiveBoundarySummary(p.root)).resolves.toBeUndefined();
 });
+it("rechecks governed revocation after consent before any provider request",async()=>{
+  const p=await project(), requestJson=vi.fn(), close=vi.fn(async()=>undefined);
+  await expect(tryAsk(["Describe the reviewed access, without a query.","--project-root",p.root,"--config",p.config_path,"--store",p.store_path,"--provider","openai","--model","fixture"],{
+    env:{OPENAI_API_KEY:"local-fixture-only"},providerDependencies:{requestJson},
+    confirmEgress:async()=>{await deactivateExplorationBoundary(p.root);return true;},
+    gatewayFactory:async()=>({mode:"authoring" as const,listTools:async()=>tools,callTool:async()=>{throw new Error("No tool execution authorized");},close}),
+  })).rejects.toMatchObject({code:"ASK_AUTHORING_AUTHORITY_UNAVAILABLE"});
+  expect(requestJson).not.toHaveBeenCalled();
+});
+it("does not fall back to a legacy export when the bound repository is missing",async()=>{
+  const p=await project(), [active]=await loadActivatedExplorationBoundaries(p.root);
+  await fs.writeFile(path.join(p.root,".synapsor/exploration-boundary.active.json"),JSON.stringify(active));
+  await fs.rename(p.store_path,`${p.store_path}.retained`);
+  await expect(authority(p)).rejects.toThrow();
+  await expect(resolveAskDeploymentProfile(p.root)).rejects.toThrow();
+  await expect(resolveActiveBoundarySummary(p.root)).rejects.toThrow();
+});
+it("runs one prepared no-query Ask response against current governed authority",async()=>{
+  const p=await project(), before=await authority(p), toolsCalled=vi.fn(async()=>{throw new Error("No query requested");});
+  const requestJson=vi.fn(async(request:{body:unknown})=>{
+    expect(JSON.stringify(request.body)).toContain("Describe the reviewed access, without a query.");
+    return {status:200,body:{choices:[{message:{role:"assistant",content:"The reviewed access is available. No query was requested."}}]}};
+  });
+  expect(await tryAsk(["Describe the reviewed access, without a query.","--project-root",p.root,"--config",p.config_path,"--store",p.store_path,"--provider","openai","--model","fixture"],{
+    env:{OPENAI_API_KEY:"local-fixture-only"},providerDependencies:{requestJson},confirmEgress:async()=>true,
+    gatewayFactory:async()=>({mode:"authoring" as const,listTools:async()=>tools,callTool:toolsCalled,close:async()=>undefined}),
+    bindPlansToAnswer:async()=>undefined,
+  })).toBe(0);
+  expect(requestJson).toHaveBeenCalledOnce();expect(toolsCalled).not.toHaveBeenCalled();
+  expect(await authority(p)).toEqual(before);
+});
+
 function fixture(root: string, inspectedAt = "2026-09-08T00:00:00.000Z") {
   const inspection = fixtureInspection(inspectedAt);
   return buildAutoBoundary({ inspection, inspectedSchema: "university", sourceEnv: "DATABASE_URL", deploymentProfile: "staging", overrides: {
