@@ -186,6 +186,8 @@ export type BoundaryAccessNotice = {
 type BoundaryPromptOptions = {
   context?: string[];
   exactDetails?: { title: string; lines: string[]; summaryTitle?: string; sections?: import("./read-boundary-review-types.js").ReviewSection[] };
+  /** Display only; exact prompts, permissions and defaults remain with the caller. */
+  activationView?: import("./authoring-activation-view.js").AuthoringActivationView;
 };
 
 export type BoundaryPromptChoice = {

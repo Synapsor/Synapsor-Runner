@@ -348,6 +348,7 @@ import { parseReadPolicySettings } from "./read-boundary-policy-revision.js";
 import { ReadRelationshipUnavailableError, assertReviewedReadRelationshipRetained, reviewReadRelationship, validateReviewedReadRelationship } from "./read-relationship-review.js";
 import { prepareReadWorkloadRelationship, validateReadWorkloadRelationshipPreparation } from "./read-relationship-preparation.js";
 import { readBoundaryReviewSections, readRevisionDiff, reviewSectionLines, loadReadReviewDiff, saveReadReviewDiff, type ReviewSection } from "./read-boundary-review-view.js";
+import { proposalActivationView, readActivationView } from "./authoring-activation-view.js";
 import { readDiscoveryCompatibility, readOptionalExplorationDraft } from "./auto-boundary.js";
 import { readDiscoveryConcernLines } from "./read-discovery-compatibility.js";
 import { readPrivacyReview, readPrivacySummary, readPrivacyExplanationFacts, type ReadPrivacyReview } from "./read-boundary-privacy-review.js";
@@ -11467,6 +11468,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const approveActivation = exactActiveAction || await (input.session.confirmActivation ?? input.session.confirm)(
       `Activate verified Action Boundary "${semanticActionAuthorityDraft.authority.action_boundary.name}" for ${semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome).join(", ")}?`,
       {
+        activationView: proposalActivationView(),
         exactDetails: { title: "EXACT ACTION BOUNDARY", summaryTitle: "ACTION REVIEW",
           sections: [...(requestImpact.length ? [{ id: "pending_requests", title: "Existing requests and rule replacement", lines: requestImpact }] : []),
             ...verifiedActionAuthoritySections(semanticActionAuthorityDraft,
@@ -15606,6 +15608,15 @@ async function confirmAndActivateFocusedBoundary(input: {
         {
           initialValue: vocabularyGaps.length && input.reviewOptions?.reviseVocabulary ? "resolve_names" : readiness && !readiness.ready ? "resolve" : "finish",
           reviewOnly: vocabularyGaps.length > 0 || readiness?.ready === false,
+          ...(!vocabularyGaps.length && (!readiness || readiness.ready) ? {
+            activationView: readActivationView({
+              replacing: replacingActive,
+              removedResources: authorityReduction.removedResources.length,
+              reducedGrants: authorityReduction.removedGrants.length > 0,
+              ...(input.reviewOptions?.reviseWithModel ? { revisionModel: "current" as const }
+                : input.reviewOptions?.openModelRevision ? { revisionModel: "new" as const } : {}),
+            }),
+          } : {}),
           explainOnRequest: true,
           context: conversationReviewContext,
           explanationContext: readPrivacyExplanationFacts(privacy),

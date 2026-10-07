@@ -20,6 +20,7 @@ import { createTerminalModelStream } from "./terminal-model-stream.js";
 import { reflowTerminalProse } from "./terminal-prose.js";
 import { authoringExplanationFailure, type AuthoringExplanationFailure } from "./authoring-explanation-failure.js";
 import type { ReviewSection } from "./read-boundary-review-view.js";
+import { activationDisplayOptions, type AuthoringActivationView } from "./authoring-activation-view.js";
 
 export type BoundaryAuthoringSpeaker = "runner" | "model";
 type BoundaryAuthoringTone = "normal" | "success" | "warning" | "danger";
@@ -75,6 +76,7 @@ type ChoiceInput = {
   explainOnRequest?: boolean;
   onModelQuestion?: (question: string) => Promise<"revise">;
   explanationContext?: string[];
+  activationView?: AuthoringActivationView;
 };
 
 const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 32;
@@ -228,40 +230,6 @@ function permissionQuestion(value: string): string {
     .split(/\r?\n/u)
     .map((line) => transcriptText(line).trim())
     .find(Boolean) ?? "Review this exact permission.";
-}
-
-// Keep the exact permission contract for validation and details. Only the
-// terminal wording changes; choice values and conservative defaults do not.
-function activationChoicePresentation(choice: ChoiceInput): ChoiceInput {
-  if (choice.message === "ACTIVATE READ BOUNDARY" || choice.message === "REPLACE ACTIVE READ BOUNDARY") {
-    const replacing = choice.message === "REPLACE ACTIVE READ BOUNDARY";
-    return {
-      ...choice,
-      title: replacing ? "REVIEW ACCESS CHANGES" : "REVIEW ACCESS",
-      message: replacing
-        ? "Replace the assistant's current reading permissions with the reviewed changes?"
-        : "Allow the assistant to read the information shown above? This does not enable changes to the database.",
-      options: choice.options.map((option) => ({
-        ...option,
-        label: option.label
-          .replace("Activate this exact Read Boundary", "Enable the reviewed reading access")
-          .replace("Replace active Read Boundary", "Replace current reading access")
-          .replace("Revise this Read Boundary with the current model", "Change what the assistant can read")
-          .replace("View exact Read Boundary details", "Inspect exact reading permissions")
-          .replace("Keep current active Read Boundary and finish", "Keep current reading access and finish")
-          .replace("Keep Read Boundary disabled and finish", "Save without enabling access and finish"),
-      })),
-    };
-  }
-  if (/^Activate verified Action Boundary\b/u.test(choice.message)) {
-    return {
-      ...choice, title: "REVIEW CHANGE REQUESTS",
-      message: "Allow the reviewed change requests and approval rules? Database execution has a separate review.",
-      options: choice.options.map((option) => option.value === "yes"
-        ? { ...option, label: "Enable the reviewed change requests" } : option),
-    };
-  }
-  return choice;
 }
 
 function isModelQuestion(title: string | undefined, context: string[] | undefined): boolean {
@@ -979,7 +947,14 @@ export function createBoundaryAuthoringChat(input: {
     }
   };
   const choose = async (choice: ChoiceInput): Promise<string | undefined> => {
-    choice = activationChoicePresentation(choice);
+    if (choice.activationView) {
+      choice = {
+        ...choice,
+        title: choice.activationView.title,
+        message: choice.activationView.message,
+        options: activationDisplayOptions(choice.options, choice.activationView),
+      };
+    }
     finishLiveResponse();
     await livePending;
     assertNotCancelled();
@@ -1202,6 +1177,7 @@ export function createBoundaryAuthoringChat(input: {
         ? permissionQuestion(prompt)
         : prompt,
       initialValue: options.defaultValue === true ? "yes" : "no",
+      ...(options.activationView ? { activationView: options.activationView } : {}),
       ...(!permission ? { exactDetails: exactDecision }
         : options.exactDetails ? { exactDetails: options.exactDetails } : {}),
       ...(/^Activate verified Action Boundary\b/u.test(prompt) ? { explainOnRequest: true } : {}),
@@ -1269,6 +1245,7 @@ export function createBoundaryAuthoringChat(input: {
           : options?.displayContext && options.context?.length ? meaningfulContext(options.context).join("\n")
           : "Choose one path. The highlighted choice is not applied until you press Enter.",
         options: choices,
+        ...(options?.activationView ? { activationView: options.activationView } : {}),
         ...(options?.initialValue ? { initialValue: options.initialValue } : {}),
         ...(options?.exactDetails ? { exactDetails: options.exactDetails } : {}),
         ...(options?.explainOnRequest ? { explainOnRequest: true } : {}),

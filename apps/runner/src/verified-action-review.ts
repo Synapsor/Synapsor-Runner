@@ -2,6 +2,7 @@ import { assessActionWithdrawal, type ActionWithdrawalReview } from "./action-ru
 import { actionRuleEffectLines, actionRuleEffectInventory } from "@synapsor-runner/action-rules";
 import { AUTHORING_PROGRAM_CAPACITY, authoringReviewPage } from "./authoring-program-capacity.js";
 import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
+import { executionActivationView, proposalActivationView } from "./authoring-activation-view.js";
 import process from "node:process";
 import { assessWorkerLaunch, workerLaunchLines } from "./worker-launch.js";
 import type { RuntimeConfig, RuntimeSupervisedWorkerOutcomePolicy } from "@synapsor-runner/mcp-server";
@@ -289,7 +290,8 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     }
     const accepted = await (input.session.confirmActivation ?? input.session.confirm)(
       `Activate verified Action Boundary "${input.draft.authority.action_boundary.name}"?`,
-      { context: [...await removalImpact(), ...input.draft.authority.rules.flatMap(actionRuleEffectLines), ...summary],
+      { activationView: proposalActivationView(),
+        context: [...await removalImpact(), ...input.draft.authority.rules.flatMap(actionRuleEffectLines), ...summary],
         exactDetails: { title: "EXACT ACTION BOUNDARY", lines: verifiedActionAuthorityDetails(input.draft, input.session.terminalColumns),
           summaryTitle: "ACTION REVIEW", sections: verifiedActionAuthoritySections(input.draft, input.session.terminalColumns) } },
     );
@@ -633,6 +635,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
       const confirmed = await (input.session.confirmActivation ?? input.session.confirm)(
         `Activate verified Action Boundary "${input.draft.authority.action_boundary.name}"?`,
         {
+          activationView: proposalActivationView(),
           context: [
             ...await removalImpact(),
             ...input.draft.authority.rules.flatMap(actionRuleEffectLines),
@@ -905,6 +908,7 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
   const confirmed = await (input.session.confirmActivation ?? input.session.confirm)(
     `Enable supervised source execution for ${input.outcome}?`,
     {
+      activationView: executionActivationView(input.outcome),
       context: [
         ...findings,
         ...workerLaunchLines(launchPreview),
