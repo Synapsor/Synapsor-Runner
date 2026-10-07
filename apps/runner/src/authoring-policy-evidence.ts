@@ -1,6 +1,7 @@
 import { SOURCE_RECEIPT_CONTRACT, ATOMIC_EFFECT_TRANSACTION } from "./authoring-receipt-contract.js";
 import { assertExcludedFieldReviews, excludedFieldReviewBinding } from "./authoring-excluded-field-records.js";
 import {sourceTransactionPreparedContext} from './authoring-source-transaction-review.js';
+import {receiptRequirementPreparedContext} from './authoring-receipt-requirement.js';
 import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
 import { receiptReadExclusion, reviewEvidencePhases } from "./authoring-receipt-read-evidence.js";
 import { policyCountingInterpretations } from "./authoring-counting-review.js";
@@ -412,6 +413,8 @@ export function policyCoverageDraft(input: {
       ...(input.policySources?.input_policy_reviews?.length ? {input_policy_requirement:{source_session:input.policySources.id,store_digest:input.inputStoreDigest ?? null,reviews:input.policySources.input_policy_reviews}} : {}),
       ...(input.policySources ? {source_transaction_requirement: sourceTransactionPreparedContext(input.policySources,
         input.transactionStoreDigest ?? input.countingDomain?.store_binding_digest ?? null,policySource?.digest)} : {}),
+      ...(input.policySources?.receipt_requirement_reviews?.length ? { receipt_requirement: receiptRequirementPreparedContext(input.policySources,
+        input.inputStoreDigest ?? input.transactionStoreDigest ?? input.countingDomain?.store_binding_digest ?? null) } : {}),
       ...(sourceConstraints ? { source_constraints: sourceConstraints } : {}),
       ...(Object.keys(reviewedExcludedMetadata).length ? { reviewed_excluded_field_metadata: reviewedExcludedMetadata } : {}),
       ...(excludedFields && Object.keys(excludedFields).length ? { excluded_field_access: {

@@ -157,6 +157,9 @@ export async function runOperatorQuestionModel(input: {
       : input.stage === "source-review" ? "Use the complete saved policy as operator evidence. Map only meanings actually stated there. If genuine business information is missing, return needs_information with one plain question. Never invent a raw operator answer or fill an unstated bound."
         : "Map only the exact captured raw operator words, referenced by answer_id. If they do not establish this meaning, return a pending proposal without a value. Never replace, normalize, quote-rewrite, strengthen or guess their meaning.",
     "For free-form Read meaning, the only proposed value is its kind; Runner keeps the exact raw words. For writer maintenance, propose all_writers_increment only when that statement is established; unknown stays pending. Input ranges must use exact current outcome/input identities. Other Source duties remain subject to their normal review.",
+    ...(q.kind !== "receipt_requirement" ? [] : [
+      "For receipt meaning, propose applied_change_receipt and pending_or_approved only when the captured answer establishes both the trusted completion evidence and the distinction from unapplied requests. Unknown stays pending. Do not select or infer a receipt location or transaction guarantee from these words; Runner separately supplies current configuration for an explicit applicability readback.",
+    ]),
     ...(q.kind !== "input_bounds" ? [] : [q.source_binding
       ? "For Source-review input ranges, valid exact Source line start/end are required as policy provenance."
       : "For captured-answer input ranges, answer_id is the provenance. Do not invent policy start/end or treat naming context as an answer. Propose bounds only established by the exact raw answer; unknown stays pending."]),
@@ -226,6 +229,9 @@ function decisionTool(q: OperatorQuestion, stage: Stage): AskToolDefinition {
     const value = q.kind === "attributed_meaning" ? { type: "object", additionalProperties: false, properties: { kind: { enum: [q.kind] } }, required: ["kind"] }
       : q.kind === "writer_maintenance" ? { type: "object", additionalProperties: false,
         properties: { kind: { enum: [q.kind] }, maintenance: { enum: ["all_writers_increment"] } }, required: ["kind", "maintenance"] }
+      : q.kind === "receipt_requirement" ? { type: "object", additionalProperties: false,
+        properties: { kind: { enum: [q.kind] }, completion_basis: { enum: ["applied_change_receipt"] },
+          unapplied_status: { enum: ["pending_or_approved"] } }, required: ["kind", "completion_basis", "unapplied_status"] }
         : { type: "object", additionalProperties: false, properties: { kind: { enum: [q.kind] }, requirements: {
           type: "array", maxItems: 256, items: { type: "object", additionalProperties: false, required: ["outcomes", "input", ...(q.source_binding ? ["start", "end"] : []), "min_length", "max_length"],
             properties: { outcomes: { type: "array", minItems: 1, maxItems: q.target.outcomes.length, uniqueItems: true, items: { type: "string", enum: q.target.outcomes } },

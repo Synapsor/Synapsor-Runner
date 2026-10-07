@@ -11,7 +11,9 @@ export type OperatorQuestionValue =
   | { kind: "attributed_meaning" }
   | { kind: "input_bounds"; requirements: Array<{ outcomes: string[]; input: string;
       start?: number; end?: number; min_length: number; max_length: number }> }
-  | { kind: "writer_maintenance"; maintenance: "all_writers_increment" };
+  | { kind: "writer_maintenance"; maintenance: "all_writers_increment" }
+  | { kind: "receipt_requirement";
+      completion_basis: "applied_change_receipt"; unapplied_status: "pending_or_approved" };
 
 /** A question checkpoint beside the immutable owner handoff. This is neither a
  * Source fact nor an authority revision. The consumer owns currentness/CAS and
@@ -27,7 +29,10 @@ export type OperatorQuestion = {
   target: { phase: string; resource?: string; field?: string; outcomes: string[] };
   material: string[];
   evidence: Array<{ id: string; digest: Digest }>;
-  continuation: "read_mapping" | "action_rule_review" | "input_policy_review" | "version_mapping";
+  /** Existing host configuration, never a model interpretation of raw words.
+   * Confirmation separately attributes its applicability to the cited duty. */
+  receipt_selection?: { source: string; mode: "runner_ledger" | "source_db"; dependencies_digest: Digest };
+  continuation: "read_mapping" | "action_rule_review" | "input_policy_review" | "version_mapping" | "receipt_requirement_review";
   /** Saved operator policy, not a fabricated UI answer. Only input review may
    * propose from this evidence without an owner-question handoff. */
   source_binding?: { source_session: string; source_digest: Digest; store_digest: Digest;
@@ -67,7 +72,7 @@ function invalid(reason: string): never { throw new Error(`AUTHORING_QUESTION_IN
 const reseal = (q: Omit<OperatorQuestion, "digest">): OperatorQuestion => parseOperatorQuestion({ ...q, digest: canonicalJsonDigest(q) });
 
 export function createOperatorQuestion(input: Pick<OperatorQuestion,
-  "id" | "revision" | "handoff_id" | "kind" | "scope_digest" | "context_digest" | "target" | "material" | "evidence" | "continuation" | "source_binding" | "budget_owner_id"> & {
+  "id" | "revision" | "handoff_id" | "kind" | "scope_digest" | "context_digest" | "target" | "material" | "evidence" | "continuation" | "source_binding" | "budget_owner_id" | "receipt_selection"> & {
     assistedLocalConsumer?: boolean;
   }): OperatorQuestion {
   const { assistedLocalConsumer, ...body } = input;
@@ -77,9 +82,9 @@ export function createOperatorQuestion(input: Pick<OperatorQuestion,
 
 export function parseOperatorQuestion(value: unknown): OperatorQuestion {
   if (!object(value) || !exact(value, ["version", "id", "revision", "handoff_id", "kind", "scope_digest", "context_digest", "target",
-    "material", "evidence", "continuation", "source_binding", "budget_owner_id", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
+    "material", "evidence", "receipt_selection", "continuation", "source_binding", "budget_owner_id", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
     || value.version !== 1 || !id(value.id) || value.handoff_id !== undefined && !text(value.handoff_id, 100) || !count(value.revision, Number.MAX_SAFE_INTEGER, 1)
-    || !["attributed_meaning", "input_bounds", "writer_maintenance"].includes(value.kind as string)
+    || !["attributed_meaning", "input_bounds", "writer_maintenance", "receipt_requirement"].includes(value.kind as string)
     || !digest(value.scope_digest) || !digest(value.context_digest) || !digest(value.digest)
     || !object(value.target) || !exact(value.target, ["phase", "resource", "field", "outcomes"])
     || !text(value.target.phase, 100) || value.target.resource !== undefined && !text(value.target.resource, 256)
@@ -89,9 +94,18 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     || !Array.isArray(value.material) || value.material.length > 64 || value.material.some(line => !text(line, 2000))
     || !Array.isArray(value.evidence) || value.evidence.length > 64
     || value.evidence.some(e => !object(e) || !exact(e, ["id", "digest"]) || !text(e.id, 256) || !digest(e.digest))
-    || !["read_mapping", "action_rule_review", "input_policy_review", "version_mapping"].includes(value.continuation as string)
+    || !["read_mapping", "action_rule_review", "input_policy_review", "version_mapping", "receipt_requirement_review"].includes(value.continuation as string)
     || Buffer.byteLength(JSON.stringify(value)) > 128 * 1024) invalid("The saved question envelope is malformed or too large.");
-  const continuation = { attributed_meaning: "read_mapping", input_bounds: "input_policy_review", writer_maintenance: "version_mapping" };
+  const continuation = { attributed_meaning: "read_mapping", input_bounds: "input_policy_review", writer_maintenance: "version_mapping",
+    receipt_requirement: "receipt_requirement_review" };
+  if (value.kind === "receipt_requirement") {
+    const selection = value.receipt_selection;
+    if (!object(selection) || !exact(selection, ["source", "mode", "dependencies_digest"])
+      || !text(selection.source, 256) || !["runner_ledger", "source_db"].includes(selection.mode as string)
+      || !digest(selection.dependencies_digest) || value.target.phase !== "receipt_requirement"
+      || !value.evidence.some(e => object(e) && e.id === "receipt-meaning-dependencies" && e.digest === selection.dependencies_digest))
+      invalid("The configured receipt selection is not current host context for this question.");
+  } else if (value.receipt_selection !== undefined) invalid("Receipt configuration cannot be attached to another question kind.");
   if (value.source_binding !== undefined) {
     const s = value.source_binding;
     if (value.kind !== "input_bounds" || value.handoff_id !== undefined || value.raw_answer !== undefined
@@ -109,7 +123,7 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
       && !(value.kind === "attributed_meaning" && value.continuation === "action_rule_review")
     || value.kind === "attributed_meaning" && value.continuation === "read_mapping" && !value.target.resource
     || value.kind === "writer_maintenance" && (!value.target.resource || !value.target.field)
-    || value.kind === "input_bounds" && !value.target.outcomes.length) invalid("The decision does not match its exact target or continuation.");
+    || ["input_bounds", "receipt_requirement"].includes(value.kind as string) && !value.target.outcomes.length) invalid("The decision does not match its exact target or continuation.");
   if (value.budget !== undefined && (!object(value.budget) || !exact(value.budget, ["iterations_used", "tool_calls_used", "correction_used"])
     || !count(value.budget.iterations_used, 6) || !count(value.budget.tool_calls_used, 8) || typeof value.budget.correction_used !== "boolean")) invalid("Invalid owning episode counters.");
   if (value.wording_state !== undefined) {
@@ -178,6 +192,10 @@ function validateProposal(q: OperatorQuestion, proposal: unknown): asserts propo
   if (v.kind === "attributed_meaning") { if (!exact(v, ["kind"])) invalid("Meaning comes from the trusted raw words, not a model quote."); }
   else if (v.kind === "writer_maintenance") {
     if (!exact(v, ["kind", "maintenance"]) || v.maintenance !== "all_writers_increment") invalid("Unknown writer behavior cannot become a different assurance.");
+  } else if (v.kind === "receipt_requirement") {
+    if (!exact(v, ["kind", "completion_basis", "unapplied_status"])
+      || v.completion_basis !== "applied_change_receipt" || v.unapplied_status !== "pending_or_approved")
+      invalid("A receipt interpretation must keep configured storage, applied completion and unapplied status distinct.");
   } else if (!exact(v, ["kind", "requirements"]) || !Array.isArray(v.requirements) || v.requirements.length > 256
     || v.requirements.some(r => !object(r) || !exact(r, ["outcomes", "input", "start", "end", "min_length", "max_length"])
       || !Array.isArray(r.outcomes) || !r.outcomes.length || r.outcomes.some(o => !q.target.outcomes.includes(o as string))
@@ -297,6 +315,7 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
         ? h.consumer === "policy_clarification" : ["read_clarification", "read_revision_clarification", "read_revision_prerequisite"].includes(h.consumer))
       || q.kind === "input_bounds" && h.consumer !== "input_policy"
       || q.kind === "writer_maintenance" && h.consumer !== "version_maintenance"
+      || q.kind === "receipt_requirement" && h.consumer !== "policy_clarification"
       || h.state === "answered" && !q.disposition && (!q.raw_answer || h.answer !== q.raw_answer.text || h.actor !== q.raw_answer.actor)
       || q.confirmation && (h.state !== "answered" || !q.raw_answer?.text.trim())) invalid("The question has no exact attributable owner handoff.");
     if (h.consumer === "read_revision_prerequisite"
@@ -349,6 +368,7 @@ export function assertOperatorQuestionsAdvance(previous: readonly OperatorQuesti
       ...(q.handoff_id ? { handoff_id: q.handoff_id } : {}),
       kind: q.kind, scope_digest: q.scope_digest, context_digest: q.context_digest, target: q.target,
       material: q.material, evidence: q.evidence, continuation: q.continuation,
+      ...(q.receipt_selection ? { receipt_selection: q.receipt_selection } : {}),
       ...(q.source_binding ? { source_binding: q.source_binding } : {}),
       ...(q.budget_owner_id ? { budget_owner_id: q.budget_owner_id } : {}) });
     if (canonicalJsonDigest(fixed(old)) !== canonicalJsonDigest(fixed(current))) invalid("A pending question's routing or currentness binding changed.");
@@ -381,6 +401,13 @@ export function operatorQuestionReadback(q: OperatorQuestion): string[] {
     "Confirm only if you can make that statement for all writers. If you do not know, keep it pending and ask the person responsible for those applications.",
     "This is a new, unverified operator assertion. Column presence and the assistant's answer are not proof of writer behavior.",
     ...q.material,
+  ];
+  if (v.kind === "receipt_requirement") return [
+    ...q.material, "Your captured answer, retained exactly:", q.raw_answer!.text,
+    `Runner's currently configured receipt location: ${q.receipt_selection!.mode === "runner_ledger" ? "Runner's local ledger, outside the source database transaction" : "the source database, in the same transaction as the applied change"}. This fact comes from configuration, not your answer.`,
+    "A change may be described as completed only from its trusted completion receipt. Pending or approved requests are not completed changes.",
+    "Confirm only if this shown receipt location satisfies the cited completion requirement. A requirement for a receipt in the same source transaction cannot be met by the local ledger.",
+    "This records your interpretation of the cited requirement. It does not switch receipt storage, prove a source effect, waive another policy duty or authorize execution.",
   ];
   return [
     ...q.material,

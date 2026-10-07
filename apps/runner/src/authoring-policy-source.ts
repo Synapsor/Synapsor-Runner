@@ -4,6 +4,7 @@ import { assertSourceInputReviews, type SourceInputPolicyReview } from "./author
 import { assertScopedDisclosureReviews, type ScopedDisclosureReview, type ScopedDisclosureInventory } from "./authoring-scoped-disclosure-records.js";
 import { assertSourceTransactionReviews, type SourceTransactionReview } from "./authoring-source-transaction-review.js";
 import { assertSourceTransactionScopeReviews, type SourceTransactionScopeReview } from "./authoring-source-transaction-scope.js";
+import { assertReceiptRequirementReviews, type ReceiptRequirementReview } from "./authoring-receipt-requirement.js";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
@@ -278,6 +279,9 @@ export type PolicySourceSession = {
   excluded_field_reviews?: ExcludedFieldReview[];
   /** Attributed source meaning, separate from compiled transaction capability. */
   source_transaction_reviews?: SourceTransactionReview[];
+  /** Attributed completion meaning and separately confirmed applicability of
+   * host receipt configuration; never execution or completion evidence. */
+  receipt_requirement_reviews?: ReceiptRequirementReview[];
   input_policy_reviews?: SourceInputPolicyReview[];
   /** Outcome-specific applicability answers within the saved source session. */
   source_transaction_scope_reviews?: SourceTransactionScopeReview[];
@@ -444,6 +448,7 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
     assertScopedDisclosureReviews(session.scoped_disclosure_reviews);
     assertExcludedFieldReviews(session.excluded_field_reviews);
     assertSourceTransactionReviews(session.source_transaction_reviews);
+    assertReceiptRequirementReviews(session.receipt_requirement_reviews);
     assertSourceTransactionScopeReviews(session.source_transaction_scope_reviews);
     assertCountingDecisions(session);
     // Once represented, omission by an older writer cannot delete a source
@@ -477,6 +482,10 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
       if (priorTransactions.some((r,i)=>r.digest!==session.source_transaction_reviews?.[i]?.digest))
         throw new Error("SOURCE_TRANSACTION_HISTORY_CHANGED: Existing source interpretations must be retained; no review was overwritten.");
       const priorScopes=existing.source_transaction_scope_reviews??[];
+      const priorReceipts=existing.receipt_requirement_reviews??[];
+      assertReceiptRequirementReviews(priorReceipts);
+      if (priorReceipts.some((r,i)=>r.digest!==session.receipt_requirement_reviews?.[i]?.digest))
+        throw new Error('RECEIPT_REQUIREMENT_HISTORY_CHANGED: Preserve earlier completion meanings and exact applicability decisions; no history was overwritten.');
       assertSourceTransactionScopeReviews(priorScopes);
       if (priorScopes.some((r,i)=>r.digest!==session.source_transaction_scope_reviews?.[i]?.digest))
         throw new Error("SOURCE_TRANSACTION_SCOPE_HISTORY_CHANGED: Existing scope decisions must be retained; no review was overwritten.");
@@ -532,6 +541,7 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
   assertExcludedFieldReviews(value.excluded_field_reviews);
   assertSourceInputReviews(value.input_policy_reviews);
   assertSourceTransactionReviews(value.source_transaction_reviews);
+  assertReceiptRequirementReviews(value.receipt_requirement_reviews);
   assertSourceTransactionScopeReviews(value.source_transaction_scope_reviews);
   assertCountingDecisions(value);
   // Optional explanation records are not authority. Corruption must not make the intact source unreadable.
