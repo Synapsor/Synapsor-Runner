@@ -3,7 +3,7 @@ import { assertOperatorQuestionsAdvance, parseOperatorQuestion, type OperatorQue
 
 type Source = { digest: string; text: string; lines: number };
 type Session = { id: string; receipt_requirement_reviews?: ReceiptRequirementReview[] };
-type Episode = { context: string; submissions: Array<{ completed_at?: string; validated?: boolean; diagnostic?: string;
+type Episode = { context: string; submissions: Array<{ reserved_at?: string; completed_at?: string; validated?: boolean; diagnostic?: string;
   tentative?: { status: string; context: string; raw_response: unknown; assembled?: unknown } }> };
 type Meaning = Extract<OperatorQuestionValue, { kind: 'receipt_requirement' }>;
 export type ReceiptRequirementReview = {
@@ -48,18 +48,22 @@ export function receiptRequirementQuestionTarget(q: OperatorQuestion, source: So
 }
 /** Nominate only a saved host refusal on an exact unaccepted receipt component.
  * Its range is a question target, never an accepted model policy interpretation. */
-export function receiptRequirementReviewTarget(source: Source, episodes: readonly Episode[], context: string | undefined, draftDigest: string):
+export function receiptRequirementReviewTarget(source: Source, episodes: readonly Episode[], context: string | undefined, responseContext: string):
   { start: number; end: number; source_excerpt: string } | undefined {
   // The native episode key binds the entire prepared review; tentative output
-  // and host refusal use its canonical draft digest. Check both identities.
-  if (!sha(context) || !sha(draftDigest)) return undefined;
-  const episode = episodes.filter(e => e.context === context).at(-1), submission = episode?.submissions.at(-1);
+  // and host refusal bind Source, draft and operator messages. Check both.
+  if (!sha(context) || !sha(responseContext)) return undefined;
+  // No-response reservations cannot originate or supersede a semantic result.
+  // They stay untouched; the independent generation admission fence still
+  // applies. Only the latest completed result can nominate a question target.
+  const submission = episodes.filter(e => e.context === context).flatMap(e => e.submissions)
+    .filter(s => s.completed_at).at(-1);
   if (!submission?.completed_at || submission.validated !== false || submission.tentative?.status !== 'unaccepted_generation'
-    || submission.tentative.context !== draftDigest || !submission.diagnostic) return undefined;
+    || submission.tentative.context !== responseContext || !submission.diagnostic) return undefined;
   let feedback: any;
   try { const saved = JSON.parse(submission.diagnostic); feedback = saved.final_refusal ?? saved; } catch { return undefined; }
   const body = object(submission.tentative.assembled ?? submission.tentative.raw_response);
-  if (feedback.context !== draftDigest || !Array.isArray(feedback.findings) || !Array.isArray(body.passages)) return undefined;
+  if (feedback.context !== responseContext || !Array.isArray(feedback.findings) || !Array.isArray(body.passages)) return undefined;
   const targets = feedback.findings.filter((f: any) => f.typed_reason === 'receipt_configuration.source_requirement_unestablished')
     .flatMap((f: any) => {
       const match = /^\/passages\/(\d+)(?:\/|$)/u.exec(f.component ?? '');

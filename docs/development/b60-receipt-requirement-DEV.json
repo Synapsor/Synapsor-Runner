@@ -7,7 +7,8 @@
   "failing_before": {
     "receipt_resolution": "1 pass / 1 fail at 9291ab82; preserved /var/tmp/synapsor-main-b60-20261007-owned/evidence/failing-before.log",
     "restart_barrier": "3 pass / 2 fail on exact6d2 product + declared tests; restart-barrier-before-v3.log; prior harness response-shape mistakes preserved separately",
-    "requested_scope_consumer": "0 pass / 2 fail before full original-job/workload hook; requested-read-evidence-before.log"
+    "requested_scope_consumer": "0 pass / 2 fail before full original-job/workload hook; requested-read-evidence-before.log",
+    "native_context": "native-source-context-before-v2.log: 2 pass / 1 fail on1cd096d4; actual producer nested Source+draft+messages identity rejected by bare-draft caller; prior manually declared identity tests were insufficient"
   },
   "checks": {
     "focused_wip8": "244 pass / 0 fail / 1 skip (live model admission opt-in; paid closed)",
@@ -19,11 +20,12 @@
       "request capture clones body only, retaining non-cloneable transport hooks"
     ],
     "focused_wip9": "347 pass / 0 fail / 1 skip in two disjoint affected batches (15 files); live model admission opt-in remains closed",
-    "types_wip9": "exit 0"
+    "types_wip9": "exit 0",
+    "native_context": "176 pass / 0 fail / 1 live-model opt-in skip; actual native producer + persisted preflight; types exit0"
   },
   "open": [
-    "ordinary public CLI receipt question/raw/map/readback/decision/save/Resume proof",
-    "independent B59 remaining existing native continuation controls",
+    "ordinary public saved Review adapter: pending receipt notice must open existing shared question host; public proof still pending",
+    "independent 20 native-context variants and current pin verdict",
     "final accepted integrated gates/composed Luna/studio",
     "actual installed package acceptance"
   ],
@@ -33,12 +35,17 @@
     "finish only missing Source projection from an acknowledged native confirmation, under currentness/CAS, no replay/remap/reconfirmation",
     "original job + actual saved workload restored for final and saved Review consumers; routing summary is not authority"
   ],
-  "product_pin": "e882bfab73b2519f872a0c2d6411ac17cb597f89",
+  "product_pin": "commit containing this compact record (not yet accepted)",
   "independent_native_review": {
     "reviewer": "codex/b60-independent-review-20261007",
     "checkpoint": "03fa7e667caed70010b9881d77eb64dc46ccef6a",
     "scoped_checks": 31,
     "satisfied": 31,
     "limitations": "actual native API/compiled old reader; whole public CLI and installed package still pending"
-  }
+  },
+  "changes_native_context": [
+    "one shared exact native response-context formula, separate full-review key unchanged",
+    "latest completed same-key result nominates only a business question; reserved/no-response records unchanged and transport admission still required",
+    "receipt raw answer preserves whitespace through existing readOperator option"
+  ]
 }

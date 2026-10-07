@@ -73,6 +73,8 @@ import {
   type SchemaInspection,
 } from "@synapsor-runner/schema-inspector";
 import crypto from "node:crypto";
+import { coverageResponseContext } from './authoring-coverage-feedback.js';
+import { assertAuthoringGenerationAdmission } from './authoring-generation-recovery.js';
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { explicitActionExecutionIntent } from "./action-execution-intent.js";
 import { prepareActionRuleReadRevision, rebindActionCatalogForReadPolicyRevision, rebuildActionCatalogAfterMetadataRefresh, buildActionCatalogForSavedReadRevision, combineReviewedActionCatalogs,
@@ -10600,7 +10602,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const retained = savedQuestion && sources.receipt_requirement_reviews?.filter(r => r.question.id === savedQuestion.id).at(-1);
     const target = retained ?? (savedQuestion && receiptRequirementQuestionTarget(savedQuestion, source, sources.id, store))
       ?? pendingReceiptRequirement(source,currentPolicyCoverageDraft(),sources)
-      ?? receiptRequirementReviewTarget(source, sources.coverage_episodes ?? [], policyAttemptKey, canonicalJsonDigest(currentPolicyCoverageDraft()));
+      ?? receiptRequirementReviewTarget(source, sources.coverage_episodes ?? [], policyAttemptKey,
+        coverageResponseContext(source.digest, currentPolicyCoverageDraft(), sources.operator_messages ?? []));
     if (!target || retained && (retained.source_session !== sources.id || retained.source_digest !== source.digest)) return false;
     await refreshPolicyCoverageEvidence();
     const draft = currentPolicyCoverageDraft();
@@ -10643,10 +10646,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       });
       return Boolean(currentReceiptRequirement(source,target,currentPolicyCoverageDraft(),sources));
     }
+    assertAuthoringGenerationAdmission();
     const answer = await reviewBusinessAnswer({
       question: 'What establishes that a change is complete, and how should an unapplied request be described?',
       stage: 'authority_review', businessContext: operatorBusinessContext(context.candidate.pack.resources), assertCurrent,
-      prompt: async displayed => input.authoringChat?.readOperator?.(displayed, () => assertCurrent(), { recordPolicyAnswer: false }),
+      prompt: async displayed => input.authoringChat?.readOperator?.(displayed, () => assertCurrent(), { recordPolicyAnswer: false, preserveWhitespace: true }),
       receiptDecision: { session: modelAssistSession, businessContext: operatorBusinessContext(context.candidate.pack.resources),
         target: { phase: 'receipt_requirement', resource: source.digest, field: `lines:${target.start}-${target.end}`,
           outcomes: draft.actions.filter(a => a.effect?.writeback === 'supervised').map(a => a.outcome).sort() },

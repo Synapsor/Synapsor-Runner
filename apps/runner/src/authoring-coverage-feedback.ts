@@ -3,6 +3,12 @@ import { createHash } from 'node:crypto';
 import { CoverageSourceLinesError } from './authoring-source-coverage.js';
 import { SourceTransactionScopeError } from './authoring-source-transaction-scope.js';
 
+/** Native response/refusal identity. The enclosing prepared review keeps its
+ * own larger key; neither identity can substitute for the other. */
+export function coverageResponseContext(sourceDigest: string, draft: unknown, messages: string | readonly string[]) {
+  return canonicalJsonDigest({ source: sourceDigest, draft, messages });
+}
+
 /** Only host-authored text and fixed response coordinates leave this boundary. */
 export class CoverageComponentError extends Error {
   constructor(readonly component: string, readonly cause: unknown) {

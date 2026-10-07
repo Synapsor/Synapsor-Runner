@@ -2,7 +2,7 @@ import { sourceInputFidelity } from "./authoring-input-policy.js";
 import {prepareRetainedDutyReview, assembleRetainedDutyReview, RetainedDutyApplicabilityError, type RetainedDutyPlan} from './authoring-retained-duties.js';
 import {createCoverageRepairScope, assembleScopedCoverageReplacement, scopeToolSchema, portableScopeToolSchema, CoverageScopedCorrectionError, type CoverageRepairScope} from "./authoring-scoped-correction.js";
 import {constrainReceiptComponentSchema, validateScopedReceiptComponents, receiptComponentMeanings} from "./authoring-scoped-receipt-components.js";
-import { CoverageReceiptDutyError } from './authoring-coverage-feedback.js';
+import { CoverageReceiptDutyError, coverageResponseContext } from './authoring-coverage-feedback.js';
 import { scopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
 import { currentSourceTransactionReview, sourceTransactionReviewNeeded } from './authoring-source-transaction-review.js';
 import { sourceTransactionScopeQuestions, SourceTransactionScopeError } from './authoring-source-transaction-scope.js';
@@ -587,7 +587,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
  * passage is never returned, saved, or treated as proof of its remaining checks. */
 export function collectCoverageFeedback(args: Record<string, unknown>, source: PolicyTextSnapshot, draft: unknown,
   operatorHistory: string | readonly string[], originalError?: unknown, sourceSession?: PolicySourceSession): CoverageFeedback {
-  const result: CoverageFeedback = { context: canonicalJsonDigest({source: source.digest, draft, messages: operatorHistory}),
+  const result: CoverageFeedback = { context: coverageResponseContext(source.digest, draft, operatorHistory),
     findings: [], limited: false, unevaluated: [], complete_validation: false };
   recordCoverageFeedbackParent(result,args);
   const add = (error: unknown, component: string, raw: unknown) => {
@@ -908,7 +908,7 @@ export async function reviewPolicyCoverage(input: {
   let repairScope: CoverageRepairScope | undefined;
   let lastAssembly: ReturnType<typeof assembleScopedCoverageReplacement> | undefined;
   let submissionEvidence: NonNullable<CoverageReviewEpisode["submissions"][number]["tentative"]> | undefined;
-  const contextIdentity = canonicalJsonDigest({ source: input.source.digest, draft: input.draft, messages: operatorMessages });
+  const contextIdentity = coverageResponseContext(input.source.digest, input.draft, operatorMessages);
   const gateway: AskToolGateway = { mode: "authoring", listTools: () => tools, close: async () => undefined,
     callTool: async (name, args) => {
       let candidate = args;
