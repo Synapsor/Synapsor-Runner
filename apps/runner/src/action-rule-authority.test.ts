@@ -1122,7 +1122,7 @@ describe("semantic Action Rule authority persistence", () => {
       reviews: [authorityReview()],
     });
     await writeActionRuleAuthorityDraft(root, draft);
-    const before = JSON.stringify(await readActionRuleAuthorityDraft(root));
+    const before = JSON.stringify(await readActionRuleAuthorityDraft(root, draft.authority.name));
     const denied = activationChat(entry === "menu" ? ["activate", "no", "back"] : ["no"]);
     const deniedSession = entry === "menu" ? denied.chat.session : { ...denied.chat.session, chooseOption: undefined };
     await reviewVerifiedActionAuthority({ projectRoot: root, boundaryName: read.pack.name, draft, session: deniedSession });
@@ -1131,7 +1131,7 @@ describe("semantic Action Rule authority persistence", () => {
     expect(denial).toMatchObject({ initialValue: "no" });
     expect(denial?.labels).toContain("Enable the reviewed change requests");
     expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
-    expect(JSON.stringify(await readActionRuleAuthorityDraft(root))).toBe(before);
+    expect(JSON.stringify(await readActionRuleAuthorityDraft(root, draft.authority.name))).toBe(before);
 
     const accepted = activationChat(entry === "menu" ? ["activate", "yes", "back"] : ["yes"]);
     const acceptedSession = entry === "menu" ? accepted.chat.session : { ...accepted.chat.session, chooseOption: undefined };
