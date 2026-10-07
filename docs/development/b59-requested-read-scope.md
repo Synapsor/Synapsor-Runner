@@ -147,3 +147,19 @@ original-job + exact saved-workload evidence hook and integrated acceptance.
 
 Final types at1985bf13 exit0/22.661s after the annotation-only `tokens: string[]`
 fix; the preceding type failure remains captured. All owned groups are closed.
+
+## Field-only negative scope correction
+
+Main review found that a negative clause containing a root phrase or ID could
+incorrectly exclude that whole resource. Three declared native controls preserve
+an approved current `service.cases` → customer cases definition, a permitted
+status Read, and a private_note restriction. Before the fix, the exact field-ID
+restriction passed but both “private notes from customer cases” and “private notes
+from service.cases” falsely failed with READ_WORKLOAD_EXCLUDED_RESOURCE (1P2F).
+The helper now compares the COMPLETE negative target to the exact root identity
+or complete normalized current definition phrase. Embedded IDs/phrases establish
+no whole-root exclusion. Four exact whole-root negative controls retain exclusion;
+existing native private select/filter/group/measure controls remain unchanged.
+Five affected files now pass276/0/0. This is not a new parser for arbitrary field
+privacy instructions: native typed restrictions and ordinary meaning review still
+own those semantics. Before/after captures and prior1985 remain preserved.

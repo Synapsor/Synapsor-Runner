@@ -45,9 +45,9 @@
     "use": "Design discussion only; never used as responder input",
     "independence": "Main notified; Reviewer must replace exposed withheld controls before independent verdict; exposed controls cannot receive hidden credit"
   },
-  "head": "1985bf13015db7b9570e252dd38001f0fe0bb07b",
+  "head": "900d09db8682d7fd8b0af62dfe79a44deeec33e0",
   "open_items": [
-    "Reviewer2 replacement independent variants on final1985",
+    "Reviewer2 independent verdict including narrow900d field-negative successor; old1985 preserved",
     "Main-owned transient original-job + exact saved-workload final coverage hook",
     "Integrated affected/types/full qualification; not authorized or run by this lane",
     "No universal arbitrary-English semantic completeness claim"
@@ -509,6 +509,51 @@
       "owned_live": [],
       "free_bytes": 101591408640,
       "head": "1985bf13015db7b9570e252dd38001f0fe0bb07b"
+    },
+    "field-root-before-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/field-root-before-v1/RESULT.json",
+      "sha256": "b1c6143b14c508825b6f94d0627ba6d5cb56097cb37d8d62fed87110f533b34a",
+      "exit": 1,
+      "stop": null,
+      "seconds": 3.244954824447632,
+      "pgid": 3612696,
+      "owned_live": [],
+      "free_bytes": 101587099648,
+      "head": "2601d13bd1493ef45e8262a30ee7d485d9548137",
+      "tests": {
+        "numPassedTests": 1,
+        "numFailedTests": 2,
+        "numPendingTests": 20
+      },
+      "vitest_sha256": "c1d3f52ea36747376ef0104aefbcadc6d623dd934352967e3b66c27e01c3cbcc"
+    },
+    "field-root-after-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/field-root-after-v1/RESULT.json",
+      "sha256": "f5dcca825bb2592af4980455cc79e38f4db1e3cdcc59ed51a6c7aaec31c2dfbf",
+      "exit": 0,
+      "stop": null,
+      "seconds": 6.058407306671143,
+      "pgid": 3613284,
+      "owned_live": [],
+      "free_bytes": 101586300928,
+      "head": "2601d13bd1493ef45e8262a30ee7d485d9548137",
+      "tests": {
+        "numPassedTests": 276,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "89cb6aeb287da219c60ec54c1b9828c86fe27f3d49af4986c839b8447c8efd02"
+    },
+    "field-root-types-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/field-root-types-v1/RESULT.json",
+      "sha256": "c039cc4f42b2b16e1cb5a1ffbf275a1fa84c749cd91413fb498e8852d9b458b6",
+      "exit": 0,
+      "stop": null,
+      "seconds": 22.26613163948059,
+      "pgid": 3613838,
+      "owned_live": [],
+      "free_bytes": 101585481728,
+      "head": "900d09db8682d7fd8b0af62dfe79a44deeec33e0"
     }
   },
   "test_definition_notes": [
@@ -526,11 +571,11 @@
     "same-name ambiguity reuses existing native clarification/current checkpoint; no new state schema/store/lifecycle/budget",
     "original job remains persisted/currentness-bound independently of routing summary;500 limit remains unchanged"
   ],
-  "current_test_head": "1985bf13015db7b9570e252dd38001f0fe0bb07b",
-  "runtime_head": "1985bf13015db7b9570e252dd38001f0fe0bb07b",
+  "current_test_head": "900d09db8682d7fd8b0af62dfe79a44deeec33e0",
+  "runtime_head": "900d09db8682d7fd8b0af62dfe79a44deeec33e0",
   "consumer_scope": {
-    "native": "Final five-file269P0F0S; prior consumer21P and all earlier captures retained",
-    "types": "0/22.661s committed1985; preceding type annotation failure retained",
+    "native": "Final five-file276P0F0S; all previous consumer and source-association captures retained",
+    "types": "0/22.266s committed900d",
     "permission_setup": "Source text approval and disabled candidate restrictions are declared belowUI inputs, not a newly exercised consent UI",
     "not_proven": [
       "Reviewer2 replacement independent variants on final1985",
@@ -553,5 +598,12 @@
     ],
     "hotspots": "boundary-commands.ts and authoring-policy-evidence.ts untouched",
     "scope": "in-process native producer/known synthetic inputs, no provider/sourceDB/activation/public whole-journey acceptance"
+  },
+  "field_negative_correction": {
+    "before": "1P2F: exact field ID already safe; embedded root ID and definition phrase falsely excluded entire resource",
+    "fix": "entire target equals exact root identity or entire normalized current definition phrase; no substring root inference",
+    "after": "276P0F0S five-file run uses working diff committed900d; types0/22.266s exact900d",
+    "preserved": "prior1985 and all previous captures; existing typed field restriction tests unchanged",
+    "limits": "not an arbitrary field privacy parser; no format/budget/currentness/permission change"
   }
 }
