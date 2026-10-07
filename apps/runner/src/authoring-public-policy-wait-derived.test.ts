@@ -9,7 +9,9 @@ import { boundaryAssistCommand, boundaryReviewCommand, loadBoundaryReviewContext
 import { READ_WORKLOAD_SET_VERSION } from "./read-workload-assist.js";
 import { saveInstantBoundaryReviewBaseline } from "./boundary-review-persistence.js";
 import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
+import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import { listActionRuleAuthorityDrafts, readActionRuleAuthorityActivation } from "./action-rule-authority.js";
+import { readSemanticSupervisedExecutionState } from "./semantic-action-deployment.js";
 import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { activePolicySource, loadPolicySources, policyTextSnapshot, savePolicySources } from "./authoring-policy-source.js";
 import { ownedProgramDraft, ownedProgramInspection } from "./test-fixtures/owned-authoring-program.js";
@@ -31,7 +33,7 @@ const jsonLine=(text:string,prefix:string):any=>{
 };
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
 
-async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=false, positiveInput=false, editInputBaseline=false) {
+async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=false, positiveInput=false, editInputBaseline=false, activationPresentation=false) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),`owned-public-policy-wait-${control}-`));
   const resumeFile=path.join(root,".synapsor/boundary-authoring/resume.json");
   const inspection=ownedProgramInspection();
@@ -63,6 +65,7 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
   const inputSnapshots:any[]=[];
   let editPhase=0,editSaveConfirmations=0;
   const editSnapshots:any[]=[];
+  const activationSnapshots:any[]=[];
   let nestedEntered=false,nestedReads=0,nestedDeclines=0,nestedStartRequests=0,nestedAuthorityBefore:any,cachedActivationAttempts=0;
   const nestedControl=control.startsWith("nested_");
   const reviewWaitControl=control.startsWith("nested_review_");
@@ -208,9 +211,28 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       else if(choice.title==="FINISH ATTACHED RULES REVIEW") {
         selected=stage==="question" && !clarifyChosen ? "clarify" : "pause";if(selected==="clarify")clarifyChosen=true;
       } else if(choice.title==="SETUP NEEDS ATTENTION" || values.includes("pause") && !values.includes("yes"))selected="pause";
+      else if(activationPresentation && choice.title==="REVIEW CHANGE REQUESTS") {
+        expect(choice.message).toBe("Allow the reviewed change requests and approval rules? Database execution has a separate review.");
+        expect(choice.initialValue).toBe("no");
+        expect(choice.options.find((entry:any)=>entry.value==="yes")!.label).toBe("Enable the reviewed change requests");
+        expect(choice.options.find((entry:any)=>entry.value==="no")!.label).toBe("Not now; keep authority unchanged");
+        const authority=(await listActionRuleAuthorityDrafts(root))[0]!;
+        expect(authority.authority.rules.map(entry=>entry.rule.outcome)).toEqual(PUBLIC_INPUT_FACTS.outcomes);
+        expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+        activationSnapshots.push({stage:"authored-action-before-default-no",resume:await readResume(),authority,
+          activeRead:await loadActivatedExplorationBoundaries(root),execution:await readSemanticSupervisedExecutionState({projectRoot:root})});
+        selected="no";
+      }
       else if(values.includes("yes") && /Send this Boundary-authoring conversation|Allow the assistant to send|reviewed structural context|Allow the assistant to read|Allow the reviewed change requests/.test(choice.message)) {expect(choice.initialValue).toBe("no");selected="yes";}
       else if(values.includes("activate")) {
-        if(nestedControl && !nestedEntered) {
+        if(activationPresentation && choice.title==="REVIEW ACCESS") {
+          expect(choice.message).toBe("Allow the assistant to read the information shown above? This does not enable changes to the database.");
+          expect(choice.initialValue).toBe("finish");
+          expect(choice.options.find((entry:any)=>entry.value==="activate")!.label).toBe("Enable the reviewed reading access");
+          activationSnapshots.push({stage:"read-before-explicit-activate",resume:await readResume(),authority:(await listActionRuleAuthorityDrafts(root))[0],
+            read:await loadBoundaryReviewContext(root)});
+          selected="activate";
+        } else if(nestedControl && !nestedEntered) {
           expect(values).toContain("__ask_boundary_model__");nestedEntered=true;nestedStartRequests=requests;selected="__ask_boundary_model__";
         } else if(control==="nested_cached_activate" && injected) {cachedActivationAttempts++;selected="activate";}
         else selected=values.includes("finish") ? "finish" : values.includes("back") ? "back" : undefined;
@@ -482,9 +504,22 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       }
       expect(initiallySaved.generation_recovery.operations.some((op:any)=>["in_flight","unknown","partial","received","handled"].includes(op.state))).toBe(false);
       expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
-      expect(await fs.readFile(path.join(root,".synapsor/exploration-boundary.active.json")).catch(()=>undefined)).toBeUndefined();
+      if(activationPresentation) {
+        expect(activationSnapshots.map(snapshot=>snapshot.stage)).toEqual(["read-before-explicit-activate","authored-action-before-default-no"]);
+        const before=activationSnapshots[1],activeRead=await loadActivatedExplorationBoundaries(root);
+        expect(activeRead).toHaveLength(1);expect(activeRead).toEqual(before.activeRead);
+        expect(activeRead[0]!.activation).toMatchObject({state:"active",actor:"local-developer"});
+        expect(authority).toEqual(before.authority);
+        expect(await readSemanticSupervisedExecutionState({projectRoot:root})).toEqual(before.execution);
+        expect(before.execution).toMatchObject({enabled:false,policies:[]});
+        expect(menus.filter(menu=>menu.title==="REVIEW CHANGE REQUESTS")).toHaveLength(1);
+        expect(menus.find(menu=>menu.title==="REVIEW CHANGE REQUESTS")).toMatchObject({initialValue:"no",selected:"no"});
+        activationSnapshots.push({stage:"authored-action-declined-public-return",resume:initiallySaved,sources,authority,activeRead,execution:before.execution});
+      } else {
+        expect(await fs.readFile(path.join(root,".synapsor/exploration-boundary.active.json")).catch(()=>undefined)).toBeUndefined();
+      }
       expect(failures.filter(entry=>entry.title==="SETUP NEEDS ATTENTION"),transcript).toEqual([]);
-      inputSnapshots.push({stage:"reviewed-disabled-program",resume:initiallySaved,sources,authority,read:(await loadBoundaryReviewContext(root))});
+      inputSnapshots.push({stage:activationPresentation ? "reviewed-read-active-action-disabled-program" : "reviewed-disabled-program",resume:initiallySaved,sources,authority,read:(await loadBoundaryReviewContext(root))});
       if(editInputBaseline) {
         const before={resume:initiallySaved,sources,authority,read:await loadBoundaryReviewContext(root),requests,inputPrompts,inputConfirmations};
         editSnapshots.push({stage:"reviewed-disabled-baseline",...before});
@@ -539,6 +574,7 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
         expect(failures.filter(entry=>entry.title==="SETUP NEEDS ATTENTION"),transcript).toEqual([]);
         return {origin:"IMPLEMENTER_PUBLIC_INPUT_SELECTED_BASELINE_EDIT_DISABLED",control,requests,inputPrompts,inputConfirmations,activation:false,provider_calls:0};
       }
+      if(activationPresentation)return {origin:"IMPLEMENTER_PUBLIC_AUTHORED_ACTION_DEFAULT_NO",control,requests,inputPrompts,inputConfirmations,read_activation:true,proposal_activation:false,execution_activation:false,provider_calls:0};
       return {origin:"IMPLEMENTER_PUBLIC_INPUT_ONBOARDING_DISABLED",control,requests,inputPrompts,inputConfirmations,activation:false,provider_calls:0};
     }
     if(reviewWaitControl) {
@@ -683,7 +719,7 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
   } finally {
     const evidenceRoot=process.env.OWNED_PUBLIC_POLICY_WAIT_EVIDENCE;
     if(evidenceRoot) {const persisted=await Promise.allSettled([readResume(),listActionRuleAuthorityDrafts(root),sourceId ? loadPolicySources(root,sourceId) : Promise.resolve(undefined)]);
-      await fs.mkdir(evidenceRoot,{recursive:true});await fs.writeFile(path.join(evidenceRoot,`${control}-${randomUUID()}.json`),JSON.stringify({origin:editInputBaseline ? "IMPLEMENTER_PUBLIC_INPUT_SELECTED_BASELINE_EDIT_DISABLED" : positiveInput ? "IMPLEMENTER_PUBLIC_INPUT_ONBOARDING_DISABLED" : "IMPLEMENTER_DERIVED_PUBLIC_POLICY_WAIT",control,positiveInput,editInputBaseline,transcript,publicOutput:stdout.mock.calls.map(([chunk])=>String(chunk)).join(""),menus,failures,responses,reports,questionSnapshots,inputSnapshots,editSnapshots,injected,
+      await fs.mkdir(evidenceRoot,{recursive:true});await fs.writeFile(path.join(evidenceRoot,`${control}-${randomUUID()}.json`),JSON.stringify({origin:activationPresentation ? "IMPLEMENTER_PUBLIC_AUTHORED_ACTION_DEFAULT_NO" : editInputBaseline ? "IMPLEMENTER_PUBLIC_INPUT_SELECTED_BASELINE_EDIT_DISABLED" : positiveInput ? "IMPLEMENTER_PUBLIC_INPUT_ONBOARDING_DISABLED" : "IMPLEMENTER_DERIVED_PUBLIC_POLICY_WAIT",control,positiveInput,editInputBaseline,activationPresentation,transcript,publicOutput:stdout.mock.calls.map(([chunk])=>String(chunk)).join(""),menus,failures,responses,reports,questionSnapshots,inputSnapshots,editSnapshots,activationSnapshots,injected,
         persisted:persisted.map((result,index)=>({kind:["resume","disabled_actions","sources"][index],...(result.status==="fulfilled" ? {value:result.value} : {error:String(result.reason)} )}))},null,2));}
     await fs.rm(root,{recursive:true,force:true});
   }
@@ -691,6 +727,10 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
 
 it("public onboarding acknowledges the exact Input answer and completes reviewed disabled Read and Action drafts",async()=>{
   const result=await publicPolicyWait("healthy",false,true);expect(result.provider_calls).toBe(0);
+},30_000);
+
+it("public onboarding presents authored Action consent after explicit Read activation and keeps default-No proposal authority absent",async()=>{
+  const result=await publicPolicyWait("healthy",false,true,false,true);expect(result.provider_calls).toBe(0);
 },30_000);
 
 it("public selected-baseline edit retains Input acknowledgement and changes only one independent reviewer requirement",async()=>{
