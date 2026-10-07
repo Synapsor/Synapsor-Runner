@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { requestedReadResourceIds } from "./read-requested-scope.js";
+import { requestedReadResourceIds, resolveRequestedReadScope } from "./read-requested-scope.js";
 
 describe("original-request resource association", () => {
   const catalog = ["studio.accounts", "studio.payments", "archive.accounts"];
@@ -14,5 +14,14 @@ describe("original-request resource association", () => {
   });
   it("does not silently resolve an unqualified same-name table across schemas", () => {
     expect(requestedReadResourceIds("Read accounts.", catalog)).toEqual([]);
+  });
+});
+
+describe("exact whole-root negative scope", () => {
+  it.each(["Do not show service.cases.", "Never show customer cases.", "Exclude customer cases.", "Customer cases are excluded."])("retains whole-root exclusion: %s", statement => {
+    const scope = resolveRequestedReadScope({ original: "Read customer cases.", resources: [{ id: "service.cases" }],
+      definitions: [{ resource: "service.cases", phrases: ["customer cases"] }], statements: [statement] });
+    expect(scope.required).toEqual(["service.cases"]);
+    expect(scope.excluded).toEqual(["service.cases"]);
   });
 });

@@ -188,6 +188,33 @@ describe("original requested Read scope versus routing summary", () => {
 });
 
 
+describe("field-only Source restrictions preserve public root Reads", () => {
+  it.each(["Do not show service.cases.private_note.", "Never show private notes from customer cases.", "Never show private notes from service.cases."])("does not exclude the whole resource for %s", async restriction => {
+    const boundary = scopeBoundary(["service.cases"]);
+    boundary.pack.resources[0]!.field_types.private_note = "text";
+    boundary.pack.resources[0]!.kept_out_fields.push("private_note");
+    const source = `service.cases represents customer cases.\n${restriction}`;
+    const conversation = createModelAuthoringConversation(), policy = newPolicySourceSession();
+    const snapshot = policyTextSnapshot(Buffer.from(source), "Rules.txt");
+    policy.snapshots.push(snapshot); policy.active = snapshot.version;
+    policy.approvals.push({ digest: snapshot.digest, destination: authoringDestination({ provider: "openai", model: "declared-scope-fixture" }) });
+    conversation.policySources = policy;
+    const requestJson = vi.fn(async (wire: { body: unknown }) => {
+      for (const line of source.split("\n")) expect(JSON.stringify(wire.body)).toContain(line);
+      return { status: 200, body: { output: [{ type: "function_call", call_id: "public_status", name: "runner__submit_read_workloads",
+        arguments: JSON.stringify({ allowed: [{ id: "public_status", description: "Read customer case status", plan: { kind: "rows", resource: "service.cases", select: ["status"] } }], forbidden: [] }) }] } };
+    });
+    const result = await generateModelReadWorkload({ name: "public_case_status", generatedBoundary: boundary,
+      allowedQuestions: ["Read customer case status"], operatorNamingContext: "Read customer cases.", conversation,
+      provider: "openai", model: "declared-scope-fixture", apiKey: "local-fixture-only", egressAcknowledged: true,
+      deferNarration: true, dependencies: { requestJson } });
+    expect(result.analysis.status).toBe("ready");
+    expect(result.workload.allowed[0]!.plan).toMatchObject({ resource: "service.cases", select: ["status"] });
+    expect(result).toMatchObject({ authority_granted: false, source_query_executed: false, source_database_changed: false });
+    expect(boundary.pack.resources[0]!.kept_out_fields).toContain("private_note");
+  });
+});
+
 describe("requested business areas through current attributed Source mappings", () => {
   it.each(["substitution", "excluded_addition", "duplicate_labels", "duplicate_definitions", "duplicate_definitions_answer", "unresolved_phrase", "source_disambiguation"])("preserves native scope for %s", async scenario => {
     const ids = scenario === "source_disambiguation" ? ["current.accounts", "archive.accounts"] : ["current.member_cards", "archive.old_cards", "current.invoices"];
