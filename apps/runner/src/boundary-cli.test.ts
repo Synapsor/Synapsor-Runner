@@ -5514,7 +5514,7 @@ describe("boundary operator-plane CLI", () => {
         if (title === "START BOUNDARY DRAFTING") return resuming ? "resume" : "model";
         if (["ACTIVATE READ BOUNDARY", "REPLACE ACTIVE READ BOUNDARY", "ACTIVATE ACTION BOUNDARY", "REPLACE ACTIVE ACTION BOUNDARY", "FINISH BOUNDARY REVIEW"].includes(title)) return "finish";
         if (title === "UNCHANGED ACTION REQUEST" && ["unchanged_closed", "already_satisfied"].includes(control)) return control === "unchanged_closed" ? "cancelled" : "confirmed_current";
-        if (title === "SETUP NEEDS ATTENTION" && ["read_drift", "competing_edit"].includes(control)) return "pause";
+        if (title === "SETUP NEEDS ATTENTION" && ["read_drift", "competing_edit", "primary_wait_read_drift"].includes(control)) return "pause";
         throw new Error(`Unexpected threshold edit menu: ${title}`);
       };
       const planner = vi.fn(async (input: Parameters<typeof planModelBoundaryJob>[0]) => {
