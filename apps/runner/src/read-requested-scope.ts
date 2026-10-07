@@ -63,12 +63,17 @@ export function resolveRequestedReadScope(input: {
       }
     }
   }
-  const groups = base.ambiguous.filter(group => group.some(id => {
+  const hasUncoveredBasename = (id: string) => {
     const name = normalizedSemanticWords(id.split(".").at(-1) ?? id);
     return [name, name.filter(word => !RESOURCE_MENTION_STOP_WORDS.has(word))].some(needle => needle.length > 0
       && words.some((_word, index) => needle.every((word, offset) => word === words[index + offset])
         && needle.some((_part, offset) => !attributedWordPositions.has(index + offset))));
-  }));
+  };
+  const qualified = [...readOrientedJobText(input.original).matchAll(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu)].map(match => match[0]);
+  for (const id of base.required) if (!attributed.includes(id)
+    && !qualified.some(token => token === id || token.startsWith(`${id}.`))
+    && !hasUncoveredBasename(id)) required.delete(id);
+  const groups = base.ambiguous.filter(group => group.some(hasUncoveredBasename));
   groups.push(...[...definitionsByPhrase.values()].filter(group => group.length > 1));
   const labels = new Map<string, string[]>();
   for (const resource of input.resources) if (resource.label && phraseMatches(resource.label)) {

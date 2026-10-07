@@ -50,3 +50,23 @@ describe("attributed business phrase versus generic homonyms", () => {
     expect(scope.ambiguous).toContainEqual(["service.requests", "audit.cases"]);
   });
 });
+
+describe("attributed business phrase versus one implicit basename", () => {
+  const resources = [{ id: "service.requests" }, { id: "archive.cases" }];
+  const definitions = [{ resource: "service.requests", phrases: ["customer cases"] }];
+  it.each([
+    ["Read customer cases.", ["service.requests"]],
+    ["Read customer cases and cases.", ["archive.cases", "service.requests"]],
+    ["Read customer cases and archive.cases.", ["archive.cases", "service.requests"]],
+    ["Read customer cases and archive.cases.status.", ["archive.cases", "service.requests"]],
+  ] as const)("keeps only genuinely requested targets: %s", (original, required) => {
+    const scope = resolveRequestedReadScope({ original, resources, definitions, statements: [] });
+    expect(scope.required).toEqual(required);
+    expect(scope.ambiguous).toEqual([]);
+  });
+  it("does not let a metadata label suppress the implicit basename requirement", () => {
+    const scope = resolveRequestedReadScope({ original: "Read customer cases.",
+      resources: [{ id: "service.requests", label: "Customer cases" }, { id: "archive.cases" }], definitions: [], statements: [] });
+    expect(scope.required).toEqual(["archive.cases"]);
+  });
+});
