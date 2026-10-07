@@ -5450,7 +5450,7 @@ describe("boundary operator-plane CLI", () => {
     } finally { await fixture.dispose(); }
   });
 
-  it.each(["selected", "deferred", "interrupted", "planned_paraphrase", "draft_interrupted", "candidate_interrupted", "saved_interrupted", "disclosure_accepted", "disclosure_declined", "extra_change_declined", "read_drift", "competing_edit", "unchanged_pending", "narration_pending", "unchanged_closed", "already_satisfied"] as const)("retains the exact 30-to-10 policy edit across client selection (%s)", async control => {
+  it.each(["selected", "deferred", "interrupted", "planned_paraphrase", "draft_interrupted", "candidate_interrupted", "saved_interrupted", "disclosure_accepted", "disclosure_declined", "extra_change_declined", "primary_eof", "primary_wait_read_drift", "read_drift", "competing_edit", "unchanged_pending", "narration_pending", "unchanged_closed", "already_satisfied"] as const)("retains the exact 30-to-10 policy edit across client selection (%s)", async control => {
     const fixture = await staleSemanticRevalidationFixture({ unusedVerificationField: true });
     const { root, inspection } = fixture;
     try {
@@ -5489,7 +5489,27 @@ describe("boundary operator-plane CLI", () => {
       const request = `Change ${outcome} automatic approval from at most 30 days to at most 10 days. Preserve every other rule and active authority; save a disabled revision.`;
       let resuming = false, interrupted = false, correctingPending = false;
       fixture.session.promptText = async () => request;
-      fixture.session.confirm = vi.fn(async (question) => question.startsWith("Close this Action request") ? ["unchanged_closed", "already_satisfied"].includes(control) : question.startsWith("Reconcile these saved Action disclosure") ? control !== "disclosure_declined" : question.startsWith("Save this exact disabled Action edit?") ? control !== "extra_change_declined" : true);
+      fixture.session.confirm = vi.fn(async (question, options) => {
+        if (question === "Save this exact disabled Action edit?") {
+          expect(options?.defaultValue).toBe(false);
+          expect(options?.context).toContain(`Requested edit: ${request}`);
+          expect(options?.exactDetails?.lines).toEqual(expect.arrayContaining([
+            expect.stringContaining("/approval/auto_approve_when/right/value: 30 -> 10"),
+          ]));
+          if (control === "primary_eof") return undefined;
+          if (control === "primary_wait_read_drift") {
+            const fresh = await loadBoundaryReviewContext(root);
+            const candidate = structuredClone(fresh.candidate);
+            candidate.pack.resources[0]!.description = "Concurrent reviewed metadata during exact edit consent";
+            await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: fresh.draft, candidate,
+              confirmedDecisions: candidate.unresolved_decisions, actor: "test-reviewer", reason: "Concurrent Read edit during consent",
+              revision: (fresh.progress?.revision ?? 0) + 1 }));
+          }
+          return control !== "extra_change_declined";
+        }
+        return question.startsWith("Close this Action request") ? ["unchanged_closed", "already_satisfied"].includes(control)
+          : question.startsWith("Reconcile these saved Action disclosure") ? control !== "disclosure_declined" : true;
+      });
       fixture.session.chooseOption = async title => {
         if (title === "START BOUNDARY DRAFTING") return resuming ? "resume" : "model";
         if (["ACTIVATE READ BOUNDARY", "REPLACE ACTIVE READ BOUNDARY", "ACTIVATE ACTION BOUNDARY", "REPLACE ACTIVE ACTION BOUNDARY", "FINISH BOUNDARY REVIEW"].includes(title)) return "finish";
@@ -5552,7 +5572,7 @@ describe("boundary operator-plane CLI", () => {
         return write(...args);
       });
       try { await fixture.run(generator, undefined, overrides); } finally { save.mockRestore(); }
-      if (control === "read_drift" || control === "competing_edit" || control === "extra_change_declined") {
+      if (["read_drift", "competing_edit", "extra_change_declined", "primary_eof", "primary_wait_read_drift"].includes(control)) {
         expect(generator).toHaveBeenCalledTimes(1);
         const actual = await readActionRuleAuthorityDraft(root, baseline.authority.name);
         if (control === "competing_edit") expect(actual?.reviews[0]!.then).toBe("Concurrent review changed");
