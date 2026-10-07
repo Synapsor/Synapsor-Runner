@@ -16,6 +16,7 @@ import { runSourceInputConversation } from "./authoring-input-policy-conversatio
 import { assertSourceInputRootBinding, createSourceInputHost } from "./authoring-input-host.js";
 import { runVersionConversation } from "./authoring-version-conversation.js";
 import { createVersionQuestionHost } from "./authoring-version-host.js";
+import { presentSourceInputInteraction, presentVersionInteraction } from "./authoring-question-presenter.js";
 import { createReadMeaningHost } from "./authoring-read-meaning-host.js";
 import { createBusinessStatementHost } from "./authoring-business-statement-host.js";
 import { prepareReadBusinessStatementDecision } from "./authoring-business-statement-read-decision.js";
@@ -4628,32 +4629,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             if(resumePersistenceBlocked)throw checkpointSaveFailure(options.subject);
           },
           checkpointFailure:checkpointSaveFailure,
-        },interact:async(view,assertCurrent)=>{
-          if(view.kind==='question'){
-            let raw:string|null;
-            if(input.authoringChat?.readOperator){
-              input.authoringChat.rememberDetails('INPUT QUESTION DETAILS',[...view.material]);
-              input.authoringChat.runner('Before you answer',operatorBusinessReadback([...view.material],businessContext));
-              await input.authoringChat.streamModel(view.text.split(/\r?\n/u));
-              raw=(await input.authoringChat.readOperator(undefined,assertCurrent,{recordPolicyAnswer:false,preserveWhitespace:true}))??null;
-            }else raw=(await input.session.promptText(view.text,{context:[...view.material],recordPolicyAnswer:false,preserveWhitespace:true}))??null;
-            return {kind:'answer',binding:view.binding,raw};
-          }
-          if(view.kind==='readback')return {kind:'decision',binding:view.binding,accepted:(await input.session.confirm(
-            'Save this exact attributed input-policy interpretation?',{context:operatorBusinessReadback([...view.lines],businessContext),
-              defaultValue:false,exactDetails:{title:'CURRENT INPUT INTERPRETATION',lines:[...view.lines]}}))??null};
-          if(!view.canAnswer){
-            input.authoringChat?.runner('INPUT POLICY STILL PENDING',[
-              'No complete interpretation or missing-business question is saved. Inspect or change the attached policy through its ordinary reviewed route.',
-              'Reopening does not invent an answer or renew the authoring allowance.']);
-            return {kind:'pending',binding:view.binding,choice:'keep'};
-          }
-          const choice=await input.session.chooseOption?.('SAVED INPUT-POLICY DECISION',[
-            {value:'keep',label:'Keep this decision pending'},
-            {value:'answer',label:view.sourceInterpretation?'Review the saved interpretation again':'Answer the saved question'},
-          ],{initialValue:'keep',reviewOnly:true,displayContext:true,context:operatorBusinessReadback([...view.material],businessContext)});
-          return {kind:'pending',binding:view.binding,choice:choice==='answer'?'answer':'keep'};
-        }});
+        },interact:(view,assertCurrent)=>presentSourceInputInteraction({view,assertCurrent,
+          session:input.session,chat:input.authoringChat,businessContext})});
       if(host.state==='reused')return;
       const result=await runSourceInputConversation({projectRoot:input.projectRoot,sources,session:selectedResumeModel,outcomes,store,
         businessContext,actor:localInteractiveActor(),egressAcknowledged:modelEgressAcknowledged,ports:host.ports});
@@ -6994,27 +6971,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             if (resumePersistenceBlocked) throw checkpointSaveFailure("The counter question wording input");
           },
         },
-        interact: async (view, assertCurrent) => {
-          if (view.kind === "question") {
-            await assertCurrent(); await input.authoringChat!.streamModel([view.text]);
-            const raw = await input.authoringChat!.readOperator?.(undefined, assertCurrent,
-              { recordPolicyAnswer: false, preserveWhitespace: true });
-            return { kind: "answer", binding: view.binding, raw: raw ?? null };
-          }
-          if (view.kind === "readback") {
-            await assertCurrent();
-            const accepted = await input.session.confirm("Record this planned counter maintenance for the current setup?", {
-              defaultValue: false, context: operatorBusinessReadback([...view.lines], businessContext),
-              exactDetails: { title: "CURRENT COUNTER STATEMENT", lines: [...view.lines] },
-            });
-            return { kind: "decision", binding: view.binding, accepted: accepted ?? null };
-          }
-          const choice = await input.session.chooseOption?.("SAVED CHANGED-RECORD QUESTION", [
-            { value: "keep", label: "Keep this decision pending" },
-            { value: "answer", label: view.hasRawAnswer ? "Answer again; keep the earlier answer" : "Answer the saved question" },
-          ], { initialValue: "keep", reviewOnly: true, context: operatorBusinessReadback([...view.material], businessContext) });
-          return { kind: "pending", binding: view.binding, choice: choice === "answer" ? "answer" : "keep" };
-        },
+        interact: (view, assertCurrent) => presentVersionInteraction({ view, assertCurrent,
+          session: input.session, chat: input.authoringChat!, businessContext }),
       });
       const initial = host.ports.readQuestion();
       const result = await runVersionConversation({ binding: { ...prepared.review,
