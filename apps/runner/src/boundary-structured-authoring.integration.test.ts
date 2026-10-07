@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 describe("public structured Boundary authoring integration", () => {
-  it.each(["complete", "competing_save", "declined_ownership", "declined_episode", "local_pending", "local_confirmed"] as const)("reviews a saved Action through publication without manufacturing a draft (%s)", async mode => {
+  it.each(["complete", "competing_save", "declined_ownership", "declined_episode", "local_pending", "local_confirmed", "receipt_adapter"] as const)("reviews a saved Action through publication without manufacturing a draft (%s)", async mode => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-published-review-")); roots.push(root);
     vi.stubEnv("TEST_READ_URL", "postgresql://fixture.invalid/not-used");
     vi.stubEnv("OPENAI_API_KEY", "local-transport-fixture");
@@ -44,7 +44,8 @@ describe("public structured Boundary authoring integration", () => {
     expect(await run(["--draft", "draft.json"])).toBe(0);
     const context = await loadBoundaryReviewContext(root);
     const authority = (await readActionRuleAuthorityDraft(root, `${context.candidate.pack.name}_rules`))!;
-    const sources = newPolicySourceSession(), snapshot = policyTextSnapshot(Buffer.from("Set an available item's quantity to the requested units, with human approval." + (mode.startsWith("local_") ? " Returned descriptions require explicit non-sensitive classification for this scoped assistant use." : "")), "rules.txt");
+    const sources = newPolicySourceSession(), snapshot = policyTextSnapshot(Buffer.from("Set an available item's quantity to the requested units, with human approval." + (mode.startsWith("local_") ? " Returned descriptions require explicit non-sensitive classification for this scoped assistant use." : "")
+      + (mode === "receipt_adapter" ? "\nRecord processing results for each request. Show when a request is complete and when it is not complete." : "")), "rules.txt");
     sources.snapshots = [snapshot]; sources.active = snapshot.version;
     sources.approvals = [{digest: snapshot.digest, destination: authoringDestination({provider: "openai", model: "fixture"})}];
     await savePolicySources(root, sources);
@@ -54,7 +55,7 @@ describe("public structured Boundary authoring integration", () => {
       provider: "openai", model: "fixture", policySourceSession: sources.id,
       action: {intent: "Maintain quantity", outcome: rule.outcome, strategy: "rule_derived"}});
     await writeBoundaryAuthoringResumeState(root, resume, {expectedRevisionDigest: null});
-    let calls = 0;
+    let calls = 0, receiptDecisions = 0;
     const notices: string[] = [];
     const review = async () => {
       const reopened = await readBoundaryAuthoringResumeState(root, binding); expect(reopened.status).toBe("ready");
@@ -62,6 +63,13 @@ describe("public structured Boundary authoring integration", () => {
       const current = await loadPolicySources(root, sources.id), conversation = createModelAuthoringConversation(); conversation.policySources = current;
       return reviewSavedBoundaryPolicy({projectRoot: root, resume: reopened.value, sources: current, request: "Review attached rules",
         selectCurrentContext: true, schemaInspector: inspect,
+        reviewReceiptRequirement: async review => {
+          receiptDecisions += 1;
+          await review.assertReviewCurrent(); await review.assertEvidenceCurrent();
+          expect(review.currentDraft().runner_evidence.action_revision?.review_record_digest).toBe(authority.digest);
+          // A pending/declined shared-host result is never a complete Review.
+          return false;
+        },
         session: {confirm: async () => mode !== "declined_episode", chooseResource: async () => undefined, editFieldTiers: async () => undefined,
           promptText: async () => undefined, chooseOption: async () => mode === "declined_ownership" ? "back" : "assign",
           rememberDetails: (_title, lines) => { notices.push(...lines); }},
@@ -71,10 +79,27 @@ describe("public structured Boundary authoring integration", () => {
           return {status: 200, body: {output: [{type: "function_call", call_id: `review_${calls}`, name: "runner__review_policy_coverage",
             arguments: JSON.stringify({passages: [{start: 1, end: 1, disposition: "implemented", responsibility: "runner",
               interpretation: "The saved action checks availability, uses the supplied bounded units and requires human approval.",
-              draft_paths: ["/actions/0/require", "/actions/0/effect", "/actions/0/approval"]}]})}]}};
+              draft_paths: ["/actions/0/require", "/actions/0/effect", "/actions/0/approval"]},
+              ...(mode === "receipt_adapter" ? [{start:2,end:2,disposition:"implemented",responsibility:"runner",
+                interpretation:"The current Runner-ledger configuration records processing results.",
+                draft_paths:["/runner_evidence/runtime_contract/receipt_configuration"]}] : [])]})}]}};
         }}}});
     };
     const first = await review();
+    if (mode === "receipt_adapter") {
+      expect(first).toMatchObject({tone:"warning"});
+      expect(first.lines.join("\n")).toContain("receipt_requirement_review");
+      expect(receiptDecisions).toBe(1); expect(calls).toBe(1);
+      const saved = await readBoundaryAuthoringResumeState(root,binding);
+      expect(saved.status === "ready" && saved.value.pending_policy_review).toBeTruthy();
+      expect(saved.status === "ready" && saved.value.completed_policy_reviews?.length).toBeFalsy();
+      const current = await loadPolicySources(root,sources.id);
+      expect(current.receipt_requirement_reviews ?? []).toHaveLength(0);
+      expect(current.coverage_episodes).toHaveLength(1);
+      expect(await readActionRuleAuthorityDraft(root,authority.authority.name)).toEqual(authority);
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      return;
+    }
     if(mode === "competing_save" || mode === "declined_ownership" || mode === "declined_episode") {
       expect(first).toMatchObject({tone: "warning"});
       const state = await readBoundaryAuthoringResumeState(root, binding);

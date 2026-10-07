@@ -8,7 +8,8 @@
     "receipt_resolution": "1 pass / 1 fail at 9291ab82; preserved /var/tmp/synapsor-main-b60-20261007-owned/evidence/failing-before.log",
     "restart_barrier": "3 pass / 2 fail on exact6d2 product + declared tests; restart-barrier-before-v3.log; prior harness response-shape mistakes preserved separately",
     "requested_scope_consumer": "0 pass / 2 fail before full original-job/workload hook; requested-read-evidence-before.log",
-    "native_context": "native-source-context-before-v2.log: 2 pass / 1 fail on1cd096d4; actual producer nested Source+draft+messages identity rejected by bare-draft caller; prior manually declared identity tests were insufficient"
+    "native_context": "native-source-context-before-v2.log: 2 pass / 1 fail on1cd096d4; actual producer nested Source+draft+messages identity rejected by bare-draft caller; prior manually declared identity tests were insufficient",
+    "saved_review_adapter": "Public v6 on8707: 0 pass / 1 fail; callback0, native Source+Resume unchanged, receipt_requirement_review notice only; independent helper204be90f and reviewer1316cbbe"
   },
   "checks": {
     "focused_wip8": "244 pass / 0 fail / 1 skip (live model admission opt-in; paid closed)",
@@ -21,7 +22,9 @@
     ],
     "focused_wip9": "347 pass / 0 fail / 1 skip in two disjoint affected batches (15 files); live model admission opt-in remains closed",
     "types_wip9": "exit 0",
-    "native_context": "176 pass / 0 fail / 1 live-model opt-in skip; actual native producer + persisted preflight; types exit0"
+    "native_context": "176 pass / 0 fail / 1 live-model opt-in skip; actual native producer + persisted preflight; types exit0",
+    "saved_review_adapter": "new native structured pending regression1P (9 excluded by selection); types0; broader affected batch RUNNING at checkpoint",
+    "test_isolation_correction": "initial structured attempt found parent decoy due missing test-root .git stop; added owned .git directory per existing full1378 isolation; assertions/customer discovery unchanged; initial failure preserved"
   },
   "open": [
     "ordinary public saved Review adapter: pending receipt notice must open existing shared question host; public proof still pending",
@@ -38,14 +41,21 @@
   "product_pin": "commit containing this compact record (not yet accepted)",
   "independent_native_review": {
     "reviewer": "codex/b60-independent-review-20261007",
-    "checkpoint": "03fa7e667caed70010b9881d77eb64dc46ccef6a",
+    "checkpoint": "1316cbbe77a4fec315d9679b00d165547b734c73",
     "scoped_checks": 31,
     "satisfied": 31,
-    "limitations": "actual native API/compiled old reader; whole public CLI and installed package still pending"
+    "limitations": "actual native API/compiled old reader; whole public CLI and installed package still pending",
+    "native_context_controls": "20/20; e88217/20 same sealed inputs"
   },
   "changes_native_context": [
     "one shared exact native response-context formula, separate full-review key unchanged",
     "latest completed same-key result nominates only a business question; reserved/no-response records unchanged and transport admission still required",
     "receipt raw answer preserves whitespace through existing readOperator option"
+  ],
+  "changes_saved_review_adapter": [
+    "same receipt handler moved early with explicit selected subject/draft/configuration dependencies; no second engine",
+    "native successful Resume writer handoff synchronizes captured generations/owner state without adopting competing disk state",
+    "one existing-host decision; pending/declined returns pending; ready recomputes full key under same prepared state, ordinary separate bounded-review consent",
+    "waiting receipt Resume enters saved Review, preserving independent edits and default-No"
   ]
 }
