@@ -23,12 +23,12 @@
     "focused_wip9": "347 pass / 0 fail / 1 skip in two disjoint affected batches (15 files); live model admission opt-in remains closed",
     "types_wip9": "exit 0",
     "native_context": "176 pass / 0 fail / 1 live-model opt-in skip; actual native producer + persisted preflight; types exit0",
-    "saved_review_adapter": "new native structured pending regression1P (9 excluded by selection); types0; broader affected batch RUNNING at checkpoint",
+    "saved_review_adapter": "212 pass / 0 fail / 29 PostgreSQL env-gated skips in8 affected files; new pending route regression included; types exit0",
     "test_isolation_correction": "initial structured attempt found parent decoy due missing test-root .git stop; added owned .git directory per existing full1378 isolation; assertions/customer discovery unchanged; initial failure preserved"
   },
   "open": [
-    "ordinary public saved Review adapter: pending receipt notice must open existing shared question host; public proof still pending",
-    "independent 20 native-context variants and current pin verdict",
+    "ordinary SAME-root public receipt question/raw/map/readback/decline/save/Resume proof RUNNING on5168",
+    "six independent route controls + Reviewer2 static adapter verdict",
     "final accepted integrated gates/composed Luna/studio",
     "actual installed package acceptance"
   ],
@@ -38,7 +38,7 @@
     "finish only missing Source projection from an acknowledged native confirmation, under currentness/CAS, no replay/remap/reconfirmation",
     "original job + actual saved workload restored for final and saved Review consumers; routing summary is not authority"
   ],
-  "product_pin": "commit containing this compact record (not yet accepted)",
+  "product_pin": "5168db4e83aef24033363a0771f59c696c4b8803",
   "independent_native_review": {
     "reviewer": "codex/b60-independent-review-20261007",
     "checkpoint": "1316cbbe77a4fec315d9679b00d165547b734c73",
