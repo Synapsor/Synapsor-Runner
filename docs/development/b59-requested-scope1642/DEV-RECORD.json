@@ -2,7 +2,7 @@
   "task": "B59 requested scope",
   "base": "d9f8635509a32093ae952314175f21116ef2faa9",
   "characterization_head": "ec41461c",
-  "status": "WIP_NATIVE_CONSUMERS21_PASS_TYPES0_FINAL_SEMANTIC_HOOK_AND_INDEPENDENT_REVIEW_PENDING",
+  "status": "FOCUSED_AND_TYPES_CLOSED_PENDING_INDEPENDENT_AND_INTEGRATED_REVIEW",
   "T0": "2026-10-07T21:51:08Z",
   "scope_cutoff": "2026-10-09T21:51:08Z",
   "window_end": "2026-10-10T21:51:08Z",
@@ -45,12 +45,12 @@
     "use": "Design discussion only; never used as responder input",
     "independence": "Main notified; Reviewer must replace exposed withheld controls before independent verdict; exposed controls cannot receive hidden credit"
   },
-  "head": "e6a92aef46b0af8b1fc945dc78b199ab47b1e1ca",
+  "head": "1985bf13015db7b9570e252dd38001f0fe0bb07b",
   "open_items": [
-    "Final policy review does not explicitly receive original job/workload scope as distinct evidence; Main hotspot hook proposal pending coordination with B60",
-    "Literal exact-only upper bound and same-name ambiguity questions do not claim general English policy completeness",
-    "Genuine private/excluded field, Source refinement and different reviewed-label consumer qualification remains owed",
-    "No fullsuite/integration/independent acceptance; replacement hidden cases after mislabeled private15-case exposure required"
+    "Reviewer2 replacement independent variants on final1985",
+    "Main-owned transient original-job + exact saved-workload final coverage hook",
+    "Integrated affected/types/full qualification; not authorized or run by this lane",
+    "No universal arbitrary-English semantic completeness claim"
   ],
   "captures": {
     "baseline-build-v1": {
@@ -334,13 +334,190 @@
       "owned_live": [],
       "free_bytes": 102512201728,
       "head": "69e7d6564331bf8e63d1817558acc898b69ef27a"
+    },
+    "source-association-before-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/source-association-before-v1/RESULT.json",
+      "sha256": "0e535b6b1b4137cc105d83a556e9c8942e85bfeb0e9d4d2cef744547a48c8a7e",
+      "exit": 1,
+      "stop": null,
+      "seconds": 3.057807445526123,
+      "pgid": 3596796,
+      "owned_live": [],
+      "free_bytes": 101633048576,
+      "head": "a73927eb46b33e4f9c8e8312733f4932af8196ad",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 4,
+        "numPendingTests": 13
+      },
+      "vitest_sha256": "01d726f872086d510b83b949fcfaaa59ea87ba0176585cb015ea089a6a4d873c"
+    },
+    "source-association-before-v2": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/source-association-before-v2/RESULT.json",
+      "sha256": "4278c98fa64dfa7ab2c6ed7f92721bd6bbb05c6d08b15bf484da6a01d9b70175",
+      "exit": 1,
+      "stop": null,
+      "seconds": 3.251108169555664,
+      "pgid": 3597140,
+      "owned_live": [],
+      "free_bytes": 101632782336,
+      "head": "a73927eb46b33e4f9c8e8312733f4932af8196ad",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 4,
+        "numPendingTests": 13
+      },
+      "vitest_sha256": "d6fe3e52c89f7a733f7545d41356d531e429b7202bdcfb1389d4a2e1823875bb"
+    },
+    "source-association-after-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/source-association-after-v1/RESULT.json",
+      "sha256": "c40e8544ea4755bcece8128b799484fc475a17e6d99e2eb909c02670be167cff",
+      "exit": 0,
+      "stop": null,
+      "seconds": 3.4537837505340576,
+      "pgid": 3598768,
+      "owned_live": [],
+      "free_bytes": 101631127552,
+      "head": "8149659d30e20c29c7e2cf2f7ececd4bc33ee4c2",
+      "tests": {
+        "numPassedTests": 4,
+        "numFailedTests": 0,
+        "numPendingTests": 13
+      },
+      "vitest_sha256": "fbfbe26b323742db0e763115c6d3dc7f082a95f390fe62b13e137ccece242e0d"
+    },
+    "unresolved-association-before-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/unresolved-association-before-v1/RESULT.json",
+      "sha256": "b438dde9a57586872570e4c45932a4394853eb73fc0512505ee4c5ca88eb51e5",
+      "exit": 1,
+      "stop": null,
+      "seconds": 3.651423454284668,
+      "pgid": 3600084,
+      "owned_live": [],
+      "free_bytes": 101630439424,
+      "head": "490a086a96625bee230c0bfab53415f9075d8084",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 2,
+        "numPendingTests": 17
+      },
+      "vitest_sha256": "4da46126c385107c1f0d9ec9b84bc151d0e140e073f838f454e0c3589e1b5b34"
+    },
+    "source-association-complete-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/source-association-complete-v1/RESULT.json",
+      "sha256": "5106fe09f6c26b24eaeb9ec9768154fcf0a7bbe8a09596d85d6203633bb05b5e",
+      "exit": 1,
+      "stop": null,
+      "seconds": 6.056735992431641,
+      "pgid": 3600587,
+      "owned_live": [],
+      "free_bytes": 101630124032,
+      "head": "490a086a96625bee230c0bfab53415f9075d8084",
+      "tests": {
+        "numPassedTests": 266,
+        "numFailedTests": 2,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "5212a7c802b4b630e7bd28ab2b4710101d18fb16bc6d3df8508d8b8e64993149"
+    },
+    "source-association-complete-v2": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/source-association-complete-v2/RESULT.json",
+      "sha256": "e187fa148396b3b41aee72f4bff060407f8aa7c03672e58b495798f89fff70c8",
+      "exit": 0,
+      "stop": null,
+      "seconds": 5.8574113845825195,
+      "pgid": 3601844,
+      "owned_live": [],
+      "free_bytes": 101629005824,
+      "head": "490a086a96625bee230c0bfab53415f9075d8084",
+      "tests": {
+        "numPassedTests": 268,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "4321d1f125da640b3a4c70809dd0476626fa53b4360756e2478ac30eb083b378"
+    },
+    "source-answer-before-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/source-answer-before-v1/RESULT.json",
+      "sha256": "868089091a2c8a9753624c9ed9190426b119d980af8ea8d01f0bc9642c233c22",
+      "exit": 1,
+      "stop": null,
+      "seconds": 3.650977373123169,
+      "pgid": 3603712,
+      "owned_live": [],
+      "free_bytes": 101626818560,
+      "head": "490a086a96625bee230c0bfab53415f9075d8084",
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 1,
+        "numPendingTests": 19
+      },
+      "vitest_sha256": "7a45ef3e18752a5abb7f1400db03da74077f98162e56de1b0c908bad958558f0"
+    },
+    "source-answer-after-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/source-answer-after-v1/RESULT.json",
+      "sha256": "23c31b9ee1c103f15344c663232609f1735ff038a0eba7db81adf25196127e21",
+      "exit": 0,
+      "stop": null,
+      "seconds": 3.6489694118499756,
+      "pgid": 3604089,
+      "owned_live": [],
+      "free_bytes": 101625638912,
+      "head": "490a086a96625bee230c0bfab53415f9075d8084",
+      "tests": {
+        "numPassedTests": 1,
+        "numFailedTests": 0,
+        "numPendingTests": 19
+      },
+      "vitest_sha256": "c86d6d8a375cf5b04a146882571ccb900ab6a866c8fb78e3061d4d7a49e49c65"
+    },
+    "source-association-final-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/source-association-final-v1/RESULT.json",
+      "sha256": "4d5e1abbed3c257a7b44a44b773a527d8c22a3007ec9a3efa5d9e5308becabf6",
+      "exit": 0,
+      "stop": null,
+      "seconds": 5.647927761077881,
+      "pgid": 3605566,
+      "owned_live": [],
+      "free_bytes": 101594357760,
+      "head": "5b84f81e9822f247dd6e09c36632c0daa42c7272",
+      "tests": {
+        "numPassedTests": 269,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "ecf887530a46700ac5e2893c8fed78ecfb411c7601bc42fa4b223dcf5c6825c8"
+    },
+    "source-association-types-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/source-association-types-v1/RESULT.json",
+      "sha256": "b947b37792a52467190812abdd9599c05d2969b70c38e72bf3e2392d23e5c1f8",
+      "exit": 2,
+      "stop": null,
+      "seconds": 21.85236382484436,
+      "pgid": 3606113,
+      "owned_live": [],
+      "free_bytes": 101579862016,
+      "head": "5b84f81e9822f247dd6e09c36632c0daa42c7272"
+    },
+    "source-association-types-v2": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/source-association-types-v2/RESULT.json",
+      "sha256": "4c328bcac3403341f02630a4c712ba169c213ff1a124e6c9c8169fb2ee28ee23",
+      "exit": 0,
+      "stop": null,
+      "seconds": 22.661372184753418,
+      "pgid": 3607048,
+      "owned_live": [],
+      "free_bytes": 101591408640,
+      "head": "1985bf13015db7b9570e252dd38001f0fe0bb07b"
     }
   },
   "test_definition_notes": [
     "workload-baseline-v1/v2 fail pretarget on missing synthetic catalog arrays/maps, preserved",
     "workload-baseline-v3 genuinely resolves incomplete workload (expected-refusal assertion fails)",
     "first-fix-v1 uses runtime working diff later committed5b1f, fixedhead661;201P1 obsolete summary-only assertion F",
-    "association-after-v1 uses working changes later committed545486;207P0F; types-v1 runs committed545486"
+    "association-after-v1 uses working changes later committed545486;207P0F; types-v1 runs committed545486",
+    "source-association-before-v1 preserves wire-newline assertion mistakes; corrected before-v2 reaches all4 causes",
+    "source-association-final-v1 runs committed5b84;1985 changes only tokens:string[] annotation; types-v2 runs committed1985"
   ],
   "runtime_contract": [
     "summary comparison removed; actual allowed workloads must contain required original-request identities, including genuine related projections",
@@ -349,19 +526,32 @@
     "same-name ambiguity reuses existing native clarification/current checkpoint; no new state schema/store/lifecycle/budget",
     "original job remains persisted/currentness-bound independently of routing summary;500 limit remains unchanged"
   ],
-  "current_test_head": "69e7d6564331bf8e63d1817558acc898b69ef27a",
-  "runtime_head": "e6a92aef46b0af8b1fc945dc78b199ab47b1e1ca",
+  "current_test_head": "1985bf13015db7b9570e252dd38001f0fe0bb07b",
+  "runtime_head": "1985bf13015db7b9570e252dd38001f0fe0bb07b",
   "consumer_scope": {
-    "native": "21P0F/124 filtered,13 scope +8 existing label/provenance; prior13P preserved before fixture schema identity correction",
-    "types": "0 on committed69e7",
+    "native": "Final five-file269P0F0S; prior consumer21P and all earlier captures retained",
+    "types": "0/22.661s committed1985; preceding type annotation failure retained",
     "permission_setup": "Source text approval and disabled candidate restrictions are declared belowUI inputs, not a newly exercised consent UI",
     "not_proven": [
-      "arbitrary English exclusion completeness",
-      "opaque resource-to-business-area completeness from literal IDs",
-      "final original-job + saved-workload semantic coverage hook",
-      "independent replacement-oracle verdict",
-      "full/integrated/public journey"
+      "Reviewer2 replacement independent variants on final1985",
+      "Main-owned transient original-job + exact saved-workload final coverage hook",
+      "Integrated affected/types/full qualification; not authorized or run by this lane",
+      "No universal arbitrary-English semantic completeness claim"
     ],
     "hotspots": "boundary-commands and authoring-policy-evidence untouched; Main owns hook"
+  },
+  "source_association_repair": {
+    "before": "source-association-before-v2: genuine0P4F; before-v1 has three wire-escaping fixture failures and remains preserved",
+    "after": "source-association-after-v1:4P0F; later complete focused269P0F0S at5b84; final1985 annotation-only type correction; types0",
+    "additional_failures": "unresolved-before0P2F; complete-v1 266P2F; answer-before0P1F; types-v1 exit2 all preserved",
+    "limits": [
+      "Only host-resolved current root evidence feeds existing explicit definition parser; metadata labels cause collisions only",
+      "Existing normalized phrase matching, no synonym lexicon or arbitrary entailment",
+      "Exact root exclusions differ from resource.field exclusions; unrecognized prose is not a complete allowlist",
+      "Native current scope question bypasses only redundant naming shortcut; raw/review/currentness/CAS/limits unchanged",
+      "Plain target-selection answer retains attributable Source definition; explicit new definition retains currentMeaning precedence"
+    ],
+    "hotspots": "boundary-commands.ts and authoring-policy-evidence.ts untouched",
+    "scope": "in-process native producer/known synthetic inputs, no provider/sourceDB/activation/public whole-journey acceptance"
   }
 }

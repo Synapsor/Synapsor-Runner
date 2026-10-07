@@ -104,3 +104,46 @@ Main's final-coverage hook must bind the original job and exact saved workload
 analysis/candidate to its transient review digest. Their semantic comparison,
 ordinary default-No decision, CAS and disabled-save/activation boundaries remain
 native. No persisted authoritative mapping or new store is proposed here.
+
+## Source association class repair after independent cause feedback
+
+Reviewer cause feedback identified three false-ready cases (substituted natural
+business area, explicitly excluded archived area, colliding business labels) and
+one false refusal (explicit current Source mapping with an unrelated same-table
+archive). New public, declared-facts native fixtures reproduce all four at a739;
+prior captures and that exact commit remain. The first fixture run had three wire
+newline-assertion mistakes; corrected before-v2 reaches all four target causes.
+
+`resolveRequestedReadScope` now receives the complete original request, actual
+catalog, and phrases from existing HOST-RESOLVED current root definitions.
+`readResourceDefinitionPhrases` reuses the existing explicit definition parser;
+it does not add synonyms or a natural-language entailment engine. Exact phrases
+can name an inspected resource independently of its table name. Catalog labels
+only create ambiguity candidates. Definition collisions are a choice to resolve,
+not permission or a requirement to include both resources. Qualified IDs do not
+fall back into the name/label matcher. Exact current definitions can resolve a
+same-table naming collision; ordinary Source mentions cannot.
+
+Finite explicit negative clauses bind root exclusions, including aliases with
+attributable definitions. A resource.field exclusion never becomes a whole-root
+exclusion. Contradictory inclusion/exclusion cannot be satisfied by dropping or
+including the prohibited plan. Arbitrary unsupported prose is not interpreted as
+an allowlist or complete business equivalence. When current root definitions do
+not establish an association with the retained request, the normal question path
+keeps that mapping pending; unknown answers/decline/limits are unchanged.
+
+A known definition and an unresolved requested-use choice are different facts.
+The existing naming-correction optimization now excludes only an exact,
+recomputed current scope question. It still uses the existing raw-answer,
+review, currentness and producer checkpoint formats. A plain answer selecting a
+view does not erase the Source definition used to associate its name: current
+Source evidence remains, and the native attributed answer separately selects
+the target. Explicit new definitions retain existing currentMeaning precedence.
+The positive native continuation and its failing-before capture are retained.
+
+Final focused five-file result at runtime5b84:269 pass,0 fail. No whole-system or
+universal semantic-completeness claim follows. Main still owns the final transient
+original-job + exact saved-workload evidence hook and integrated acceptance.
+
+Final types at1985bf13 exit0/22.661s after the annotation-only `tokens: string[]`
+fix; the preceding type failure remains captured. All owned groups are closed.
