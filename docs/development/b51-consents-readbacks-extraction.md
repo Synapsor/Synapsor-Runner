@@ -56,6 +56,21 @@ declined/Keep sample and remains non-activation, non-cold-process evidence.
 
 Detailed seals and raw results:
 [slice evidence](</home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-consents6-dev1579-v1/AFTER-RESULT-SEAL.json>).
-Independent Reviewer verdict and this slice's ONE full8 gate remain pending;
-the heavy gate is held until candidate2 freeze gates finish. This branch is
-separate from candidate2 and the frozen demo; no acceptance transfer is claimed.
+The ONE native full8 gate ran after candidate2's freeze gates finished, on
+baa0e0ef/runtime c8, with the original `corepack pnpm test` command, max8/min1,
+forks/isolation and test/hook timeouts of 20 seconds. It passed 9,224 tests with
+576 skipped (431 passed files, 23 skipped). The original type, dependency,
+license, human-command, DSL, Cursor, protocol, bundle-freshness and six launcher
+shutdown checks completed through the unchanged `&&` chain. Native exit 0;
+all 706 observed process identities and the suite group are closed naturally.
+
+Source files stayed unchanged. One dependency entry changed: the existing Vitest
+results cache. The 526 generated entries are required compiler/package outputs:
+the initially absent public package assets and directories, build metadata and
+dist outputs. The exact deltas are retained and classified against the existing
+package script and public Source origins. All 32,294 POST records were checked
+against current membership, bytes, modes, inodes and raw/resolved links. The
+resulting bundle is 4604b8dc0ae852c6348a85bb4d620b09ca3476331bdcf8c5d075fb1ba26a367c.
+[Full result seal](</home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-consents6-full1585-prep/FULL-RESULT-SEAL.json>).
+Independent final DEV adjudication remains pending. This branch is separate
+from candidate2 and the frozen demo; no installed or acceptance transfer is claimed.
