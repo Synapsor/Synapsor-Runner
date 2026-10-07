@@ -486,6 +486,24 @@ describe("conversational Action authoring tools", () => {
       return { input, events, requestJson, queues, readCheckpoint, state: () => state, onCheckpoint, stageVersionQuestion,
         saveVersion, boundary, review, tracked, question: () => question! };
     }
+    it("hands the twelfth validated Action batch to Runner without a thirteenth narration call", async () => {
+      const f = controlled();
+      for (const name of ["runner.submit_verification_boundary_draft", "runner.submit_effect_envelope_draft",
+        "runner.submit_action_rule_draft", "runner.submit_approval_policy_draft"]) f.queues.push(call(name));
+      for (let i = 0; i < 7; i += 1) f.queues.push(call("runner.inspect_action_draft", {}));
+      f.queues.push(call("runner.validate_action_draft", {}));
+      const result = await f.tracked(() => converseActionRuleDraft({ ...f.input, onCheckpoint: f.onCheckpoint,
+        stageVersionQuestion: f.stageVersionQuestion, reviewVersionQuestion: f.saveVersion,
+        assertLogicalTurnBoundary: f.boundary }));
+      expect(result.state).toBe("ready");
+      expect(result.compiled.client_compatibility.compatible).toBe(true);
+      expect(result.authority_granted).toBe(false); expect(result.source_database_changed).toBe(false);
+      expect(f.requestJson).toHaveBeenCalledTimes(12); expect(f.queues).toEqual([]);
+      const turn = f.readCheckpoint().logical_turns!.at(-1)!;
+      expect(turn).toMatchObject({ iterations_used: 12, tool_calls_used: 12, completed: { kind: "compiled_draft" } });
+      const completion = turn.completed!.completion;
+      expect(f.state()!.operations.find(op => op.id === completion.operation_id)?.state).toBe("checkpointed");
+    });
     it("consumes the actual Version batch before outside UI, preserving pending counters across restart", async () => {
       const f = controlled(); f.queues.push(call("runner.review_version_field", { resource: f.review.resource, field: f.review.field }));
       await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, onCheckpoint: f.onCheckpoint,
