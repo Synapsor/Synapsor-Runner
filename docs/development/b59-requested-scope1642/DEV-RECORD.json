@@ -2,7 +2,7 @@
   "task": "B59 requested scope",
   "base": "d9f8635509a32093ae952314175f21116ef2faa9",
   "characterization_head": "ec41461c",
-  "status": "WIP_209_FOCUSED_PLUS_NATIVE_RESUME1_TYPES0_NOT_FINAL_ACCEPTANCE",
+  "status": "WIP_NATIVE_CONSUMERS21_PASS_TYPES0_FINAL_SEMANTIC_HOOK_AND_INDEPENDENT_REVIEW_PENDING",
   "T0": "2026-10-07T21:51:08Z",
   "scope_cutoff": "2026-10-09T21:51:08Z",
   "window_end": "2026-10-10T21:51:08Z",
@@ -41,7 +41,7 @@
   "oracle_exposure": {
     "cause": "Main originally mislabeled ce332 private preseal as public; corrected afterward",
     "read": "All15 B59 variant/expected/required_observation bodies B59-01..15; no B60/B61 bodies",
-    "timing": "Existing declared-facts ec414 fixture committed and baseline executed before exposure; no subsequent fixture/runtime changes",
+    "timing": "Initial declared-facts ec414 fixture and baseline preceded exposure. Subsequent developer-authored controls/runtime WIP are not hidden acceptance; Reviewer must replace exposed withheld B59 cases.",
     "use": "Design discussion only; never used as responder input",
     "independence": "Main notified; Reviewer must replace exposed withheld controls before independent verdict; exposed controls cannot receive hidden credit"
   },
@@ -289,6 +289,51 @@
       "owned_live": [],
       "free_bytes": 102564540416,
       "head": "e6a92aef46b0af8b1fc945dc78b199ab47b1e1ca"
+    },
+    "consumer-scope-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/consumer-scope-v1/RESULT.json",
+      "sha256": "743e15ce1ab52372402111762429dc25d16fb890bff1ccaaa50143e33420c64f",
+      "exit": 0,
+      "stop": null,
+      "seconds": 3.2500481605529785,
+      "pgid": 3579927,
+      "owned_live": [],
+      "free_bytes": 102513725440,
+      "head": "b678a31667be0831225ea230ea2cd2af12900160",
+      "tests": {
+        "numPassedTests": 13,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "3bee5c689ded75d98e1efba1cdcd6279cb3007b6c5c9045663193268e0c6b3b3"
+    },
+    "reviewed-consumers-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/reviewed-consumers-v1/RESULT.json",
+      "sha256": "68d5c2c0156cdddebd98768596833e6bf7b16c7d35f37efd3255419f6e98de1c",
+      "exit": 0,
+      "stop": null,
+      "seconds": 4.839157819747925,
+      "pgid": 3580257,
+      "owned_live": [],
+      "free_bytes": 102513422336,
+      "head": "b678a31667be0831225ea230ea2cd2af12900160",
+      "tests": {
+        "numPassedTests": 21,
+        "numFailedTests": 0,
+        "numPendingTests": 124
+      },
+      "vitest_sha256": "6f74163e8f685aaf6c23a504f968ef07a8099bd9611d3e3fc14570a8d0738d1f"
+    },
+    "types-consumers-v1": {
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-requested-scope1642/types-consumers-v1/RESULT.json",
+      "sha256": "b59c09bc26d3a7f33501801ab9425178da1f57b1c9b8a91a495cf9182fb703f2",
+      "exit": 0,
+      "stop": null,
+      "seconds": 22.45461082458496,
+      "pgid": 3581065,
+      "owned_live": [],
+      "free_bytes": 102512201728,
+      "head": "69e7d6564331bf8e63d1817558acc898b69ef27a"
     }
   },
   "test_definition_notes": [
@@ -303,5 +348,20 @@
     "only a complete literal inspected-ID only-list supplies deterministic upper scope; other prose is not converted to a blanket allowlist",
     "same-name ambiguity reuses existing native clarification/current checkpoint; no new state schema/store/lifecycle/budget",
     "original job remains persisted/currentness-bound independently of routing summary;500 limit remains unchanged"
-  ]
+  ],
+  "current_test_head": "69e7d6564331bf8e63d1817558acc898b69ef27a",
+  "runtime_head": "e6a92aef46b0af8b1fc945dc78b199ab47b1e1ca",
+  "consumer_scope": {
+    "native": "21P0F/124 filtered,13 scope +8 existing label/provenance; prior13P preserved before fixture schema identity correction",
+    "types": "0 on committed69e7",
+    "permission_setup": "Source text approval and disabled candidate restrictions are declared belowUI inputs, not a newly exercised consent UI",
+    "not_proven": [
+      "arbitrary English exclusion completeness",
+      "opaque resource-to-business-area completeness from literal IDs",
+      "final original-job + saved-workload semantic coverage hook",
+      "independent replacement-oracle verdict",
+      "full/integrated/public journey"
+    ],
+    "hotspots": "boundary-commands and authoring-policy-evidence untouched; Main owns hook"
+  }
 }
