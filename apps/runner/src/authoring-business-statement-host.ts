@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
-import { authoringQuestionAnswerCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringQuestionAnswerCheckpoint, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, leaveOperatorQuestionPending,
   operatorQuestionReadback, presentOperatorQuestion, proposeOperatorAnswer, reopenOperatorQuestion,
   type OperatorQuestion } from "./authoring-operator-question.js";
@@ -88,7 +88,10 @@ export function createBusinessStatementHost(input: {
       scope_digest: access.scopeDigest(), context_digest: context });
     if (access.readHandoffs().at(-1)?.state === "waiting")
       throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Answer or inspect the saved question before another question can replace it.");
-    if (access.readRecovery()?.operations.some(op => ["in_flight", "received", "handled", "unknown", "partial"].includes(op.state)))
+    const recovery = access.readRecovery();
+    // A recorded disposition retains the uncertain original as history. Use
+    // the native validator; unrelated or uncheckpointed output still fences.
+    if (recovery && unresolvedAuthoringTransportOperations(recovery).length)
       throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "A question without an acknowledged completed turn cannot clear an unresolved generation. Preserve the current job for inspection.", 409);
     access.install({ handoffs: [...access.readHandoffs(), handoff] });
     await access.save(permit, consumer === "policy_clarification" || consumer.startsWith("read_revision_") ? "authority_review" : "read_mapping", "The owner question");

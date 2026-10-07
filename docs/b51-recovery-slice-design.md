@@ -45,6 +45,15 @@ another unfinished Action turn cannot supply its allowance. Connection retry
 policy remains its existing separate administration path. No publication,
 execution, funding or database authority is granted by these changes.
 
+The cold Action continuation also exposed a caller handoff barrier: a valid
+replacement saved its question, but the next business-question host counted the
+explicitly disposed original as unresolved merely because its historical state
+remained unknown. Business, Input replacement and inline owner-question admission
+now use the existing native unresolved-operation validator. It excludes only
+recorded dispositions and still fences unrelated, uncheckpointed or malformed
+operations, including handled output outside an acknowledged checkpoint. No
+completion is inferred, and neither the original nor its allowance is rewritten.
+
 Proofs: preserve frozen/c6 failing-before packets; run Source linked continuation
 and paired real Source change through fresh public processes, affected old
 recovery/controller tests, an independently withheld reviewer variant, types

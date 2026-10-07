@@ -4845,7 +4845,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       context_digest: currentContext, ...(completion ? { completion } : {}) });
     if (ownerHandoffs.at(-1)?.state === "waiting") throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Answer or inspect the saved question before another question can replace it.");
     if (completion) generationRecovery = authoringQuestionCheckpoint(generationRecovery, ownerHandoffCheckpoint(handoff));
-    else if (generationRecovery?.operations.some(op => ["in_flight", "received", "handled", "unknown", "partial"].includes(op.state))) {
+    else if (generationRecovery && unresolvedAuthoringTransportOperations(generationRecovery).length) {
       throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "A question without an acknowledged completed turn cannot clear an unresolved generation. Preserve the current job for inspection.", 409);
     }
     ownerHandoffs.push(handoff);

@@ -1,12 +1,18 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { afterEach, expect, it } from "vitest";
 import { createBusinessStatementHost, type BusinessStatementRecordUpdate } from "./authoring-business-statement-host.js";
 import type { BusinessStatementInteraction, BusinessStatementResponse } from "./authoring-business-statement-interaction.js";
 import { PolicySourceChangedError } from "./authoring-policy-source.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { AskError, secureAskJsonRequest, type ProviderHttpInput } from "./model-ask.js";
+import { authoringGenerationHandled, authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
+  permitAuthoringInterruptedRecovery, prepareAuthoringInterruptedRecovery, recoverAuthoringGeneration,
+  validateAuthoringTransportState, withAuthoringGenerationRecovery, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 
 // Local host port characterization with real short exclusion and literal disk
 // writes. No native producer, generation journal or accepted Action is seeded.
@@ -50,6 +56,74 @@ const answer = (raw: string | null, accepted: boolean | null = true) => async (v
   view.kind === "question" ? { kind: "answer", binding: view.binding, raw }
     : view.kind === "readback" ? { kind: "decision", binding: view.binding, accepted }
       : { kind: "pending", binding: view.binding, choice: "keep" };
+
+// Real native transport/disposition records; the business host still uses local
+// ports. This is not a public authoring or model semantic-fidelity proof.
+async function recoveredJournal(companion?: "unknown" | "handled") {
+  let calls = 0;
+  const server = createServer(async (request, response) => {
+    for await (const _ of request) { /* consume the actual request */ }
+    calls++;
+    if (calls === 1 || companion === "unknown" && calls === 3) { request.socket.destroy(); return; }
+    response.end(JSON.stringify({ status: "completed", output: [] }));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
+  let state: AuthoringTransportState = { version: 1, operations: [] };
+  const context = canonicalJsonDigest("declared unchanged business context");
+  const enter = <T,>(run: () => Promise<T>) => withAuthoringGenerationRecovery(() => {
+    configureAuthoringGenerationRecovery({ available: () => true, read: () => state,
+      current: async () => context, write: async next => {
+        validateAuthoringTransportState(next); state = structuredClone(next);
+      } });
+    return run();
+  });
+  const request = (): ProviderHttpInput => ({ endpoint, scope: "custom_loopback", headers: {},
+    body: { model: "declared-offline-model", input: "Inspect only the declared metadata.", tools: [], max_output_tokens: 10 },
+    signal: new AbortController().signal, timeoutMs: 2_000, stream: { format: "openai_responses" } });
+  try {
+    await expect(enter(() => recoverAuthoringGeneration(request(), secureAskJsonRequest))).rejects.toBeInstanceOf(AskError);
+    const origin = structuredClone(state.operations[0]!);
+    await enter(async () => permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(canonicalJsonDigest("saved producer checkpoint"))));
+    await enter(async () => {
+      const result = await recoverAuthoringGeneration(request(), secureAskJsonRequest);
+      await authoringGenerationHandled([result]); state = authoringTransportCheckpoint(state)!;
+    });
+    expect(calls).toBe(2); expect(state.operations[0]).toEqual(origin);
+    expect(state.operations[1]!.state).toBe("checkpointed");
+    expect(state.interrupted_dispositions![0]!.status).toBe("admitted");
+    if (companion) {
+      const separate = () => recoverAuthoringGeneration({ ...request(),
+        body: { ...request().body, input: "Inspect separate declared metadata." } }, secureAskJsonRequest);
+      if (companion === "unknown") await expect(enter(separate)).rejects.toBeInstanceOf(AskError);
+      else await enter(async () => authoringGenerationHandled([await separate()]));
+      expect(calls).toBe(3); expect(state.operations.at(-1)!.state).toBe(companion);
+      expect(state.operations.at(-1)!.recovery_of).toBeUndefined();
+    }
+    return { state, origin };
+  } finally {
+    server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+}
+
+it("an explicitly disposed interruption does not block the next ordinary business question or rewrite its history", async () => {
+  const f = await fixture(), { state, origin } = await recoveredJournal();
+  f.install({ recovery: state });
+  expect(await f.host(answer(null)).review()).toBeUndefined();
+  expect(f.inspect().questions!.at(-1)?.presentation?.text).toBe("How many reviewers are needed?");
+  expect(f.inspect().recovery).toEqual(state); expect(f.inspect().recovery!.operations[0]).toEqual(origin);
+  expect(f.statements()).toEqual([]);
+});
+
+it.each(["unknown", "handled"] as const)("a genuinely unresolved %s still blocks an uncompleted business question", async status => {
+  const f = await fixture(), { state } = await recoveredJournal(status);
+  // A separately dispatched native operation remains undisposed. No borrowed
+  // completion or disposition comes from the earlier recovered chain.
+  f.install({ recovery: state }); const before = f.inspect(); let asked = false;
+  await expect(f.host(async view => { asked = true; return answer(null)(view); }).review())
+    .rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
+  expect(asked).toBe(false); expect(f.inspect()).toEqual(before); expect(f.events).toEqual([]);
+});
 
 it("preserves exact raw testimony and appends Source before the acceptance save, without holding exclusion during a wait", async () => {
   const f = await fixture(), raw = "  Two reviewers. 🧭\t";

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
-import { authoringQuestionAnswerCheckpoint, authoringQuestionCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringQuestionAnswerCheckpoint, authoringQuestionCheckpoint, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { captureOperatorAnswer, createOperatorQuestion, leaveOperatorQuestionPending, presentOperatorQuestion,
   reopenOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import { activePolicySource, loadPolicySources, policySourceSavedDigest, PolicySourceChangedError,
@@ -225,7 +225,8 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
         const update: SourceInputRecordUpdate = {};
         if (oldH.state === "answered") {
           if (handoffs.at(-1)?.state === "waiting") throw new PolicySourceChangedError();
-          if (access.readRecovery()?.operations.some(op => ["in_flight", "received", "handled", "unknown", "partial"].includes(op.state)))
+          const recovery = access.readRecovery();
+          if (recovery && unresolvedAuthoringTransportOperations(recovery).length)
             throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "Inspect the unresolved generation before answering another question. No response was replayed.", 409);
           h = createOwnerHandoff({ consumer: "input_policy", question: q.presentation.text, scope_digest: q.scope_digest, context_digest: q.context_digest });
           update.handoffs = [...handoffs, h];
