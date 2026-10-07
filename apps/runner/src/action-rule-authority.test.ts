@@ -1870,7 +1870,7 @@ async function temporaryRoot(): Promise<string> {
 
 async function writeActiveReadSet(root: string, boundary: ActivatedExplorationBoundary): Promise<void> {
   const state = path.join(root, ".synapsor");
-  await fs.mkdir(state, { recursive: true });
+  await fs.mkdir(state, { recursive: true, mode: 0o700 });
   await fs.writeFile(path.join(state, "exploration-boundaries.active.json"), `${JSON.stringify({
     schema_version: "synapsor.active-exploration-boundaries.v1",
     selected_name: boundary.pack.name,

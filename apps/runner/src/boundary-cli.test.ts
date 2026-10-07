@@ -18953,7 +18953,9 @@ describe("public saved-job connection recovery control", () => {
       f.session.confirm = async (question, config) => {
         confirmations++; expect(config?.defaultValue).toBe(false);
         expect(question).toContain("may have been charged");
-        expect(config?.context?.join(" ")).toContain(recovery.operations[0]!.id);
+        expect(config?.exactDetails?.lines.join(" ")).toContain(recovery.operations[0]!.id);
+        expect(config?.exactDetails?.lines.join(" ")).toContain(recovery.operations[0]!.attempts[0]!.id);
+        expect(config?.exactDetails?.lines.join(" ")).toContain(recorded.revision_digest);
         if (mode === "competing") await writeBoundaryAuthoringResumeState(f.root,
           buildBoundaryAuthoringResumeState({binding, stage: recorded.stage, jobIntent: recorded.job_intent,
             provider: "openai", model: "gpt-test", action: recorded.action, previous: recorded,
