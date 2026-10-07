@@ -203,7 +203,7 @@ export async function ensurePreparedPolicyCoverage(input: {
       ...(retainedDutyPlan.crossSource?[retainedDutyPlan.crossSource.base.context_digest]:[])]} : {}),
     ...(prospective ? {prospective_withdrawal:canonicalJsonDigest(prospective)} : {}) });
   const pendingReceipt = pendingReceiptRequirement(source,draftRecord,sources)
-    ?? receiptRequirementReviewTarget(source, sources.coverage_episodes ?? [], key);
+    ?? receiptRequirementReviewTarget(source, sources.coverage_episodes ?? [], key, preparedDraftDigest);
   if (pendingReceipt && !currentReceiptRequirement(source, pendingReceipt, draftRecord, sources)) {
     state.attemptKey = key;
     const finding = coverageFinding(new CoverageReceiptConfigurationError('source_requirement_unestablished'),

@@ -48,15 +48,18 @@ export function receiptRequirementQuestionTarget(q: OperatorQuestion, source: So
 }
 /** Nominate only a saved host refusal on an exact unaccepted receipt component.
  * Its range is a question target, never an accepted model policy interpretation. */
-export function receiptRequirementReviewTarget(source: Source, episodes: readonly Episode[], context: string | undefined):
+export function receiptRequirementReviewTarget(source: Source, episodes: readonly Episode[], context: string | undefined, draftDigest: string):
   { start: number; end: number; source_excerpt: string } | undefined {
+  // The native episode key binds the entire prepared review; tentative output
+  // and host refusal use its canonical draft digest. Check both identities.
+  if (!sha(context) || !sha(draftDigest)) return undefined;
   const episode = episodes.filter(e => e.context === context).at(-1), submission = episode?.submissions.at(-1);
   if (!submission?.completed_at || submission.validated !== false || submission.tentative?.status !== 'unaccepted_generation'
-    || submission.tentative.context !== context || !submission.diagnostic) return undefined;
+    || submission.tentative.context !== draftDigest || !submission.diagnostic) return undefined;
   let feedback: any;
   try { const saved = JSON.parse(submission.diagnostic); feedback = saved.final_refusal ?? saved; } catch { return undefined; }
   const body = object(submission.tentative.assembled ?? submission.tentative.raw_response);
-  if (!Array.isArray(feedback.findings) || !Array.isArray(body.passages)) return undefined;
+  if (feedback.context !== draftDigest || !Array.isArray(feedback.findings) || !Array.isArray(body.passages)) return undefined;
   const targets = feedback.findings.filter((f: any) => f.typed_reason === 'receipt_configuration.source_requirement_unestablished')
     .flatMap((f: any) => {
       const match = /^\/passages\/(\d+)(?:\/|$)/u.exec(f.component ?? '');

@@ -10600,7 +10600,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const retained = savedQuestion && sources.receipt_requirement_reviews?.filter(r => r.question.id === savedQuestion.id).at(-1);
     const target = retained ?? (savedQuestion && receiptRequirementQuestionTarget(savedQuestion, source, sources.id, store))
       ?? pendingReceiptRequirement(source,currentPolicyCoverageDraft(),sources)
-      ?? receiptRequirementReviewTarget(source, sources.coverage_episodes ?? [], policyAttemptKey);
+      ?? receiptRequirementReviewTarget(source, sources.coverage_episodes ?? [], policyAttemptKey, canonicalJsonDigest(currentPolicyCoverageDraft()));
     if (!target || retained && (retained.source_session !== sources.id || retained.source_digest !== source.digest)) return false;
     await refreshPolicyCoverageEvidence();
     const draft = currentPolicyCoverageDraft();
