@@ -1,0 +1,28 @@
+{
+  "captured-port-parity": {
+    "exit": 0,
+    "stop": null,
+    "seconds": 5.24704384803772,
+    "pgid": 2353958,
+    "owned_live": [],
+    "free_bytes": 128975585280,
+    "head": "6e8666702d85e5301c64c4cae4d5944a292c3b81",
+    "counts": {
+      "numPassedTests": 56,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "native_report_sha256": "1d94294d4157c0df1dacae25216261bdb291fb27a714db91190d6897003404f7",
+    "evidence_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-consents6c-implementation-restored/captured-port-parity"
+  },
+  "captured-port-types": {
+    "exit": 0,
+    "stop": null,
+    "seconds": 3.6526713371276855,
+    "pgid": 2354446,
+    "owned_live": [],
+    "free_bytes": 128974888960,
+    "head": "6e8666702d85e5301c64c4cae4d5944a292c3b81",
+    "evidence_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-consents6c-implementation-restored/captured-port-types"
+  }
+}

@@ -52,7 +52,7 @@ export function installPolicySourceCommands(input: {
     const destination = authoringDestination(target);
     showPolicyAttachmentTransfer({ view: attachmentView(source), destination, chat });
     while (true) {
-      const decision = await choosePolicyAttachmentTransfer(chat.session);
+      const decision = await choosePolicyAttachmentTransfer({ chooseOption: choose });
       if (decision === "view") { await show(source); continue; }
       if (decision !== "send") return false;
       const next = structuredClone(session);
@@ -63,7 +63,7 @@ export function installPolicySourceCommands(input: {
       Object.assign(session, next);
       await input.onChange();
       showPolicyAttachmentReady({ view: attachmentView(source), chat });
-      if (offerReview && input.hasDraft?.() && input.reviewCurrent && await choosePolicyAttachmentReview(chat.session) === "review") {
+      if (offerReview && input.hasDraft?.() && input.reviewCurrent && await choosePolicyAttachmentReview({ chooseOption: choose }) === "review") {
         await input.reviewCurrent(); return "reviewed";
       }
       return true;
