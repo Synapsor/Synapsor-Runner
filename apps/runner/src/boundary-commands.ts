@@ -1,3 +1,4 @@
+import { createReadAssistanceCheckpointHost } from "./authoring-read-assistance-checkpoint-host.js";
 import { presentAuthoringRecovery } from "./authoring-interrupted-step-review.js";
 import { retainedRecoveryOwner } from "./authoring-recovery-owner.js";
 import { saveAuthoringRecoveryResume } from "./authoring-recovery-resume.js";
@@ -7502,129 +7503,26 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           return input.authoringChat!.readOperator!(undefined, assertAnswerCurrent, { recordPolicyAnswer: false,
             preserveWhitespace: options?.preserveWhitespace });
         } } : input.session;
-    const persistReadAssistance = async (checkpoint: ReadWorkloadAssistanceCheckpoint | undefined,
-      currentBoundary: ExplorationBoundaryDraft,
-      accepted?: Awaited<ReturnType<typeof generateModelReadWorkload>>) => mutateOwnerHandoff(async permit => {
-      const currentContext = await ownerQuestionContext(permit);
-      const current = await loadBoundaryReviewContext(input.projectRoot);
-      if (explorationBoundaryCandidateDigest(currentBoundary) !== current.bundle.candidate_digest) {
-        throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The exact Read candidate changed. Preserve the assistance and inspect the current saved job.");
-      }
-      if (!checkpoint) {
-        if (!accepted || accepted.analysis.status !== "ready") throw checkpointSaveFailure("The accepted Read mapping");
-        // The immutable analysis is inert until the SAME resume CAS records its
-        // exact pointer. Failure never clears a question or acknowledges a save.
-        const analysis = analyzeReadWorkloadSet({ workload: accepted.workload, generatedBoundary: currentBoundary });
-        if (analysis.status !== "ready" || canonicalJsonDigest(analysis) !== canonicalJsonDigest(accepted.analysis)) {
-          throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The accepted mapping no longer validates against the current Read catalog.");
-        }
-        const saved = await storeReadWorkloadAnalysis({ projectRoot: input.projectRoot,
-          generatedBoundary: currentBoundary, source: accepted.workload.source, analysis });
-        // The producer pins its input history until this accepted mapping.
-        // Index newly confirmed testimony only here, without changing that
-        // contract or upgrading legacy conversation into current meaning.
-        const sources = authoringConversation?.policySources;
-        const source = activePolicySource(sources);
-        if (sources && source && readAssistanceCheckpoint) {
-          const pending = readAssistanceCheckpoint.pending_question;
-          const answers = [...readAssistanceCheckpoint.state.clarified_targets];
-          const retired = new Set((readAssistanceCheckpoint.state.reviewed_replacements ?? []).map(review => review.previous_index));
-          if (pending?.kind === "clarification" && pending.decision?.state === "answered") {
-            if (pending.replacement?.confirmed) retired.add(pending.replacement.previous_index);
-            answers.push({ ...pending.request, answer: pending.decision.answer });
-          }
-          const statements = answers.filter((_answer, index) => !retired.has(index)).flatMap(answer => {
-            const handoff = [...ownerHandoffs].reverse().find(record => record.consumer === "read_clarification"
-              && record.question === answer.question);
-            // Older non-mediated checkpoints remain ordinary naming context.
-            // Association precedes validation: an existing malformed native
-            // question must never masquerade as absent legacy evidence.
-            const question = [...operatorQuestions].reverse().find(record => record.kind === "attributed_meaning"
-              && record.handoff_id === handoff?.id);
-            if (!question) return [];
-            if (question.scope_digest !== ownerQuestionScope() || question.context_digest !== currentContext
-              || question.target.resource !== answer.resource || question.target.field !== answer.field
-              || question.presentation?.text !== answer.question || question.raw_answer?.text !== answer.answer
-              || !question.confirmation || !handoff || handoff.state !== "answered"
-              || handoff.answer !== answer.answer || handoff.answer_context_digest !== currentContext) throw new PolicySourceChangedError();
-            return [{ resource: answer.resource, ...(answer.field ? { field: answer.field } : {}),
-              question: answer.question, raw_answer: answer.answer, question_digest: question.digest,
-              question_context_digest: question.context_digest, confirmation: question.confirmation }];
-          });
-          if (statements.length) await appendPolicySourceOperatorMessage(input.projectRoot, sources,
-            JSON.stringify({ kind: "confirmed_read_meaning", attribution: "Untrusted operator naming context for this task only; not database proof or permission to read or change data.",
-              source_digest: source.digest, scope_digest: ownerQuestionScope(), statements }),
-            { permit, expectedDigest: canonicalJsonDigest(sources) });
-        }
-        resumeRead = { analysis_id: saved.analysis_id, analysis_digest: saved.analysis_digest,
-          ...(readAssistanceCheckpoint ? { assistance_history: structuredClone(readAssistanceCheckpoint) } : {}) };
-        readAssistanceCheckpoint = undefined;
-      } else {
-        const checked = parseReadWorkloadAssistanceCheckpoint(checkpoint);
-        if (checked.stage === "dispatching") {
-          // Preserve the producer's actual input and spent limits before I/O.
-          // A raw controller reservation is neither an operator question nor
-          // acknowledgement of any previous uncertain response or mutation.
-          readAssistanceCheckpoint = checked;
-          await persistAuthoringResume("read_mapping", permit, false);
-          if (resumePersistenceBlocked) throw checkpointSaveFailure("The Read dispatch checkpoint");
-          return;
-        }
-        const q = checked.pending_question;
-        const consumer = q.kind === "value" ? "read_value_context" : "read_clarification";
-        const last = ownerHandoffs.at(-1);
-        const sameQuestion = last?.consumer === consumer && last.question === q.question
-          && canonicalJsonDigest(last.completion ?? null) === canonicalJsonDigest(q.completion ?? null);
-        if (checked.stage === "waiting") {
-          if (sameQuestion && last?.state === "waiting") {
-            if (last.scope_digest !== ownerQuestionScope() || last.context_digest !== currentContext) {
-              throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The saved Read question is not current. No answer or replacement was inferred.");
-            }
-          } else {
-            if (last?.state === "waiting") throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Inspect the current saved question before replacing it.");
-            const next = createOwnerHandoff({ consumer, question: q.question, scope_digest: ownerQuestionScope(),
-              context_digest: currentContext, ...(q.completion ? { completion: q.completion } : {}) });
-            if (q.completion) generationRecovery = authoringQuestionCheckpoint(generationRecovery, ownerHandoffCheckpoint(next));
-            else if (generationRecovery?.operations.some(op => ["in_flight", "received", "handled", "unknown", "partial"].includes(op.state))) {
-              throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The Read question has no exact completed consumer association. Preserve the saved generation without replay.", 409);
-            }
-            ownerHandoffs.push(next);
-          }
-          if (q.kind === "clarification" && !operatorQuestions.some(record => record.handoff_id === ownerHandoffs.at(-1)!.id)) {
-            const h = ownerHandoffs.at(-1)!;
-            operatorQuestions.push(createOperatorQuestion({ id: h.id, revision: 1, handoff_id: h.id,
-              kind: "attributed_meaning", scope_digest: h.scope_digest, context_digest: h.context_digest,
-              target: { phase: "read_mapping", resource: q.request.resource, ...(q.request.field ? { field: q.request.field } : {}), outcomes: [] },
-              material: [`This meaning is for ${q.request.resource}${q.request.field ? ` / ${q.request.field}` : ""} in this task only.`,
-                "It is a statement of business meaning, not private sample data, a database guarantee, or permission to read or change data."],
-              evidence: [{ id: "current-read-candidate", digest: current.bundle.candidate_digest },
-                { id: "current-source-and-permissions", digest: currentContext }], continuation: "read_mapping" }));
-          }
-        } else {
-          const acknowledged = sameQuestion && last?.state === "answered" && q.kind === "clarification"
-            && operatorQuestions.some(record => record.handoff_id === last.id && record.confirmation
-              && record.raw_answer?.text === readWorkloadAssistanceDecisionAnswer(q));
-          if (!sameQuestion || !last || !acknowledged && last.state !== "waiting" || last.scope_digest !== ownerQuestionScope()
-            || last.context_digest !== currentContext && !(q.kind === "relationship"
-              && reviewedRelationshipAnswer?.id === last.id && reviewedRelationshipAnswer.digest === last.digest
-              && reviewedRelationshipAnswer.context === currentContext)) {
-            throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: Source, permissions or the exact Read question changed. Its answer was not accepted.");
-          }
-          const answer = readWorkloadAssistanceDecisionAnswer(q);
-          if (!acknowledged) {
-            const next = answerOwnerHandoff(last, answer, currentContext);
-            if (last.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
-              ownerHandoffCheckpoint(last), { digest: canonicalJsonDigest(next), operator_messages: [answer] });
-            ownerHandoffs[ownerHandoffs.length - 1] = next;
-            rememberModelAuthoringTurn(authoringConversation, last.question, answer);
-          }
-          reviewedRelationshipAnswer = undefined;
-        }
-        readAssistanceCheckpoint = checked;
-      }
-      await persistAuthoringResume("read_mapping", permit);
-      if (resumePersistenceBlocked) throw checkpointSaveFailure("The Read assistance checkpoint");
-    });
+    const { persist: persistReadAssistance } = createReadAssistanceCheckpointHost({ access: {
+      mutate: mutateOwnerHandoff, contextDigest: ownerQuestionContext, scopeDigest: ownerQuestionScope,
+      currentCandidate: async () => (await loadBoundaryReviewContext(input.projectRoot)).bundle,
+      readCheckpoint: () => readAssistanceCheckpoint, readHandoffs: () => ownerHandoffs,
+      readQuestions: () => operatorQuestions, readRecovery: () => generationRecovery,
+      readConversation: () => authoringConversation, readReviewedRelationshipAnswer: () => reviewedRelationshipAnswer,
+      install: update => {
+        if (Object.prototype.hasOwnProperty.call(update, "checkpoint")) readAssistanceCheckpoint = update.checkpoint;
+        if (Object.prototype.hasOwnProperty.call(update, "recovery")) generationRecovery = update.recovery;
+        if (Object.prototype.hasOwnProperty.call(update, "read")) resumeRead = update.read;
+        if (Object.prototype.hasOwnProperty.call(update, "reviewedRelationshipAnswer")) reviewedRelationshipAnswer = update.reviewedRelationshipAnswer;
+      },
+      storeAnalysis: args => storeReadWorkloadAnalysis({ projectRoot: input.projectRoot, ...args }),
+      appendSourceMessage: (sources, message, options) => appendPolicySourceOperatorMessage(input.projectRoot, sources, message, options),
+      save: async (permit, subject, acknowledge) => {
+        await persistAuthoringResume("read_mapping", permit, acknowledge);
+        if (resumePersistenceBlocked) throw checkpointSaveFailure(subject);
+      },
+      checkpointFailure: checkpointSaveFailure,
+    } });
     const readMeaningHost = createReadMeaningHost({ access: {
       readQuestions: () => operatorQuestions, readHandoffs: () => ownerHandoffs,
       readCheckpoint: () => readAssistanceCheckpoint, readRecovery: () => generationRecovery,
