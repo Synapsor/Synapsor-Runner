@@ -103,6 +103,7 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     if (!object(selection) || !exact(selection, ["source", "mode", "dependencies_digest"])
       || !text(selection.source, 256) || !["runner_ledger", "source_db"].includes(selection.mode as string)
       || !digest(selection.dependencies_digest) || value.target.phase !== "receipt_requirement"
+      || new Set(value.evidence.map(e => (e as { id: string }).id)).size !== value.evidence.length
       || !value.evidence.some(e => object(e) && e.id === "receipt-meaning-dependencies" && e.digest === selection.dependencies_digest))
       invalid("The configured receipt selection is not current host context for this question.");
   } else if (value.receipt_selection !== undefined) invalid("Receipt configuration cannot be attached to another question kind.");
@@ -117,7 +118,8 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     }
   } else if (!text(value.handoff_id, 100)) invalid("A raw-answer question requires its actual owner handoff.");
   if (value.budget_owner_id !== undefined && (!id(value.budget_owner_id) || value.budget_owner_id === value.id
-    || value.kind !== "input_bounds" || value.source_binding !== undefined || value.budget !== undefined))
+    || !["input_bounds", "receipt_requirement"].includes(value.kind as string) || value.source_binding !== undefined
+    || value.kind === "input_bounds" && value.budget !== undefined || value.kind === "receipt_requirement" && value.budget === undefined))
     invalid("The missing-answer question cannot own or reset another allowance.");
   if (continuation[value.kind as OperatorQuestion["kind"]] !== value.continuation
       && !(value.kind === "attributed_meaning" && value.continuation === "action_rule_review")
@@ -156,11 +158,12 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
       || !["unknown", "cancelled", "declined"].includes(event.disposition as string) || !date(event.recorded_at)))) invalid("Invalid retained pending history.");
   if (value.terminal_failure !== undefined) {
     const failure = value.terminal_failure, c = object(failure) ? failure.completion : undefined;
-    if (!["input_bounds", "writer_maintenance"].includes(value.kind as string) || value.proposal !== undefined || value.confirmation !== undefined || value.disposition !== undefined
+    if (!["input_bounds", "writer_maintenance", "receipt_requirement"].includes(value.kind as string) || value.proposal !== undefined || value.confirmation !== undefined || value.disposition !== undefined
       || !object(failure) || !exact(failure, ["code", "stage", "completion", "recorded_at"])
       || failure.code !== "ASK_TOOL_ARGUMENTS_INVALID" || !date(failure.recorded_at)
       || (value.kind === "input_bounds" && failure.stage !== (value.source_binding ? "source-review" : "answer-map"))
       || (value.kind === "writer_maintenance" && !["present", "answer-map"].includes(failure.stage as string))
+      || (value.kind === "receipt_requirement" && (failure.stage !== "answer-map" || !object(value.budget) || value.budget.correction_used !== true))
       || (value.kind === "writer_maintenance" && failure.stage === "present" && (value.presentation !== undefined || value.raw_answer !== undefined))
       || (value.kind === "input_bounds" && !value.source_binding && !value.budget_owner_id)
       || (!value.source_binding && failure.stage !== "present" && (!object(value.raw_answer) || !text(value.raw_answer.text, 4000)))
@@ -290,7 +293,18 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
     seen.add(q.id);
     if (q.budget_owner_id) {
       const root = result.find(record => record.id === q.budget_owner_id);
-      if (!root || !seen.has(root.id) || root.kind !== "input_bounds" || !root.source_binding || !root.budget
+      if (q.kind === "receipt_requirement") {
+        const earlier = result.filter(other => seen.has(other.id) && other.id !== q.id
+          && (other.id === q.budget_owner_id || other.budget_owner_id === q.budget_owner_id));
+        const previous = earlier.at(-1);
+        if (!root || !previous || !root.budget || !previous.budget || !q.budget || root.kind !== q.kind || root.budget_owner_id
+          || q.revision !== previous.revision + 1 || root.scope_digest !== q.scope_digest
+          || canonicalJsonDigest(root.target) !== canonicalJsonDigest(q.target)
+          || canonicalJsonDigest(root.receipt_selection) !== canonicalJsonDigest(q.receipt_selection)
+          || q.evidence.find(e => e.id === "receipt-source-range")?.digest !== root.evidence.find(e => e.id === "receipt-source-range")?.digest
+          || q.budget.iterations_used < previous.budget.iterations_used || q.budget.tool_calls_used < previous.budget.tool_calls_used
+          || previous.budget.correction_used && !q.budget.correction_used) invalid("The replacement receipt answer lost its original owning allowance or exact requirement.");
+      } else if (!root || !seen.has(root.id) || root.kind !== "input_bounds" || !root.source_binding || !root.budget
         || root.budget_owner_id || root.confirmation || root.terminal_failure || q.revision <= root.revision
         || root.scope_digest !== q.scope_digest || root.context_digest !== q.context_digest
         || canonicalJsonDigest(root.target) !== canonicalJsonDigest(q.target)
@@ -298,7 +312,7 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
         || canonicalJsonDigest(root.evidence) !== canonicalJsonDigest(q.evidence)
         || result.some(other => other.id !== q.id && other.budget_owner_id === q.budget_owner_id && other.revision === q.revision))
         invalid("The missing-answer question has no exact current owning Source episode.");
-      if (q.terminal_failure && !root.budget.correction_used) invalid("The owning Input correction was not exhausted.");
+      if (q.kind === "input_bounds" && q.terminal_failure && !root!.budget!.correction_used) invalid("The owning Input correction was not exhausted.");
     }
     if (q.terminal_failure) {
       const c = q.terminal_failure.completion, op = generation?.operations.find(op => op.id === c.operation_id);
@@ -322,7 +336,7 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
       && (q.kind !== "attributed_meaning" || q.continuation !== "read_mapping"
         || !["read_prerequisite", "read_prerequisite_correction"].includes(q.target.phase)))
       invalid("The private Read statement has no exact stage association.");
-    if (q.budget_owner_id) {
+    if (q.budget_owner_id && q.kind === "input_bounds") {
       const root = result.find(record => record.id === q.budget_owner_id)!;
       const predecessors = result.filter(other => seen.has(other.id) && other.id !== q.id
         && other.budget_owner_id === root.id);

@@ -1,14 +1,16 @@
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
-import { parseOperatorQuestion, type OperatorQuestion, type OperatorQuestionValue } from './authoring-operator-question.js';
+import { assertOperatorQuestionsAdvance, parseOperatorQuestion, type OperatorQuestion, type OperatorQuestionValue } from './authoring-operator-question.js';
 
 type Source = { digest: string; text: string; lines: number };
 type Session = { id: string; receipt_requirement_reviews?: ReceiptRequirementReview[] };
+type Episode = { context: string; submissions: Array<{ completed_at?: string; validated?: boolean; diagnostic?: string;
+  tentative?: { status: string; context: string; raw_response: unknown; assembled?: unknown } }> };
 type Meaning = Extract<OperatorQuestionValue, { kind: 'receipt_requirement' }>;
 export type ReceiptRequirementReview = {
   origin: 'OPERATOR-RECEIPT-REQUIREMENT'; source_session: string; source_digest: string; store_digest: string;
   start: number; end: number; source_excerpt: string; dependencies_digest: string;
-  question: OperatorQuestion; requirement: Meaning;
-  selection: NonNullable<OperatorQuestion['receipt_selection']> & { origin: 'current_host_configuration'; applicability: 'operator_confirmed' };
+  question: OperatorQuestion; decision: 'confirmed' | 'pending'; requirement?: Meaning;
+  selection: NonNullable<OperatorQuestion['receipt_selection']> & { origin: 'current_host_configuration'; applicability: 'operator_confirmed' | 'pending' };
   verified: false; previous: string | null; digest: string;
 };
 const object = (v: unknown): Record<string, any> => v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, any> : {};
@@ -35,31 +37,66 @@ export function receiptRequirementSourceBinding(source: Source, session: string,
   return canonicalJsonDigest({ source_session: session, source_digest: source.digest, store_digest: store, start, end,
     source_excerpt: source.text.split(/\r\n|\r|\n/u).slice(start - 1, end).join('\n') });
 }
+/** Nominate only a saved host refusal on an exact unaccepted receipt component.
+ * Its range is a question target, never an accepted model policy interpretation. */
+export function receiptRequirementReviewTarget(source: Source, episodes: readonly Episode[], context: string | undefined):
+  { start: number; end: number; source_excerpt: string } | undefined {
+  const episode = episodes.filter(e => e.context === context).at(-1), submission = episode?.submissions.at(-1);
+  if (!submission?.completed_at || submission.validated !== false || submission.tentative?.status !== 'unaccepted_generation'
+    || submission.tentative.context !== context || !submission.diagnostic) return undefined;
+  let feedback: any;
+  try { const saved = JSON.parse(submission.diagnostic); feedback = saved.final_refusal ?? saved; } catch { return undefined; }
+  const body = object(submission.tentative.assembled ?? submission.tentative.raw_response);
+  if (!Array.isArray(feedback.findings) || !Array.isArray(body.passages)) return undefined;
+  const targets = feedback.findings.filter((f: any) => f.typed_reason === 'receipt_configuration.source_requirement_unestablished')
+    .flatMap((f: any) => {
+      const match = /^\/passages\/(\d+)(?:\/|$)/u.exec(f.component ?? '');
+      const p = match ? body.passages[Number(match[1])] : undefined;
+      if (!p || !Number.isSafeInteger(p.start) || p.start < 1 || !Number.isSafeInteger(p.end) || p.end < p.start || p.end > source.lines
+        || p.disposition !== 'implemented' || p.responsibility !== 'runner' || !Array.isArray(p.draft_paths)
+        || !p.draft_paths.includes('/runner_evidence/runtime_contract/receipt_configuration')) return [];
+      const source_excerpt = source.text.split(/\r\n|\r|\n/u).slice(p.start - 1, p.end).join('\n');
+      return source_excerpt.trim() && source_excerpt.length <= 16_000 ? [{ start: p.start, end: p.end, source_excerpt }] : [];
+    });
+  const unique = [...new Map(targets.map((t: any) => [canonicalJsonDigest(t), t])).values()];
+  return unique.length === 1 ? unique[0] as { start: number; end: number; source_excerpt: string } : undefined;
+}
+export function receiptRequirementQuestionContext(session: Session) {
+  const { receipt_requirement_reviews: _history, ...source } = session;
+  return source;
+}
 export function assertReceiptRequirementReviews(value: unknown): asserts value is ReceiptRequirementReview[] {
   if (value === undefined) return;
   if (!Array.isArray(value) || value.length > 64) return invalid();
   let previous: string | null = null;
-  const questions = new Set<string>();
+  const questions = new Map<string, OperatorQuestion>();
   for (const r of value) {
     const { digest, ...body } = r ?? {};
     if (Object.keys(r ?? {}).some(k => !['origin', 'source_session', 'source_digest', 'store_digest', 'start', 'end',
-      'source_excerpt', 'dependencies_digest', 'question', 'requirement', 'selection', 'verified', 'previous', 'digest'].includes(k))
+      'source_excerpt', 'dependencies_digest', 'question', 'decision', 'requirement', 'selection', 'verified', 'previous', 'digest'].includes(k))
       || r?.origin !== 'OPERATOR-RECEIPT-REQUIREMENT' || !uuid(r.source_session) || !sha(r.source_digest)
       || !sha(r.store_digest) || !sha(r.dependencies_digest) || !Number.isSafeInteger(r.start) || r.start < 1
       || !Number.isSafeInteger(r.end) || r.end < r.start || typeof r.source_excerpt !== 'string'
       || !r.source_excerpt.trim() || r.source_excerpt.length > 16_000 || r.verified !== false
       || r.previous !== previous || digest !== canonicalJsonDigest(body)) invalid();
     const q = parseOperatorQuestion(r.question);
-    if (q.kind !== 'receipt_requirement' || !q.confirmation || q.disposition || q.proposal?.disposition !== 'proposed'
-      || !q.raw_answer?.text.trim() || q.proposal.value?.kind !== 'receipt_requirement'
-      || canonicalJsonDigest(q.proposal.value) !== canonicalJsonDigest(r.requirement) || questions.has(q.id)
+    const evidence = q.evidence.filter(e => ['receipt-source-range', 'receipt-meaning-dependencies'].includes(e.id));
+    if (q.kind !== 'receipt_requirement' || !['confirmed', 'pending'].includes(r.decision)
+      || r.decision === 'confirmed' && (!q.confirmation || q.disposition || q.proposal?.disposition !== 'proposed'
+        || !q.raw_answer?.text.trim() || q.proposal.value?.kind !== 'receipt_requirement'
+        || canonicalJsonDigest(q.proposal.value) !== canonicalJsonDigest(r.requirement))
+      || r.decision === 'pending' && (q.confirmation || r.requirement !== undefined || !q.disposition && !q.terminal_failure)
       || canonicalJsonDigest(r.selection) !== canonicalJsonDigest({ ...q.receipt_selection,
-        origin: 'current_host_configuration', applicability: 'operator_confirmed' })
+        origin: 'current_host_configuration', applicability: r.decision === 'confirmed' ? 'operator_confirmed' : 'pending' })
+      || evidence.length !== 2 || new Set(evidence.map(e => e.id)).size !== 2
+      || q.receipt_selection?.dependencies_digest !== r.dependencies_digest
       || q.evidence.find(e => e.id === 'receipt-meaning-dependencies')?.digest !== r.dependencies_digest
       || q.evidence.find(e => e.id === 'receipt-source-range')?.digest !== canonicalJsonDigest({
         source_session: r.source_session, source_digest: r.source_digest, store_digest: r.store_digest,
         start: r.start, end: r.end, source_excerpt: r.source_excerpt })) invalid();
-    questions.add(q.id); previous = digest;
+    const prior = questions.get(q.id);
+    if (prior) assertOperatorQuestionsAdvance([prior], [q]);
+    questions.set(q.id, q); previous = digest;
   }
 }
 /** Creation is available only after the native question has captured words,
@@ -77,8 +114,10 @@ export function makeReceiptRequirementReview(input: { source: Source; session: S
     source_digest: input.source.digest, store_digest: input.store, start: input.start, end: input.end,
     source_excerpt: input.source.text.split(/\r\n|\r|\n/u).slice(input.start - 1, input.end).join('\n'),
     dependencies_digest: receiptRequirementDependencies(input.draft), question: structuredClone(input.question),
-    requirement: input.question.proposal?.value as Meaning,
-    selection: { ...input.question.receipt_selection!, origin: 'current_host_configuration' as const, applicability: 'operator_confirmed' as const },
+    decision: input.question.confirmation ? 'confirmed' as const : 'pending' as const,
+    ...(input.question.confirmation ? { requirement: input.question.proposal!.value as Meaning } : {}),
+    selection: { ...input.question.receipt_selection!, origin: 'current_host_configuration' as const,
+      applicability: input.question.confirmation ? 'operator_confirmed' as const : 'pending' as const },
     verified: false as const,
     previous: input.session.receipt_requirement_reviews?.at(-1)?.digest ?? null };
   const record = { ...body, digest: canonicalJsonDigest(body) };
@@ -92,17 +131,18 @@ export function receiptRequirementPreparedContext(session: Session, store: strin
   assertReceiptRequirementReviews(reviews);
   return { source_session: session.id, store_digest: store, review_digests: reviews.map(r => r.digest),
     items: reviews.map(r => ({ digest: r.digest, source_digest: r.source_digest, start: r.start, end: r.end,
-      source_excerpt: r.source_excerpt, dependencies_digest: r.dependencies_digest, requirement: r.requirement, selection: r.selection,
+      source_excerpt: r.source_excerpt, dependencies_digest: r.dependencies_digest, decision: r.decision,
+      requirement: r.requirement ?? null, selection: r.selection,
       assurance: 'operator_interpretation_only' as const, verified: false as const })) };
 }
 export function currentReceiptRequirement(source: Source, span: { start: number; end: number }, draft: unknown,
-  session?: Session): (Meaning & { mode: 'runner_ledger' | 'source_db' }) | undefined {
+  session?: Session): (Meaning & { mode: 'runner_ledger' | 'source_db'; decision_digest: string }) | undefined {
   const prepared = object(object(draft).runner_evidence).receipt_requirement;
   if (!session || !prepared || !sha(prepared.store_digest)
     || canonicalJsonDigest(prepared) !== canonicalJsonDigest(receiptRequirementPreparedContext(session, prepared.store_digest))) return undefined;
   const latest = (session.receipt_requirement_reviews ?? []).filter(r => r.source_session === session.id
     && r.source_digest === source.digest && r.store_digest === prepared.store_digest && r.start === span.start && r.end === span.end
     && r.end <= source.lines && r.source_excerpt === source.text.split(/\r\n|\r|\n/u).slice(r.start - 1, r.end).join('\n')).at(-1);
-  return latest?.dependencies_digest === receiptRequirementDependencies(draft)
-    ? { ...latest.requirement, mode: latest.selection.mode } : undefined;
+  return latest?.decision === 'confirmed' && latest.requirement && latest.dependencies_digest === receiptRequirementDependencies(draft)
+    ? { ...latest.requirement, mode: latest.selection.mode, decision_digest: latest.digest } : undefined;
 }

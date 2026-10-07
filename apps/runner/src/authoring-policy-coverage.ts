@@ -318,7 +318,7 @@ function applicationObligationError(entry: PolicyPassage, index: number, lines: 
 
 function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSnapshot, draft: unknown,
   operatorHistory: string | readonly string[], sourceRequirements: ReturnType<typeof countingSourceRequirements>,
-  fieldEvidence: ReturnType<typeof fieldPrivacyEvidence>): PolicyPassage {
+  fieldEvidence: ReturnType<typeof fieldPrivacyEvidence>, sourceSession?: PolicySourceSession): PolicyPassage {
   const lines = policyTextLines(source.text);
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Each passage must be an object.");
     // Saved comparisons are not trusted on restart. Restore and revalidate the
@@ -556,7 +556,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
     const coupling = assessReceiptCouplingCapability(assessed, source, draft);
     if (stored.receipt_coupling && canonicalJsonDigest(stored.receipt_coupling) !== canonicalJsonDigest(coupling ?? null))
       throw new Error("OBLIGATION_SOURCE_TRANSACTION_COUPLING_STALE: Recheck the exact current source and complete capability; no stale proof was reused.");
-    const obligationAssessment = assessReviewObligation(assessed, source, draft);
+    const obligationAssessment = assessReviewObligation(assessed, source, draft, sourceSession);
     if (stored.obligation_assessment && canonicalJsonDigest(stored.obligation_assessment) !== canonicalJsonDigest(obligationAssessment ?? null)) {
       throw new CoverageReceiptDutyError("evidence_stale");
     }
@@ -664,7 +664,7 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
   for (const [index, raw] of args.passages.entries()) {
     const component = `/passages/${index}`;
     try {
-      const parsed = parseCoveragePassage(raw,index,source,draft,operatorHistory,requirements,fields);
+      const parsed = parseCoveragePassage(raw,index,source,draft,operatorHistory,requirements,fields,sourceSession);
       const identity = canonicalJsonDigest(parsed);
       if (seen.has(identity)) throw new Error("COVERAGE_DUPLICATE_COMPONENT: Identical component repeated in the complete replacement.");
       seen.add(identity);
@@ -733,7 +733,7 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
   const passages: PolicyPassage[] = [];
   const seen = new Set<string>();
   for (const [index, raw] of args.passages.entries()) {
-    const passage = parseCoveragePassage(raw, index, source, draft, operatorHistory, sourceRequirements, fieldEvidence);
+    const passage = parseCoveragePassage(raw, index, source, draft, operatorHistory, sourceRequirements, fieldEvidence,sourceSession);
     const identity = canonicalJsonDigest(passage);
     if (seen.has(identity)) throw new CoverageComponentError(`/passages/${index}`, new Error("COVERAGE_DUPLICATE_COMPONENT: Identical component repeated in the complete replacement."));
     seen.add(identity);
@@ -821,9 +821,9 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
   // Configuration evidence proves only the selected mode. Preserve its submitted
   // passage and an isolated, still-pending duty rather than calling a receipt done.
   for (const passage of [...passages]) {
-    const component = receiptSelectionComponent(passage, source, draft);
+    const component = receiptSelectionComponent(passage, source, draft, sourceSession);
     if (!component || passages.some(p => p.obligation_assessment?.family === "receipt_setup")) continue;
-    const assessment = assessReviewObligation(component, source, draft);
+    const assessment = assessReviewObligation(component, source, draft, sourceSession);
     passages.push({ ...component, ...(assessment ? { obligation_assessment: assessment } : {}) });
   }
   const inputContext=(draft as any)?.runner_evidence?.input_policy_requirement;

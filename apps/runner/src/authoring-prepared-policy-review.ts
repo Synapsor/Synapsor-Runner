@@ -179,7 +179,7 @@ export async function ensurePreparedPolicyCoverage(input: {
   const hostPending = (error: RetainedDutyApplicabilityError): never => { throw new ReviewResolutionError(error.code,
     planCoverageResolution(error.feedback(canonicalJsonDigest(draftRecord))), error.message); };
   try { retainedDutyPlan = prepareRetainedDutyReview(sources.coverage, source, draftRecord, lineage, sources.coverage_authority_digest,prospective,counterContext);
-    preflightRetainedDutyEvidence(retainedDutyPlan, source, draftRecord); }
+    preflightRetainedDutyEvidence(retainedDutyPlan, source, draftRecord, sources); }
   catch (error) { if (error instanceof RetainedDutyApplicabilityError) hostPending(error); throw error; }
   const assertRetainedCurrent = async () => {
     if (canonicalJsonDigest(await loadCounterContext() ?? null) !== canonicalJsonDigest(counterContext ?? null))

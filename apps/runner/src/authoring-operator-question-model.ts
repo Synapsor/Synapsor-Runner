@@ -200,6 +200,7 @@ export async function runOperatorQuestionModel(input: {
       }, onCorrection: () => { correctionExhausted = true; } });
   } catch (error) {
     if (knownInvalid && error === knownInvalid && correctionExhausted && (q.kind === "input_bounds" && input.stage !== "present"
+      || q.kind === "receipt_requirement" && input.stage === "answer-map"
       || q.kind === "writer_maintenance" && input.actionLogicalTurnBudget
         && (input.stage === "answer-map" || input.stage === "present" && consumed.length >= 2))) {
       const completion = completedAuthoringQuestionSequence(consumed);

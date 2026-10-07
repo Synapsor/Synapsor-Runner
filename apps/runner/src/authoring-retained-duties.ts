@@ -359,12 +359,13 @@ export function assembleRetainedDutyReview(report: PolicyCoverage, plan: Retaine
 
 /** Establish known host prerequisites locally, before consent/reservation. This
  * cannot certify a model report; full canonical assembly remains mandatory. */
-export function preflightRetainedDutyEvidence(plan: RetainedDutyPlan, source: PolicyTextSnapshot, draft: unknown): void {
+export function preflightRetainedDutyEvidence(plan: RetainedDutyPlan, source: PolicyTextSnapshot, draft: unknown,
+  session?: import('./authoring-policy-source.js').PolicySourceSession): void {
   const checked: PolicyPassage[] = plan.retain.map(p => {
     try {
       const resolution = p.source_counter_obligation ? resolveSourceCounterObligation(p, source, draft) : undefined;
       const current = { ...p, ...(resolution ? { source_counter_resolution: resolution } : {}) };
-      const assessment = assessReviewObligation(current, source, draft);
+      const assessment = assessReviewObligation(current, source, draft, session);
       if (!assessment) throw new Error('Current retained obligation evidence unavailable.');
       return { ...current, obligation_assessment: assessment };
     } catch { throw new RetainedDutyApplicabilityError(p.draft_paths[0] ?? '/', 'retained_validation'); }

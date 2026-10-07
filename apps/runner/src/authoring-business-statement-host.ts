@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
-import { authoringQuestionAnswerCheckpoint, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringQuestionAnswerCheckpoint, authoringTransportCheckpoint, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, leaveOperatorQuestionPending,
   operatorQuestionReadback, presentOperatorQuestion, proposeOperatorAnswer, reopenOperatorQuestion,
-  type OperatorQuestion } from "./authoring-operator-question.js";
+  operatorQuestionEpisode, parseOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
+import { runOperatorQuestionModel, consumedOperatorQuestionFailure } from './authoring-operator-question-model.js';
+import type { ActionModelSuggestionSession } from './action-tui.js';
+import type { OperatorBusinessContext } from './authoring-operator-presentation.js';
 import { PolicySourceChangedError } from "./authoring-policy-source.js";
 import { isUnknownReadMeaning } from "./read-meaning-evidence.js";
 import { validateReadPrerequisiteBusinessAnswer } from "./read-prerequisite-model.js";
@@ -49,6 +52,14 @@ export function createBusinessStatementHost(input: {
   handoff?: AuthoringOwnerHandoff; producerQuestionDigest?: Digest; privateCorrection?: boolean;
   assertCurrent(permit?: ProjectAuthorityMutationPermit): Promise<void>;
   interact(view: BusinessStatementInteraction): Promise<BusinessStatementResponse>;
+  /** Bounded receipt interpretation adapter, using this same raw-answer,
+   * default-No, protected-save and retained-answer interaction owner. */
+  receiptDecision?: {
+    session: ActionModelSuggestionSession; businessContext?: OperatorBusinessContext;
+    target: OperatorQuestion['target']; material: string[]; evidence: OperatorQuestion['evidence'];
+    selection: NonNullable<OperatorQuestion['receipt_selection']>;
+    predecessor?: OperatorQuestion;
+  };
 }) {
   const access = input.access;
   let savedHandoff: AuthoringOwnerHandoff;
@@ -75,10 +86,11 @@ export function createBusinessStatementHost(input: {
     if (canonicalJsonDigest(view.binding) !== canonicalJsonDigest(binding())) throw new PolicySourceChangedError();
     return response;
   };
-  const saveQuestion = async (next: OperatorQuestion, expected?: Digest) => access.mutate(async permit => {
+  const saveQuestion = async (next: OperatorQuestion, expected?: Digest, completedModel = false) => access.mutate(async permit => {
     await assertCurrent(permit);
     const questions = access.readQuestions(), old = questions.find(q => q.id === next.id);
     if (expected ? old?.digest !== expected : Boolean(old)) throw new PolicySourceChangedError();
+    if (completedModel) access.install({ recovery: authoringTransportCheckpoint(access.readRecovery()) });
     access.install({ questions: old ? questions.map(q => q.id === next.id ? next : q) : [...questions, next] });
     await access.save(permit, input.stage, "The exact business statement");
   });
@@ -113,7 +125,8 @@ export function createBusinessStatementHost(input: {
       ...(read.decisions ? { readDecisions: read.decisions } : {}), ...(read.recovery ? { recovery: read.recovery } : {}),
     });
     // The private prerequisite never appends this raw statement to policy Source.
-    if (testimony && savedHandoff.consumer !== "read_revision_prerequisite") await access.appendSourceStatement(permit, answer);
+    if (testimony && savedHandoff.consumer !== "read_revision_prerequisite" && confirming?.kind !== "receipt_requirement")
+      await access.appendSourceStatement(permit, answer);
     const acceptedContext = await access.contextDigest(permit, savedHandoff.consumer);
     const next = answerOwnerHandoff(savedHandoff, answer, acceptedContext);
     const update: BusinessStatementRecordUpdate = {
@@ -153,15 +166,25 @@ export function createBusinessStatementHost(input: {
     let q = latestQuestion();
     if (!q) {
       const read = h.consumer.startsWith("read_revision_"), privateRead = h.consumer === "read_revision_prerequisite";
-      await saveQuestion(presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(), revision: 1, handoff_id: h.id,
-        kind: "attributed_meaning", scope_digest: h.scope_digest, context_digest: h.context_digest,
-        target: { phase: privateRead ? input.privateCorrection ? "read_prerequisite_correction" : "read_prerequisite" : read ? "read_revision" : "action_rule_components",
+      const receipt = input.receiptDecision, previous = receipt?.predecessor;
+      let created = createOperatorQuestion({ id: randomUUID(), revision: previous ? previous.revision + 1 : 1, handoff_id: h.id,
+        kind: receipt ? "receipt_requirement" : "attributed_meaning", scope_digest: h.scope_digest, context_digest: h.context_digest,
+        target: receipt?.target ?? { phase: privateRead ? input.privateCorrection ? "read_prerequisite_correction" : "read_prerequisite" : read ? "read_revision" : "action_rule_components",
           ...(read ? { resource: "current-reviewed-read-edit" } : {}), outcomes: [] },
-        material: ["This records only your statement for this exact question. Runner must still map and validate the resulting disabled draft.",
+        material: receipt?.material ?? ["This records only your statement for this exact question. Runner must still map and validate the resulting disabled draft.",
           "It does not override the attached policy, prove database behavior, grant access or enable execution."],
         evidence: [{ id: "current-owner-question", digest: h.digest },
-          ...(input.producerQuestionDigest ? [{ id: "action-producer-question", digest: input.producerQuestionDigest }] : [])],
-        continuation: read ? "read_mapping" : "action_rule_review" }), h.question));
+          ...(input.producerQuestionDigest ? [{ id: "action-producer-question", digest: input.producerQuestionDigest }] : []),
+          ...(receipt?.evidence ?? [])],
+        ...(receipt ? { receipt_selection: receipt.selection, assistedLocalConsumer: true } : {}),
+        continuation: receipt ? "receipt_requirement_review" : read ? "read_mapping" : "action_rule_review" });
+      if (receipt) {
+        const { digest: _digest, ...body } = created;
+        const continued = { ...body,
+          ...(previous ? { budget_owner_id: previous.budget_owner_id ?? previous.id, budget: previous.budget! } : {}) };
+        created = parseOperatorQuestion({ ...continued, digest: canonicalJsonDigest(continued) });
+      }
+      await saveQuestion(presentOperatorQuestion(created, h.question));
       q = latestQuestion()!;
     }
     if (q.disposition) {
@@ -174,11 +197,18 @@ export function createBusinessStatementHost(input: {
           await adopt(previous.raw_answer!.text, undefined, false);
           savedHandoff = await createHandoff(savedHandoff.consumer);
         }
-        await saveQuestion(presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(), revision: previous.revision + 1,
+        let next = createOperatorQuestion({ id: randomUUID(), revision: previous.revision + 1,
           handoff_id: savedHandoff.id, kind: previous.kind, scope_digest: savedHandoff.scope_digest,
           context_digest: savedHandoff.context_digest, target: previous.target, material: previous.material,
           evidence: [{ id: "current-owner-question", digest: savedHandoff.digest },
-            ...previous.evidence.filter(e => e.id === "action-producer-question")], continuation: previous.continuation }), savedHandoff.question));
+            ...previous.evidence.filter(e => e.id !== "current-owner-question")], continuation: previous.continuation,
+          ...(previous.receipt_selection ? { receipt_selection: previous.receipt_selection } : {}) });
+        if (previous.kind === "receipt_requirement") {
+          const { digest: _digest, ...body } = next;
+          const continued = { ...body, budget_owner_id: previous.budget_owner_id ?? previous.id, budget: previous.budget! };
+          next = parseOperatorQuestion({ ...continued, digest: canonicalJsonDigest(continued) });
+        }
+        await saveQuestion(presentOperatorQuestion(next, savedHandoff.question));
       } else {
         if (choice !== "review") return undefined;
         await saveQuestion(reopenOperatorQuestion(q), q.digest);
@@ -199,9 +229,36 @@ export function createBusinessStatementHost(input: {
     }
     if (input.handoff?.consumer === "read_revision_prerequisite") validateReadPrerequisiteBusinessAnswer(raw);
     if (!q.proposal) {
-      await saveQuestion(proposeOperatorAnswer(q, { question_id: q.id, revision: q.revision,
+      if (q.kind === "receipt_requirement") {
+        const episode = operatorQuestionEpisode({ read: () => latestQuestion()!, save: (next, expected) => saveQuestion(next, expected) });
+        let result;
+        try {
+          result = await runOperatorQuestionModel({ question: q, stage: 'answer-map', session: input.receiptDecision!.session,
+            businessContext: input.receiptDecision!.businessContext, episodeBudget: episode,
+            reserveCorrection: () => episode.reserveCorrection(), authorityGuard: async digest => { await assertCurrent(); return digest; },
+            egressAcknowledged: true });
+        } catch (error) {
+          const failure = consumedOperatorQuestionFailure(error, q, 'answer-map');
+          if (failure) {
+            const current = latestQuestion()!, { digest: _digest, ...body } = current;
+            const stopped = { ...body, terminal_failure: { code: 'ASK_TOOL_ARGUMENTS_INVALID' as const, stage: 'answer-map' as const,
+              completion: failure.completion, recorded_at: new Date().toISOString() } };
+            await saveQuestion(parseOperatorQuestion({ ...stopped, digest: canonicalJsonDigest(stopped) }), current.digest, true);
+          }
+          throw error;
+        }
+        const current = latestQuestion()!;
+        if (result.state === 'question') throw new PolicySourceChangedError();
+        const next = proposeOperatorAnswer(current, result.proposal);
+        await saveQuestion(result.state === 'pending' ? leaveOperatorQuestionPending(next, 'unknown') : next, current.digest, true);
+        if (result.state === 'pending') return undefined;
+      } else await saveQuestion(proposeOperatorAnswer(q, { question_id: q.id, revision: q.revision,
         answer_id: q.raw_answer!.id, disposition: "proposed", value: { kind: "attributed_meaning" } }), q.digest);
       q = latestQuestion()!;
+    }
+    if (q.proposal?.disposition !== 'proposed') {
+      await saveQuestion(leaveOperatorQuestionPending(q, 'unknown'), q.digest);
+      return undefined;
     }
     const response = await exchange({ kind: "readback", binding: binding(), question: savedHandoff.question,
       lines: operatorQuestionReadback(q), defaultValue: false });

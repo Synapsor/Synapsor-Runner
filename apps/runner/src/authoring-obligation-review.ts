@@ -2,6 +2,7 @@ import { SOURCE_RECEIPT_CONTRACT, ATOMIC_EFFECT_TRANSACTION } from "./authoring-
 import { currentSourceTransactionReview, sourceTransactionMappings, sourceTransactionReviewNeeded } from './authoring-source-transaction-review.js';
 import { currentSourceTransactionScopeReview, sourceTransactionScopeQuestions, SourceTransactionScopeError } from './authoring-source-transaction-scope.js';
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { currentReceiptRequirement } from './authoring-receipt-requirement.js';
 import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, receiptSetupComponentOnly as receiptOnly, receiptConfigurationComponentOnly, type ReviewObligationAssessment, type PolicyPassage, type PolicyTextSnapshot, type ReceiptCouplingAssessment, type PolicySourceSession } from "./authoring-policy-source.js";
 import { CoverageComponentError, CoverageReceiptObservationError, CoverageReceiptReadContextError, CoverageReceiptReadExclusionError, CoverageReceiptConfigurationError, type ReceiptConfigurationFindingReason } from "./authoring-coverage-feedback.js";
 export { deferredReviewObligation } from "./authoring-policy-source.js";
@@ -389,7 +390,14 @@ export function assertRequiredReceiptCoupling(passages: readonly PolicyPassage[]
 /** Only an explicit receipt-mode requirement can supply this narrow binding.
  * Missing/ambiguous prose never means the default mode or an absent duty.
  * This does not interpret arbitrary delivery, atomicity or durability claims. */
-export function receiptRequirement(source: PolicyTextSnapshot, p: Pick<PolicyPassage, "start" | "end">): "runner_ledger" | "source_db" | undefined {
+export function receiptRequirement(source: PolicyTextSnapshot, p: Pick<PolicyPassage, "start" | "end">,
+  draft?: unknown, session?: PolicySourceSession): "runner_ledger" | "source_db" | undefined {
+  const explicit = explicitReceiptRequirement(source, p);
+  const reviewed = currentReceiptRequirement(source, p, draft, session);
+  if (explicit && reviewed && explicit !== reviewed.mode) throw new CoverageReceiptConfigurationError('mode_mismatch');
+  return explicit ?? reviewed?.mode;
+}
+function explicitReceiptRequirement(source: PolicyTextSnapshot, p: Pick<PolicyPassage, "start" | "end">): "runner_ledger" | "source_db" | undefined {
   const text = source.text.split(/\r\n|\r|\n/u).slice(p.start - 1, p.end).join("\n");
   const mentions = [...text.matchAll(/\b(runner[-_ ]ledger|source[-_ ]db|source-atomic)\s+receipt\b/giu)];
   if (mentions.length !== 1 || /\b(?:not|never|unless|instead|either|optional)\b/iu.test(text.slice(Math.max(0, mentions[0]!.index! - 45), mentions[0]!.index))) return undefined;
@@ -404,18 +412,19 @@ export function receiptRequirement(source: PolicyTextSnapshot, p: Pick<PolicyPas
 /** The configured mode is a different, narrow claim from receipt production.
  * The enclosing provider passage is retained; a pending component below keeps
  * future setup/observation duties visible. No other fields use this proof. */
-export function receiptSelectionComponent(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): PolicyPassage | undefined {
+export function receiptSelectionComponent(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown,
+  session?: PolicySourceSession): PolicyPassage | undefined {
   if (p.disposition !== "implemented") return undefined;
   const configurationReference = p.draft_paths.some(path => path === CONFIGURATION_PATH || path.startsWith(`${CONFIGURATION_PATH}/`));
   // A broad ancestor does not become a narrow mode comparison. Use the same
   // existing explicit source requirement, not interpretation keywords, to
   // identify this bounded receipt claim before model-selected paths can skip it.
-  const broadReceiptReference = receiptRequirement(source, p) && p.draft_paths.some(path =>
+  const broadReceiptReference = receiptRequirement(source, p, draft, session) && p.draft_paths.some(path =>
     path === '/runner_evidence' || path === '/runner_evidence/runtime_contract');
   if (!configurationReference && !broadReceiptReference) return undefined;
   if (!p.draft_paths.includes(CONFIGURATION_PATH)) throw new CoverageReceiptConfigurationError('reference_overbroad');
   if (p.responsibility !== "runner") throw new CoverageReceiptConfigurationError("responsibility_mismatch");
-  const mode = receiptRequirement(source, p), problem = receiptSelectionProblem(source, draft, mode);
+  const mode = receiptRequirement(source, p, draft, session), problem = receiptSelectionProblem(source, draft, mode);
   // Determine evidence independently of the submitted disposition/shape. A
   // conflict or unavailable binding is not a formatting problem, regardless of
   // which pointer is first. The original grouping is still strictly rejected.
@@ -436,7 +445,8 @@ export function receiptSelectionComponent(p: PolicyPassage, source: PolicyTextSn
 
 /** Recomputed from current host inputs, never deserialized as a provider claim.
  * All three families use the same phase record; their proof requirements differ. */
-export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): ReviewObligationAssessment | undefined {
+export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown,
+  session?: PolicySourceSession): ReviewObligationAssessment | undefined {
   const coupling = assessReceiptCouplingCapability(p, source, draft);
   if (p.disposition === 'implemented' && p.draft_paths.some(path => path === RECEIPT_READ_PATH || path.startsWith(`${RECEIPT_READ_PATH}/`))) {
     if (!currentReceiptReadExclusion(draft)) throw new CoverageReceiptReadExclusionError('proof_unavailable');
@@ -451,9 +461,9 @@ export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnaps
     && p.draft_paths.length === 2 && p.draft_paths.includes('/read') && p.draft_paths.includes(RECEIPT_PATH)) {
     throw new CoverageReceiptReadContextError();
   }
-  const selection = receiptSelectionComponent(p, source, draft);
+  const selection = receiptSelectionComponent(p, source, draft, session);
   if (p.disposition === "implemented" && (p.draft_paths.includes(READBACK_PATH)
-    || p.draft_paths.includes(RECEIPT_PATH) && receiptRequirement(source, p) && !selection && !coupling)) {
+    || p.draft_paths.includes(RECEIPT_PATH) && receiptRequirement(source, p, draft, session) && !selection && !coupling)) {
     throw new CoverageReceiptObservationError(isolatableReceiptCapability(p, source, draft));
   }
   let family: ReviewObligationAssessment["family"], phase: ReviewObligationAssessment["phase"], requirement: string, pointer: string, evidence: unknown;
@@ -472,7 +482,7 @@ export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnaps
     family = "independent_source_readback"; phase = "after_execution"; requirement = "independent_source_readback";
     pointer = READBACK_PATH; evidence = contract;
   } else if (receiptOnly(p) || receiptConfigurationComponentOnly(p)) {
-    const mode = receiptRequirement(source, p), setup = at(draft, SETUP_PATH);
+    const mode = receiptRequirement(source, p, draft, session), setup = at(draft, SETUP_PATH);
     if (!mode) return undefined;
     if (setup?.supported !== true || setup.stage !== "after_authority_review" || setup.verified !== false
       || !Array.isArray(setup.receipt_modes_supported) || !setup.receipt_modes_supported.includes(mode)) return undefined;
@@ -499,7 +509,8 @@ export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnaps
           && entry.action_digest === canonicalJsonDigest(action)))) return undefined;
     }
     family = "receipt_setup"; phase = "after_authority_review"; requirement = mode; pointer = RECEIPT_PATH;
-    evidence = { setup, configuration: configured ?? null, actions: at(draft, "/runner_evidence/actions") };
+    evidence = { setup, configuration: configured ?? null, actions: at(draft, "/runner_evidence/actions"),
+      ...(currentReceiptRequirement(source, p, draft, session) ? { owner_meaning: currentReceiptRequirement(source, p, draft, session) } : {}) };
   } else return undefined;
   return { ...(family === "receipt_setup" ? { configuration_digest: at(draft, CONFIGURATION_PATH)?.digest ?? null,
     ...(receiptConfigurationComponentOnly(p) ? { association: { kind: "reviewed_receipt_configuration" as const,

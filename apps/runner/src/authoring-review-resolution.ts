@@ -8,6 +8,7 @@ export const REVIEW_RESOLUTION_HANDLERS = {
   source_transaction_scope_review: 'localSourceTransactionScopeReview',
   scoped_disclosure_review: 'localScopedDisclosureReview',
   counting_review: 'reviewUnestablishedCounting',
+  receipt_requirement_review: 'reviewBusinessAnswer',
   scoped_correction: 'createCoverageRepairScope',
   reinspection: 'inspectPolicyReviewSource',
 } as const;
@@ -52,7 +53,8 @@ const reasonPolicy = {
   'receipt_duty.evidence_stale':reinspection,
   'receipt_exclusion.proof_unavailable':terminal, 'receipt_exclusion.component_not_isolatable':terminal,
   'receipt_exclusion.current_proof_mixed_component':model,
-  'receipt_configuration.source_requirement_unestablished':terminal,
+  'receipt_configuration.source_requirement_unestablished':{operation:'receipt_requirement_review',actor:'operator',availability:'available',
+    cost:'provider_episode',consent:'bounded_episode'},
   'receipt_configuration.selection_unavailable':reinspection,
   'receipt_configuration.mode_mismatch':terminal,
   'receipt_configuration.component_not_isolatable':terminal,
