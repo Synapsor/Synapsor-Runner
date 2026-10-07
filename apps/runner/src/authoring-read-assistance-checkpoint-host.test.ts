@@ -19,9 +19,14 @@ import { storeReadWorkloadAnalysis, listReadWorkloadAnalyses } from "./read-work
 const question = { resource: "public.orders", field: "status", reason: "Meaning missing from this view", question: "Which fulfillment stages should this view describe?" };
 const response = (args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "read_host_control", name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } });
 const mapping = { allowed: [{ id: "my_orders", description: "List my orders", plan: { kind: "rows", resource: "public.orders", select: ["status"] } }], forbidden: [] };
-async function harness() {
+async function harness(relativeTime = false) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "read-checkpoint-host-"));
   const boundary = generatedBoundary();
+  if (relativeTime) {
+    boundary.pack.resources[0]!.field_types.created_at = "timestamptz";
+    boundary.pack.resources[0]!.selectable_fields.push("created_at");
+    boundary.pack.resources[0]!.time_bucket_fields.created_at = ["day"];
+  }
   let context = canonicalJsonDigest("declared current Source and reader"), candidate = explorationBoundaryCandidateDigest(boundary);
   let state: { checkpoint?: ReadWorkloadAssistanceCheckpoint; read?: BoundaryAuthoringResumeRead; handoffs: AuthoringOwnerHandoff[]; questions: OperatorQuestion[]; recovery?: AuthoringTransportState } = { handoffs: [], questions: [] };
   const permit = Object.freeze({ testPermit: "identity-only mock native mutation port" }) as never;
@@ -54,6 +59,22 @@ async function harness() {
 }
 
 describe("initial Read assistance checkpoint host native producer boundary", () => {
+  it("commits a valid relative-window mapping when the clock advances between producer and host validation", async () => {
+    const h = await harness(true);
+    let clock = Date.parse("2026-10-07T15:00:00Z");
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock++);
+    const send = vi.fn(async () => response({ ...mapping, allowed: [{ ...mapping.allowed[0], plan: {
+      ...mapping.allowed[0]!.plan, time_window: { field: "created_at", window: "last_30_days" },
+    } }] }));
+    try {
+      const result = await h.run(send);
+      expect(result.analysis.status).toBe("ready"); expect(send).toHaveBeenCalledOnce();
+      expect(h.state().checkpoint).toBeUndefined(); expect(h.state().read?.analysis_id).toBeTruthy();
+      const records = await listReadWorkloadAnalyses({ projectRoot: h.root, generatedBoundary: h.boundary });
+      expect(records).toHaveLength(1); expect(records[0]!.analysis).toEqual(result.analysis);
+      expect(records[0]!.authority_granted).toBe(false); expect(h.append).not.toHaveBeenCalled();
+    } finally { now.mockRestore(); await h.cleanup(); }
+  });
   it("stops a failed pre-I/O dispatch save without sending, clearing or renewing producer limits", async () => {
     const h = await harness(), send = vi.fn(async () => response(mapping));
     try { h.saveFault.subject = "The Read dispatch checkpoint";

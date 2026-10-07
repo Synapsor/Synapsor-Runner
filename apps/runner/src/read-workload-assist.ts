@@ -407,15 +407,18 @@ export function normalizeReadWorkloadSet(value: unknown): ReadWorkloadSet {
 export function analyzeReadWorkloadSet(input: {
   workload: unknown;
   generatedBoundary: ExplorationBoundaryDraft;
+  /** Host-owned preview clock; all passes must resolve relative plans identically. */
+  now?: number;
 }): ReadWorkloadAnalysis {
+  const now = input.now ?? Date.now();
   const workload = normalizeReadWorkloadSet(input.workload);
   const generated = input.generatedBoundary;
   if (generated.activation !== "disabled_unreviewed") {
     throw new Error("READ_WORKLOAD_BOUNDARY_INVALID: workload analysis requires a disabled generated boundary draft.");
   }
   const validationBoundary = activatedFacade(generated);
-  const allowed = workload.allowed.map((entry) => validateAllowedEntry(entry, validationBoundary));
-  const forbidden = workload.forbidden.map((entry) => validateForbiddenEntry(entry, validationBoundary));
+  const allowed = workload.allowed.map((entry) => validateAllowedEntry(entry, validationBoundary, now));
+  const forbidden = workload.forbidden.map((entry) => validateForbiddenEntry(entry, validationBoundary, now));
   const blockers = allowed
     .filter((entry) => entry.status !== "supported")
     .map((entry) => `${entry.id}: ${entry.reason ?? "the allowed plan is not supported by generated authority"}`);
@@ -431,12 +434,12 @@ export function analyzeReadWorkloadSet(input: {
       const compiled = compileBoundaryCandidate(generated, atoms);
       const candidateBoundary = activatedFacade(compiled);
       for (const entry of workload.allowed) {
-        const validated = validateExploreRequest(entry.plan, candidateBoundary);
+        const validated = validateExploreRequest(entry.plan, candidateBoundary, { now });
         compileExplorePlan(validated.plan, candidateBoundary, placeholderContext(), generatedEngine(generated));
       }
       for (const entry of workload.forbidden) {
         try {
-          validateExploreRequest(entry.plan, candidateBoundary);
+          validateExploreRequest(entry.plan, candidateBoundary, { now });
           blockers.push(
             `${entry.id}: forbidden plan is still expressible by the minimum allowed authority; revise the workload because the allowed and forbidden requirements conflict.`,
           );
@@ -459,6 +462,7 @@ export function analyzeReadWorkloadSet(input: {
       validateExploreRequest(
         workload.forbidden.find((candidateEntry) => candidateEntry.id === entry.id)!.plan,
         activatedFacade(candidate),
+        { now },
       );
       return {
         ...entry,
@@ -723,10 +727,11 @@ function reviewedFilterPlaceholder(
 function validateAllowedEntry(
   entry: ReadWorkloadEntry,
   boundary: ActivatedExplorationBoundary,
+  now: number,
 ): ReadWorkloadValidation {
   try {
     assertExactMetadataReferences(entry.plan, boundary);
-    const validated = validateExploreRequest(entry.plan, boundary);
+    const validated = validateExploreRequest(entry.plan, boundary, { now });
     compileExplorePlan(validated.plan, boundary, placeholderContext(), generatedEngine(boundary));
     return {
       id: entry.id,
@@ -750,10 +755,11 @@ function validateAllowedEntry(
 function validateForbiddenEntry(
   entry: ReadWorkloadEntry,
   boundary: ActivatedExplorationBoundary,
+  now: number,
 ): ReadWorkloadValidation {
   try {
     assertExactMetadataReferences(entry.plan, boundary);
-    const validated = validateExploreRequest(entry.plan, boundary);
+    const validated = validateExploreRequest(entry.plan, boundary, { now });
     return {
       id: entry.id,
       description: entry.description,

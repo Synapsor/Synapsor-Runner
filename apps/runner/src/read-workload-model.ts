@@ -53,6 +53,8 @@ function isReadProviderFailure(error: unknown): error is AskError {
 export type ModelReadWorkloadResult = {
   workload: ReadWorkloadSet;
   analysis: ReadWorkloadAnalysis;
+  /** Transient host clock for exact acceptance revalidation; never model or saved authority. */
+  analysis_clock?: number;
   provider: AskProvider;
   model: string;
   authority_granted: false;
@@ -182,6 +184,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
 
   let workload: ReadWorkloadSet | undefined;
   let analysis: ReadWorkloadAnalysis | undefined;
+  let analysisClock: number | undefined;
   let valueRequest: ModelReadValueRequest | undefined;
   let clarificationRequest: ModelReadClarificationRequest | undefined;
   let clarificationFromInvalidNaming = false;
@@ -552,9 +555,11 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         },
       };
       try {
+        const candidateAnalysisClock = Date.now();
         const candidateAnalysis = analyzeReadWorkloadSet({
           workload: candidateWorkload,
           generatedBoundary: mappingBoundary,
+          now: candidateAnalysisClock,
         });
         if (candidateAnalysis.status === "blocked") {
           candidateAnalysis.blockers = [...misplacedReadRootFieldIssues(args), ...candidateAnalysis.blockers];
@@ -567,6 +572,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         }
         workload = candidateWorkload;
         analysis = candidateAnalysis;
+        analysisClock = candidateAnalysisClock;
         workloadValidationBlockers = [];
       } catch (error) {
         workload = undefined;
@@ -1141,6 +1147,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     workload,
     ...(diagnostics.length ? { diagnostics } : {}),
     analysis,
+    analysis_clock: analysisClock,
     provider: input.provider,
     model: input.model,
     authority_granted: false,

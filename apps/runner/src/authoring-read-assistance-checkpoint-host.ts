@@ -58,7 +58,10 @@ export function createReadAssistanceCheckpointHost({ access }: { access: ReadAss
         if (!accepted || accepted.analysis.status !== "ready") throw access.checkpointFailure("The accepted Read mapping");
         // The immutable analysis is inert until the SAME resume CAS records its
         // exact pointer. Failure never clears a question or acknowledges a save.
-        const analysis = analyzeReadWorkloadSet({ workload: accepted.workload, generatedBoundary: currentBoundary });
+        // A rolling window is resolved during the producer's analysis. Reuse
+        // that host-only clock rather than making an unchanged plan appear stale.
+        const analysis = analyzeReadWorkloadSet({ workload: accepted.workload, generatedBoundary: currentBoundary,
+          now: accepted.analysis_clock });
         if (analysis.status !== "ready" || canonicalJsonDigest(analysis) !== canonicalJsonDigest(accepted.analysis)) {
           throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The accepted mapping no longer validates against the current Read catalog.");
         }
