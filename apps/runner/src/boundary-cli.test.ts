@@ -9366,7 +9366,9 @@ describe("boundary operator-plane CLI", () => {
         }
         const details: string[][] = [], diagnostics: string[] = [];
         const confirmAction = vi.fn(async () => false);
+        const policyConfirm = vi.fn(resumedSession.confirm);
         const policySession: BoundaryReviewInteractiveSession = { ...resumedSession,
+          confirm: policyConfirm,
           chooseResource: async (_resources, _overview, options) => {
             if (recovery && phase !== "ready") throw new Error("Pending rules must not fall into the manual editor");
             diagnostics.push(JSON.stringify(options?.notice)); return undefined;
@@ -9950,6 +9952,16 @@ describe("boundary operator-plane CLI", () => {
         expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeReadBefore);
         expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
         if (posture === "policy_target_business") {
+          // This later Source reconciliation is already requested. The same
+          // actual before/after reaches details, without a second primary Save.
+          expect(policyConfirm.mock.calls.some(([question]) => question === "Save this exact disabled Action edit?")).toBe(false);
+          const readback = vi.mocked(chat.rememberDetails).mock.calls.find(([title]) => title === "Exact Action revision")?.[1];
+          expect(readback).toBeDefined();
+          const beforeIndex = readback!.indexOf("Before:"), afterIndex = readback!.indexOf("After:");
+          expect(beforeIndex).toBeGreaterThan(0);expect(afterIndex).toBeGreaterThan(beforeIndex);
+          expect(JSON.parse(readback!.slice(beforeIndex + 1, afterIndex).join("\n"))).toEqual(revise.mock.calls[0]![0].existingDraft);
+          const actualRevision = await revise.mock.results[0]!.value;
+          expect(JSON.parse(readback!.slice(afterIndex + 1).join("\n"))).toEqual(actualRevision.compiled.draft);
           const checkpoint = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
           expect(checkpoint.conversation).toContainEqual(expect.objectContaining({
             answer: "Require two reviewers for this same outcome; keep the others unchanged.",
