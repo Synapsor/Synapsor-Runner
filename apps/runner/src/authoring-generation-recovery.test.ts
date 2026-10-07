@@ -10,7 +10,7 @@ import { authoringReadCheckpoint, assertAuthoringReadCheckpoint, authoringReadDe
   recoverAuthoringGeneration, prepareAuthoringManualRecovery, permitAuthoringManualRecovery,
   prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, createAuthoringHostEpisodeBudget,
   beginAuthoringProducerInvocation, authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
-  assertAuthoringTransportAdvance, authoringInterruptedRecoveryNeeded,
+  assertAuthoringTransportAdvance, authoringInterruptedRecoveryNeeded, authoringInterruptedProducerInput,
   validateAuthoringTransportState, withAuthoringGenerationRecovery,
   isAuthoringGenerationStop, type AuthoringGenerationHost, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
@@ -102,6 +102,48 @@ describe("producer correction ownership",()=>{
     await expect(enter(m,run)).rejects.toBeDefined();
     expect(f.sends()).toBe(3);expect(JSON.stringify(m.read().operations[1])).toBe(old);
     expect(m.read().episodes!.find(e=>e.id===owner)!.correction_used).toBe(true);
+  });
+});
+
+describe("exact linked Source producer handoff",()=>{
+  it("uses the original Source round and fallback counters; another origin refuses before charge",async()=>{
+    const f=await fixture("B-success"),m=memory(f.endpoint,0),key=canonicalJsonDigest("coverage tools");
+    const origin={consumer:"policy_coverage" as const,episode_id:"11111111-1111-4111-8111-111111111111",
+      context_digest:canonicalJsonDigest("prepared Source business context"),submission_number:1};
+    const original={...input(f.endpoint),authoringInput:origin};
+    await expect(enter(m,async()=>{
+      const budget=(await createAuthoringHostEpisodeBudget({keyDigest:key,conversational:false}))!;
+      try{return await recoverAuthoringGeneration(original,secureAskJsonRequest,()=>budget.admitIteration());}
+      finally{budget.release();}
+    })).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_UNKNOWN"});
+    const old=JSON.stringify(m.read().operations[0]),owner=m.read().operations[0]!.episode_id;
+    await enter(m,async()=>{await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(canonicalJsonDigest("saved revision")));});
+    await enter(m,async()=>{
+      expect(await authoringInterruptedProducerInput("policy_coverage")).toEqual(origin);
+      const budget=(await createAuthoringHostEpisodeBudget({keyDigest:key,conversational:false}))!;
+      expect(budget.ownerId).toBe(owner);
+      const before=JSON.stringify(m.read());
+      await expect(recoverAuthoringGeneration({...original,authoringInput:{...origin,episode_id:"22222222-2222-4222-8222-222222222222"}},secureAskJsonRequest,
+        ()=>budget.admitIteration())).rejects.toMatchObject({code:"ASK_GENERATION_CONTEXT_CHANGED"});
+      expect(JSON.stringify(m.read())).toBe(before);expect(f.sends()).toBe(1);
+      const response=await recoverAuthoringGeneration(original,secureAskJsonRequest,()=>budget.admitIteration());
+      await authoringGenerationHandled([response]);budget.release();
+    });
+    expect(f.sends()).toBe(2);expect(JSON.stringify(m.read().operations[0])).toBe(old);
+    expect(m.read().episodes).toHaveLength(1);expect(m.read().episodes![0]!.iterations_used).toBe(2);
+    expect(m.read().operations[1]).toMatchObject({producer_input:origin,episode_id:owner,
+      recovery_of:{root_operation_id:m.read().operations[0]!.id}});
+    expect(f.bodies.every(body=>!body.includes(origin.episode_id))).toBe(true);
+  });
+  it("refuses a changed business context before restoring the selected Source controller",async()=>{
+    const f=await fixture("B-success"),m=memory(f.endpoint,0);
+    await expect(enter(m,()=>recoverAuthoringGeneration({...input(f.endpoint),authoringInput:{consumer:"policy_coverage",
+      episode_id:"11111111-1111-4111-8111-111111111111",context_digest:canonicalJsonDigest("Source"),submission_number:1}},secureAskJsonRequest)))
+      .rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_UNKNOWN"});
+    await enter(m,async()=>{await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(canonicalJsonDigest("saved revision")));});
+    const before=JSON.stringify(m.read());m.drift();
+    await expect(enter(m,()=>authoringInterruptedProducerInput("policy_coverage"))).rejects.toMatchObject({code:"ASK_GENERATION_CONTEXT_CHANGED"});
+    expect(JSON.stringify(m.read())).toBe(before);expect(f.sends()).toBe(1);
   });
 });
 

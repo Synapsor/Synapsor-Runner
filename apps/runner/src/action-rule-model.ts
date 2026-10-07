@@ -4,7 +4,7 @@ import { buildActionAuthoringWorkUnitContract, pendingActionWorkUnitSourceReview
   ActionWorkUnitFidelityError, ActionWorkUnitSourcePendingError, actionWorkUnitFidelityDiagnostics,
   type ActionWorkUnitContext, type ActionWorkUnitFidelityAssessment,
   type ActionWorkUnitSourceReview, type ActionWorkUnitSourceReviewStatus } from "./action-authoring-work-unit-contract.js";
-import { authoringQuestionSequenceCompletion, type AuthoringQuestionCompletion, authoringManualProducerInput } from "./authoring-generation-recovery.js";
+import { authoringQuestionSequenceCompletion, type AuthoringQuestionCompletion, authoringInterruptedProducerInput } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { operatorBusinessContext, operatorClarificationGate, presentOperatorClarification } from "./authoring-operator-presentation.js";
 import { historySelectorChanges, type HistorySelectorReview } from "./action-history-selector-review.js";
@@ -1028,7 +1028,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     businessWordingIssue = undefined;
     validationAttempted = false;
     const progressBefore = draftProgressRevision;
-    const origin = await authoringManualProducerInput("action_rule_components");
+    const origin = await authoringInterruptedProducerInput("action_rule_components");
     if (origin) {
       // Only an original instruction or a currently retained, attributed answer
       // is usable. Restore the origin frame, not the current disk/CAS revision.
@@ -1039,6 +1039,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       if (program) program = {...program, resume_revision: origin.program_resume_revision!};
     }
     await startOrdinaryTurn();
+    if (origin?.logical_turn_id && origin.logical_turn_id !== logicalTurns?.at(-1)?.id)
+      throw new AskError("ASK_GENERATION_CONTEXT_CHANGED", "The interrupted Action's exact owning turn is unavailable. Inspect retained work; no other turn's allowance was used.", 409);
     if (sourceRepair && !sourceInvocationReserved) {
       if (!input.onCheckpoint) throw new Error("ACTION_SOURCE_REPAIR_NOT_SAVED: Preserve the original nomination; no correction was sent.");
       if (sourceRepair.corrections_used >= MAX_FINAL_COMPILER_REPAIRS) {
@@ -1056,7 +1058,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       // another autonomous drafting call to guess its answer.
       stopAfterAuthoringToolBatch: () => Boolean(stagedVersion || clarification),
       authoringInput: {consumer: "action_rule_components", operator_message: operatorMessage,
-        ...(program ? {program_resume_revision: program.resume_revision as `sha256:${string}`} : {})},
+        ...(program ? {program_resume_revision: program.resume_revision as `sha256:${string}`} : {}),
+        ...(mediatedVersion ? {logical_turn_id: logicalTurns!.at(-1)!.id} : {})},
       configuration, tools, gateway, authorityDigest,
       signal: input.signal ?? new AbortController().signal,
       dependencies: {

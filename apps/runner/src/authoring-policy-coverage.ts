@@ -846,7 +846,8 @@ export async function reviewPolicyCoverage(input: {
   sourceSession?: PolicySourceSession;
   previousReport?: PolicyCoverage;
   retainedDutyPlan?: RetainedDutyPlan;
-  episode?: { beforeSubmission: (number: number) => Promise<void>;
+  episode?: { authoringInput?: (number: number) => import("./model-provider-transport.js").ProviderHttpInput["authoringInput"];
+    beforeSubmission: (number: number) => Promise<void>;
     afterSubmission: (number: number, feedback: CoverageFeedback | undefined, accepted: boolean, tentative?: NonNullable<CoverageReviewEpisode["submissions"][number]["tentative"]>) => Promise<void> };
 }): Promise<PolicyCoverage> {
   if (activePolicySource(input.session.conversation?.policySources)?.digest !== input.source.digest) {
@@ -1022,6 +1023,7 @@ export async function reviewPolicyCoverage(input: {
       await input.episode?.beforeSubmission(attempt + 1);
       report = undefined; feedback = undefined; submissionEvidence = undefined;
       await runAskProviderTurn({ configuration: {...configuration,authority_digest:authorityDigest}, authorityDigest, gateway, tools, signal: new AbortController().signal,
+        ...(input.episode?.authoringInput ? {authoringInput:input.episode.authoringInput(attempt + 1)} : {}),
         dependencies: session.dependencies, history: modelAuthoringHistory(session.conversation, session),
         question: [repairScope ? "Correct ONLY the nominated unaccepted region using the scoped tool envelope. The full report will be revalidated; no retained passage is certified." : "Review every nonblank source line against this actual draft. Return all dispositions, not just successes.",
           `Fixed source inventory for this episode: ${JSON.stringify(repairScope ? {...inventory,response_contract:"scoped_generation_complete_validation"} : inventory)}`,

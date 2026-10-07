@@ -200,9 +200,19 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
     }
     if (op.producer_input !== undefined) {
       const p = op.producer_input;
-      if (!p || typeof p !== "object" || !exactKeys(p,["consumer","operator_message","program_resume_revision"])
-        || p.consumer !== "action_rule_components" || typeof p.operator_message !== "string" || !p.operator_message.trim()
-        || p.operator_message.length > 4_000 || p.program_resume_revision !== undefined && !digest(p.program_resume_revision)) throw invalid();
+      if (!p || typeof p !== "object") throw invalid();
+      if (p.consumer === "action_rule_components") {
+        if (!exactKeys(p,["consumer","operator_message","program_resume_revision","logical_turn_id"])
+          || typeof p.operator_message !== "string" || !p.operator_message.trim()
+          || p.operator_message.length > 4_000 || p.program_resume_revision !== undefined && !digest(p.program_resume_revision)
+          || p.logical_turn_id !== undefined && !id(p.logical_turn_id)) throw invalid();
+      } else if (p.consumer === "authoring_turn") {
+        if (!exactKeys(p,["consumer","episode_id"]) || !id(p.episode_id) || p.episode_id !== op.episode_id) throw invalid();
+      } else if (p.consumer === "policy_coverage") {
+        if (!exactKeys(p,["consumer","episode_id","context_digest","submission_number"])
+          || !id(p.episode_id) || !digest(p.context_digest) || !Number.isSafeInteger(p.submission_number)
+          || p.submission_number < 1 || p.submission_number > 3) throw invalid();
+      } else throw invalid();
     }
     if (op.question_handoff !== undefined) {
       const h = op.question_handoff;
@@ -316,7 +326,7 @@ export type AuthoringManualRecoveryPreview = {
 /** Restore only product-authored producer inputs for the exact permitted step.
  * The caller still constructs the complete request normally; its final digest
  * must match at admission. This neither imports a response nor ignores CAS. */
-export async function authoringManualProducerInput(consumer: NonNullable<ProviderHttpInput["authoringInput"]>["consumer"]): Promise<ProviderHttpInput["authoringInput"]> {
+export async function authoringManualProducerInput<C extends NonNullable<ProviderHttpInput["authoringInput"]>["consumer"]>(consumer: C): Promise<Extract<NonNullable<ProviderHttpInput["authoringInput"]>, {consumer:C}> | undefined> {
   const host = storage.getStore()?.host;
   if (!host) return undefined;
   const state = structuredClone(host.read() ?? {version: 1 as const, operations: []});
@@ -325,7 +335,22 @@ export async function authoringManualProducerInput(consumer: NonNullable<Provide
   if (!op?.producer_input) return undefined; // Never fabricate origin for historical records.
   if (op.producer_input.consumer !== consumer || await currentRecoveryContext(host) !== op.context_digest)
     throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
-  return structuredClone(op.producer_input);
+  return structuredClone(op.producer_input) as Extract<NonNullable<ProviderHttpInput["authoringInput"]>, {consumer:C}>;
+}
+/** Exact origin of the explicitly selected unfinished producer. Historical
+ * records without an origin cannot acquire one from a similar current target. */
+export async function authoringInterruptedProducerInput<C extends NonNullable<ProviderHttpInput["authoringInput"]>["consumer"]>(consumer: C): Promise<Extract<NonNullable<ProviderHttpInput["authoringInput"]>, {consumer:C}> | undefined> {
+  const host = storage.getStore()?.host;
+  if (!host) return undefined;
+  const state = structuredClone(host.read() ?? {version:1 as const,operations:[]});
+  validateAuthoringTransportState(state);
+  const disposition = state.interrupted_dispositions?.find(d => d.status === "permitted");
+  if (!disposition) return authoringManualProducerInput(consumer);
+  const op = state.operations.find(o => o.id === disposition.operation_id);
+  if (!op?.producer_input) return interruptedRecoveryUnavailable("This historical step has no recorded producer origin. Inspect current saved work or start a separately reviewed job; no controller or allowance was invented.");
+  if (op.producer_input.consumer !== consumer || await currentRecoveryContext(host) !== disposition.current_context_digest)
+    throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
+  return structuredClone(op.producer_input) as Extract<NonNullable<ProviderHttpInput["authoringInput"]>, {consumer:C}>;
 }
 function manualRecoveryUnavailable(message: string): never {
   throw new AskError("ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE", message, 409);
@@ -911,6 +936,11 @@ export async function recoverAuthoringGeneration(input: ProviderHttpInput,
   if (!interrupted && initial.interrupted_dispositions?.some(d => d.status === "local_review" && d.current_context_digest === context))
     return interruptedRecoveryUnavailable("The same unfinished step remains under local review. No generation permission was granted by its disposition.");
   if (interrupted && context !== interrupted.current_context_digest) throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
+  if (interrupted) {
+    const origin = initial.operations.find(o => o.id === interrupted.operation_id)?.producer_input;
+    if (origin && canonicalJsonDigest(origin) !== canonicalJsonDigest(input.authoringInput ?? null))
+      throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
+  }
   if (interrupted?.episode_id && frame.episode_id !== interrupted.episode_id) throw new AskError("ASK_GENERATION_LEGACY_BUDGET_UNAVAILABLE",
     "The linked request must use its original saved episode owner. No provider allowance was renewed.",409);
   const body = structuredClone(input.body), requestDigest = canonicalJsonDigest({body, endpoint: input.endpoint.href, stream: input.stream?.format ?? null});

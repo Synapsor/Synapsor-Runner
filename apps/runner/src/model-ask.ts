@@ -707,7 +707,8 @@ export async function runAskProviderTurn(input: {
   let currentCallbackMayHaveRun = false;
   const requestJson: NonNullable<AskProviderDependencies["requestJson"]> = (requestInput) => checked(async () => {
     const preparedInput = { ...requestInput, signal, contextMeasurement,
-      ...(input.authoringInput ? {authoringInput: input.authoringInput} : {}) };
+      ...(input.authoringInput ? {authoringInput: input.authoringInput}
+        : hostEpisode ? {authoringInput: {consumer:"authoring_turn" as const,episode_id:hostEpisode.ownerId}} : {}) };
     if (input.gateway.mode !== "authoring") return request(preparedInput);
     await authoringGenerationHandled(generationResults);
     // A completed preceding callback remains historical progress. If the next

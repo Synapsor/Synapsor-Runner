@@ -1,4 +1,7 @@
-import { reviewInterruptedAuthoringStep } from "./authoring-interrupted-step-review.js";
+import { presentAuthoringRecovery } from "./authoring-interrupted-step-review.js";
+import { retainedRecoveryOwner } from "./authoring-recovery-owner.js";
+import { saveAuthoringRecoveryResume } from "./authoring-recovery-resume.js";
+import { createAuthoringRecoveryHost } from "./authoring-recovery-host.js";
 import { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
 export { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
 import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, authoringActionCheckpoint, authoringReadCheckpoint, authoringReadDecisionCheckpoint, assertAuthoringReadCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, authoringInterruptedRecoveryNeeded, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
@@ -4953,11 +4956,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let generationRecoveryPermit: ProjectAuthorityMutationPermit | undefined;
   const writeGenerationRecovery = async (state: AuthoringTransportState, permit?: ProjectAuthorityMutationPermit) => {
     if (!activeResume || activeResume.revision_digest !== savedResumeRevision || resumePersistenceBlocked) throw checkpointSaveFailure("Transport history");
-    await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
-    const core = { ...activeResume, generation_recovery: structuredClone(state), updated_at: new Date().toISOString() };
-    const {revision_digest: _old, ...unsigned} = core;
-    const next = {...unsigned, revision_digest: canonicalJsonDigest(unsigned)};
-    await writeBoundaryAuthoringResumeState(input.projectRoot, next, {expectedRevisionDigest: savedResumeRevision, permit});
+    const next = await saveAuthoringRecoveryResume({ resume: activeResume, expectedRevision: savedResumeRevision,
+      recovery: state, permit,
+      assertCurrent: currentPermit => assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume!, undefined, { permit: currentPermit }),
+      write: (next, options) => writeBoundaryAuthoringResumeState(input.projectRoot, next, options) });
     activeResume = next; savedResumeRevision = next.revision_digest; generationRecovery = next.generation_recovery;
   };
   const reviewConnectionRecovery = async (title: string): Promise<boolean> => {
@@ -5024,7 +5026,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     },
     progress: message => input.authoringChat?.runner("AUTHORING CONNECTION", [message]),
   });
-  const reviewInterruptedStep = async () => {
+  const reviewRecoveryStep = async (kind: "interrupted" | "manual") => {
     if (!activeResume || activeResume.revision_digest !== savedResumeRevision || revalidateSavedJob)
       throw checkpointSaveFailure("The interrupted business step review");
     const reviewedResume = activeResume;
@@ -5039,51 +5041,44 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           ? await policySourceSavedDigest(input.projectRoot, reviewedResume.policy_source_session) : null,
         resume: reviewedResume.revision_digest });
     };
-    const inspected = await inspectCurrent();
-    const unresolved = generationRecovery ? unresolvedAuthoringTransportOperations(generationRecovery) : [];
-    let selectedOperation: string | undefined;
-    if (unresolved.length > 1) {
-      selectedOperation = await input.session.chooseOption?.("REVIEW RETAINED UNFINISHED STEPS", [
-        ...unresolved.map((operation, index) => ({ value: operation.id, label: `Inspect unfinished recorded step ${index + 1}`,
-          detail: `Exact operation: ${operation.id}; current state: ${operation.state}` })),
-        { value: "pause", label: "Keep all steps pending" },
-      ], { initialValue: "pause", context: [
-        "Several saved steps need inspection. Each decision retains the original uncertainty; no request is sent.",
-        "Inspect and record local review of earlier steps before selecting bounded continuation of the still-unfinished task.",
-      ] });
-      if (!selectedOperation || selectedOperation === "pause") return {
-        ...boundaryAssistResult(boundaryAssistBackNotice("All unfinished steps remain pending. No decision or provider request was made.")), navigation: "pause" as const };
-    }
-    const decision = await reviewInterruptedAuthoringStep({ session: input.session,
-      businessContext: [`Saved job: ${reviewedResume.job_intent}`,
-        `Unfinished task: ${formatBoundaryAuthoringStage(reviewedResume.stage)}`,
-        ...(reviewedResume.pending_action_revision ? [`Pending change: ${reviewedResume.pending_action_revision.instruction}`] : []),
-        ...(reviewedResume.pending_read_revision ? [`Pending Read change: ${reviewedResume.pending_read_revision}`] : [])],
-      prepare: async () => {
-        const preview = await prepareAuthoringInterruptedRecovery(reviewedResume.revision_digest, undefined, selectedOperation);
-        const turn = (reviewedResume.pending_action_revision?.checkpoint ?? reviewedResume.action?.checkpoint)?.logical_turns?.at(-1);
-        const knownTypedAllowance = turn && !turn.completed && turn.iterations_used < 12 && turn.tool_calls_used < 24
-          || reviewedResume.operator_questions?.some(question => question.budget && !question.confirmation
-            && question.budget.iterations_used < 6 && question.budget.tool_calls_used < 8);
-        return { preview, canContinue: preview.unresolved_operation_count === 1 && preview.remaining_attempts > 0 && Boolean(preview.episode_id || knownTypedAllowance),
-          details: [`Saved job revision: ${reviewedResume.revision_digest}`,
-            `Current inspected state: ${inspected}`, `Interrupted operation: ${preview.operation_id}; attempt: ${preview.attempt_id}`,
-            `Remaining attempts in this generation chain: ${preview.remaining_attempts}`,
-            ...(!preview.episode_id && !knownTypedAllowance ? ["No provable saved provider allowance owns this historical step. Local current-work review remains available; this does not grant a new provider episode."] : []),
-            "The original response and local save outcome are not acknowledged by this review.",
-            "Retained business state:", ...JSON.stringify({ stage: reviewedResume.stage,
-              action: reviewedResume.action, pending_action_revision: reviewedResume.pending_action_revision,
-              read_assistance: reviewedResume.read_assistance, pending_read_revision_state: reviewedResume.pending_read_revision_state,
-              owner_handoffs: reviewedResume.owner_handoffs, operator_questions: reviewedResume.operator_questions }, null, 2).split("\n")] };
-      },
-      record: async (preview, mode) => withProjectAuthorityMutation(input.projectRoot, async permit => {
+    const record = async (inspected: `sha256:${string}`, run: () => Promise<void>) =>
+      withProjectAuthorityMutation(input.projectRoot, async permit => {
         generationRecoveryPermit = permit;
         try {
-          if (await inspectCurrent(permit) !== inspected) throw new Error("AUTHORING_RECOVERY_CONTEXT_CHANGED: Saved rules or inspected metadata changed during recovery review. Reopen the current saved step; no recovery decision was recorded.");
-          await permitAuthoringInterruptedRecovery(preview, { mode });
+          if (await inspectCurrent(permit) !== inspected) throw new Error("AUTHORING_RECOVERY_CONTEXT_CHANGED: Saved rules or inspected metadata changed during recovery review. Reopen current saved work; no recovery decision was recorded.");
+          await run();
         } finally { generationRecoveryPermit = undefined; }
-      }),
-    });
+      });
+    return createAuthoringRecoveryHost({
+      access: {
+        inspect: async () => ({ resume: reviewedResume.revision_digest, digest: await inspectCurrent(),
+          recovery: generationRecovery ? structuredClone(generationRecovery) : undefined,
+          business: [`Saved job: ${reviewedResume.job_intent}`,
+            `Unfinished task: ${formatBoundaryAuthoringStage(reviewedResume.stage)}`,
+            `Provider/model: ${reviewedResume.model.provider}[${reviewedResume.model.name}]`,
+            ...(reviewedResume.pending_action_revision ? [`Pending change: ${reviewedResume.pending_action_revision.instruction}`] : [])],
+          retained: ["Retained business state:", ...JSON.stringify({ stage: reviewedResume.stage,
+            action: reviewedResume.action, pending_action_revision: reviewedResume.pending_action_revision,
+            read_assistance: reviewedResume.read_assistance, pending_read_revision_state: reviewedResume.pending_read_revision_state,
+            owner_handoffs: reviewedResume.owner_handoffs, operator_questions: reviewedResume.operator_questions }, null, 2).split("\n")],
+        }),
+        unresolved: state => state ? unresolvedAuthoringTransportOperations(state) : [],
+        prepareInterrupted: (revision, operation) => prepareAuthoringInterruptedRecovery(revision, undefined, operation),
+        prepareManual: prepareAuthoringManualRecovery,
+        hasRemainingOwner: async (inspection, preview) => retainedRecoveryOwner({
+          recovery: inspection.recovery, preview,
+          sources: reviewedResume.policy_source_session
+            ? await loadPolicySources(input.projectRoot, reviewedResume.policy_source_session) : undefined,
+          actionTurn: (reviewedResume.pending_action_revision?.checkpoint ?? reviewedResume.action?.checkpoint)?.logical_turns?.at(-1),
+        }),
+        recordInterrupted: (preview, mode, inspected) => record(inspected, () => permitAuthoringInterruptedRecovery(preview, { mode })),
+        recordManual: (preview, inspected) => record(inspected, () => permitAuthoringManualRecovery(preview)),
+      },
+      interact: view => presentAuthoringRecovery(view, input.session),
+    }).review(kind);
+  };
+  const reviewInterruptedStep = async () => {
+    const decision = await reviewRecoveryStep("interrupted");
     return { ...boundaryAssistResult({ tone: decision === "recorded" ? "success" : "warning",
       title: decision === "recorded" ? "Interrupted step recovery recorded." : "Interrupted step remains pending.",
       lines: [decision === "recorded" ? "Reopen the saved job for ordinary continuation or current saved-work review. No provider request was made." : "No recovery decision or provider request was made.",
@@ -5304,28 +5299,18 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if (selected === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
     if (selected === "interrupted_step_recovery") return reviewInterruptedStep();
     if (selected === "manual_transport_recovery" && activeResume && !revalidateSavedJob) {
-      let preview: Awaited<ReturnType<typeof prepareAuthoringManualRecovery>>;
-      try { preview = await prepareAuthoringManualRecovery(activeResume.revision_digest); }
+      let decision: "pending" | "recorded";
+      try { decision = await reviewRecoveryStep("manual"); }
       catch (error) {
         if (!isAuthoringGenerationStop(error)) throw error;
         return {...boundaryAssistResult({tone: "warning", title: "Replacement generation is not eligible.",
-          lines: [error.code, error.message, "Saved drafts, the original attempt and possible charge remain unchanged. No provider request or acknowledgement was made."]}), navigation: "pause" as const};
+          lines: [error.code, error.message, "Review the interrupted business step to inspect separately reviewed continuation or local saved-work review.",
+            "Saved drafts, the original attempt and possible charge remain unchanged. No provider request or acknowledgement was made."]}), navigation: "pause" as const};
       }
-      const confirmed = await input.session.confirm(
-        "The provider outcome is unknown and the request may have been charged. Runner has not accepted a response from this attempt. Preserve the saved work and permit one replacement generation?",
-        {defaultValue: false, context: [
-          `Saved job: ${activeResume.job_intent}`,
-          `Provider/model: ${activeResume.model.provider}[${activeResume.model.name}]`,
-          `Pending step: ${formatBoundaryAuthoringStage(activeResume.stage)}`,
-          `Operation: ${preview.operation_id}; attempt: ${preview.attempt_id}`,
-          `Retained prepared Action drafts: ${activeResume.action?.completed_outcomes?.length ?? 0}. Prepared drafts still require complete business review; this does not certify correctness.`,
-          "The ended pure-generation attempt has no accepted headers, content or response consumer. Its unknown provider outcome and possible charge remain history.",
-          "One replacement uses the same operation and finite attempt allowance. It may incur an additional charge; normal funding/currentness admission still applies.",
-          "This does not enable future automatic retries, acknowledge old output, or grant publication, approval or execution authority.",
-        ]});
-      if (confirmed) await permitAuthoringManualRecovery(preview);
-      return {...boundaryAssistResult({tone: confirmed ? "success" : "warning", title: confirmed ? "One replacement permission saved." : "Stopped generation retained.",
-        lines: [confirmed ? "Resume the same saved job to attempt its exact pending generation. No provider request was made by this review." : "No replacement permission was granted.",
+      return {...boundaryAssistResult({tone: decision === "recorded" ? "success" : "warning",
+        title: decision === "recorded" ? "One replacement permission saved." : "Stopped generation retained.",
+        lines: [decision === "recorded" ? "Resume the same saved job to attempt its exact pending generation. No provider request was made by this review." : "No replacement permission was granted.",
+          "A request that cannot be reconstructed identically needs a separate interrupted-step review, never an automatic permission conversion.",
           "The original attempt and possible charge remain recorded; saved drafts and business authority are unchanged."]}), navigation: "pause" as const};
     }
     if (selected === "transport_recovery" && availableResume && !revalidateSavedJob) {
@@ -12836,11 +12821,8 @@ async function reviewSavedBoundaryPolicyInner(input: {
         return boundaryGenerationContext(input.projectRoot, resume);
       },
       write: async recovery => {
-        await assertCurrent();
-        const {revision_digest: _old, ...core} = {...resume, generation_recovery: structuredClone(recovery), updated_at: new Date().toISOString()};
-        const next = {...core, revision_digest: canonicalJsonDigest(core)};
-        await writeBoundaryAuthoringResumeState(input.projectRoot, next, {expectedRevisionDigest: resume.revision_digest});
-        resume = next;
+        resume = await saveAuthoringRecoveryResume({ resume, expectedRevision: resume.revision_digest, recovery,
+          assertCurrent, write: (next, options) => writeBoundaryAuthoringResumeState(input.projectRoot, next, options) });
       },
       progress: message => input.session.present?.("AUTHORING CONNECTION", [message], "warning"),
     });

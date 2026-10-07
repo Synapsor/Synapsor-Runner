@@ -10,6 +10,8 @@ import { CoverageComponentError, coverageFinding } from './authoring-coverage-fe
 import { SourceTransactionScopeError } from './authoring-source-transaction-scope.js';
 import { planCoverageResolution } from './authoring-review-resolution.js';
 import { randomUUID } from "node:crypto";
+import { authoringInterruptedProducerInput } from "./authoring-generation-recovery.js";
+import { retainedSourceRecoveryEpisode } from "./authoring-recovery-source.js";
 import type { CoverageReviewEpisode } from "./authoring-policy-source.js";
 import { reviewClientDutyOwnership, type ClientDutyReviewState } from "./authoring-client-duties.js";
 import { AskError } from "./model-provider-transport.js";
@@ -231,8 +233,12 @@ export async function ensurePreparedPolicyCoverage(input: {
   };
   const produce = async () => {
     await assertRetainedCurrent();
+    const origin = await authoringInterruptedProducerInput("policy_coverage");
+    const retained = origin && retainedSourceRecoveryEpisode(sources, key, origin);
+    if (origin && !retained) pending('episode_declined','POLICY_COVERAGE_EPISODE_PENDING',
+      'The original saved review round cannot be continued faithfully from this checkpoint. Review the interrupted step locally, or start a separately reviewed job. Its earlier submissions, scoped proof and uncertainty remain saved; no new episode or provider allowance was allocated.');
     const prior = sources.coverage_episodes?.filter(e=>e.context===key).at(-1);
-    if (input.savedReviewEpisode || prior) {
+    if (!retained && (input.savedReviewEpisode || prior)) {
       const context = input.savedReviewEpisode ? [
         `Saved job: ${input.savedReviewEpisode.job}`,
         `Review subject: ${input.savedReviewEpisode.subject}`,
@@ -253,10 +259,10 @@ export async function ensurePreparedPolicyCoverage(input: {
         pending('currentness','POLICY_COVERAGE_CONTEXT_CHANGED',
           'The reviewed target or selected model changed while awaiting consent. Reopen current Review; no provider call was started.');
     }
-    if ((sources.coverage_episodes?.length ?? 0) >= 120) pending('history_full','POLICY_COVERAGE_EPISODE_HISTORY_FULL',
+    if (!retained && (sources.coverage_episodes?.length ?? 0) >= 120) pending('history_full','POLICY_COVERAGE_EPISODE_HISTORY_FULL',
       'Prior attempts are preserved; no provider call was started.');
-    episode = {id:randomUUID(), context:key, started_at:new Date().toISOString(),submissions:[]};
-    await coordinated(async permit=>{
+    episode = retained ?? {id:randomUUID(), context:key, started_at:new Date().toISOString(),submissions:[]};
+    if (!retained) await coordinated(async permit=>{
       await assertCurrent(permit);
       await assertRetainedCurrent();
       if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest)
@@ -266,13 +272,23 @@ export async function ensurePreparedPolicyCoverage(input: {
       expectedSource=canonicalJsonDigest(staged); Object.assign(sources,staged);
     });
     state.attemptKey = key;
+    let retainedReservation = Boolean(retained);
     return reviewPolicyCoverage({session:input.modelSession,source,draft:draftRecord,sourceSession:sources,retainedDutyPlan,
       ...(sources.coverage?.source_digest===source.digest?{previousReport:sources.coverage}:{}),
-      episode:{beforeSubmission:async number=>saveEpisode(e=>{
+      episode:{authoringInput:number=>({consumer:"policy_coverage",episode_id:episode.id,
+        context_digest:key,submission_number:number}),beforeSubmission:async number=>{
+        if (retainedReservation) {
+          await assertCurrent(); await assertRetainedCurrent();
+          if (number !== origin!.submission_number || canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest)
+            pending('currentness','POLICY_COVERAGE_CONTEXT_CHANGED','The exact interrupted review round changed; no replacement was sent.');
+          retainedReservation=false;
+          return;
+        }
+        await saveEpisode(e=>{
         if(number!==e.submissions.length+1 || number>3) pending('episode_exhausted','POLICY_COVERAGE_EPISODE_EXHAUSTED',
           'The bounded episode has no remaining submissions. Prior attempts remain saved.');
         e.submissions.push({number,reserved_at:new Date().toISOString()});
-      }),afterSubmission:async(number,feedback,accepted,tentative)=>saveEpisode(e=>{
+      });},afterSubmission:async(number,feedback,accepted,tentative)=>saveEpisode(e=>{
         const submission=e.submissions[number-1]!;
         submission.completed_at=new Date().toISOString(); submission.validated=accepted;
         if(feedback) submission.diagnostic=JSON.stringify(feedback);
