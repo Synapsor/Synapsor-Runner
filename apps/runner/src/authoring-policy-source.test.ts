@@ -519,6 +519,64 @@ describe("complete operator-selected policy text", () => {
 });
 
 describe("current attachment review operation", () => {
+  it.each([undefined, "cancel", "continue", "review"] as const)("keeps attachment default, save/install/onChange and optional review ordering (%s)", async outcome => {
+    const root = await directory(), conversation = createModelAuthoringConversation();
+    conversation.policySources = approved("The existing rules.");
+    await savePolicySources(root, conversation.policySources);
+    const before = structuredClone(conversation.policySources), events: string[] = [];
+    const text = "The complete new rules.\r\n  Retain this whitespace.\n";
+    await fs.writeFile(path.join(root, "complete.txt"), text);
+    let handler!: (command: string, argument: string) => Promise<boolean | "reviewed">;
+    const onChange = vi.fn(async () => {
+      const stored = await loadPolicySources(root, before.id);
+      expect(conversation.policySources).toEqual(stored);
+      expect(activePolicySource(stored)?.text).toBe(text);
+      expect(stored.approvals.at(-1)).toEqual({ digest: activePolicySource(stored)!.digest, destination: authoringDestination(destination) });
+      events.push("installed-and-saved");
+    });
+    const review = vi.fn(async () => { expect(events).toEqual(["installed-and-saved"]); events.push("review"); });
+    const chat = { checkpoint: vi.fn(), setSourceCommandHandler: (value: typeof handler) => { handler = value; },
+      session: { chooseOption: async (title: string, _choices: unknown, options: unknown) => {
+        if (title === "SEND ATTACHED RULES") {
+          expect(options).toEqual({ initialValue: "cancel" });
+          expect(conversation.policySources).toEqual(before);
+          expect(await loadPolicySources(root, before.id)).toEqual(before);
+          return outcome === "continue" || outcome === "review" ? "send" : outcome;
+        }
+        expect(title).toBe("USE THE SAVED ATTACHMENT");
+        expect(options).toEqual({ initialValue: "continue", reviewOnly: true });
+        expect(events).toEqual(["installed-and-saved"]);
+        return outcome;
+      } },
+    } as unknown as BoundaryAuthoringChat;
+    installPolicySourceCommands({ root, chat, conversation, destination: () => destination, onChange,
+      hasDraft: () => true, reviewCurrent: review });
+    expect(await handler("/attach", "complete.txt")).toBe(outcome === "review" ? "reviewed" : outcome === "continue");
+    expect(review).toHaveBeenCalledTimes(outcome === "review" ? 1 : 0);
+    expect(onChange).toHaveBeenCalledTimes(outcome === "review" || outcome === "continue" ? 1 : 0);
+    if (outcome === undefined || outcome === "cancel") {
+      expect(conversation.policySources).toEqual(before);
+      expect(await loadPolicySources(root, before.id)).toEqual(before);
+    }
+  });
+
+  it("keeps an exact prior attachment approval distinct from a canceled new destination", async () => {
+    const root = await directory(), conversation = createModelAuthoringConversation();
+    conversation.policySources = approved();
+    await savePolicySources(root, conversation.policySources);
+    const before = structuredClone(conversation.policySources), onChange = vi.fn(), review = vi.fn();
+    const chooseOption = vi.fn(async () => "cancel");
+    const chat = { checkpoint: vi.fn(), session: { chooseOption }, setSourceCommandHandler() {} } as unknown as BoundaryAuthoringChat;
+    const control = installPolicySourceCommands({ root, chat, conversation, destination: () => destination, onChange,
+      hasDraft: () => true, reviewCurrent: review });
+    expect(await control.reviewTransfer(destination)).toBe(true);
+    expect(chooseOption).not.toHaveBeenCalled();
+    expect(await control.reviewTransfer({ ...destination, baseUrl: "https://different.example/v1" })).toBe(false);
+    expect(chooseOption).toHaveBeenCalledOnce();
+    expect(onChange).not.toHaveBeenCalled(); expect(review).not.toHaveBeenCalled();
+    expect(conversation.policySources).toEqual(before); expect(await loadPolicySources(root, before.id)).toEqual(before);
+  });
+
   it.each(["already-attached", "replacement", "declined"])("hands the exact consented source to Review (%s)", async mode => {
     const root = await directory(), conversation = createModelAuthoringConversation(); conversation.policySources = approved("The prior rules.");
     const original = structuredClone(conversation.policySources);

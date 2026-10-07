@@ -14,7 +14,7 @@ import { readRevisionDiff, readBoundaryReviewSections, findReviewSection, review
 import { policyCoverageDraft } from "./authoring-policy-evidence.js";
 
 describe("private Read condition disabled revisions", () => {
-  it.each([false, true])("reviews saved private metadata before a new model receives it (allowed: %s)", async allowed => {
+  it.each([false, true, undefined, "changed"] as const)("reviews saved private metadata before a new model receives it (allowed: %s)", async allowed => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-read-condition-host-egress-"));
     try {
       const inspection = fixture();
@@ -50,6 +50,18 @@ describe("private Read condition disabled revisions", () => {
         ]));
         expect(narrator).not.toHaveBeenCalled();
         expect(mapper).not.toHaveBeenCalled();
+        expect(options).toMatchObject({ defaultValue: false });
+        if (allowed === "changed") {
+          const replacement = prepareReviewedReadCurrentStatePrerequisite({
+            ...prerequisite,
+            semantic_consent: { ...prerequisite.semantic_consent,
+              source_description: "New registrar-maintained meaning awaiting this model's permission." },
+          }, inspection, saved.candidate);
+          await commitExactBoundaryCandidateMutation(root, await prepareReadPrerequisiteRevision({ projectRoot: root,
+            previous: saved.candidate, prerequisite: replacement, bindings: saved.bundle.mutation_bindings,
+            actor: "synthetic-unit-reviewer", schemaInspector: async () => inspection }));
+          return true;
+        }
         return allowed;
       });
       const session: BoundaryReviewInteractiveSession = {
@@ -67,17 +79,22 @@ describe("private Read condition disabled revisions", () => {
         rememberDetails: details, showDetails: vi.fn(), providerStream: vi.fn(),
         progress: async (_message, operation) => operation(), close: vi.fn(),
       };
-      expect(await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], async () => inspection, session, undefined, {
+      const result = boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], async () => inspection, session, undefined, {
         startWithAgentJob: true,
         modelAuthoringSession: { provider: "anthropic", model: "new-provider-model", apiKey: "synthetic-key" },
         modelAuthoringNarrator: narrator, modelReadWorkloadGenerator: mapper, boundaryAuthoringChatFactory: () => chat,
-      })).toBe(0);
+      });
+      if (allowed === "changed") await expect(result).rejects.toThrow("PRIVATE_READ_METADATA_CHANGED");
+      else expect(await result).toBe(0);
       expect(confirm).toHaveBeenCalledOnce();
       // Metadata permission alone does not start generation. The operator
       // cancelled the new job prompt, so neither path opens a narrator.
       expect(narrator).not.toHaveBeenCalled();
       expect(mapper).not.toHaveBeenCalled();
-      expect((await loadBoundaryReviewContext(root)).candidate).toEqual(saved.candidate);
+      const current = (await loadBoundaryReviewContext(root)).candidate;
+      if (allowed === "changed") expect(current.read_prerequisite?.semantic_consent.source_description)
+        .toBe("New registrar-maintained meaning awaiting this model's permission.");
+      else expect(current).toEqual(saved.candidate);
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toThrow();
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
