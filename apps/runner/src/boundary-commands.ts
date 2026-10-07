@@ -1,3 +1,4 @@
+import { createReadRevisionCheckpointHost } from "./authoring-read-revision-checkpoint-host.js";
 import { createReadAssistanceCheckpointHost } from "./authoring-read-assistance-checkpoint-host.js";
 import { presentAuthoringRecovery } from "./authoring-interrupted-step-review.js";
 import { retainedRecoveryOwner } from "./authoring-recovery-owner.js";
@@ -210,7 +211,6 @@ import {
 } from "./model-authoring-conversation.js";
 import {
   buildBoundaryAuthoringResumeState,
-  consumeBoundaryReadRevisionResult,
   updateBoundaryPolicyReview,
   type BoundaryPolicyReviewRequest,
   assertBoundaryAuthoringResumeCurrent,
@@ -342,7 +342,7 @@ import {
   type ReadBoundaryFieldExposure,
   type ModelReadBoundaryRevisionResult,
 } from "./read-boundary-revision-model.js";
-import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionCheckpoint, readBoundaryRevisionDecisionAnswer,
+import { readBoundaryRevisionCheckpoint,
   type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
 import { assertReviewedReadCurrentStatePrerequisite } from "./read-prerequisite.js";
 import { parseReadPolicySettings } from "./read-boundary-policy-revision.js";
@@ -9501,128 +9501,23 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let failedReadRevision: RetainedReadRevisionRequest | undefined;
   let readRevisionRecovery: string[] = [];
   let latestReadRevisionDiff: ReviewSection | undefined;
-  const persistReadRevision = async (checkpoint: ReadBoundaryRevisionCheckpoint | undefined,
-    currentBoundary: ExplorationBoundaryDraft, accepted?: ModelReadBoundaryRevisionResult) => {
-    // A complete parsed result is known consumption, not a committed mutation.
-    // Persist that distinction so a declined/failed save cannot replay the
-    // already consumed producer on reopen. The actual guarded save clears it.
-    if (!checkpoint) {
-      if (!accepted) throw checkpointSaveFailure("The Read revision result");
-      await mutateOwnerHandoff(async permit => {
-        await ownerQuestionContext(permit, "read_revision_clarification");
-        const current = await loadBoundaryReviewContext(input.projectRoot);
-        if (!pendingReadRevisionState || explorationBoundaryCandidateDigest(currentBoundary) !== current.bundle.candidate_digest) {
-          throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The consumed revision belongs to another current candidate.");
-        }
-        pendingReadRevisionState = consumeBoundaryReadRevisionResult(pendingReadRevisionState);
-        await persistAuthoringResume("authority_review", permit);
-        if (resumePersistenceBlocked) throw checkpointSaveFailure("The consumed Read revision result");
-      });
-      return;
-    }
-    await mutateOwnerHandoff(async permit => {
-      if (!pendingReadRevisionState || pendingReadRevisionState.instruction !== pendingReadRevision) throw checkpointSaveFailure("The pending Read revision");
-      const currentContext = await ownerQuestionContext(permit, "read_revision_clarification");
-      const current = await loadBoundaryReviewContext(input.projectRoot);
-      if (explorationBoundaryCandidateDigest(currentBoundary) !== current.bundle.candidate_digest) {
-        throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The exact Read candidate changed. Preserve this question and inspect the current saved job.");
-      }
-      const checked = parseReadBoundaryRevisionCheckpoint(checkpoint);
-      if (checked.stage === "dispatching" || checked.pending_question.kind === "private_prerequisite"
-        && checked.pending_question.nested_checkpoint?.stage === "dispatching") {
-        pendingReadRevisionState = { ...pendingReadRevisionState, checkpoint: checked };
-        await persistAuthoringResume("authority_review", permit, false);
-        if (resumePersistenceBlocked) throw checkpointSaveFailure("The Read edit dispatch checkpoint");
-        return;
-      }
-      const q = checked.pending_question;
-      if (q.kind === "private_prerequisite") {
-        const checkpointNative = (completion: NonNullable<AuthoringOwnerHandoff["completion"]> | undefined,
-          kind: "private_prerequisite" | "prerequisite_mapping", material: unknown) => {
-          if (!completion) {
-            if (generationRecovery) throw checkpointSaveFailure("The native private Read completion");
-            return;
-          }
-          const record = { consumer: "read_revision" as const, kind, material_digest: canonicalJsonDigest(material) };
-          const op = generationRecovery?.operations.find(op => op.id === completion.operation_id);
-          if (op?.read_checkpoint) assertAuthoringReadCheckpoint(generationRecovery, completion, record);
-          else generationRecovery = authoringReadCheckpoint(generationRecovery, completion, record);
-        };
-        checkpointNative(q.completion, "private_prerequisite", q.request);
-        const nested = q.nested_checkpoint;
-        if (nested?.pending?.kind === "semantic_confirmation") {
-          checkpointNative(nested.pending.completion, "prerequisite_mapping", nested.pending.proposal);
-          if (nested.stage === "decided" && nested.pending.completion)
-            generationRecovery = authoringReadDecisionCheckpoint(generationRecovery, nested.pending.completion,
-              nested.pending.proposal, nested.pending.decision);
-        }
-        if (nested?.pending?.kind === "clarification") {
-          const p = nested.pending, last = ownerHandoffs.at(-1);
-          const same = last?.consumer === "read_revision_prerequisite" && last.question === p.request.question
-            && canonicalJsonDigest(last.completion ?? null) === canonicalJsonDigest(p.completion ?? null);
-          if (nested.stage === "waiting") {
-            if (!same) {
-              if (last?.state === "waiting") throw checkpointSaveFailure("The retained private Read question");
-              const h = createOwnerHandoff({ consumer: "read_revision_prerequisite", question: p.request.question,
-                scope_digest: ownerQuestionScope(), context_digest: currentContext, ...(p.completion ? { completion: p.completion } : {}) });
-              if (p.completion) generationRecovery = authoringQuestionCheckpoint(generationRecovery, ownerHandoffCheckpoint(h));
-              else if (generationRecovery) throw checkpointSaveFailure("The private Read question completion");
-              ownerHandoffs.push(h);
-            } else if (last?.state !== "waiting" || last.context_digest !== currentContext) throw new PolicySourceChangedError();
-          } else if (!same || last?.state !== "answered" || last.answer !== p.decision?.answer
-            || last.answer_context_digest !== currentContext) throw new PolicySourceChangedError();
-        }
-        pendingReadRevisionState = { ...pendingReadRevisionState, checkpoint: checked };
-        await persistAuthoringResume("authority_review", permit);
-        if (resumePersistenceBlocked) throw checkpointSaveFailure("The private Read adapter");
-        return;
-      }
-      const last = ownerHandoffs.at(-1);
-      const sameQuestion = last?.consumer === "read_revision_clarification" && last.question === q.question
-        && canonicalJsonDigest(last.completion ?? null) === canonicalJsonDigest(q.completion ?? null);
-      if (checked.stage === "waiting") {
-        if (sameQuestion && last?.state === "waiting") {
-          if (last.scope_digest !== ownerQuestionScope() || last.context_digest !== currentContext) {
-            throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The saved Read edit question changed. No answer was inferred.");
-          }
-        } else {
-          if (last?.state === "waiting") throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Inspect the exact saved question before replacing it.");
-          const next = createOwnerHandoff({ consumer: "read_revision_clarification", question: q.question,
-            scope_digest: ownerQuestionScope(), context_digest: currentContext, ...(q.completion ? { completion: q.completion } : {}) });
-          if (q.completion) generationRecovery = authoringQuestionCheckpoint(generationRecovery, ownerHandoffCheckpoint(next));
-          else if (generationRecovery?.operations.some(op => ["in_flight", "received", "handled", "unknown", "partial"].includes(op.state))) {
-            throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The Read edit question has no completed consumer association. Preserve the saved generation without replay.", 409);
-          }
-          ownerHandoffs.push(next);
-        }
-      } else {
-        const answer = readBoundaryRevisionDecisionAnswer(checked);
-        if (!sameQuestion || !last || last.scope_digest !== ownerQuestionScope()) {
-          throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The saved Read question or exact request changed. Its answer was not accepted.");
-        }
-        if (last.state === "answered") {
-          // Counter updates retain the same acknowledged answer. They cannot
-          // create another consent record or acknowledge another generation.
-          if (last.answer !== answer || last.answer_context_digest !== currentContext) throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The saved Read answer is no longer current.");
-        } else {
-          if (last.context_digest !== currentContext) throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: Source or permissions changed before the Read answer was accepted.");
-          const sources = authoringConversation?.policySources;
-          if (q.decision?.state === "answered" && sources && activePolicySource(sources)) {
-            await appendPolicySourceOperatorMessage(input.projectRoot, sources, answer, { permit, expectedDigest: canonicalJsonDigest(sources) });
-          }
-          const acceptedContext = await ownerQuestionContext(permit, "read_revision_clarification");
-          const next = answerOwnerHandoff(last, answer, acceptedContext);
-          if (last.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
-            ownerHandoffCheckpoint(last), { digest: canonicalJsonDigest(next), operator_messages: [answer] });
-          ownerHandoffs[ownerHandoffs.length - 1] = next;
-          if (q.decision?.state === "answered") rememberModelAuthoringClarification(authoringConversation, last.question, answer);
-        }
-      }
-      pendingReadRevisionState = { ...pendingReadRevisionState, checkpoint: checked };
-      await persistAuthoringResume("authority_review", permit);
-      if (resumePersistenceBlocked) throw checkpointSaveFailure("The Read edit question and decision");
-    });
-  };
+  const { persist: persistReadRevision } = createReadRevisionCheckpointHost({ access: {
+    mutate: mutateOwnerHandoff, contextDigest: permit => ownerQuestionContext(permit, "read_revision_clarification"),
+    scopeDigest: ownerQuestionScope, currentCandidate: async () => (await loadBoundaryReviewContext(input.projectRoot)).bundle,
+    readRevision: () => pendingReadRevisionState, readInstruction: () => pendingReadRevision,
+    readHandoffs: () => ownerHandoffs, readRecovery: () => generationRecovery,
+    readConversation: () => authoringConversation,
+    install: update => {
+      if (Object.prototype.hasOwnProperty.call(update, "revision")) pendingReadRevisionState = update.revision;
+      if (Object.prototype.hasOwnProperty.call(update, "recovery")) generationRecovery = update.recovery;
+    },
+    appendSourceMessage: (sources, message, options) => appendPolicySourceOperatorMessage(input.projectRoot, sources, message, options),
+    save: async (permit, subject, acknowledge) => {
+      await persistAuthoringResume("authority_review", permit, acknowledge);
+      if (resumePersistenceBlocked) throw checkpointSaveFailure(subject);
+    },
+    checkpointFailure: checkpointSaveFailure,
+  } });
   const reviseReadWithModel = canReviseReadWithModel
     ? async (guidedInstruction?: string, preparedRevision?: ModelReadBoundaryRevisionResult, options?: {
         interpretationInstruction?: string;
