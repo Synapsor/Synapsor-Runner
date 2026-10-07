@@ -216,11 +216,11 @@ describe("field-only Source restrictions preserve public root Reads", () => {
 });
 
 describe("requested business areas through current attributed Source mappings", () => {
-  it.each(["substitution", "excluded_addition", "duplicate_labels", "duplicate_definitions", "duplicate_definitions_answer", "unresolved_phrase", "source_disambiguation"])("preserves native scope for %s", async scenario => {
-    const ids = scenario === "source_disambiguation" ? ["current.accounts", "archive.accounts"] : ["current.member_cards", "archive.old_cards", "current.invoices"];
+  it.each(["substitution", "excluded_addition", "duplicate_labels", "duplicate_definitions", "duplicate_definitions_answer", "unresolved_phrase", "source_disambiguation", "source_outside_homonyms"])("preserves native scope for %s", async scenario => {
+    const ids = scenario === "source_outside_homonyms" ? ["service.requests", "archive.cases", "audit.cases"] : scenario === "source_disambiguation" ? ["current.accounts", "archive.accounts"] : ["current.member_cards", "archive.old_cards", "current.invoices"];
     const boundary = scopeBoundary(ids);
-    const request = scenario === "source_disambiguation" ? "Read customer accounts." : "Read customer memberships.";
-    const source = scenario.startsWith("duplicate_definitions") ? "current.member_cards represents customer memberships.\narchive.old_cards represents customer memberships."
+    const request = scenario === "source_outside_homonyms" ? "Read customer cases." : scenario === "source_disambiguation" ? "Read customer accounts." : "Read customer memberships.";
+    const source = scenario === "source_outside_homonyms" ? "service.requests represents customer cases." : scenario.startsWith("duplicate_definitions") ? "current.member_cards represents customer memberships.\narchive.old_cards represents customer memberships."
       : scenario === "unresolved_phrase" ? "current.member_cards represents current member records."
       : scenario === "source_disambiguation"
       ? "current.accounts represents customer accounts.\narchive.accounts represents archived records."
@@ -246,9 +246,9 @@ describe("requested business areas through current attributed Source mappings", 
     const operation=generateModelReadWorkload({name:"source_area",generatedBoundary:boundary,allowedQuestions:[request],operatorNamingContext:request,
       conversation,provider:"openai",model:"declared-scope-fixture",apiKey:"local-fixture-only",egressAcknowledged:true,deferNarration:true,
       dependencies:{requestJson},clarificationHandler:question,onCheckpoint:async(_c,_b,result)=>{if(result)accepted(result);}});
-    if(scenario==="source_disambiguation" || scenario==="duplicate_definitions_answer"){
+    if(scenario==="source_disambiguation" || scenario==="source_outside_homonyms" || scenario==="duplicate_definitions_answer"){
       const result=await operation;expect(result.analysis.status).toBe("ready");
-      if(scenario==="source_disambiguation")expect(question).not.toHaveBeenCalled();else expect(question).toHaveBeenCalledOnce();
+      if(scenario!=="duplicate_definitions_answer")expect(question).not.toHaveBeenCalled();else expect(question).toHaveBeenCalledOnce();
       expect(accepted).toHaveBeenCalledOnce();
       expect(result.workload.allowed.map(entry=>entry.plan.resource)).toEqual([ids[0]!]);
     }else if(["duplicate_labels","duplicate_definitions","unresolved_phrase"].includes(scenario)){

@@ -46,12 +46,29 @@ export function resolveRequestedReadScope(input: {
   const attributed = input.definitions.filter(definition => ids.includes(definition.resource)
     && definition.phrases.some(phrase => phraseMatches(phrase))).map(definition => definition.resource);
   const required = new Set([...base.required, ...attributed]);
-  const groups = [...base.ambiguous];
   const definitionsByPhrase = new Map<string, string[]>();
   for (const definition of input.definitions) for (const phrase of definition.phrases) if (phraseMatches(phrase)) {
     const key = normalizedSemanticWords(phrase).join(" ");
     definitionsByPhrase.set(key, [...new Set([...(definitionsByPhrase.get(key) ?? []), definition.resource])]);
   }
+  // A basename inside an exact, uniquely attributed business phrase is not
+  // a separate request for unrelated homonymous tables. Preserve collisions
+  // for any additional, uncovered occurrence of that basename in the request.
+  const attributedWordPositions = new Set<number>();
+  for (const [phrase, targets] of definitionsByPhrase) if (targets.length === 1) {
+    const phraseWords = phrase.split(" ");
+    for (let index = 0; index <= words.length - phraseWords.length; index += 1) {
+      if (phraseWords.every((word, offset) => word === words[index + offset])) {
+        phraseWords.forEach((_word, offset) => attributedWordPositions.add(index + offset));
+      }
+    }
+  }
+  const groups = base.ambiguous.filter(group => group.some(id => {
+    const name = normalizedSemanticWords(id.split(".").at(-1) ?? id);
+    return [name, name.filter(word => !RESOURCE_MENTION_STOP_WORDS.has(word))].some(needle => needle.length > 0
+      && words.some((_word, index) => needle.every((word, offset) => word === words[index + offset])
+        && needle.some((_part, offset) => !attributedWordPositions.has(index + offset))));
+  }));
   groups.push(...[...definitionsByPhrase.values()].filter(group => group.length > 1));
   const labels = new Map<string, string[]>();
   for (const resource of input.resources) if (resource.label && phraseMatches(resource.label)) {
