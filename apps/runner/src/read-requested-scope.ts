@@ -35,10 +35,10 @@ export function resolveRequestedReadScope(input: {
   resources: readonly { id: string; label?: string }[];
   definitions: readonly { resource: string; phrases: readonly string[] }[];
   statements: readonly string[];
-}): { required: string[]; excluded: string[]; ambiguous: string[][] } {
+}): { required: string[]; excluded: string[]; ambiguous: string[][]; unresolved: boolean } {
   const ids = input.resources.map(resource => resource.id);
   const base = requestedReadResourceAssociations(input.original, ids);
-  const words = normalizedSemanticWords(readOrientedJobText(input.original));
+  const words = normalizedSemanticWords(readOrientedJobText(input.original).replace(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu, " "));
   const phraseMatches = (phrase: string, inWords = words) => {
     const phraseWords = normalizedSemanticWords(phrase);
     return phraseWords.length > 0 && containsWordSequence(inWords, phraseWords);
@@ -47,6 +47,12 @@ export function resolveRequestedReadScope(input: {
     && definition.phrases.some(phrase => phraseMatches(phrase))).map(definition => definition.resource);
   const required = new Set([...base.required, ...attributed]);
   const groups = [...base.ambiguous];
+  const definitionsByPhrase = new Map<string, string[]>();
+  for (const definition of input.definitions) for (const phrase of definition.phrases) if (phraseMatches(phrase)) {
+    const key = normalizedSemanticWords(phrase).join(" ");
+    definitionsByPhrase.set(key, [...new Set([...(definitionsByPhrase.get(key) ?? []), definition.resource])]);
+  }
+  groups.push(...[...definitionsByPhrase.values()].filter(group => group.length > 1));
   const labels = new Map<string, string[]>();
   for (const resource of input.resources) if (resource.label && phraseMatches(resource.label)) {
     const key = normalizedSemanticWords(resource.label).join(" ");
@@ -60,6 +66,9 @@ export function resolveRequestedReadScope(input: {
     if (resolved.length === 1) { required.add(resolved[0]!); return false; }
     return true;
   }).filter((group, index, all) => all.findIndex(other => JSON.stringify(other) === JSON.stringify(group)) === index);
+  // An attributed naming collision is a choice to resolve, not a request to
+  // include every resource carrying that definition. Explicit IDs remain bound.
+  for (const group of ambiguous) for (const id of group) if (!base.required.includes(id)) required.delete(id);
   const excluded = new Set<string>();
   for (const text of [input.original, ...input.statements]) {
     for (const clause of unquotedRequest(text).split(/[;\n]|(?<=[.!?])\s+/u)) {
@@ -75,7 +84,9 @@ export function resolveRequestedReadScope(input: {
       for (const definition of input.definitions) if (definition.phrases.some(phrase => phraseMatches(phrase, negativeWords))) excluded.add(definition.resource);
     }
   }
-  return { required: [...required], excluded: [...excluded], ambiguous };
+  return { required: [...required], excluded: [...excluded], ambiguous,
+    unresolved: required.size === 0 && ambiguous.length === 0 && words.length > 0
+      && input.definitions.some(definition => definition.phrases.length > 0) };
 }
 
 /** A literal, complete identity list is the one upper bound this helper can
