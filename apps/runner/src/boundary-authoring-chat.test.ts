@@ -1,9 +1,11 @@
+import { readActivationView, proposalActivationView } from "./authoring-activation-view.js";
 import { describe, expect, it, vi } from "vitest";
 import { createServer } from "node:http";
 import { PassThrough } from "node:stream";
 import { Terminal } from "@xterm/headless";
 import {
   createBoundaryAuthoringChat,
+  type BoundaryAuthoringPermissionGuideInput,
 } from "./boundary-authoring-chat.js";
 import { createTerminalAnalyticsShellIo, type AnalyticsShellIo } from "./analytics-shell.js";
 import { AskError, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn } from "./model-ask.js";
@@ -73,7 +75,7 @@ describe("Boundary authoring chat", () => {
       { value: "revise_model", label: "Revise this Read Boundary with the current model" },
       { value: "details", label: "View exact Read Boundary details" },
       { value: "finish", label: replacing ? "Keep current active Read Boundary and finish" : "Keep Read Boundary disabled and finish" },
-    ], { initialValue: "finish", exactDetails: exact, explainOnRequest: true })).toBe("activate");
+    ], { activationView: readActivationView({ replacing, removedResources: 2, revisionModel: "current" }), initialValue: "finish", exactDetails: exact, explainOnRequest: true })).toBe("activate");
     expect(exact).toEqual(before);
     expect(memory.choices[0]).toMatchObject({ title: replacing ? "REVIEW ACCESS CHANGES" : "REVIEW ACCESS", initialValue: "finish" });
     expect(memory.choices[0]!.labels).toContain("Inspect exact reading permissions");
@@ -85,12 +87,56 @@ describe("Boundary authoring chat", () => {
   it("distinguishes enabling change requests from execution without changing consent", async () => {
     const memory = memoryIo({ choices: ["no"] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
-    expect(await chat.session.confirmActivation!('Activate verified Action Boundary "telecom"?', {
+    expect(await chat.session.confirmActivation!('Activate verified Action Boundary "telecom"?', { activationView: proposalActivationView(),
       context: ["Only the reviewed plan change. Approval is not execution."],
     })).toBe(false);
     expect(memory.choices[0]).toMatchObject({ title: "REVIEW CHANGE REQUESTS", initialValue: "no" });
     expect(memory.choices[0]!.message).toContain("execution has a separate review");
     expect(memory.choices[0]!.labels).toContain("Enable the reviewed change requests");
+    chat.close();
+  });
+  it("keeps the original replacement permission and details in the Guide while displaying a typed business view", async () => {
+    const memory = memoryIo({ choices: ["__ask_boundary_model__", "finish"], reads: ["What stays active if I wait?"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const guide = vi.fn(async (_request: BoundaryAuthoringPermissionGuideInput) => "Runner keeps current authority until an explicit unchanged replacement decision.");
+    chat.setPermissionGuide!(guide);
+    const exact = { title: "Exact replacement", lines: ["Removed resources: 2", "Digest: sha256:unchanged"] };
+    const choices = [
+      { value: "activate", label: "Replace active Read Boundary (removes 2 tables)", detail: "Only the reviewed replacement." },
+      { value: "revise_model", label: "Revise saved read access with a model", disabled: true },
+      { value: "finish", label: "Keep current active Read Boundary and finish", detail: "No active authority changes." },
+    ];
+    const original = structuredClone({ choices, exact });
+    expect(await chat.session.chooseOption!("REPLACE ACTIVE READ BOUNDARY", choices, {
+      activationView: readActivationView({ replacing: true, removedResources: 2, revisionModel: "new" }),
+      exactDetails: exact, initialValue: "finish", explainOnRequest: true,
+      context: ["Current access remains live until replaced."], explanationContext: ["Only two reviewed resources are removed."],
+    })).toBe("finish");
+    expect({ choices, exact }).toEqual(original);
+    expect(guide).toHaveBeenCalledTimes(1);
+    expect(guide).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: "REPLACE ACTIVE READ BOUNDARY",
+      choices: [choices[0], choices[2]],
+      explanationContext: ["Only two reviewed resources are removed."],
+      operatorQuestion: "What stays active if I wait?",
+    }));
+    expect(guide.mock.calls[0]![0]).not.toHaveProperty("activationView");
+    for (const choice of memory.choices) {
+      expect(choice).toMatchObject({ title: "REVIEW ACCESS CHANGES", initialValue: "finish" });
+      expect(choice.labels).toContain("Replace current reading access (removes 2 tables)");
+      expect(choice.labels).toContain("Keep current reading access and finish");
+    }
+    chat.close();
+  });
+
+  it("does not infer a display view from an untyped technical permission prompt", async () => {
+    const memory = memoryIo({ choices: ["finish"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    expect(await chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
+      { value: "finish", label: "Keep Read Boundary disabled and finish" },
+    ], { initialValue: "finish" })).toBe("finish");
+    expect(memory.choices[0]).toMatchObject({ title: "PERMISSION REQUIRED", initialValue: "finish" });
+    expect(memory.choices[0]!.labels).toContain("Keep Read Boundary disabled and finish");
     chat.close();
   });
   it("retains the current phase in provider status and restores nested progress context", async () => {
@@ -347,7 +393,7 @@ describe("Boundary authoring chat", () => {
     const memory = memoryIo({ choices: ["no"] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
     const guide = vi.fn(); chat.setPermissionGuide!(guide);
-    await chat.session.confirmActivation!("Activate verified Action Boundary sample?", {
+    await chat.session.confirmActivation!("Activate verified Action Boundary sample?", { activationView: proposalActivationView(),
       context: ["Action  plan.change", "Limits  At most 10 overall and 3 per account in any rolling 24 hours"],
     });
     expect(guide).not.toHaveBeenCalled();
@@ -398,7 +444,7 @@ describe("Boundary authoring chat", () => {
     const result = await chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
       { value: "activate", label: "Activate this revision" }, { value: "privacy_details", label: "Inspect privacy findings" },
       { value: "details", label: "View exact details" }, { value: "finish", label: "Leave disabled" },
-    ], { initialValue: "finish", explainOnRequest: true, exactDetails: exact,
+    ], { activationView: readActivationView({ replacing: false }), initialValue: "finish", explainOnRequest: true, exactDetails: exact,
       context: ["Readable information: support cases."], explanationContext: ["support_cases.updated_at is the exact checked date finding; no access change needed."] });
     expect(result).toBe("finish");
     expect(exact).toEqual(before);
@@ -445,7 +491,7 @@ describe("Boundary authoring chat", () => {
     const decide = () => chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
       { value: "activate", label: "Activate this exact revision" },
       { value: "finish", label: "Leave disabled" },
-    ], { initialValue: "finish", explainOnRequest: true });
+    ], { activationView: readActivationView({ replacing: false }), initialValue: "finish", explainOnRequest: true });
     try {
       expect(await decide()).toBeUndefined();
       expect(memory.choices).toHaveLength(1);
@@ -462,7 +508,7 @@ describe("Boundary authoring chat", () => {
     try {
       expect(await chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
         { value: "activate", label: "Activate this exact revision" },{ value: "finish", label: "Leave disabled" },
-      ], {initialValue:"finish",explainOnRequest:true})).toBe("finish");
+      ], { activationView: readActivationView({ replacing: false }),initialValue:"finish",explainOnRequest:true})).toBe("finish");
       expect(memory.choices).toHaveLength(2);expect(guide).not.toHaveBeenCalled();expect(review).not.toHaveBeenCalled();
     } finally {chat.close();}
   });
@@ -479,7 +525,7 @@ describe("Boundary authoring chat", () => {
     chat.setPermissionGuide!(async () => "The replacement still needs review. No authority changed.");
     expect(await chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
       { value: "activate", label: "Activate this revision" }, { value: "finish", label: "Leave disabled" },
-    ], { initialValue: "finish", explainOnRequest: true })).toBe("finish");
+    ], { activationView: readActivationView({ replacing: false }), initialValue: "finish", explainOnRequest: true })).toBe("finish");
     expect(recordPolicy.mock.calls).toEqual([["Keep the date visible."], ["Use these revised rules."]]);
     expect(attach).toHaveBeenCalledWith("/attach", "replacement.txt");
     chat.close();
@@ -538,7 +584,7 @@ describe("Boundary authoring chat", () => {
         { value: "activate", label: "Activate this exact Read Boundary" },
         { value: "details", label: "View exact Read Boundary details" },
         { value: "finish", label: "Leave disabled" },
-      ], { initialValue: "finish", explainOnRequest: true, context: [`Pending reviewed revision: ${digest}`], exactDetails: exact })).toBe("finish");
+      ], { activationView: readActivationView({ replacing: false }), initialValue: "finish", explainOnRequest: true, context: [`Pending reviewed revision: ${digest}`], exactDetails: exact })).toBe("finish");
       expect(forwardSelections).toHaveLength(3);
       expect(forwardMenus.map((choice) => choice.title)).toEqual(["REVIEW ACCESS", exact.title, resources.title]);
       expect(forwardMenus[0]!.labels).toContain("Inspect exact reading permissions");
@@ -593,7 +639,7 @@ describe("Boundary authoring chat", () => {
     } };
     expect(await chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
       { value: "activate", label: "Activate" }, { value: "details", label: "View exact details" }, { value: "finish", label: "Leave disabled" },
-    ], options)).toBe("activate");
+    ], { ...options, activationView: readActivationView({ replacing: false }) })).toBe("activate");
     expect(reviews).toHaveLength(2);
     expect(reviews[0]).toContain("Model analysis:");
     expect(reviews[1]).toContain("Explanation claimed authority enabled.");
@@ -616,7 +662,7 @@ describe("Boundary authoring chat", () => {
       { value: "activate", label: "Activate this exact Read Boundary" },
       { value: "details", label: "View exact Read Boundary details" },
       { value: "finish", label: "Keep Read Boundary disabled and finish" },
-    ], options)).resolves.toBe("activate");
+    ], { ...options, activationView: readActivationView({ replacing: false }) })).resolves.toBe("activate");
     expect(guide).toHaveBeenCalledTimes(3); // initial, explicit question, explicit retry; never details
     expect(reviews).toHaveLength(2);
     for (const review of reviews) for (const line of exact) expect(review).toContain(line);
@@ -641,7 +687,7 @@ describe("Boundary authoring chat", () => {
       { id: "outcomes", title: "All reviewed outcomes", lines: ["RETAINED quantity", "RETAINED reorder", "ADDED archive"] },
       { id: "authority", title: "Complete authority and fingerprints", lines: ["ALL PREDICATES AND LIMITS", "sha256:exact"] },
     ] };
-    await expect(chat.session.confirmActivation!('Activate verified Action Boundary "warehouse"?', {
+    await expect(chat.session.confirmActivation!('Activate verified Action Boundary "warehouse"?', { activationView: proposalActivationView(),
       context: ["Add archive; retain two outcomes."], exactDetails,
     })).resolves.toBe(false);
     expect(review).toHaveBeenCalledTimes(2);
@@ -666,7 +712,7 @@ describe("Boundary authoring chat", () => {
     ] };
     await expect(chat.session.confirmActivation!(
       'Activate verified Action Boundary "warehouse_actions"?',
-      { context: ["Add archive; keep two existing outcomes. Execution requires separate review."], exactDetails: exact },
+      { activationView: proposalActivationView(), context: ["Add archive; keep two existing outcomes. Execution requires separate review."], exactDetails: exact },
     )).resolves.toBe(accept);
     expect(guide).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(guide.mock.calls)).not.toContain("a".repeat(64));

@@ -1,3 +1,4 @@
+import { proposalActivationView } from "./authoring-activation-view.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -108,7 +109,7 @@ describe("owned complete public structured program", () => {
       const chat = createBoundaryAuthoringChat({io, color: false});
       const guide = vi.fn(async () => { throw new Error('Inspection must remain local.'); });
       chat.setPermissionGuide!(guide);
-      expect(await chat.session.confirmActivation!('Activate verified Action Boundary "studio"?', {
+      expect(await chat.session.confirmActivation!('Activate verified Action Boundary "studio"?', { activationView: proposalActivationView(),
         context: ['Review the complete candidate.'], exactDetails: {title: 'EXACT ACTION BOUNDARY',
           summaryTitle: 'ACTION REVIEW', sections, lines: ['Full candidate retained.']},
       })).toBe(false);

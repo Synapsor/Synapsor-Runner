@@ -17,6 +17,8 @@ import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deactivateExplorationBoundary, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
+import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
+import type { AnalyticsShellIo } from "./analytics-shell.js";
 import { reviewVerifiedActionAuthority } from "./boundary-commands.js";
 import { reviewSemanticSupervisedExecution, verifiedActionAuthorityDetails } from "./verified-action-review.js";
 import * as semanticDeployment from "./semantic-action-deployment.js";
@@ -1043,6 +1045,7 @@ describe("semantic Action Rule authority persistence", () => {
     const beforeExecution = await fs.readFile(path.join(root, "synapsor.actions.runner.json"), "utf8");
     let visits = 0;
     const confirmations: string[] = [];
+    const consent = activationChat([enable ? "yes" : "no"]);
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async () => undefined,
       editFieldTiers: async () => "back",
@@ -1052,8 +1055,9 @@ describe("semantic Action Rule authority persistence", () => {
         expect(options?.context?.join("\n")).toContain("Writer verification: PASSED");
         expect(options?.context?.join("\n")).toContain("Receipt probe: NOT RUN (Runner-ledger mode)");
         expect(options?.context?.join("\n")).not.toContain("secret-writer-url");
+        expect(options?.activationView?.kind).toBe("execution");
         confirmations.push(prompt);
-        return enable;
+        return consent.chat.session.confirmActivation!(prompt, options);
       },
       chooseOption: async (title) => {
         if (title === "Set up database changes") return "choose";
@@ -1072,6 +1076,12 @@ describe("semantic Action Rule authority persistence", () => {
     expect(confirmations).toEqual([
       "Enable supervised source execution for billing.pause_notifications?",
     ]);
+    expect(consent.frames).toHaveLength(1);
+    expect(consent.frames[0]).toMatchObject({
+      title: "PERMISSION REQUIRED", initialValue: "no",
+      message: "Enable supervised source execution for billing.pause_notifications?",
+    });
+    consent.chat.close();
     if (!enable) {
       expect(await fs.readFile(path.join(root, "synapsor.actions.runner.json"), "utf8")).toBe(beforeExecution);
       expect((await readActionRuleAuthorityActivation(root))!.digest).toBe(active.digest);
@@ -1099,6 +1109,40 @@ describe("semantic Action Rule authority persistence", () => {
     expect(JSON.stringify(reviewMenu.mock.calls)).toContain("Execution enabled");
     expect(JSON.stringify(reviewMenu.mock.calls)).not.toContain("Worker on");
     expect(confirmations).toHaveLength(1);
+  });
+
+  it.each(["menu", "confirmation_only"] as const)("presents saved proposal activation through the actual %s host and conservative chat consent", async entry => {
+    const root = await temporaryRoot(), read = activeReadBoundary();
+    await writeActiveReadSet(root, read);
+    const source = authoritySource(read.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({
+      name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: read.pack.name, read_boundary_digest: read.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: source.rule }],
+      reviews: [authorityReview()],
+    });
+    await writeActionRuleAuthorityDraft(root, draft);
+    const before = JSON.stringify(await readActionRuleAuthorityDraft(root));
+    const denied = activationChat(entry === "menu" ? ["activate", "no", "back"] : ["no"]);
+    const deniedSession = entry === "menu" ? denied.chat.session : { ...denied.chat.session, chooseOption: undefined };
+    await reviewVerifiedActionAuthority({ projectRoot: root, boundaryName: read.pack.name, draft, session: deniedSession });
+    denied.chat.close();
+    const denial = denied.frames.find(frame => frame.title === "REVIEW CHANGE REQUESTS");
+    expect(denial).toMatchObject({ initialValue: "no" });
+    expect(denial?.labels).toContain("Enable the reviewed change requests");
+    expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+    expect(JSON.stringify(await readActionRuleAuthorityDraft(root))).toBe(before);
+
+    const accepted = activationChat(entry === "menu" ? ["activate", "yes", "back"] : ["yes"]);
+    const acceptedSession = entry === "menu" ? accepted.chat.session : { ...accepted.chat.session, chooseOption: undefined };
+    await reviewVerifiedActionAuthority({ projectRoot: root, boundaryName: read.pack.name, draft, session: acceptedSession });
+    accepted.chat.close();
+    expect(accepted.frames.find(frame => frame.title === "REVIEW CHANGE REQUESTS")).toMatchObject({ initialValue: "no" });
+    expect((await readActionRuleAuthorityActivation(root))?.digest).toBe(draft.digest);
+    const config = JSON.parse(await fs.readFile(path.join(root, "synapsor.actions.runner.json"), "utf8"));
+    expect(config.supervised_worker?.outcomes ?? []).toHaveLength(0);
+    expect(await semanticDeployment.readSemanticSupervisedExecutionState({ projectRoot: root }))
+      .toMatchObject({ enabled: false, policies: [] });
   });
 
   it.each(["unconfirmed", "committed", "cancelled"] as const)("keeps the execution review truthful after a %s save and pause", async (state) => {
@@ -1831,6 +1875,26 @@ async function migrateActionBaselineFixture(projectRoot: string) {
       active: activeRecords.map(pointer), drafts: drafts.map(pointer), provenance: [] }),
     validateSnapshot: async (snapshot) => validateOperatorPolicySnapshot(snapshot),
   })).binding;
+}
+
+function activationChat(decisions: string[]) {
+  const remaining = [...decisions];
+  const frames: Array<{ title: string; message: string; initialValue?: string; labels: string[] }> = [];
+  const io: AnalyticsShellIo = {
+    read: async () => undefined,
+    choose: async choice => {
+      frames.push({ title: choice.title, message: choice.message, initialValue: choice.initialValue,
+        labels: choice.options.map(option => option.label) });
+      const decision = remaining.shift();
+      if (decision !== undefined) expect(choice.options.some(option => option.value === decision)).toBe(true);
+      return decision;
+    },
+    write: () => undefined, writeChunk: () => undefined,
+    setStatus: () => undefined, clearStatus: () => undefined,
+    isTerminal: () => false, columns: () => 110,
+    onInterrupt: () => () => undefined, close: () => undefined,
+  };
+  return { frames, chat: createBoundaryAuthoringChat({ io, color: false, streamLineDelayMs: 0 }) };
 }
 
 async function temporaryRoot(): Promise<string> {

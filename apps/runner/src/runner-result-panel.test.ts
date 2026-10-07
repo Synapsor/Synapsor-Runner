@@ -1,3 +1,4 @@
+import { readActivationView } from "./authoring-activation-view.js";
 import { PassThrough } from "node:stream";
 import { Terminal } from "@xterm/headless";
 import { describe, expect, it, vi } from "vitest";
@@ -35,7 +36,7 @@ describe("selective Runner result panels", () => {
       const decision = chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
         { value: "activate", label: "Activate this exact Read Boundary" },
         { value: "finish", label: "Keep Read Boundary disabled and finish" },
-      ], { initialValue: "finish", explainOnRequest: true });
+      ], { activationView: readActivationView({ replacing: false }), initialValue: "finish", explainOnRequest: true });
       await vi.waitFor(async () => { await flush(); expect(screen()).toContain("REVIEW ACCESS"); });
       readable.write("\r");
       expect(await decision).toBe("finish"); // Enter never silently enables authority.
