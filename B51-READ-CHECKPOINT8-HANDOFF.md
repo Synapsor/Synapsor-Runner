@@ -1,0 +1,13 @@
+# PAUSED — Read checkpoint8
+- Owner explicitly paused; no work resumes until Owner says resume. No usage monitoring/self-stop.
+- W `/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6d`; branch `codex/b51-read-checkpoint8-20261007`.
+- Basee9 contains accepted6d765; WIP product `4949e687d91a4f7248e819ed95a4d532dd1be813` privately pushed, NOT accepted.
+- Old inline `persistReadAssistance` moved to `authoring-read-assistance-checkpoint-host.ts`; native mutation/rollback/writers remain caller ports.
+- Baseline23 producer+3 genuinecold PASS; extracted genuinecold3 PASS/0FAIL at4949 (30.47s); types/newhostcontrols/full NOTRUN.
+- Public Reviewer2 preseal read only; privateoracle unread. Candidate differential/verdict pending.
+- Accepted6d fe0d bundle preserved externally before same-pathreuse; oldref/rawfull/cache untouched.
+- Record: /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-read-checkpoint8-dev1609/DEV-RECORD.json.
+- Exact next after Ownerresume: `python3 /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b51-read-checkpoint8-dev1609/run-focused.py extracted-checkpoint apps/runner/src/read-workload-model.test.ts -t 'durable Read assistance producer checkpoint'`.
+- Then types/narrow host fault/currentness controls and independentreview; no newengine/format/budget or delayedSource timing changes.
+- All own test/model/build groups closed; no Read8 containers/DB/provider. Baseline44 separately OWNER_INTERRUPTED, notPASS.
+-7full ownership is recoveryhelper; never edit consents6c. Candidate2/frozen62 unchanged; same-connection STOP/no paid.
