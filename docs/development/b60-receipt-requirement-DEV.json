@@ -1,0 +1,28 @@
+{
+  "status": "WIP_NOT_ACCEPTED",
+  "base": "d9f8635509a32093ae952314175f21116ef2faa9",
+  "branch": "codex/b60-owner-requirement-20261007",
+  "T0": "2026-10-07T21:51:08Z",
+  "product": "existing shared business-question host; attributed receipt meaning, current configuration applicability, append-only Source/Resume history",
+  "failing_before": {
+    "receipt_resolution": "1 pass / 1 fail at 9291ab82; preserved /var/tmp/synapsor-main-b60-20261007-owned/evidence/failing-before.log"
+  },
+  "checks": {
+    "focused_wip8": "244 pass / 0 fail / 1 skip (live model admission opt-in; paid closed)",
+    "types_wip8": "exit 0",
+    "commands": "isolated HOME/TMP vitest ten affected files maxWorkers=1 test/hookTimeout=20000; corepack pnpm typecheck",
+    "logs": "/var/tmp/synapsor-main-b60-20261007-owned/evidence/",
+    "harness_fixes": [
+      "short inert credential corrected",
+      "request capture clones body only, retaining non-cloneable transport hooks"
+    ]
+  },
+  "open": [
+    "native CLI/Resume adapter independent variants",
+    "Source-only older package preservation/refusal control",
+    "full original requested scope + exact workload final consumer hook",
+    "B59 semantic association gaps",
+    "final integrated gates/composed Luna/studio"
+  ],
+  "paid": "CLOSED; no calls/reservations/ledger change"
+}

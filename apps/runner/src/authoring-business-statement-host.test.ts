@@ -24,16 +24,17 @@ async function fixture() {
   let state: BusinessStatementRecordUpdate = { questions: [], handoffs: [], conversationTurns: [] }, statements: string[] = [];
   let failure: "raw-before-write" | "raw-after-write" | "answer-before-write" | undefined;
   const events: string[] = [], digest = canonicalJsonDigest("declared selected Action");
+  let insideMutation: (() => void) | undefined;
   const context = () => canonicalJsonDigest({ declared: "Source/schema/role", statements });
   const inspect = () => structuredClone(state), reload = async () => { state = JSON.parse(await fs.readFile(file, "utf8")); };
-  const host = (interact: (view: BusinessStatementInteraction) => Promise<BusinessStatementResponse>) => createBusinessStatementHost({
+  const host = (interact: (view: BusinessStatementInteraction) => Promise<BusinessStatementResponse>, assertCurrent = async () => {}) => createBusinessStatementHost({
     question: "How many reviewers are needed?", stage: "action_drafting", producerQuestionDigest: canonicalJsonDigest("declared producer question"),
-    assertCurrent: async () => {},
+    assertCurrent,
     access: {
       readQuestions: () => state.questions!, readHandoffs: () => state.handoffs!, readRecovery: () => state.recovery,
       readConversationTurns: () => state.conversationTurns, readCheckpointDigest: () => undefined,
       scopeDigest: () => digest, contextDigest: async () => context(),
-      mutate: operation => withProjectAuthorityMutation(root, operation),
+      mutate: operation => withProjectAuthorityMutation(root, async permit => { insideMutation?.(); return operation(permit); }),
       install: update => { state = { ...state, ...update }; },
       save: async (_permit, _stage, subject) => {
         const rawOnly = !!state.questions!.at(-1)?.raw_answer && !state.questions!.at(-1)?.proposal;
@@ -49,13 +50,26 @@ async function fixture() {
     }, interact,
   });
   return { root, file, source, host, events, inspect, reload, setFailure: (next: typeof failure) => { failure = next; },
-    statements: () => [...statements], install: (update: BusinessStatementRecordUpdate) => { state = { ...state, ...update }; } };
+    statements: () => [...statements], install: (update: BusinessStatementRecordUpdate) => { state = { ...state, ...update }; },
+    setMutationHook: (hook: () => void) => { insideMutation = hook; } };
 }
 
 const answer = (raw: string | null, accepted: boolean | null = true) => async (view: BusinessStatementInteraction): Promise<BusinessStatementResponse> =>
   view.kind === "question" ? { kind: "answer", binding: view.binding, raw }
     : view.kind === "readback" ? { kind: "decision", binding: view.binding, accepted }
       : { kind: "pending", binding: view.binding, choice: "keep" };
+
+it('checks the full consumer currentness under the adoption permit after the readback wait', async () => {
+  const f = await fixture(); let armed = false, configurationChanged = false;
+  f.setMutationHook(() => { if (armed) configurationChanged = true; });
+  await expect(f.host(async view => {
+    if (view.kind === 'readback') armed = true;
+    return answer('Use the worker completion receipt.')(view);
+  }, async () => { if (configurationChanged) throw new PolicySourceChangedError(); }).review()).rejects.toBeInstanceOf(PolicySourceChangedError);
+  expect(f.inspect().questions!.at(-1)?.confirmation).toBeUndefined();
+  expect(f.inspect().handoffs!.at(-1)?.state).toBe('waiting');
+  expect(f.statements()).toEqual([]);
+});
 
 // Real native transport/disposition records; the business host still uses local
 // ports. This is not a public authoring or model semantic-fidelity proof.

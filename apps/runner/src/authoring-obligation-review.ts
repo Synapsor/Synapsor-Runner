@@ -118,8 +118,8 @@ function receiptCapabilityRoots(draft: unknown): string[] {
       ? [`${base}/effect`, `${base}/execution`, `/actions/${index}/effect`] : [];
   });
 }
-function isolatableReceiptConfiguration(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): boolean {
-  const mode = receiptRequirement(source, p);
+function isolatableReceiptConfiguration(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown, session?: PolicySourceSession): boolean {
+  const mode = receiptRequirement(source, p, draft, session);
   if (!mode || receiptSelectionProblem(source, draft, mode) || !supportedReceiptSetup(draft, mode)
     || !isolatedReceiptReadFields(p) || p.issue_kind !== 'coverage_link'
     || p.draft_paths.length < 2 || new Set(p.draft_paths).size !== p.draft_paths.length) return false;
@@ -433,7 +433,7 @@ export function receiptSelectionComponent(p: PolicyPassage, source: PolicyTextSn
     || new Set(p.draft_paths).size !== p.draft_paths.length
     || p.field_checks?.length || p.counter_requirements?.length || p.application_obligations?.length || p.deployment_prerequisite
     || p.source_counter_obligation || p.operator_override || p.evidence_checks?.some(c => !c.path.startsWith(`${CONFIGURATION_PATH}/`))) {
-    throw new CoverageReceiptConfigurationError(isolatableReceiptConfiguration(p, source, draft)
+    throw new CoverageReceiptConfigurationError(isolatableReceiptConfiguration(p, source, draft, session)
       ? 'current_selection_mixed_component' : 'component_not_isolatable');
   }
   if (at(draft, CONFIGURATION_PATH)?.status !== 'current') throw new CoverageReceiptConfigurationError('selection_unavailable');

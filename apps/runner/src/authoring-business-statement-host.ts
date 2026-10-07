@@ -95,6 +95,7 @@ export function createBusinessStatementHost(input: {
     await access.save(permit, input.stage, "The exact business statement");
   });
   const createHandoff = (consumer: AuthoringOwnerHandoff["consumer"]) => access.mutate(async permit => {
+    await input.assertCurrent(permit);
     const context = await access.contextDigest(permit, consumer);
     const handoff = createOwnerHandoff({ consumer, question: input.question,
       scope_digest: access.scopeDigest(), context_digest: context });
@@ -110,6 +111,7 @@ export function createBusinessStatementHost(input: {
     return handoff;
   });
   const adopt = (answer: string, question?: OperatorQuestion, testimony = true) => access.mutate(async permit => {
+    await assertCurrent(permit);
     const current = await access.contextDigest(permit, savedHandoff.consumer), pending = access.readHandoffs().at(-1);
     if (savedHandoff.state !== "waiting" || pending?.state !== "waiting" || pending.id !== savedHandoff.id
       || pending.digest !== savedHandoff.digest || savedHandoff.scope_digest !== access.scopeDigest()
@@ -187,9 +189,10 @@ export function createBusinessStatementHost(input: {
       await saveQuestion(presentOperatorQuestion(created, h.question));
       q = latestQuestion()!;
     }
-    if (q.disposition) {
+    if (q.disposition || q.terminal_failure) {
       const response = await exchange({ kind: "pending", binding: binding(), lines: operatorQuestionReadback(q),
-        defaultValue: "keep", canReplace: Boolean(q.raw_answer) });
+        defaultValue: "keep", canReplace: Boolean(q.raw_answer),
+        ...(q.kind === 'receipt_requirement' ? { canReview: !q.terminal_failure && q.proposal?.disposition === 'proposed' } : {}) });
       const choice = response.kind === "pending" ? response.choice : "keep";
       if (choice === "replace" && q.raw_answer) {
         const previous = q;

@@ -16,7 +16,7 @@ type View = AuthoringQuestionInteraction<BusinessStatementBinding>;
 export type BusinessStatementInteraction = Extract<View, { kind: "question" }>
   | (Extract<View, { kind: "readback" }> & { question: string })
   | { kind: "pending"; binding: BusinessStatementBinding; lines: readonly string[];
-      defaultValue: "keep"; canReplace: boolean };
+      defaultValue: "keep"; canReplace: boolean; canReview?: boolean };
 export type BusinessStatementResponse = Exclude<AuthoringQuestionResponse<BusinessStatementBinding>, { kind: "pending" }>
   | { kind: "pending"; binding: BusinessStatementBinding; choice: "keep" | "review" | "replace" };
 
@@ -34,6 +34,7 @@ export function assertBusinessStatementResponse(view: BusinessStatementInteracti
   if (canonicalJsonDigest(view.binding) !== canonicalJsonDigest(response.binding)
     || view.kind === "question" && (response.kind !== "answer" || response.raw !== null && typeof response.raw !== "string")
     || view.kind === "readback" && (response.kind !== "decision" || response.accepted !== null && typeof response.accepted !== "boolean")
-    || view.kind === "pending" && (response.kind !== "pending" || !["keep", "review", "replace"].includes(response.choice)))
+    || view.kind === "pending" && (response.kind !== "pending" || !["keep", "review", "replace"].includes(response.choice)
+      || response.choice === 'replace' && view.canReview !== undefined && !view.canReplace || response.choice === 'review' && view.canReview === false))
     throw new PolicySourceChangedError();
 }

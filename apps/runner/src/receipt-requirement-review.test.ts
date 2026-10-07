@@ -22,7 +22,7 @@ function fixture() {
   const dependencies = receiptRequirementDependencies(draft);
   let question = presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(), revision: 1, handoff_id: randomUUID(),
     kind: 'receipt_requirement', scope_digest: canonicalJsonDigest('declared job'), context_digest: canonicalJsonDigest('declared current context'),
-    target: { phase: 'receipt_requirement', outcomes: ['lab.change'] }, material: [source.text],
+    target: { phase: 'receipt_requirement', resource: source.digest, field: 'lines:1-2', outcomes: ['lab.change'] }, material: [source.text],
     evidence: [{ id: 'receipt-source-range', digest: receiptRequirementSourceBinding(source, session.id, store, 1, 2) as `sha256:${string}` },
       { id: 'receipt-meaning-dependencies', digest: dependencies as `sha256:${string}` }],
     receipt_selection: { source: 'lab', mode: 'runner_ledger', dependencies_digest: dependencies as `sha256:${string}` },

@@ -144,8 +144,8 @@ export async function presentBusinessStatementInteraction(input: {
   if (view.kind === "pending") {
     const choice = await input.session.chooseOption?.("SAVED BUSINESS STATEMENT", [
       { value: "keep", label: "Keep this decision pending" },
-      { value: "review", label: "Review the retained answer" },
-      { value: "replace", label: "Answer again; retain the earlier words" },
+      ...(view.canReview === false ? [] : [{ value: "review", label: "Review the retained answer" }]),
+      ...(view.canReview === undefined || view.canReplace ? [{ value: "replace", label: "Answer again; retain the earlier words" }] : []),
     ], { initialValue: "keep", reviewOnly: true,
       context: operatorBusinessReadback([...view.lines], input.businessContext) });
     return { kind: "pending", binding: view.binding,

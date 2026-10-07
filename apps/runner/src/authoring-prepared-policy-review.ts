@@ -9,6 +9,8 @@ import { planReviewPrerequisite, ReviewResolutionError, type ReviewPrerequisiteR
 import { CoverageComponentError, coverageFinding } from './authoring-coverage-feedback.js';
 import { SourceTransactionScopeError } from './authoring-source-transaction-scope.js';
 import { planCoverageResolution } from './authoring-review-resolution.js';
+import { currentReceiptRequirement, receiptRequirementReviewTarget } from './authoring-receipt-requirement.js';
+import { CoverageReceiptConfigurationError } from './authoring-coverage-feedback.js';
 import { randomUUID } from "node:crypto";
 import { authoringInterruptedProducerInput } from "./authoring-generation-recovery.js";
 import { retainedSourceRecoveryEpisode } from "./authoring-recovery-source.js";
@@ -200,6 +202,15 @@ export async function ensurePreparedPolicyCoverage(input: {
       ...(retainedDutyPlan.counterHistory??[]).map(record=>record.context_digest),
       ...(retainedDutyPlan.crossSource?[retainedDutyPlan.crossSource.base.context_digest]:[])]} : {}),
     ...(prospective ? {prospective_withdrawal:canonicalJsonDigest(prospective)} : {}) });
+  const pendingReceipt = receiptRequirementReviewTarget(source, sources.coverage_episodes ?? [], key);
+  if (pendingReceipt && !currentReceiptRequirement(source, pendingReceipt, draftRecord, sources)) {
+    state.attemptKey = key;
+    const finding = coverageFinding(new CoverageReceiptConfigurationError('source_requirement_unestablished'),
+      '/receipt_requirement', { source: source.digest, start: pendingReceipt.start, end: pendingReceipt.end });
+    throw new ReviewResolutionError(finding.code, planCoverageResolution({context:key,findings:[finding],limited:false,
+      unevaluated:['current complete policy review'],complete_validation:false}),
+      'The saved receipt requirement needs your business interpretation and an exact current-configuration readback. Resume that decision before another model review; no receipt mode or completion was inferred.');
+  }
   let reused: PolicyCoverage | undefined;
   if (!input.force && (state.attemptKey === key && state.report?.key === key
     || state.attemptKey === undefined && sources.coverage_context_digest === key && sources.coverage)) {

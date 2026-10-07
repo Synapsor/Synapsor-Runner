@@ -21,7 +21,7 @@ const invalid = (): never => { throw new Error('RECEIPT_REQUIREMENT_REVIEW_INVAL
 /** Relevant meaning dependencies only. Approval counts, publication timestamps
  * and whole-review PASS flags cannot supply or invalidate receipt meaning.
  * The enclosing complete policy review retains its full independent key. */
-export function receiptRequirementDependencies(draft: unknown): string {
+export function receiptRequirementDependencies(draft: unknown): `sha256:${string}` {
   const d = object(draft), evidence = object(d.runner_evidence), runtime = object(evidence.runtime_contract);
   const configuration = object(runtime.receipt_configuration);
   return canonicalJsonDigest({ source: object(d.read).source ?? null,
@@ -33,9 +33,18 @@ export function receiptRequirementDependencies(draft: unknown): string {
       source_receipt_destinations: configuration.source_receipt_destinations ?? [] },
     receipt_contract: runtime.receipts ?? null, reader: runtime.onboarding_reader ?? null });
 }
-export function receiptRequirementSourceBinding(source: Source, session: string, store: string, start: number, end: number): string {
+export function receiptRequirementSourceBinding(source: Source, session: string, store: string, start: number, end: number): `sha256:${string}` {
   return canonicalJsonDigest({ source_session: session, source_digest: source.digest, store_digest: store, start, end,
     source_excerpt: source.text.split(/\r\n|\r|\n/u).slice(start - 1, end).join('\n') });
+}
+export function receiptRequirementQuestionTarget(q: OperatorQuestion, source: Source, session: string, store: string):
+  { start: number; end: number; source_excerpt: string } | undefined {
+  const range = /^lines:(\d+)-(\d+)$/u.exec(q.target.field ?? '');
+  if (q.kind !== 'receipt_requirement' || q.target.resource !== source.digest || !range) return undefined;
+  const start = Number(range[1]), end = Number(range[2]);
+  if (!Number.isSafeInteger(start) || start < 1 || !Number.isSafeInteger(end) || end < start || end > source.lines
+    || q.evidence.find(e => e.id === 'receipt-source-range')?.digest !== receiptRequirementSourceBinding(source, session, store, start, end)) return undefined;
+  return { start, end, source_excerpt: source.text.split(/\r\n|\r|\n/u).slice(start - 1, end).join('\n') };
 }
 /** Nominate only a saved host refusal on an exact unaccepted receipt component.
  * Its range is a question target, never an accepted model policy interpretation. */
@@ -61,7 +70,7 @@ export function receiptRequirementReviewTarget(source: Source, episodes: readonl
   const unique = [...new Map(targets.map((t: any) => [canonicalJsonDigest(t), t])).values()];
   return unique.length === 1 ? unique[0] as { start: number; end: number; source_excerpt: string } : undefined;
 }
-export function receiptRequirementQuestionContext(session: Session) {
+export function receiptRequirementQuestionContext<T extends Session>(session: T) {
   const { receipt_requirement_reviews: _history, ...source } = session;
   return source;
 }
@@ -85,11 +94,12 @@ export function assertReceiptRequirementReviews(value: unknown): asserts value i
       || r.decision === 'confirmed' && (!q.confirmation || q.disposition || q.proposal?.disposition !== 'proposed'
         || !q.raw_answer?.text.trim() || q.proposal.value?.kind !== 'receipt_requirement'
         || canonicalJsonDigest(q.proposal.value) !== canonicalJsonDigest(r.requirement))
-      || r.decision === 'pending' && (q.confirmation || r.requirement !== undefined || !q.disposition && !q.terminal_failure)
+      || r.decision === 'pending' && (q.confirmation || r.requirement !== undefined || !q.presentation)
       || canonicalJsonDigest(r.selection) !== canonicalJsonDigest({ ...q.receipt_selection,
         origin: 'current_host_configuration', applicability: r.decision === 'confirmed' ? 'operator_confirmed' : 'pending' })
       || evidence.length !== 2 || new Set(evidence.map(e => e.id)).size !== 2
       || q.receipt_selection?.dependencies_digest !== r.dependencies_digest
+      || q.target.resource !== r.source_digest || q.target.field !== `lines:${r.start}-${r.end}`
       || q.evidence.find(e => e.id === 'receipt-meaning-dependencies')?.digest !== r.dependencies_digest
       || q.evidence.find(e => e.id === 'receipt-source-range')?.digest !== canonicalJsonDigest({
         source_session: r.source_session, source_digest: r.source_digest, store_digest: r.store_digest,
