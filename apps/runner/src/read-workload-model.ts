@@ -1,3 +1,4 @@
+import { requestedReadResourceIds } from "./read-requested-scope.js";
 import { findReadMeaningEvidence, isExplicitReadMeaningStatement, explicitReadTaskTargets, ReadMeaningConflictError, isUnknownReadMeaning, type ReadMeaningAttempt, type ReadMeaningEvidence, type ReadMeaningStatement } from "./read-meaning-evidence.js";
 import type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 export type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
@@ -463,6 +464,18 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           },
         };
       }
+      // The complete operator request is retained independently of the bounded
+      // routing question. Check real allowed plans, including reviewed related
+      // paths; forbidden examples cannot satisfy a requested public workload.
+      const requiredResources = requestedReadResourceIds(originalNamingSources.join("\n"), catalog.resources.map(resource => resource.id));
+      const allowedResources = new Set(workloadNamingEntries({ allowed: args.allowed }, catalog)
+        .flatMap(entry => isRecord(entry) && isRecord(entry.plan) && typeof entry.plan.resource === "string" ? [entry.plan.resource] : []));
+      const missingResources = requiredResources.filter(resource => !allowedResources.has(resource));
+      if (missingResources.length) {
+        workloadValidationBlockers = [`READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED: The retained operator request includes ${missingResources.join(", ")}; submit complete allowed workloads or retain the missing business access pending. A routing summary cannot withdraw it.`];
+        return { ok: false, error_code: "READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED", value: { blockers: workloadValidationBlockers,
+          authority_granted: false, source_query_executed: false, source_database_changed: false } };
+      }
       const requestedTargets = explicitReadTaskTargets(originalNamingSources.join("\n"), catalog);
       const actualDependencies = workloadNamingEntries(args, catalog).flatMap(entry => isRecord(entry) && isRecord(entry.plan)
         ? workloadPlanFields(entry.plan).map(field => JSON.stringify({ resource: (entry.plan as Record<string, unknown>).resource, field })) : []);
@@ -607,7 +620,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     async close() {},
   };
   const baseQuestion = () => [
-    "Map every representative question to one exact Synapsor Explore plan using only ids and operations in the structural catalog.",
+    "Map the complete retained operator request to exact Synapsor Explore plans using only ids and operations in the structural catalog. Representative questions are routing summaries, not authority to omit requested reads or add unrelated access.",
     `Workload name: ${name}`,
     `Allowed questions: ${JSON.stringify(allowedQuestions)}`,
     `Forbidden questions: ${JSON.stringify(forbiddenQuestions)}`,
