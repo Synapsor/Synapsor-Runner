@@ -1,0 +1,30 @@
+{
+  "status": "INDEPENDENT_REVIEW_PENDING",
+  "base": "78c88609",
+  "files": [
+    "authoring-typed-review-codec.ts",
+    "authoring-typed-review-codec.test.ts"
+  ],
+  "failing_first": "/var/tmp/synapsor-b64-view-codec-before-owned/out/vitest.json missing required new module (characterization, not established old product regression)",
+  "types": 0,
+  "focused_group": {
+    "pass": 57,
+    "fail": 0,
+    "skip": 0,
+    "files": 3
+  },
+  "final_codec_only": {
+    "pass": 19,
+    "fail": 0,
+    "skip": 0
+  },
+  "evidence": "/var/tmp/synapsor-b64-view-codec-after-owned/out/",
+  "commands": [
+    "tsc -b --pretty false",
+    "vitest3file codec/literal/presenter maxWorkers1 testTimeout20000",
+    "vitest runtimecodec only after added invaliddisplay/keep test maxWorkers1"
+  ],
+  "contract": "Strict fixed view/event shapes, canonical digests, bounds, provenance tags, safe integer/money, duplicate identity rejection; exact field/application/operation/view/dependency bindings; literal reparsed; no confirmation, actor, store/provider port. Safely represented out-of-range suggestion display allowed, keep refused.",
+  "open": "Main native OperatorQuestion v2 persistence/public integration; independent reviewer verdict pending",
+  "usage": "6% used at normal checkpoint; Owner new overnight stop about97% used, no new test/edit/call then, coordinate Main"
+}
