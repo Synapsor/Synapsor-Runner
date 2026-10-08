@@ -1,0 +1,14 @@
+{
+  "owner_source": "666117a9",
+  "reviewer": "Main, independent of Action implementer",
+  "verdict": "ACCEPT_SCOPED_PRESENTATION_BINDING",
+  "inspection": "Optional fifth typed metadata argument; exact proposal activation producer supplies existing proposalActivationView and activation kind. Existing back default, choice values and activation branch unchanged. No prompt/title inference.",
+  "actual_tests": {
+    "passed": 10,
+    "failed": 0,
+    "workers": 1,
+    "network": "unshared",
+    "report": "/var/tmp/synapsor-b64-main-owned/evidence/action-consent-typed-hook.json"
+  },
+  "limits": "Real reviewActionDraft prompt exercised with stubbed project ports; no installed/public/full authority acceptance. Consumer retirement remains Chat-owned and independently reviewed."
+}

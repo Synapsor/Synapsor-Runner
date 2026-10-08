@@ -1,3 +1,4 @@
+import { proposalActivationView, type AuthoringActivationView } from "./authoring-activation-view.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -145,6 +146,7 @@ export type ActionControlPrompter = {
     choices: ActionPromptChoice[],
     context?: string[],
     initialValue?: string,
+    metadata?: { decisionKind?: "business_review" | "disclosure" | "activation" | "recovery"; activationView?: AuthoringActivationView },
   ): Promise<string | undefined>;
   text(label: string, options?: ActionTextPromptOptions): Promise<string | undefined>;
   confirm(label: string, defaultValue?: boolean, context?: string[]): Promise<boolean | undefined>;
@@ -3717,7 +3719,7 @@ export async function reviewActionDraft(input: {
           ...activationReview,
           `Complete authority digest: ${draft.action_boundary_digest ?? "unavailable"}`,
           `${actionRehearsalSummary(draft)} for this exact disabled revision; source database changed: no.`,
-        ], "back");
+        ], "back", { decisionKind: "activation", activationView: proposalActivationView() });
     if (choice === "activate") {
       const actor = input.env.SYNAPSOR_OPERATOR_ACTOR ?? input.env.USER ?? "local_operator";
       operatorSession.actor = actor;
