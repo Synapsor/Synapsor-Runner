@@ -302,7 +302,9 @@ export function reconciliationReceipt(
     if (outcome !== "applied") throw new Error("SOURCE_COMPLETION_OUTCOME_MISMATCH");
     const receipt = toExecutionReceipt(job, observation.source_completion.evidence.result, false);
     const { receipt_hash: _hash, ...body } = receipt;
-    const core = { ...body, reconciliation: { intent_id: intent.intent_id, reason: reason.slice(0, 500) } };
+    // Canonical evidence contains only JSON fields. Optional native V2 fields
+    // absent from the result must remain absent, rather than undefined.
+    const core = JSON.parse(JSON.stringify({ ...body, reconciliation: { intent_id: intent.intent_id, reason: reason.slice(0, 500) } })) as Record<string, unknown>;
     return parseExecutionReceipt({ ...core, receipt_hash: canonicalJsonDigest(core) }) as ExecutionReceiptV2 | ExecutionReceiptV5;
   }
   if (job.engine === "postgres" && (intent.status === "applying" || intent.status === "reconciliation_required")) {
