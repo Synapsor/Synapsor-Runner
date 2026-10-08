@@ -607,3 +607,5 @@ passed on current structured paths (success/failure/missing context/unresolved),
 so that result is not claimed as a reproduced English leak. Their temporary patch
 and log remain /var/tmp/synapsor-b64-main-owned/evidence/english-scope-*; deletion
 and fail-closed typed routing now replace defensive legacy gating.
+
+Public Read host assembly (in progress): `projectAuthoringReadScopeContext` derives original-request, exact active Source, catalog and saved-job applicability from native records. Meaning identity excludes transient Resume/generation bookkeeping; operation identity binds the actual Read baseline and structural binding. It grants no interpretation/consent. The caller must reload coherent records and check egress/currentness; source/analysis/save ownership remains unchanged. Five focused controls and types pass; the first local Source test omitted the fixture's active snapshot selector (4P/1F preserved, then5P). Public producer/review wiring, edit-delta binding and public cold continuation are still pending, so this component is not public-flow acceptance.
