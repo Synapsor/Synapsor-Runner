@@ -1,4 +1,4 @@
-import { createCurrentReadEvidence, currentReadEvidenceStatements, currentStructuredReadEvidence,
+import { createCurrentReadEvidence, currentReadEvidenceStatements, currentStructuredReadEvidence, currentReadScopeContextDigest,
   type CurrentReadEvidenceRecords, type CurrentStructuredReadEvidence } from "./read-current-evidence.js";
 import { READ_SCOPE_PROTOCOL, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
   type ReadScopeBinding, type ReadScopeCatalog, type ReadScopeReference, type ReadScopeRecord } from "./read-structured-scope.js";
@@ -180,7 +180,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   const structuredScopeInput = input.structuredScope ? structuredClone(input.structuredScope.current()) : undefined;
   if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL)
     throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED: Preserve the native job; no legacy protocol fallback is available.");
-  const structuredScopeDigest = structuredScopeInput ? canonicalJsonDigest(structuredScopeInput) : undefined;
+  const structuredScopeDigest = currentReadScopeContextDigest(structuredScopeInput);
   const nativeScope = structuredScopeInput?.native ? currentStructuredReadEvidence({ ...structuredScopeInput.native,
     expectedBinding: structuredScopeInput.binding, references: structuredScopeInput.references, catalog: structuredScopeInput.catalog }) : undefined;
   const confirmedScope = nativeScope?.status === "confirmed" ? nativeScope.record : undefined;
@@ -821,7 +821,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           const current = explorationBoundaryCandidateDigest(mappingBoundary);
           const currentCatalog = readWorkloadCatalog(mappingBoundary, input.principalScopedRootResources).digest;
           return current === expectedBoundaryDigest && currentCatalog === catalog.digest
-            && (!input.structuredScope || canonicalJsonDigest(input.structuredScope.current()) === structuredScopeDigest)
+            && (!input.structuredScope || currentReadScopeContextDigest(input.structuredScope.current()) === structuredScopeDigest)
             ? authorityDigest : canonicalJsonDigest({ stale: current, catalog: currentCatalog });
         },
       });
@@ -853,7 +853,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   };
   const inputDigest = () => canonicalJsonDigest({ name, allowedQuestions, forbiddenQuestions, originalNamingSources, namingSources,
     principal_roots: input.principalScopedRootResources ?? null, provider: configuration.provider, model: configuration.model,
-    endpoint: configuration.endpoint.href, base_question: input.structuredScope ? { protocol: READ_SCOPE_PROTOCOL, input: structuredScopeInput } : baseQuestion(), provider_system_prompt: providerSystemPrompt,
+    endpoint: configuration.endpoint.href, base_question: input.structuredScope ? { protocol: READ_SCOPE_PROTOCOL, context_digest: structuredScopeDigest } : baseQuestion(), provider_system_prompt: providerSystemPrompt,
     relationship_review_limit: relationshipReviewLimit });
   const clarificationLine = (request: ModelReadClarificationRequest, answer: string) =>
     `Reviewed business clarification for ${request.resource}${request.field ? `.${request.field}` : ""}: question ${JSON.stringify(request.question)}, operator answer ${JSON.stringify(answer)}. This is naming context, not database values or authority.`;
@@ -865,7 +865,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   const assertAssistanceContext = () => {
     if (meaningContext() !== expectedMeaningContext || explorationBoundaryCandidateDigest(mappingBoundary) !== expectedBoundaryDigest
       || readWorkloadCatalog(mappingBoundary, input.principalScopedRootResources).digest !== catalog.digest
-      || input.structuredScope && canonicalJsonDigest(input.structuredScope.current()) !== structuredScopeDigest)
+      || input.structuredScope && currentReadScopeContextDigest(input.structuredScope.current()) !== structuredScopeDigest)
       throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The Read metadata changed while assistance was pending. Preserve the question and revalidate; no new mapping was sent.");
   };
   const controllerState = (): ReadWorkloadAssistanceCheckpoint["state"] => ({

@@ -18,7 +18,7 @@ import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionCheckpoint, ty
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
 import { exploreBoundaryVocabularyGaps } from "./explore-vocabulary.js";
-import { createCurrentReadEvidence, currentReadEvidenceStatements, currentStructuredReadEvidence,
+import { createCurrentReadEvidence, currentReadEvidenceStatements, currentStructuredReadEvidence, currentReadScopeContextDigest,
   type CurrentStructuredReadEvidence, type CurrentReadEvidenceRecords } from "./read-current-evidence.js";
 import { READ_SCOPE_PROTOCOL, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
   type ReadScopeBinding, type ReadScopeReference, type ReadScopeCatalog, type ReadScopeRecord } from "./read-structured-scope.js";
@@ -133,7 +133,7 @@ export async function generateModelReadBoundaryRevision(input: {
   const serializedCatalog = JSON.stringify(catalog);
   if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL) throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED");
   const structured = input.structuredScope ? structuredClone(input.structuredScope.current()) : undefined;
-  const structuredDigest = canonicalJsonDigest(structured ?? null);
+  const structuredDigest = currentReadScopeContextDigest(structured);
   const nativeScope = structured?.native ? currentStructuredReadEvidence({ ...structured.native,
     expectedBinding: structured.binding, references: structured.references, catalog: structured.catalog }) : undefined;
   const currentMeanings = () => {
@@ -428,7 +428,7 @@ export async function generateModelReadBoundaryRevision(input: {
     completeAfterRequiredTool: true,
     authorityGuard: () => readBoundaryRevisionCatalog(input.boundary).digest === catalog.digest
       && canonicalJsonDigest(currentMeanings()) === evidenceDigest
-      && canonicalJsonDigest(input.structuredScope?.current() ?? null) === structuredDigest
+      && currentReadScopeContextDigest(input.structuredScope?.current()) === structuredDigest
       ? authorityDigest
       : canonicalJsonDigest({ stale: true }),
   }); };
@@ -445,7 +445,7 @@ export async function generateModelReadBoundaryRevision(input: {
   const assertCurrent = () => {
     if (explorationBoundaryCandidateDigest(input.boundary) !== boundaryDigest
       || readBoundaryRevisionCatalog(input.boundary).digest !== catalog.digest
-      || canonicalJsonDigest(input.structuredScope?.current() ?? null) !== structuredDigest) throw new Error(
+      || currentReadScopeContextDigest(input.structuredScope?.current()) !== structuredDigest) throw new Error(
       "READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The exact Read draft or catalog changed while clarification was pending; no replacement was sent.");
   };
   let usage: ModelReadBoundaryRevisionResult["usage"], correctionUsed = authoringInterruptedProducerCorrections().correction_used, clarificationCount = 0;

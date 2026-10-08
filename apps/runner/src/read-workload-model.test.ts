@@ -81,7 +81,7 @@ describe("B64 structured Read producer adapter", () => {
     expect(accepted[0]!.completion).toMatchObject({ operation_id: state.operations[0]!.id,
       request_digest: state.operations[0]!.request_digest, response_digest: canonicalJsonDigest(response(args()).body) });
   });
-  it.each(["omit", "replace", "unconfirmed", "planning_reuse", "planning_wrong_scope"] as const)("uses native scope lineage when a later producer tries to %s its interpretation", async mode => {
+  it.each(["omit", "replace", "unconfirmed", "planning_reuse", "planning_wrong_scope", "live_generation", "invalid_generation"] as const)("uses native scope lineage when a later producer tries to %s its interpretation", async mode => {
     let state: AuthoringTransportState = { version: 1, operations: [] };
     let saved: OperatorQuestion | undefined;
     const first = setup(async () => response(args()));
@@ -126,6 +126,7 @@ describe("B64 structured Read producer adapter", () => {
       return;
     }
     const send = vi.fn(async () => {
+      if (mode === "invalid_generation") state.operations[0]!.read_checkpoint!.material_digest = canonicalJsonDigest("different scope");
       if (mode === "replace") {
         const changed = args(); changed.allowed[0]!.plan.select = ["amount"];
         changed.read_scope.requirements[0]!.targets[1]!.field = "amount";
@@ -138,10 +139,12 @@ describe("B64 structured Read producer adapter", () => {
     const run = () => withAuthoringGenerationRecovery(async () => {
       configureAuthoringGenerationRecovery(host);
       return generateModelReadWorkload({ ...next.input, structuredScope: { protocol: READ_SCOPE_PROTOCOL,
-        current: () => ({ ...next.context, native: { questions: [saved!], handoffs: [], generation: fixedGeneration,
+        current: () => ({ ...next.context, native: { questions: [saved!], handoffs: [], generation: mode === "live_generation" || mode === "invalid_generation" ? state : fixedGeneration,
           question_id: saved!.id, analysis: initial.analysis } }) } });
     });
-    if (mode === "unconfirmed") {
+    if (mode === "invalid_generation") {
+      await expect(run()).rejects.toMatchObject({ code: "ASK_AUTHORITY_CHANGED" }); expect(send).toHaveBeenCalledOnce();
+    } else if (mode === "unconfirmed") {
       await expect(run()).rejects.toThrow("READ_SCOPE_NATIVE_PENDING"); expect(send).not.toHaveBeenCalled();
     } else if (mode === "replace") {
       await expect(run()).rejects.toThrow("READ_WORKLOAD_DRAFT_FAILED"); expect(send).toHaveBeenCalledTimes(2);

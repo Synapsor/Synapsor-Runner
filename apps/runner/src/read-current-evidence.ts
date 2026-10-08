@@ -31,6 +31,28 @@ export type CurrentStructuredReadEvidence = Parameters<typeof resolveNativeReadS
 export function currentStructuredReadEvidence(records: CurrentStructuredReadEvidence) {
   return resolveNativeReadScope(records);
 }
+/** Revalidate the actual native lineage on each call, but bind only the scope
+ * evidence it establishes. The producer's unrelated generation bookkeeping is
+ * not a change to the operator's confirmed scope. Nothing is stored here. */
+export function currentReadScopeContextDigest(input: {
+  binding: CurrentStructuredReadEvidence["expectedBinding"];
+  references: CurrentStructuredReadEvidence["references"];
+  catalog: CurrentStructuredReadEvidence["catalog"];
+  native?: Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id" | "analysis">;
+  reusable?: Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id" | "analysis">;
+  resumable?: Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id" | "analysis">;
+} | undefined): Digest {
+  if (!input) throw new Error("READ_SCOPE_PROTOCOL_REQUIRED: No scope evidence context is available.");
+  const native = (value: typeof input.native) => {
+    if (!value) return null;
+    const current = currentStructuredReadEvidence({ ...value, expectedBinding: input.binding,
+      references: input.references, catalog: input.catalog });
+    return { requested_question_id: value.question_id, question_digest: current.question.digest,
+      record_digest: current.record.digest, status: current.status, analysis_digest: canonicalJsonDigest(value.analysis ?? null) };
+  };
+  return canonicalJsonDigest({ binding: input.binding, references: input.references, catalog: input.catalog,
+    native: native(input.native), reusable: native(input.reusable), resumable: native(input.resumable) });
+}
 export type CurrentReadEvidenceReference =
   | { kind: "statement"; evidence: ReadMeaningEvidence }
   | { kind: "operator_answer"; question_id: string; revision: number; answer_id: string; handoff_id: string }

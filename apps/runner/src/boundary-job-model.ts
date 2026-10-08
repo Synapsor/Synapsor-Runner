@@ -2,7 +2,7 @@ import type { ExactReadRequestBinding } from "./boundary-job-read-requests.js";
 import { READ_SCOPE_PROTOCOL, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
   type ReadScopeBinding, type ReadScopeReference, type ReadScopeCatalog, type ReadScopeRecord } from "./read-structured-scope.js";
 import type { ReadWorkloadAnalysis } from "./read-workload-assist.js";
-import { currentStructuredReadEvidence, type CurrentStructuredReadEvidence } from "./read-current-evidence.js";
+import { currentStructuredReadEvidence, currentReadScopeContextDigest, type CurrentStructuredReadEvidence } from "./read-current-evidence.js";
 import { isAuthoringGenerationStop, beginAuthoringProducerInvocation, authoringInterruptedProducerCorrections,
   reserveAuthoringProducerCorrection, withAuthoringProducerCorrection, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -191,11 +191,6 @@ export async function planModelBoundaryJob(input: {
     resumable: structured.resumable ? currentStructuredReadEvidence({ ...structured.resumable, expectedBinding: structured.binding,
       references: structured.references, catalog: structured.catalog }).record.proposal : undefined } : undefined;
   if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL) throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED");
-  const exactRevisionRoute = input.workflow || input.structuredScope ? undefined : exactSoleSemanticActionRevisionRoute(jobIntent, state);
-  if (exactRevisionRoute) {
-    rememberModelAuthoringTurn(input.session.conversation, jobIntent, exactRevisionRoute.summary);
-    return exactRevisionRoute;
-  }
   const tools: AskToolDefinition[] = [jobPlanToolDefinition(state, input.workflow, !!structured)];
   const authorityDigest = askToolSurfaceDigest(tools);
   const configuration = planningConfiguration(
@@ -313,7 +308,7 @@ export async function planModelBoundaryJob(input: {
     requiredInitialToolName: PLAN_BOUNDARY_JOB_TOOL,
     completeAfterRequiredTool: true,
     authorityGuard: () => canonicalJsonDigest(state) === canonicalJsonDigest(normalizeCurrentState(input.currentState))
-      && (!input.structuredScope || canonicalJsonDigest(input.structuredScope.current()) === canonicalJsonDigest(structured))
+      && (!input.structuredScope || currentReadScopeContextDigest(input.structuredScope.current()) === currentReadScopeContextDigest(structured))
       ? authorityDigest
       : canonicalJsonDigest({ stale: true }),
   });
@@ -367,47 +362,6 @@ export async function planModelBoundaryJob(input: {
     : result.summary;
   rememberModelAuthoringTurn(input.session.conversation, jobIntent, remembered);
   return result;
-}
-
-/**
- * Do not ask a general routing model to rediscover an already exact route.
- * This grants no authority: the focused Action model still drafts the change,
- * Runner validates it, and the replacement remains disabled until review.
- */
-function exactSoleSemanticActionRevisionRoute(
-  jobIntent: string,
-  state: BoundaryJobCurrentState,
-): Extract<BoundaryJobPlan, { state: "planned" }> | undefined {
-  // Removal has its own exact tool path. Never turn a mixed "remove and
-  // change" request into a sole-outcome revision through this shortcut.
-  if (/\bremove\b/iu.test(jobIntent)) return undefined;
-  if (state.read.exact_reusable_revision_count !== 1) return undefined;
-  const semanticActions = state.actions.filter((action) =>
-    action.kind === "rule_derived" && Boolean(action.outcome));
-  if (semanticActions.length !== 1) return undefined;
-  if (!/\b(?:change|revise|update|modify|set|require|increase|decrease)\b/iu.test(jobIntent)) return undefined;
-  if (!/\b(?:action|outcome|rule|policy|approval|reviewer|quorum|fallback|eligibility|effect|limit|threshold)\b/iu.test(jobIntent)) {
-    return undefined;
-  }
-  const preservesRead = /\b(?:keep|preserve|retain|reuse|leave)\b[^.!?]{0,180}\b(?:read|explore)\b[^.!?]{0,120}\b(?:unchanged|same|baseline|intact|as[- ]is)\b/iu.test(jobIntent)
-    || /\b(?:read|explore)\b[^.!?]{0,120}\b(?:unchanged|same|baseline|intact|as[- ]is)\b/iu.test(jobIntent);
-  if (!preservesRead) return undefined;
-  if (/\b(?:add|remove|include|exclude|expand|narrow)\b[^.!?]{0,100}\b(?:read|explore|table|resource|field|column)\b/iu.test(jobIntent)) {
-    return undefined;
-  }
-  const action = semanticActions[0]!;
-  return {
-    state: "planned",
-    read_mode: "reuse",
-    action_mode: "revise",
-    action_intent: jobIntent,
-    action_outcome: action.outcome!,
-    action_strategy: "rule_derived",
-    summary: `Keep the exact ${state.read.boundary_name} Read revision and prepare one disabled replacement for ${action.outcome}.`,
-    correction_used: false,
-    authority_granted: false,
-    source_database_changed: false,
-  };
 }
 
 function jobPlanToolDefinition(state: BoundaryJobCurrentState, workflow?: "program", structuredScope = false): AskToolDefinition {
