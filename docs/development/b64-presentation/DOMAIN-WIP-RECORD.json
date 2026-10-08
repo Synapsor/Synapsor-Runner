@@ -1,5 +1,5 @@
 {
-  "status": "PAUSED_UNACCEPTED_WIP",
+  "status": "INDEPENDENT_COMPONENT_ACCEPT",
   "base": "3bb1154c (includes Main technical_lines contract3577335c)",
   "product_files": [
     "authoring-action-parameter-review.ts",
@@ -14,14 +14,14 @@
     "workers": 1
   },
   "earlier": "parameter-v1 actual compiler23P0F; initial test-only boolean fixture type error fixed before running",
-  "types": "v3 exited0 before final narrow raw type guard/test; no rerun started after pause",
+  "types": "Exact36ce6b88 tsc -b exited0 after Owner resume; /var/tmp/b64-parameter-types-exact36ce.log",
   "evidence": "/var/tmp/synapsor-b64-parameter-v2-owned/out/vitest.json",
   "command": "isolated bwrap --unshare-net; own0700 HOME/TMP+decoy; vitest authoring-action-parameter-review/authoring-typed-review-presenter/authoring-typed-field-codec maxWorkers1 testTimeout20000",
   "results": "Actual compiler+existing Runner business renderer: warehouse/studio quorum1\u21922, integer threshold, USD exact-scale threshold299minor, comparator, stale identities, extra noneditable eligibility change, strict raw guard. Full canonical component diffs preserved separately in technical_lines.",
-  "reviewer": "Domain adapter not yet sent for independent verdict; presenter79ac separately accepted39independent checks reviewer4a5aa517",
+  "reviewer": "early_full_triage8domainvariants PASS at67cf8ad5, component domain ACCEPT; native store/Resume/public lifecycle not covered",
   "next": [
     "Main independently review fixedtarget domain adapter API and baseline_origin provenance",
-    "Run exact WIP types once resumed; reviewer sealed domain variants",
+    "Independent domain variants requested from early_full_triage; previous53PASS not rerun",
     "Main owns protected persistence/currentness/public+B48 lifecycle wiring; no component-only E2E claim"
   ],
   "scope": "No protected record/store edits, no provider/DB/paid; no boundary-commands changes; paid CLOSED"

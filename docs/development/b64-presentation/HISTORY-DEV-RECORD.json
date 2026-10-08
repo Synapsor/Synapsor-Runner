@@ -1,0 +1,35 @@
+{
+  "base": "05db05c1",
+  "status": "INDEPENDENT_REVIEW_PENDING_COMPONENT_ONLY",
+  "files": [
+    "authoring-operation-history.ts",
+    "authoring-operation-history.test.ts"
+  ],
+  "tests": {
+    "pass": 6,
+    "fail": 0,
+    "skip": 0,
+    "workers": 1
+  },
+  "types": 0,
+  "commands": [
+    "tsc -b --pretty false",
+    "vitest run apps/runner/src/authoring-operation-history.test.ts --maxWorkers=1 --minWorkers=1 --testTimeout=20000 --hookTimeout=20000"
+  ],
+  "evidence": "/var/tmp/synapsor-b64-history-v1-owned/out/vitest.json",
+  "isolation": "own0700 HOME/TMP+decoy, bwrap unshare-net",
+  "contract": [
+    "Exact host-authorized record digests; absence redacted",
+    "Actual Question/Source/Handoff/transport snapshots only; no provider or filesystem/save port",
+    "Unknown original request payload unavailable; never reconstruct current request as historical",
+    "Question confirmation and transport status do not infer downstream durable save/activation",
+    "Exact ref or snapshot tampering refuses, no fallback to unrelated latest record",
+    "Bounded page\u226410, display capacity stop never prunes history",
+    "Escaped display values; raw protected records unchanged"
+  ],
+  "open": [
+    "Main supplies native protected typed-review projection once its format lands",
+    "Main supplies production session authorization/currentness and chat /details /exact entry wiring",
+    "No actual public CLI history route proof yet"
+  ]
+}
