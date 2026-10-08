@@ -1,10 +1,13 @@
 # Action typed subject — implementation active
 1. B64 T0 2026-10-08T06:32:23Z; end 2026-10-13T06:32:23Z unchanged; paid CLOSED; no usage pause.
 2. Branch `codex/b64-action-typed-20261008`; private backup only; Main owns boundary/native public save.
-3. Dispatcher/fixture ports accepted through 48fb91d7; details [DEV record](DEV-RECORD.json).
-4. R2 accepted [subject design](ACTION-SUBJECT-CONTRACT.md) at 1c10143f+909ccc0c+9b63bdcb; actual consumed batch, open turn/no reset.
-5. Subject codec/native host + actual producer staging: 230 tests PASS / 1 live skip; readback-order failing-before fixed at 0f15401f.
-6. Native q/generation/checkpoint codecs and consumed-batch staging implemented; Main public protected CAS + inherited support resolver next; independent acceptance NOT RUN.
-7. Types retain only Main-owned removed `modelActionRuleRevisionFocus` import on this branch; Main fixed integration.
-8. No owned processes/paid operations; isolated HOME/TMP `/var/tmp/synapsor-b64-action-owned`.
-9. Remaining English constraint/focused/legacy discretionary edit obligations [map](CONSTRAINT-RETIREMENT-MAP.md); no bypass accepted.
+3. Accepted dispatcher/fixture ports through48fb91d7; [DEV record](DEV-RECORD.json); subject design1c10143f+909+9b R2 accepted.
+4. Subject strict codecs/native q/full history208cda49+0d2; readback-order regression fixed0f15401f.
+5. Actual whole-batch producer stagingdb555ee4: same open Action turn, exact consumed operation, later mutations refused.
+6. Main Read476 merged579f216b; current public-subject inheritance39321d30; private/effect reuse refused.
+7. Shared question-model typed answer adapter05a94d18; one real call for plain mapping, vague answer remains typed unresolved with follow-up.
+8. Owned review host now in code: direct/raw/Replace/readback/No and exact ACK; no lock spans human/model wait.
+9. Next Main wires owned host to exact native Resume q/ref/generation save; R2 independently qualifies codec/protected persistence/cold process/public routes.
+10. No-option private structural prerequisite remains explicit pending/design check; typed Source interpretation has no existing owner yet.
+11. Types: only5 inherited Read fixture missing-subject errors; Read owner owns them. [Remaining English migration](CONSTRAINT-RETIREMENT-MAP.md) is OPEN.
+12. All local checks use0700 `/var/tmp/synapsor-b64-action-owned`, OS network isolation; no paid work or heavy suite.

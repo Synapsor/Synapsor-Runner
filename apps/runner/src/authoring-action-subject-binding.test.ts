@@ -217,3 +217,51 @@ describe("Action subject uses the shared question-model producer", () => {
     expect(q.confirmation).toBeUndefined(); expect(q.raw_answer?.text).toBe(raw);
   });
 });
+
+import { createActionSubjectHost, type ActionSubjectSnapshot } from "./authoring-action-subject-host.js";
+import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
+import type { AuthoringTransportState } from "./authoring-generation-recovery.js";
+describe("Action subject host coherent decision boundary (component ports)", () => {
+  function hostFixture(scenario: "yes" | "no" | "drift" | "lost_ack") {
+    const turn = "40404040-4040-4040-8040-404040404040", b = binding(); b.material.logical_turn_id = turn;
+    b.origin.material_digest = actionSubjectOriginDigest(b.material, awaiting);
+    let q = createActionSubjectQuestion({ binding: b, entries: awaiting, scope_digest: hash("scope"), context_digest: hash("context") });
+    let currentMaterial = b.material, steps = 0, saves = 0, held = false;
+    // Shape-only component generation fixture. Actual provider consumption is
+    // independently exercised by the Action producer test; this is not native CAS proof.
+    const generation = { operations: [{ id: completion.operation_id, state: "checkpointed", checkpoint_seen: true,
+      request_digest: completion.request_digest, context_digest: completion.context_digest, attempts: [{ outcome: "response" }],
+      action_checkpoint: { consumer: "action_rule_components", kind: "subject_proposal", material_digest: b.origin.material_digest, response_digest: completion.response_digest } }] } as unknown as AuthoringTransportState;
+    const snapshot = (): ActionSubjectSnapshot => ({ questions: [q], handoffs: [], generation,
+      resume_revision_digest: hash({ q: q.digest, saves }), material: currentMaterial,
+      checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: material.request_digest,
+        context_digest: hash("context"), components: {}, logical_turns: [{ id: turn, origin_context_digest: hash("context"), iterations_used: 1, tool_calls_used: 1 }],
+        subject_question: { id: q.id, revision: q.revision, question_digest: q.digest } }) });
+    const host = createActionSubjectHost({ access: { load: async () => snapshot(), mutate: async operation => {
+      expect(held).toBe(false); held = true; try { return await operation({} as never); } finally { held = false; }
+    }, save: async next => { expect(held).toBe(true); saves++; if (scenario !== "lost_ack") q = next; } },
+      model: { session: { provider: "openai", model: "never-called" }, reserveCorrection: async () => false, egressAcknowledged: false,
+        actionLogicalTurnBudget: { admitIteration: async () => { throw Error("No model call for direct choice"); }, reserveToolBatch: async () => { throw Error("No model tool for direct choice"); } } },
+      present: async (view, assertCurrent) => {
+        expect(held).toBe(false); await assertCurrent(); steps++;
+        if (scenario === "drift") currentMaterial = { ...currentMaterial, applicability_digest: hash("changed after display") };
+        if (steps > 1) return { kind: "review", binding: view.binding };
+        const field = view.fields[0]!;
+        return { kind: "field_event", event: { kind: "select_option", binding: view.binding, field_id: field.id,
+          target_digest: field.target_digest, dependencies_digest: field.dependencies_digest, value: material.targets[0]!.options[0]!.reference } };
+      }, confirm: async (view, assertCurrent) => {
+        expect(held).toBe(false); await assertCurrent(); return { kind: "decision", binding: view.binding, accepted: scenario !== "no" };
+      } });
+    return { run: () => host.review(q.id), read: () => q, saves: () => saves };
+  }
+  it.each(["yes", "no"] as const)("direct choice still requires a separate %s grouped decision", async scenario => {
+    const f = hostFixture(scenario), result = await f.run();
+    expect(f.saves()).toBe(2); expect(Boolean(result)).toBe(scenario === "yes");
+    expect(Boolean(f.read().confirmation)).toBe(scenario === "yes");
+    expect(f.read().raw_answer).toBeUndefined();
+  });
+  it.each(["drift", "lost_ack"] as const)("refuses %s without adopting a later state or confirmation", async scenario => {
+    const f = hostFixture(scenario); await expect(f.run()).rejects.toThrow("ACTION_SUBJECT_CHANGED");
+    expect(f.read().confirmation).toBeUndefined(); expect(f.saves()).toBe(scenario === "drift" ? 0 : 1);
+  });
+});
