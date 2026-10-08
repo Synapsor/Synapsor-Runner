@@ -3188,7 +3188,7 @@ function boundaryMapFieldNotes(
   if (isTrustedScopeField(view, field.name)) notes.push("trusted scope");
   else if (field.primary_key) notes.push("record ID");
   if (field.sensitivity.state === "high_confidence_sensitive") notes.push("sensitive");
-  else if (field.sensitivity.state === "unresolved_free_text") notes.push("needs review");
+  else if (field.sensitivity.state !== "structurally_low_risk") notes.push("needs review");
   if (restoresSuggestions) notes.push("restores on save");
   if ((view.operation_repair_fields ?? []).includes(field.name)) notes.push("operations available");
   return notes;
@@ -4189,8 +4189,8 @@ function riskBadge(
   if (isTrustedScopeField(view, field.name)) return "[trusted scope fixed; output tier reviewed]";
   if (field.primary_key) return "[record ID]";
   if (field.sensitivity.state === "high_confidence_sensitive") return "[sensitive]";
-  if (field.sensitivity.state === "unresolved_free_text") return "[needs review]";
-  return "[low structural risk]";
+  if (field.sensitivity.state === "structurally_low_risk") return "[low structural risk]";
+  return "[needs review]";
 }
 
 function relationshipStateLabel(

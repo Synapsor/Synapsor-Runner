@@ -1,0 +1,17 @@
+{
+  "requested_by": "Main for Privacy lane",
+  "before_pin": "e39a81fb",
+  "before": {
+    "passed": 1,
+    "failed": 2,
+    "skipped": 99
+  },
+  "after": {
+    "passed": 102,
+    "failed": 0,
+    "file": "apps/runner/src/boundary-cli-picker.test.ts"
+  },
+  "change": "Only explicit structurally_low_risk is rendered low risk; non-sensitive unknown/review-required states show needs review. No new schema or English inference.",
+  "isolation": "slot1, bwrap --unshare-net, owned0700 HOME/TMP, one worker",
+  "acceptance": "Producer evidence only; independent review pending"
+}
