@@ -1,0 +1,23 @@
+(node:3766224) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+node:events:497
+      throw er; // Unhandled 'error' event
+      ^
+
+Error: Connection terminated unexpectedly
+    at Connection.<anonymous> (/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review/node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/client.js:199:73)
+    at Object.onceWrapper (node:events:633:28)
+    at Connection.emit (node:events:519:28)
+    at Socket.<anonymous> (/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review/node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/connection.js:63:12)
+    at Socket.emit (node:events:519:28)
+    at Pipe.<anonymous> (node:net:347:12)
+Emitted 'error' event on Client instance at:
+    at Client._handleErrorEvent (/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review/node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/client.js:417:10)
+    at Connection.<anonymous> (/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review/node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/client.js:217:16)
+    at Object.onceWrapper (node:events:633:28)
+    at Connection.emit (node:events:519:28)
+    at Socket.<anonymous> (/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review/node_modules/.pnpm/pg@8.22.0/node_modules/pg/lib/connection.js:63:12)
+    at Socket.emit (node:events:519:28)
+    at Pipe.<anonymous> (node:net:347:12)
+
+Node.js v22.23.3

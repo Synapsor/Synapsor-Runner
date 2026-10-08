@@ -1,0 +1,10 @@
+BEGIN; ALTER ROLE "runner_writer_224914d91b6e" LOGIN; ALTER ROLE "runner_writer_224914d91b6e" SET impact.tenant='f1111111-1111-4111-8111-111111111111'; ALTER ROLE "runner_writer_224914d91b6e" SET impact.principal='f2222222-2222-4222-8222-222222222222';
+ALTER TABLE "telecom"."subscriptions" ENABLE ROW LEVEL SECURITY; ALTER TABLE "telecom"."subscriptions" FORCE ROW LEVEL SECURITY;
+ CREATE POLICY impact_select ON "telecom"."subscriptions" FOR SELECT TO "runner_writer_224914d91b6e" USING (account_id=nullif(current_setting('impact.tenant',true),'')::uuid AND nullif(current_setting('impact.principal',true),'')::uuid='f2222222-2222-4222-8222-222222222222'::uuid);
+ 
+ CREATE POLICY impact_update ON "telecom"."subscriptions" FOR UPDATE TO "runner_writer_224914d91b6e" USING (account_id=nullif(current_setting('impact.tenant',true),'')::uuid AND nullif(current_setting('impact.principal',true),'')::uuid='f2222222-2222-4222-8222-222222222222'::uuid) WITH CHECK (account_id=nullif(current_setting('impact.tenant',true),'')::uuid AND nullif(current_setting('impact.principal',true),'')::uuid='f2222222-2222-4222-8222-222222222222'::uuid);
+ALTER TABLE "telecom"."plan_change_offers" ENABLE ROW LEVEL SECURITY; ALTER TABLE "telecom"."plan_change_offers" FORCE ROW LEVEL SECURITY;
+ CREATE POLICY impact_select ON "telecom"."plan_change_offers" FOR SELECT TO "runner_writer_224914d91b6e" USING (account_id=nullif(current_setting('impact.tenant',true),'')::uuid AND nullif(current_setting('impact.principal',true),'')::uuid='f2222222-2222-4222-8222-222222222222'::uuid);
+ 
+ CREATE POLICY impact_update ON "telecom"."plan_change_offers" FOR UPDATE TO "runner_writer_224914d91b6e" USING (account_id=nullif(current_setting('impact.tenant',true),'')::uuid AND nullif(current_setting('impact.principal',true),'')::uuid='f2222222-2222-4222-8222-222222222222'::uuid) WITH CHECK (account_id=nullif(current_setting('impact.tenant',true),'')::uuid AND nullif(current_setting('impact.principal',true),'')::uuid='f2222222-2222-4222-8222-222222222222'::uuid);
+COMMIT;

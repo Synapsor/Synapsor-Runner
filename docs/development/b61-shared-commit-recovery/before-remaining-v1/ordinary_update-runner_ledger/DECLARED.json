@@ -1,0 +1,27 @@
+{
+  "family": "ordinary_update",
+  "mode": "runner_ledger",
+  "db": "impact_36fbbab48f15",
+  "controlDb": "control_a81642bbdd6c",
+  "role": "runner_writer_dd265dbc4789",
+  "facts": {
+    "tenant": "fixture_tenant",
+    "principal": "customer_impact"
+  },
+  "relations": [
+    {
+      "schema": "ordinary_native",
+      "table": "credits",
+      "privileges": [
+        "select",
+        "update"
+      ],
+      "update_columns": [
+        "amount_cents",
+        "version"
+      ],
+      "lock_column": "id"
+    }
+  ],
+  "luna_recipe_scope": null
+}

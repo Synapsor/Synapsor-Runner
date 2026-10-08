@@ -1,0 +1,165 @@
+{
+  "schema": "synapsor.dev.commit-ack-proxy.v1",
+  "parent": "/var/tmp/sb61rp-6c10d65c",
+  "backendSocket": "/var/tmp/sb61r-55b5f343/socket",
+  "armed": false,
+  "dropped": true,
+  "records": [
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "Q",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "a8402858d4f1e1d27afee976520485ebb4b96a5387355b823f0d0b8079729032"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "Q",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "e67fda05dacea7a0b6290e8b69932ad27e5a0dd128af9273d1d6179e60f9ea0b"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "Q",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "377edff8df9f9dda6ccd50ce0d360f2c305b75466faeddf56efb45e58052413e"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "Q",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "b1cfe1f13973752813f2ea5c85fee484f5cbf425ec275276e64464a0175cef27"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "P",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "2136031db81c673d74e34a377f63aca8d3804612dcf264e6dc9e05ffcfa42b9a"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "P",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "7afadcca11d87d198d13d6a7f6a105d6b9806236221a7d30dd2298e5641c31cd"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "P",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "8ecfa4e0d5516482e429e2a783cc406d5fee88457ff6c4e4b9b758821684069a"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "P",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "cc59741edf2c18b7466b42421e454be3c87bd1021b6a19979b2626260066898c"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "Q",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "4b5830d44f40cf0845a5d15cdcf2052a11ec3d47b10ffe520fc06c684e000c7e"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "P",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "0a08889a721812954e402dd7801f7f71031937294fb934cd354a4c9d5400a6b0"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "P",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "2136031db81c673d74e34a377f63aca8d3804612dcf264e6dc9e05ffcfa42b9a"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "P",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "7afadcca11d87d198d13d6a7f6a105d6b9806236221a7d30dd2298e5641c31cd"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "P",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "8c3a11e06d04239309b6a59ac2db5bed95c14c59af0c1c6fa7f21f2b7d60812c"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "P",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "7a83feff138ec96ae99bd812de083c5740edd444518a399108b15da756507bdb"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "P",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "58765203a782d6b7e6828c5be7189db0bb9c5a679a11116500f558070247bd92"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "P",
+      "declared_target": true,
+      "commit": false,
+      "sql_sha256": "53ad244cf16bec623e2abebb60f89393e9d7efe55c2778ebedb67d3b20827626"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "P",
+      "declared_target": false,
+      "commit": false,
+      "sql_sha256": "35cef5c719306ece8e31eb8c346221b1a6622cf4663ffa2f71a160e2fb11b5e4"
+    },
+    {
+      "id": 1,
+      "direction": "frontend",
+      "type": "Q",
+      "declared_target": false,
+      "commit": true,
+      "sql_sha256": "79663c1d3b43ceaf9ee728e501c64b57ae2e4d6cb36ff5c65eddcda1de27342f"
+    },
+    {
+      "id": 1,
+      "direction": "backend",
+      "type": "C",
+      "command": "COMMIT",
+      "backend_commit_observed_at": "2026-10-08T01:06:40.311Z",
+      "target_effect_command_completes": 1,
+      "ack_forwarded": false,
+      "frame_sha256": "da3d3495ce0c743ce5f2af882c5f48ce038802cc58558892a74f8b7cf3d3b149"
+    }
+  ],
+  "sql_changed": false,
+  "backend_commit_fabricated": false
+}

@@ -1,0 +1,9 @@
+[
+  {
+    "rolname": "runner_writer_dd265dbc4789",
+    "rolsuper": false,
+    "rolinherit": false,
+    "rolcreaterole": false,
+    "rolbypassrls": false
+  }
+]

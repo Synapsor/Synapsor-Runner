@@ -1,0 +1,160 @@
+{
+  "schema": "synapsor.dev.shared-commit-impact.v1",
+  "pid": 3767547,
+  "custody": "acf16895",
+  "container": "synapsor-b61-recovery-acf16895",
+  "socketParent": "/var/tmp/sb61r-acf16895",
+  "socket": "/var/tmp/sb61r-acf16895/socket",
+  "started_at": "2026-10-08T01:02:37.272Z",
+  "scope": "actual shared applyPostgresJob/createPostgresPool connector, fresh synthetic compiled test authorities; not public CLI/activation/authentication",
+  "historical_fixture_replay": false,
+  "provider_calls": 0,
+  "sql_changed": false,
+  "results": [
+    {
+      "family": "anchored_insert",
+      "mode": "source_db",
+      "db": "impact_84c0362a8cda",
+      "role": "runner_writer_1a5022f6e574",
+      "pid": 3768144,
+      "exit": {
+        "code": 1,
+        "signal": null
+      },
+      "backend_commit_ack_dropped": true,
+      "nativeResult": null,
+      "actual_source_changed": true,
+      "source_receipt_rows": [
+        {
+          "job_id": "wbj_wrp_new_impact_13b9382c23b1458f9ea8182d73417066",
+          "status": "applied",
+          "created_at": "2026-10-08T01:02:39.982879+00:00",
+          "proposal_id": "wrp_new_impact_13b9382c23b1458f9ea8182d73417066",
+          "result_hash": "sha256:466d4e1327b85f84de0a92d4264ed9b1395bf7eee2c6120779f6186d91210980",
+          "completed_at": "2026-10-08T01:02:39.982879+00:00",
+          "idempotency_key": "fresh-impact:wrp_new_impact_13b9382c23b1458f9ea8182d73417066",
+          "semantic_verification_json": {
+            "status": "reverified",
+            "checked_at": "2026-10-08T01:02:39.430Z",
+            "proof_digest": "sha256:0c42d971cd476efbecda70373390b343618651d713ec262d6d75285e7964b43e",
+            "effect_digest": "sha256:68b8222d075a209114392f7610ef7df4cc5922535880d82805dc6835a49b7fed",
+            "action_rule_digest": "sha256:80b939e5af8a9697a52ac3f656e216ede144a20db8155abac124ba0f3c043dda",
+            "compiled_plan_digest": "sha256:b0f6a0fc7a2fc1a3db96167ce402f29889f65fe8cfdfc0499e10b38a846a9b07",
+            "dependency_set_digest": "sha256:ba5870e299e2af8b8c61390a20625727535170434bdb67a51305a8a515483269",
+            "proposal_dependency_set_digest": "sha256:ba5870e299e2af8b8c61390a20625727535170434bdb67a51305a8a515483269"
+          }
+        }
+      ],
+      "intent_statuses": [],
+      "ended_at": "2026-10-08T01:02:40.157Z"
+    },
+    {
+      "family": "ordinary_update",
+      "mode": "source_db",
+      "db": "impact_43afa784840b",
+      "role": "runner_writer_7d861c151a75",
+      "pid": 3768260,
+      "exit": {
+        "code": 1,
+        "signal": null
+      },
+      "backend_commit_ack_dropped": true,
+      "nativeResult": null,
+      "actual_source_changed": true,
+      "source_receipt_rows": [
+        {
+          "job_id": "wbj_wrp_new_impact_b38f82c1861844dd83e4354d2f43580d",
+          "status": "applied",
+          "created_at": "2026-10-08T01:02:40.917502+00:00",
+          "proposal_id": "wrp_new_impact_b38f82c1861844dd83e4354d2f43580d",
+          "result_hash": "sha256:cf371026d0a6f0dddc0c484c5766d472ad1898ee0a947be1be86cf9a5bf30604",
+          "completed_at": "2026-10-08T01:02:40.917502+00:00",
+          "idempotency_key": "fresh-impact:wrp_new_impact_b38f82c1861844dd83e4354d2f43580d",
+          "semantic_verification_json": null
+        }
+      ],
+      "intent_statuses": [],
+      "ended_at": "2026-10-08T01:02:41.094Z"
+    },
+    {
+      "family": "anchored_insert",
+      "mode": "runner_ledger",
+      "db": "impact_98fc059540fe",
+      "role": "runner_writer_44516a361736",
+      "pid": 3768395,
+      "exit": {
+        "code": 1,
+        "signal": null
+      },
+      "backend_commit_ack_dropped": true,
+      "nativeResult": null,
+      "actual_source_changed": true,
+      "source_receipt_rows": [],
+      "intent_statuses": [
+        "applying"
+      ],
+      "ended_at": "2026-10-08T01:02:42.102Z"
+    },
+    {
+      "family": "ordinary_update",
+      "mode": "runner_ledger",
+      "db": "impact_36fbbab48f15",
+      "role": "runner_writer_dd265dbc4789",
+      "pid": 3768510,
+      "exit": {
+        "code": 1,
+        "signal": null
+      },
+      "backend_commit_ack_dropped": true,
+      "nativeResult": null,
+      "actual_source_changed": true,
+      "source_receipt_rows": [],
+      "intent_statuses": [
+        "applying"
+      ],
+      "ended_at": "2026-10-08T01:02:43.077Z"
+    },
+    {
+      "family": "luna_atomic",
+      "mode": "source_db",
+      "db": "impact_13387dfae1ea",
+      "role": "runner_writer_224914d91b6e",
+      "pid": 3768629,
+      "exit": {
+        "code": 1,
+        "signal": null
+      },
+      "backend_commit_ack_dropped": true,
+      "nativeResult": null,
+      "actual_source_changed": true,
+      "source_receipt_rows": [
+        {
+          "job_id": "wbj_wrp_new_impact_2c2e7f8b6e644536ab69d926bb44729d",
+          "status": "applied",
+          "created_at": "2026-10-08T01:02:43.870065+00:00",
+          "proposal_id": "wrp_new_impact_2c2e7f8b6e644536ab69d926bb44729d",
+          "result_hash": "sha256:91108068f380c98d5579481d612fa4b10c023b856bc5f4cc0d840d9f34d5c94d",
+          "completed_at": "2026-10-08T01:02:43.870065+00:00",
+          "idempotency_key": "fresh-impact:wrp_new_impact_2c2e7f8b6e644536ab69d926bb44729d",
+          "semantic_verification_json": {
+            "status": "reverified",
+            "checked_at": "2026-10-08T01:02:43.303Z",
+            "proof_digest": "sha256:3f7fdef366b8515129d4d54fd16db8546722e994341467145ff1f4572154d856",
+            "effect_digest": "sha256:c9f04f8b5ab00ad05e43927deac3ddc5f756fe8294b3edebe7f828d515f809f5",
+            "action_rule_digest": "sha256:64b473f357e8f399b6a2c5a68d5df2139379976ad6e5da2ca8cc9eab1fd0d3b0",
+            "compiled_plan_digest": "sha256:0928e3ccdf0e9c61b59aae0765ca87aa1737470cf6bac07b0a6099f5a69cf083",
+            "dependency_set_digest": "sha256:40831f9c7564d59f96f5a876047f9d35ee7baa712295ccc1ddab52656bb0fc99",
+            "proposal_dependency_set_digest": "sha256:40831f9c7564d59f96f5a876047f9d35ee7baa712295ccc1ddab52656bb0fc99"
+          }
+        }
+      ],
+      "intent_statuses": [],
+      "ended_at": "2026-10-08T01:02:44.072Z"
+    }
+  ],
+  "stopped": true,
+  "preserved": true,
+  "volumes_removed": false,
+  "ready_at": "2026-10-08T01:02:39.207Z",
+  "ended_at": "2026-10-08T01:02:46.229Z"
+}

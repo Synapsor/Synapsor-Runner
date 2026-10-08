@@ -1,0 +1,43 @@
+{
+  "impact_receipts.synapsor_writeback_receipts": [
+    {
+      "job_id": "wbj_wrp_new_impact_b38f82c1861844dd83e4354d2f43580d",
+      "status": "applied",
+      "created_at": "2026-10-08T01:02:40.917502+00:00",
+      "proposal_id": "wrp_new_impact_b38f82c1861844dd83e4354d2f43580d",
+      "result_hash": "sha256:cf371026d0a6f0dddc0c484c5766d472ad1898ee0a947be1be86cf9a5bf30604",
+      "completed_at": "2026-10-08T01:02:40.917502+00:00",
+      "idempotency_key": "fresh-impact:wrp_new_impact_b38f82c1861844dd83e4354d2f43580d",
+      "semantic_verification_json": null
+    }
+  ],
+  "ordinary_native.credits": [
+    {
+      "id": "credit_impact",
+      "version": 8,
+      "tenant_id": "fixture_tenant",
+      "amount_cents": 2500,
+      "principal_id": "customer_impact"
+    },
+    {
+      "id": "foreign",
+      "version": 2,
+      "tenant_id": "other_tenant",
+      "amount_cents": 1200,
+      "principal_id": "other_principal"
+    },
+    {
+      "id": "sibling",
+      "version": 3,
+      "tenant_id": "fixture_tenant",
+      "amount_cents": 1100,
+      "principal_id": "customer_impact"
+    }
+  ],
+  "ordinary_native.unrelated": [
+    {
+      "value": "original value",
+      "sentinel_id": "preserve_me"
+    }
+  ]
+}

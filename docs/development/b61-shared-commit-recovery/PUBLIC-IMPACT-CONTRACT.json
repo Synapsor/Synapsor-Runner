@@ -1,0 +1,25 @@
+{
+  "schema": "synapsor.dev.b61.shared-commit-public-contract.v1",
+  "connector": "actual applyPostgresJob/createPostgresPool pg8.22",
+  "source_base": "ab91163d641fced8f97c7d80750183192d6e4389",
+  "families": [
+    "anchored semantic INSERT",
+    "ordinary guarded UPDATE",
+    "actual Luna seven-field subscriptions + atomic offer.status UPDATE"
+  ],
+  "luna_actual_receipt_mode": "runner_ledger",
+  "source_db": "separate supplemental mode; atomic updates do not imply source atomic receipts",
+  "physical_fault": "forward SQL unchanged, observe exact backend COMMIT CommandComplete after declared target effects, withhold ack and close client",
+  "records": [
+    "whole Source rows and data dump before/after",
+    "actual source receipt rows",
+    "actual existing Postgres intent ledger separately",
+    "child process exit/stderr/structured result",
+    "new dedicated native-generated minimum writer grants + exact scoped policies",
+    "owned container custody/stop+preserve"
+  ],
+  "authority_limit": "pre-admitted fresh synthetic native test inputs; not public CLI activation/authentication",
+  "no_replay": true,
+  "legacy_missing_proof": "remains unknown; no automatic replay/requeue/row-similarity recovery",
+  "next": "independent R2 native runtime oracle remains withheld; failing-before before product repair"
+}

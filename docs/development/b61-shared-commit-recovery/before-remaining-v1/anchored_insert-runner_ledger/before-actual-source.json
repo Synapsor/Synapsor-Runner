@@ -1,0 +1,33 @@
+{
+  "enquiry_native.customers": [
+    {
+      "status": "active",
+      "version": 3,
+      "tenant_id": "fixture_tenant",
+      "customer_id": "other_customer",
+      "display_label": "Other Customer"
+    },
+    {
+      "status": "active",
+      "version": 4,
+      "tenant_id": "other_tenant",
+      "customer_id": "foreign_customer",
+      "display_label": "Foreign Customer"
+    },
+    {
+      "status": "active",
+      "version": 7,
+      "tenant_id": "fixture_tenant",
+      "customer_id": "customer_impact",
+      "display_label": "New Impact Customer"
+    }
+  ],
+  "enquiry_native.enquiries": [],
+  "enquiry_native.enquiry_audit": [],
+  "enquiry_native.unrelated": [
+    {
+      "value": "original value",
+      "sentinel_id": "preserve_me"
+    }
+  ]
+}

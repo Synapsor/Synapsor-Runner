@@ -1,0 +1,10 @@
+BEGIN; ALTER ROLE "runner_writer_1a5022f6e574" LOGIN; ALTER ROLE "runner_writer_1a5022f6e574" SET impact.tenant='fixture_tenant'; ALTER ROLE "runner_writer_1a5022f6e574" SET impact.principal='customer_impact';
+ALTER TABLE "enquiry_native"."customers" ENABLE ROW LEVEL SECURITY; ALTER TABLE "enquiry_native"."customers" FORCE ROW LEVEL SECURITY;
+ CREATE POLICY impact_select ON "enquiry_native"."customers" FOR SELECT TO "runner_writer_1a5022f6e574" USING (tenant_id=nullif(current_setting('impact.tenant',true),'') AND customer_id=nullif(current_setting('impact.principal',true),''));
+ 
+ CREATE POLICY impact_update ON "enquiry_native"."customers" FOR UPDATE TO "runner_writer_1a5022f6e574" USING (tenant_id=nullif(current_setting('impact.tenant',true),'') AND customer_id=nullif(current_setting('impact.principal',true),'')) WITH CHECK (tenant_id=nullif(current_setting('impact.tenant',true),'') AND customer_id=nullif(current_setting('impact.principal',true),''));
+ALTER TABLE "enquiry_native"."enquiries" ENABLE ROW LEVEL SECURITY; ALTER TABLE "enquiry_native"."enquiries" FORCE ROW LEVEL SECURITY;
+ CREATE POLICY impact_select ON "enquiry_native"."enquiries" FOR SELECT TO "runner_writer_1a5022f6e574" USING (tenant_id=nullif(current_setting('impact.tenant',true),'') AND customer_id=nullif(current_setting('impact.principal',true),''));
+ CREATE POLICY impact_insert ON "enquiry_native"."enquiries" FOR INSERT TO "runner_writer_1a5022f6e574" WITH CHECK (tenant_id=nullif(current_setting('impact.tenant',true),'') AND customer_id=nullif(current_setting('impact.principal',true),''));
+ CREATE POLICY impact_update ON "enquiry_native"."enquiries" FOR UPDATE TO "runner_writer_1a5022f6e574" USING (tenant_id=nullif(current_setting('impact.tenant',true),'') AND customer_id=nullif(current_setting('impact.principal',true),'')) WITH CHECK (tenant_id=nullif(current_setting('impact.tenant',true),'') AND customer_id=nullif(current_setting('impact.principal',true),''));
+COMMIT;

@@ -1,0 +1,97 @@
+{
+  "impact_receipts.synapsor_writeback_receipts": [
+    {
+      "job_id": "wbj_wrp_new_impact_760284d8af4c4c278e10263010cae1d5",
+      "status": "applied",
+      "created_at": "2026-10-08T01:06:44.989421+00:00",
+      "proposal_id": "wrp_new_impact_760284d8af4c4c278e10263010cae1d5",
+      "result_hash": "sha256:c5a892ff383d05ef162a7cb18d8df4bd7f2ce7e6d85d2b8acf5b1fceb6cb4767",
+      "completed_at": "2026-10-08T01:06:44.989421+00:00",
+      "idempotency_key": "fresh-impact:wrp_new_impact_760284d8af4c4c278e10263010cae1d5",
+      "semantic_verification_json": {
+        "status": "reverified",
+        "checked_at": "2026-10-08T01:06:44.407Z",
+        "proof_digest": "sha256:a415dbeca0e5d01a07db499ffa7cf587c4b23cb7adc9dc13791a750db34e62d5",
+        "effect_digest": "sha256:c9f04f8b5ab00ad05e43927deac3ddc5f756fe8294b3edebe7f828d515f809f5",
+        "action_rule_digest": "sha256:64b473f357e8f399b6a2c5a68d5df2139379976ad6e5da2ca8cc9eab1fd0d3b0",
+        "compiled_plan_digest": "sha256:0928e3ccdf0e9c61b59aae0765ca87aa1737470cf6bac07b0a6099f5a69cf083",
+        "dependency_set_digest": "sha256:40831f9c7564d59f96f5a876047f9d35ee7baa712295ccc1ddab52656bb0fc99",
+        "proposal_dependency_set_digest": "sha256:40831f9c7564d59f96f5a876047f9d35ee7baa712295ccc1ddab52656bb0fc99"
+      }
+    }
+  ],
+  "telecom.accounts": [
+    {
+      "account_id": "e1111111-1111-4111-8111-111111111111"
+    },
+    {
+      "account_id": "f1111111-1111-4111-8111-111111111111"
+    }
+  ],
+  "telecom.impact_memberships": [
+    {
+      "account_id": "f1111111-1111-4111-8111-111111111111",
+      "can_manage": true,
+      "principal_id": "f2222222-2222-4222-8222-222222222222"
+    }
+  ],
+  "telecom.plan_change_offers": [
+    {
+      "status": "accepted",
+      "version": 5,
+      "account_id": "f1111111-1111-4111-8111-111111111111",
+      "created_at": "2026-10-08T01:06:44.077884+00:00",
+      "expires_at": "2099-01-01T00:00:00+00:00",
+      "updated_at": "2026-10-08T01:06:44.077884+00:00",
+      "valid_from": "2026-01-01T00:00:00+00:00",
+      "plan_offer_id": "f4444444-4444-4444-8444-444444444444",
+      "subscription_id": "f3333333-3333-4333-8333-333333333333",
+      "source_plan_code": "starter",
+      "target_plan_code": "unlimited_plus",
+      "target_data_policy": "fictional unlimited data",
+      "customer_explanation": "Declared new synthetic impact offer",
+      "target_effective_from": "2026-10-08",
+      "target_included_lines": 2,
+      "auto_approval_eligible": false,
+      "target_plan_display_name": "Fictional Impact Plus",
+      "target_base_monthly_cents": 5300,
+      "target_international_day_pass": true
+    }
+  ],
+  "telecom.subscriptions": [
+    {
+      "version": 2,
+      "plan_code": "starter",
+      "account_id": "e1111111-1111-4111-8111-111111111111",
+      "updated_at": "2026-10-08T01:06:44.077884+00:00",
+      "data_policy": "foreign data",
+      "effective_from": "2026-01-01",
+      "included_lines": 1,
+      "subscription_id": "e3333333-3333-4333-8333-333333333333",
+      "contract_end_date": null,
+      "plan_display_name": "Foreign Starter",
+      "base_monthly_cents": 2600,
+      "international_day_pass": false
+    },
+    {
+      "version": 8,
+      "plan_code": "unlimited_plus",
+      "account_id": "f1111111-1111-4111-8111-111111111111",
+      "updated_at": "2026-10-08T01:06:44.077884+00:00",
+      "data_policy": "fictional unlimited data",
+      "effective_from": "2026-10-08",
+      "included_lines": 2,
+      "subscription_id": "f3333333-3333-4333-8333-333333333333",
+      "contract_end_date": null,
+      "plan_display_name": "Fictional Impact Plus",
+      "base_monthly_cents": 5300,
+      "international_day_pass": true
+    }
+  ],
+  "telecom.unrelated": [
+    {
+      "value": "original value",
+      "sentinel_id": "preserve_me"
+    }
+  ]
+}

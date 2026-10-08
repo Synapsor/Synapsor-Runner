@@ -1,0 +1,34 @@
+{
+  "result": {
+    "protocol_version": "5.0",
+    "job_id": "wbj_wrp_new_impact_983e2d48ae4b441ea822acee1c9258c8",
+    "runner_id": "fresh_impact_runner",
+    "operation": "single_row_insert",
+    "receipt_authority": "source_db",
+    "status": "reconciliation_required",
+    "affected_rows": 0,
+    "target_identity": [
+      {
+        "column": "enquiry_id",
+        "value": "wrp_new_impact_983e2d48ae4b441ea822acee1c9258c8"
+      },
+      {
+        "column": "tenant_id",
+        "value": "fixture_tenant"
+      }
+    ],
+    "semantic_verification": {
+      "status": "not_run",
+      "proof_digest": "sha256:3ee49c1d29c248f7df8dde3c1549071588822962bb45673ca537689b036911e1",
+      "action_rule_digest": "sha256:80b939e5af8a9697a52ac3f656e216ede144a20db8155abac124ba0f3c043dda",
+      "compiled_plan_digest": "sha256:b0f6a0fc7a2fc1a3db96167ce402f29889f65fe8cfdfc0499e10b38a846a9b07",
+      "proposal_dependency_set_digest": "sha256:ba5870e299e2af8b8c61390a20625727535170434bdb67a51305a8a515483269",
+      "effect_digest": "sha256:cb10f748f12937900e2dbc783511963014b281f9e57f101581b7a394308d2df2"
+    },
+    "result_hash": "sha256:3e7bda04d7538aafaeb7efa97941d483011f608fe08e237eaace752e356e2bf0",
+    "error_code": "OUTCOME_UNKNOWN",
+    "intent_id": "source-db:sha256:e2a91499c1fea1b66fb73a7c0a0fccc79793ad34be72de429a28576fa51f24bd",
+    "completed_at": "2026-10-08T01:06:40.313Z"
+  },
+  "pid": 3773212
+}

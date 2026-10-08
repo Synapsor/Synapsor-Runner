@@ -1,0 +1,35 @@
+{
+  "family": "anchored_insert",
+  "mode": "runner_ledger",
+  "db": "impact_98fc059540fe",
+  "controlDb": "control_65ff4e4cf4c0",
+  "role": "runner_writer_44516a361736",
+  "facts": {
+    "tenant": "fixture_tenant",
+    "principal": "customer_impact"
+  },
+  "relations": [
+    {
+      "schema": "enquiry_native",
+      "table": "customers",
+      "privileges": [
+        "select",
+        "update"
+      ],
+      "update_columns": [],
+      "lock_column": "customer_id"
+    },
+    {
+      "schema": "enquiry_native",
+      "table": "enquiries",
+      "privileges": [
+        "select",
+        "insert",
+        "update"
+      ],
+      "update_columns": [],
+      "lock_column": "enquiry_id"
+    }
+  ],
+  "luna_recipe_scope": null
+}

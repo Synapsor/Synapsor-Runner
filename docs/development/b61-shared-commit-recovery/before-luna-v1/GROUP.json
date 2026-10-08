@@ -1,0 +1,39 @@
+{
+  "schema": "synapsor.dev.shared-commit-impact.v1",
+  "pid": 3765609,
+  "custody": "d7855bd0",
+  "container": "synapsor-b61-recovery-d7855bd0",
+  "socketParent": "/var/tmp/sb61r-d7855bd0",
+  "socket": "/var/tmp/sb61r-d7855bd0/socket",
+  "started_at": "2026-10-08T01:01:12.221Z",
+  "scope": "actual shared applyPostgresJob/createPostgresPool connector, fresh synthetic compiled test authorities; not public CLI/activation/authentication",
+  "historical_fixture_replay": false,
+  "provider_calls": 0,
+  "sql_changed": false,
+  "results": [
+    {
+      "family": "luna_atomic",
+      "mode": "runner_ledger",
+      "db": "impact_408e258c2db3",
+      "role": "runner_writer_02600f4809e3",
+      "pid": 3766224,
+      "exit": {
+        "code": 1,
+        "signal": null
+      },
+      "backend_commit_ack_dropped": true,
+      "nativeResult": null,
+      "actual_source_changed": true,
+      "source_receipt_rows": [],
+      "intent_statuses": [
+        "applying"
+      ],
+      "ended_at": "2026-10-08T01:01:15.283Z"
+    }
+  ],
+  "stopped": true,
+  "preserved": true,
+  "volumes_removed": false,
+  "ready_at": "2026-10-08T01:01:14.172Z",
+  "ended_at": "2026-10-08T01:01:17.226Z"
+}

@@ -1,0 +1,22 @@
+{
+  "result": {
+    "protocol_version": "2.0",
+    "job_id": "wbj_wrp_new_impact_8a187edfbf0549abb5e0f8841af56e53",
+    "runner_id": "fresh_impact_runner",
+    "operation": "single_row_update",
+    "receipt_authority": "runner_ledger",
+    "status": "reconciliation_required",
+    "affected_rows": 0,
+    "target_identity": [
+      {
+        "column": "id",
+        "value": "credit_impact"
+      }
+    ],
+    "result_hash": "sha256:7f91b5c146a5580903dd11a1a826698f6ed2738a6ff5b02412fa21a86e703244",
+    "error_code": "RECONCILIATION_REQUIRED",
+    "intent_id": "wbi:wbj_wrp_new_impact_8a187edfbf0549abb5e0f8841af56e53",
+    "completed_at": "2026-10-08T01:06:43.776Z"
+  },
+  "pid": 3773656
+}

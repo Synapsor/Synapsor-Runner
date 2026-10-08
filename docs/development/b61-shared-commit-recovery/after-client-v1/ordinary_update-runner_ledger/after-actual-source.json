@@ -1,0 +1,31 @@
+{
+  "ordinary_native.credits": [
+    {
+      "id": "credit_impact",
+      "version": 8,
+      "tenant_id": "fixture_tenant",
+      "amount_cents": 2500,
+      "principal_id": "customer_impact"
+    },
+    {
+      "id": "foreign",
+      "version": 2,
+      "tenant_id": "other_tenant",
+      "amount_cents": 1200,
+      "principal_id": "other_principal"
+    },
+    {
+      "id": "sibling",
+      "version": 3,
+      "tenant_id": "fixture_tenant",
+      "amount_cents": 1100,
+      "principal_id": "customer_impact"
+    }
+  ],
+  "ordinary_native.unrelated": [
+    {
+      "value": "original value",
+      "sentinel_id": "preserve_me"
+    }
+  ]
+}

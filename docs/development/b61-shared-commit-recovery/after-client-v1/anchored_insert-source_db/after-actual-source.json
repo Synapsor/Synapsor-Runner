@@ -1,0 +1,73 @@
+{
+  "enquiry_native.customers": [
+    {
+      "status": "active",
+      "version": 3,
+      "tenant_id": "fixture_tenant",
+      "customer_id": "other_customer",
+      "display_label": "Other Customer"
+    },
+    {
+      "status": "active",
+      "version": 4,
+      "tenant_id": "other_tenant",
+      "customer_id": "foreign_customer",
+      "display_label": "Foreign Customer"
+    },
+    {
+      "status": "active",
+      "version": 7,
+      "tenant_id": "fixture_tenant",
+      "customer_id": "customer_impact",
+      "display_label": "New Impact Customer"
+    }
+  ],
+  "enquiry_native.enquiries": [
+    {
+      "status": "queued",
+      "message": "  New synthetic impact request.\t ",
+      "tenant_id": "fixture_tenant",
+      "created_at": "2026-10-08T01:06:40.274501+00:00",
+      "enquiry_id": "wrp_new_impact_983e2d48ae4b441ea822acee1c9258c8",
+      "customer_id": "customer_impact",
+      "external_ref": "NEW-IMPACT-REFERENCE"
+    }
+  ],
+  "enquiry_native.enquiry_audit": [
+    {
+      "message": "  New synthetic impact request.\t ",
+      "tenant_id": "fixture_tenant",
+      "enquiry_id": "wrp_new_impact_983e2d48ae4b441ea822acee1c9258c8",
+      "customer_id": "customer_impact",
+      "observed_at": "2026-10-08T01:06:40.274501+00:00",
+      "external_ref": "NEW-IMPACT-REFERENCE"
+    }
+  ],
+  "enquiry_native.unrelated": [
+    {
+      "value": "original value",
+      "sentinel_id": "preserve_me"
+    }
+  ],
+  "impact_receipts.synapsor_writeback_receipts": [
+    {
+      "job_id": "wbj_wrp_new_impact_983e2d48ae4b441ea822acee1c9258c8",
+      "status": "applied",
+      "created_at": "2026-10-08T01:06:40.274501+00:00",
+      "proposal_id": "wrp_new_impact_983e2d48ae4b441ea822acee1c9258c8",
+      "result_hash": "sha256:70c0f0761fee2fd4958012bd4b52cf14fe672acdcdab124f3190dda650f1e403",
+      "completed_at": "2026-10-08T01:06:40.274501+00:00",
+      "idempotency_key": "fresh-impact:wrp_new_impact_983e2d48ae4b441ea822acee1c9258c8",
+      "semantic_verification_json": {
+        "status": "reverified",
+        "checked_at": "2026-10-08T01:06:39.641Z",
+        "proof_digest": "sha256:3ee49c1d29c248f7df8dde3c1549071588822962bb45673ca537689b036911e1",
+        "effect_digest": "sha256:cb10f748f12937900e2dbc783511963014b281f9e57f101581b7a394308d2df2",
+        "action_rule_digest": "sha256:80b939e5af8a9697a52ac3f656e216ede144a20db8155abac124ba0f3c043dda",
+        "compiled_plan_digest": "sha256:b0f6a0fc7a2fc1a3db96167ce402f29889f65fe8cfdfc0499e10b38a846a9b07",
+        "dependency_set_digest": "sha256:ba5870e299e2af8b8c61390a20625727535170434bdb67a51305a8a515483269",
+        "proposal_dependency_set_digest": "sha256:ba5870e299e2af8b8c61390a20625727535170434bdb67a51305a8a515483269"
+      }
+    }
+  ]
+}

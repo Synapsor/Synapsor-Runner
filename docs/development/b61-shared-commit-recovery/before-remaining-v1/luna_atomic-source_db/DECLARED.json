@@ -1,0 +1,49 @@
+{
+  "family": "luna_atomic",
+  "mode": "source_db",
+  "db": "impact_13387dfae1ea",
+  "controlDb": null,
+  "role": "runner_writer_224914d91b6e",
+  "facts": {
+    "tenant": "f1111111-1111-4111-8111-111111111111",
+    "principal": "f2222222-2222-4222-8222-222222222222",
+    "subscription": "f3333333-3333-4333-8333-333333333333",
+    "offer": "f4444444-4444-4444-8444-444444444444"
+  },
+  "relations": [
+    {
+      "schema": "telecom",
+      "table": "subscriptions",
+      "privileges": [
+        "select",
+        "update"
+      ],
+      "update_columns": [
+        "base_monthly_cents",
+        "data_policy",
+        "effective_from",
+        "included_lines",
+        "international_day_pass",
+        "plan_code",
+        "plan_display_name",
+        "version"
+      ],
+      "lock_column": "subscription_id"
+    },
+    {
+      "schema": "telecom",
+      "table": "plan_change_offers",
+      "privileges": [
+        "select",
+        "update"
+      ],
+      "update_columns": [
+        "plan_offer_id",
+        "status",
+        "version"
+      ],
+      "lock_column": "plan_offer_id"
+    }
+  ],
+  "luna_recipe_scope": "actual seven-field subscriptions + offer.status, composite FK, offer→subscription locks, repeatable_read/UTC, both reviewed BEFORE UPDATE version triggers; newly scoped direct principal policy; no historic memberships/activation imported"
+}

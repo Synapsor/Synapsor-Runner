@@ -1,5 +1,5 @@
 {
-  "status": "RECOVERY_WIP_FIRST_NATIVE_POSITIVE_OBSERVED_INDEPENDENT_PENDING",
+  "status": "SCOPED_NATIVE_QUALIFICATIONS_COMPLETE_INDEPENDENT_ACCEPTANCE_PENDING",
   "product_base": "ab91163d641fced8f97c7d80750183192d6e4389",
   "new_native_execution": "6_RUNTIME_FAILURES_6_COMMITTED_SOURCE_EFFECT_WITNESSES",
   "original_lost_ack_checkpoint_preserved": "eb608c27d50e6a9f7108fc57c85530650fe29aa6",
@@ -120,7 +120,7 @@
     "owned_live": 0,
     "no_replay_or_reconcile": true
   },
-  "product_runtime_pin": "1026279b",
+  "product_runtime_pin": "dd35675f",
   "after_client": {
     "native_cases": 6,
     "child_exits": [
@@ -151,7 +151,7 @@
     "seconds_focus": 2.0476419925689697,
     "owned_live": 0
   },
-  "remaining": "Fresh anchored/ordinary Source_db and actual Luna runner_ledger; before-late-callback crash+leased refusal/quarantine; control adoption interruption; full-result/wrong-binding/legacy/permission/rollback controls; independent scoped acceptance. Actual historical Luna runner_ledger remains UNKNOWN.",
+  "remaining": "Independent Reviewer2 exact runtime/tests/ownership adjudication and coherent Main composition/full gates. Native requested two-OS/precommit/postcommit/Source-callback qualifications observed. No physical Postgres-control-store recovery claim; conflicting full receipts tested as rejected typed witnesses, not live Source mutation. Rollback full-worker lifecycle remains outside adapter proof. Actual Luna runner_ledger stays UNKNOWN.",
   "prospective": {
     "typed_envelope_binding_pin": "93b52520",
     "types_exit": 0,
@@ -239,6 +239,614 @@
       "container": "synapsor-b61-recovery-01e5b8ac",
       "owned_live": 0,
       "independent_acceptance": "PENDING"
+    },
+    "recovery-remaining-v1": {
+      "owned": "/var/tmp/synapsor-b61-recovery-owned-recovery-remaining-v1-58e526d2",
+      "stopped_container": "synapsor-b61-recovery-c010e353",
+      "owned_live": 0,
+      "failure": "Command failed: /usr/bin/node --import /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review/node_modules/tsx/dist/loader.mjs /home/sandesh-tiwari/Desktop/C++/synapsor-b5",
+      "source_histories_preserved": true,
+      "no_replay": true,
+      "cases": []
+    },
+    "recovery-remaining-v2": {
+      "owned": "/var/tmp/synapsor-b61-recovery-owned-recovery-remaining-v2-26aa6c82",
+      "stopped_container": "synapsor-b61-recovery-78a33547",
+      "owned_live": 0,
+      "failure": "Command failed: /usr/bin/node --import /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review/node_modules/tsx/dist/loader.mjs /home/sandesh-tiwari/Desktop/C++/synapsor-b5",
+      "source_histories_preserved": true,
+      "no_replay": true,
+      "cases": []
+    },
+    "recovery-remaining-v3": {
+      "owned": "/var/tmp/synapsor-b61-recovery-owned-recovery-remaining-v3-f7366ba9",
+      "stopped_container": "synapsor-b61-recovery-4e56525e",
+      "owned_live": 0,
+      "failure": "Command failed: /usr/bin/node --import /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review/node_modules/tsx/dist/loader.mjs /home/sandesh-tiwari/Desktop/C++/synapsor-b5",
+      "source_histories_preserved": true,
+      "no_replay": true,
+      "cases": [
+        {
+          "family": "anchored_insert",
+          "mode": "source_db",
+          "original_pid": 3833828,
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "actual_commit_ack_lost": true,
+          "native_intent_statuses": [
+            "applied"
+          ],
+          "lifecycle": "applied",
+          "queue": "completed",
+          "metrics": [
+            {
+              "tenant_id": "fixture_tenant",
+              "capability": "impact.create_enquiry",
+              "proposals": 1,
+              "approvals": 1,
+              "rejections": 0,
+              "applies": 1,
+              "conflicts": 0,
+              "failures": 0,
+              "revert_proposals": 0,
+              "revert_applies": 0
+            }
+          ],
+          "reconciliation_events": 1,
+          "whole_source_equal_after_recovery": true,
+          "native_cold_controls": [
+            {
+              "action": "inspect",
+              "pid": 3833997,
+              "signal": null,
+              "refusal": null
+            },
+            {
+              "action": "ambient",
+              "pid": 3834053,
+              "signal": null,
+              "refusal": null
+            },
+            {
+              "action": "negative",
+              "pid": 3834130,
+              "signal": null,
+              "refusal": null
+            },
+            {
+              "action": "concurrent",
+              "pid": 3834209,
+              "signal": null,
+              "refusal": null
+            },
+            {
+              "action": "reconcile",
+              "pid": 3834297,
+              "signal": null,
+              "refusal": null
+            },
+            {
+              "action": "lifecycle",
+              "pid": 3834361,
+              "signal": null,
+              "refusal": null
+            }
+          ]
+        }
+      ]
+    },
+    "recovery-crash-v1": {
+      "owned": "/var/tmp/synapsor-b61-recovery-owned-recovery-crash-v1-ba4de6f2",
+      "stopped_container": "synapsor-b61-recovery-9f26dde4",
+      "owned_live": 0,
+      "failure": "",
+      "source_histories_preserved": true,
+      "no_replay": true,
+      "cases": [
+        {
+          "family": "ordinary_update",
+          "mode": "source_db",
+          "original_pid": 3839198,
+          "exit": {
+            "code": null,
+            "signal": "SIGKILL"
+          },
+          "actual_commit_ack_lost": true,
+          "native_intent_statuses": [
+            "applied"
+          ],
+          "lifecycle": "applied",
+          "queue": "completed",
+          "metrics": [
+            {
+              "tenant_id": "fixture_tenant",
+              "capability": "impact.ordinary_update",
+              "proposals": 1,
+              "approvals": 1,
+              "rejections": 0,
+              "applies": 1,
+              "conflicts": 0,
+              "failures": 0,
+              "revert_proposals": 0,
+              "revert_applies": 0
+            }
+          ],
+          "reconciliation_events": 1,
+          "whole_source_equal_after_recovery": true,
+          "native_cold_controls": [
+            {
+              "action": "inspect",
+              "pid": 3839388,
+              "signal": null,
+              "refusal": null
+            },
+            {
+              "action": "ambient",
+              "pid": 3839775,
+              "signal": null,
+              "refusal": null
+            },
+            {
+              "action": "refuse_leased",
+              "pid": 3839834,
+              "signal": null,
+              "refusal": "SOURCE_COMPLETION_QUEUE_NOT_QUARANTINED"
+            },
+            {
+              "action": "quarantine",
+              "pid": 3839869,
+              "signal": null,
+              "refusal": null
+            },
+            {
+              "action": "negative",
+              "pid": 3839944,
+              "signal": null,
+              "refusal": null
+            },
+            {
+              "action": "reconcile_crash",
+              "pid": null,
+              "signal": "SIGKILL",
+              "refusal": null
+            },
+            {
+              "action": "reconcile",
+              "pid": 3840182,
+              "signal": null,
+              "refusal": null
+            },
+            {
+              "action": "lifecycle",
+              "pid": 3840239,
+              "signal": null,
+              "refusal": null
+            }
+          ]
+        }
+      ]
+    },
+    "recovery-luna-ledger-v1": {
+      "owned": "/var/tmp/synapsor-b61-recovery-owned-recovery-luna-ledger-v1-3eceade6",
+      "stopped_container": "synapsor-b61-recovery-7bfa7221",
+      "owned_live": 0,
+      "failure": "",
+      "source_histories_preserved": true,
+      "no_replay": true,
+      "cases": [
+        {
+          "family": "luna_atomic",
+          "mode": "runner_ledger",
+          "original_pid": 3841387,
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "actual_commit_ack_lost": true,
+          "native_intent_statuses": [
+            "reconciliation_required"
+          ],
+          "lifecycle": "unknown",
+          "queue": "reconciliation_required",
+          "metrics": [
+            {
+              "tenant_id": "f1111111-1111-4111-8111-111111111111",
+              "capability": "new_luna.accept_offer",
+              "proposals": 1,
+              "approvals": 1,
+              "rejections": 0,
+              "applies": 0,
+              "conflicts": 0,
+              "failures": 0,
+              "revert_proposals": 0,
+              "revert_applies": 0
+            }
+          ],
+          "reconciliation_events": 0,
+          "whole_source_equal_after_recovery": true,
+          "native_cold_controls": [
+            {
+              "action": "inspect",
+              "pid": 3841639,
+              "signal": null,
+              "refusal": null
+            },
+            {
+              "action": "ambient",
+              "pid": 3841702,
+              "signal": null,
+              "refusal": null
+            },
+            {
+              "action": "lifecycle",
+              "pid": 3841788,
+              "signal": null,
+              "refusal": null
+            }
+          ]
+        }
+      ]
+    },
+    "recovery-cleanup-v1": {
+      "owned": "/var/tmp/synapsor-b61-recovery-owned-recovery-cleanup-v1-c4457a87",
+      "stopped_container": "synapsor-b61-recovery-007dfb34",
+      "owned_live": 0,
+      "failure": "",
+      "source_histories_preserved": true,
+      "no_replay": true,
+      "cases": [
+        {
+          "family": "luna_atomic",
+          "mode": "runner_ledger",
+          "original_pid": 3844878,
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "actual_commit_ack_lost": false,
+          "native_intent_statuses": [
+            "applied"
+          ],
+          "lifecycle": "applied",
+          "queue": "completed",
+          "metrics": [
+            {
+              "tenant_id": "f1111111-1111-4111-8111-111111111111",
+              "capability": "new_luna.accept_offer",
+              "proposals": 1,
+              "approvals": 1,
+              "rejections": 0,
+              "applies": 1,
+              "conflicts": 0,
+              "failures": 0,
+              "revert_proposals": 0,
+              "revert_applies": 0
+            }
+          ],
+          "reconciliation_events": 0,
+          "whole_source_equal_after_recovery": true,
+          "cold_completion": "unknown",
+          "cleanup_events": [
+            {
+              "phase": "native_pool_end_complete_after_commit_ack",
+              "injected_error": true
+            }
+          ],
+          "native_cold_controls": [
+            {
+              "action": "inspect",
+              "pid": 3845015,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "ambient",
+              "pid": 3845193,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "lifecycle",
+              "pid": 3845287,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            }
+          ]
+        }
+      ]
+    },
+    "recovery-legacy-unwritable-v1": {
+      "owned": "/var/tmp/synapsor-b61-recovery-owned-recovery-legacy-unwritable-v1-1fe56746",
+      "stopped_container": "synapsor-b61-recovery-540e5586",
+      "owned_live": 0,
+      "failure": "",
+      "source_histories_preserved": true,
+      "no_replay": true,
+      "cases": [
+        {
+          "family": "ordinary_update",
+          "mode": "source_db",
+          "original_pid": 3846652,
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "actual_commit_ack_lost": false,
+          "native_intent_statuses": [
+            "applied"
+          ],
+          "lifecycle": "applied",
+          "queue": "completed",
+          "metrics": [
+            {
+              "tenant_id": "fixture_tenant",
+              "capability": "impact.ordinary_update",
+              "proposals": 1,
+              "approvals": 1,
+              "rejections": 0,
+              "applies": 1,
+              "conflicts": 0,
+              "failures": 0,
+              "revert_proposals": 0,
+              "revert_applies": 0
+            }
+          ],
+          "reconciliation_events": 0,
+          "whole_source_equal_after_recovery": true,
+          "cold_completion": "unknown",
+          "cleanup_events": [],
+          "native_cold_controls": [
+            {
+              "action": "inspect",
+              "pid": 3846748,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "ambient",
+              "pid": 3846788,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "lifecycle",
+              "pid": 3846845,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            }
+          ]
+        }
+      ]
+    },
+    "recovery-legacy-absent-v1": {
+      "owned": "/var/tmp/synapsor-b61-recovery-owned-recovery-legacy-absent-v1-534a841f",
+      "stopped_container": "synapsor-b61-recovery-8395e6f9",
+      "owned_live": 0,
+      "failure": "",
+      "source_histories_preserved": true,
+      "no_replay": true,
+      "cases": [
+        {
+          "family": "ordinary_update",
+          "mode": "source_db",
+          "original_pid": 3847833,
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "actual_commit_ack_lost": true,
+          "native_intent_statuses": [
+            "reconciliation_required"
+          ],
+          "lifecycle": "unknown",
+          "queue": "reconciliation_required",
+          "metrics": [
+            {
+              "tenant_id": "fixture_tenant",
+              "capability": "impact.ordinary_update",
+              "proposals": 1,
+              "approvals": 1,
+              "rejections": 0,
+              "applies": 0,
+              "conflicts": 0,
+              "failures": 0,
+              "revert_proposals": 0,
+              "revert_applies": 0
+            }
+          ],
+          "reconciliation_events": 0,
+          "whole_source_equal_after_recovery": true,
+          "cold_completion": "unknown",
+          "cleanup_events": [],
+          "native_cold_controls": [
+            {
+              "action": "inspect",
+              "pid": 3847926,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "ambient",
+              "pid": 3847984,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "lifecycle",
+              "pid": 3848039,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            }
+          ]
+        }
+      ]
+    },
+    "recovery-companion-rollback-v1": {
+      "owned": "/var/tmp/synapsor-b61-recovery-owned-recovery-companion-rollback-v1-dcff5dfe",
+      "stopped_container": "synapsor-b61-recovery-de6b6592",
+      "owned_live": 0,
+      "failure": "Expected values to be strictly equal:\n+ actual - expected\n\n+ 'in_progress'\n- 'failed'\n",
+      "source_histories_preserved": true,
+      "no_replay": true,
+      "cases": [],
+      "observed_native_boundary": {
+        "native_failed": "failed",
+        "all_source_rows_receipts_equal": true,
+        "receipt_rows": 0,
+        "source_companion_fault": "declared exceptional BEFORE UPDATE trigger on offer; whole real PG transaction rolled back",
+        "downstream_lifecycle": "in_progress because below-worker adapter fixture preserves original leased queue",
+        "outer_assertion": "FAILED_EXPECTED_failed_ACTUAL_in_progress",
+        "full_worker_failure_pass": false
+      }
+    },
+    "recovery-two-os-v1": {
+      "owned": "/var/tmp/synapsor-b61-recovery-owned-recovery-two-os-v1-2df502d2",
+      "stopped_container": "synapsor-b61-recovery-eaefaf41",
+      "owned_live": 0,
+      "failure": "Command failed: /usr/bin/node --import /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review/node_modules/tsx/dist/loader.mjs /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-inp",
+      "source_histories_preserved": true,
+      "no_replay": true,
+      "cases": []
+    },
+    "recovery-two-os-v2": {
+      "owned": "/var/tmp/synapsor-b61-recovery-owned-recovery-two-os-v2-0dd4f6f3",
+      "stopped_container": "synapsor-b61-recovery-9e55b4b8",
+      "owned_live": 0,
+      "failure": "",
+      "source_histories_preserved": true,
+      "no_replay": true,
+      "cases": [
+        {
+          "family": "ordinary_update",
+          "mode": "source_db",
+          "original_pid": 3856719,
+          "exit": {
+            "code": 0,
+            "signal": null
+          },
+          "actual_commit_ack_lost": true,
+          "native_intent_statuses": [
+            "applied"
+          ],
+          "lifecycle": "applied",
+          "queue": "completed",
+          "metrics": [
+            {
+              "tenant_id": "fixture_tenant",
+              "capability": "impact.ordinary_update",
+              "proposals": 1,
+              "approvals": 1,
+              "rejections": 0,
+              "applies": 1,
+              "conflicts": 0,
+              "failures": 0,
+              "revert_proposals": 0,
+              "revert_applies": 0
+            }
+          ],
+          "reconciliation_events": 1,
+          "whole_source_equal_after_recovery": true,
+          "cold_completion": "proven",
+          "cleanup_events": [],
+          "native_cold_controls": [
+            {
+              "action": "inspect",
+              "pid": 3856813,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "ambient",
+              "pid": 3856868,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "negative",
+              "pid": 3856945,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "snapshot_local",
+              "pid": 3857001,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "reconcile_before_commit_crash",
+              "pid": null,
+              "signal": "SIGKILL",
+              "precommit_interrupted": true,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "assert_local_rollback",
+              "pid": 3857096,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": true,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "two_os_reconcile",
+              "pid": null,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": [
+                3857151,
+                3857152
+              ]
+            },
+            {
+              "action": "reconcile",
+              "pid": 3857240,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            },
+            {
+              "action": "lifecycle",
+              "pid": 3857302,
+              "signal": null,
+              "precommit_interrupted": false,
+              "all_local_records_rolled_back": null,
+              "os_reconciler_pids": []
+            }
+          ]
+        }
+      ]
     }
   },
   "adoption_correction": {
@@ -260,5 +868,60 @@
     "queue_rule": "whole adoption refuses until original queue quarantined; exact same transaction queue CAS; proven repeat validates receipt and finishes only existing quarantined queue or observes exact completed queue",
     "version_rule": "optional typed v2 new_version emitted prospectively; exact matching value required for Source completion; legacy acknowledged terminal records remain compatible",
     "native_crash_and_remaining_families": "NOT_RUN"
+  },
+  "v2_encoding": {
+    "runtime": "dd35675f",
+    "native_before": "ordinary full Source receipt reached; canonical undefined fields caused prospective helper exception before adoption",
+    "unit_before": {
+      "passed": 0,
+      "failed": 1
+    },
+    "unit_after": {
+      "passed": 1,
+      "failed": 0
+    },
+    "app_types_exit": 0,
+    "scope": "normal JSON encoding of absent optional native fields before canonical receipt hash",
+    "original_committed_source_preserved": true
+  },
+  "legacy_refusal_regression": {
+    "native_original_tests_failed": 2,
+    "after_passed": 3,
+    "after_failed": 0,
+    "coverage": "36 receipt outcomes across frozen-set UPDATE/DELETE/INSERT row classifications refuse; explicit unknown Source observation also refuses outcome choice",
+    "scope": "legacy PostgreSQL missing exact proof stays UNKNOWN; no MySQL relabel or positive fixture fabrication",
+    "preserved_test_only_correction": "first new expectation used a wrong safe error string; actual SOURCE_COMPLETION_UNKNOWN retained"
+  },
+  "final_scope": {
+    "runtime": "dd35675f",
+    "fixture": "129be2b5",
+    "real_pg": true,
+    "native_signed_approval_reconcile": true,
+    "whole_public_cli_activation": false,
+    "source_db_positive": [
+      "anchored_insert",
+      "ordinary_update",
+      "actual_luna_structural_supplemental_two_target"
+    ],
+    "actual_luna_runner_ledger": "UNKNOWN_no_atomic_source_completion",
+    "source_recovery_business_or_receipt_writes": 0,
+    "source_receipt_schema_auto_upgrade": false,
+    "control_store": "existing native SQLite; typed binding also local/shared payload round-trip focused, no physical Postgres-control-recovery claim",
+    "concurrency": "two distinct fresh OS reconcilers against one Source/original SQLite control; one reconciliation event",
+    "control_interruption": "before local adoption commit rolls back all original control records; after commit/before ACK cold repeat idempotent",
+    "cleanup": "successful native COMMIT result applied despite injected post-native-pool-end error",
+    "defaults_triggers": "anchored queued/default actual DBtime + audit trigger observed separately; Luna two original version triggers; all Source tables/receipt rows dumped/compared",
+    "owned_live": 0,
+    "paid_provider_calls": 0,
+    "physical_effect_observations": {
+      "anchored": "one enquiry INSERT plus one audit trigger append; queued/default actual DBtime and Source receipt infrastructure separately observed",
+      "ordinary": "one bounded UPDATE/version advance; Source receipt infrastructure separate",
+      "luna": "seven primary mapped fields + one offer status companion, two actual version triggers; Source receipt exists only in explicit supplemental source_db mode"
+    }
+  },
+  "final_types": {
+    "exit": 0,
+    "seconds": 7.794702768325806,
+    "owned_live": 0
   }
 }

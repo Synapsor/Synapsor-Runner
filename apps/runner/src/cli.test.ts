@@ -6733,50 +6733,18 @@ END
     ])).rejects.toThrow(new RegExp(`APPLY WRITEBACK SETUP ${preview.plan.digest}`));
   });
 
-  it("emits an exact v3 receipt when a frozen set is reconciled as applied", () => {
-    const intent = boundedSetIntent("set_update");
-    const observation = boundedSetObservation("set_update", "matches_proposed");
-
-    expect(reconciliationSupportedOutcome(observation)).toBe("applied");
-    const receipt = parseExecutionReceipt(reconciliationReceipt(intent, observation, "applied", "operator:alice", "verified source state"));
-
-    expect(receipt).toMatchObject({
-      schema_version: "synapsor.execution-receipt.v3",
-      operation: "set_update",
-      receipt_authority: "runner_ledger",
-      status: "applied",
-      rows_affected: 2,
-      source_database_mutated: true,
-      target: {
-        identities: [
-          { column: "id", value: "INV-1" },
-          { column: "id", value: "INV-2" },
-        ],
-        set_digest: "sha256:set-cli",
-      },
-      member_effects: [
-        { primary_key: { column: "id", value: "INV-1" }, before_digest: "sha256:before-0", after_digest: "sha256:after-0" },
-        { primary_key: { column: "id", value: "INV-2" }, before_digest: "sha256:before-1", after_digest: "sha256:after-1" },
-      ],
-      reconciliation: { intent_id: "wbi:wbj_set_cli", reason: "verified source state" },
-    });
-  });
-
-  it("treats an entirely absent frozen DELETE set as applied and mixed state as conflict", () => {
-    const absent = boundedSetObservation("set_delete", "target_absent");
-    expect(reconciliationSupportedOutcome(absent)).toBe("applied");
-    const receipt = parseExecutionReceipt(reconciliationReceipt(boundedSetIntent("set_delete"), absent, "applied", "operator:alice", "all reviewed rows are absent"));
-    expect(receipt).toMatchObject({
-      schema_version: "synapsor.execution-receipt.v3",
-      operation: "set_delete",
-      rows_affected: 2,
-      member_effects: [
-        { primary_key: { column: "id", value: "INV-1" }, tombstone_digest: "sha256:tombstone-0" },
-        { primary_key: { column: "id", value: "INV-2" }, tombstone_digest: "sha256:tombstone-1" },
-      ],
-    });
-
-    expect(reconciliationSupportedOutcome(boundedSetObservation("set_delete", "drifted"))).toBe("conflict");
+  it.each(["set_update", "set_delete", "batch_insert"] as const)("refuses legacy PostgreSQL frozen-set completion from row observations (%s)", (operation) => {
+    const intent = boundedSetIntent(operation);
+    for (const classification of ["matches_proposed", "target_absent", "drifted", "not_observed"] as const) {
+      const observation = boundedSetObservation(operation, classification);
+      for (const outcome of ["applied", "conflict", "failed"] as const) {
+        expect(() => reconciliationReceipt(intent, observation, outcome, "operator:alice", "Row observations cannot prove transaction outcome"))
+          .toThrow("SOURCE_COMPLETION_PROOF_REQUIRED");
+      }
+      expect(() => reconciliationSupportedOutcome({ ...observation,
+        source_completion: { status: "unknown", reason: "SOURCE_COMPLETION_LEGACY_SCHEMA" } }))
+        .toThrow("SOURCE_COMPLETION_UNKNOWN");
+    }
   });
 
   it("creates app-owned writeback handler templates without package-relative paths", async () => {

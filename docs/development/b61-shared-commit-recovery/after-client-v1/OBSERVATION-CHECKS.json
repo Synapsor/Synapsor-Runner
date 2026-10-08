@@ -1,0 +1,372 @@
+{
+  "result": "PASS",
+  "checks": [
+    [
+      "luna_atomic",
+      "runner_ledger",
+      "child closes",
+      true
+    ],
+    [
+      "luna_atomic",
+      "runner_ledger",
+      "actual COMMIT lost",
+      true
+    ],
+    [
+      "luna_atomic",
+      "runner_ledger",
+      "structured unknown",
+      true
+    ],
+    [
+      "luna_atomic",
+      "runner_ledger",
+      "original job id",
+      true
+    ],
+    [
+      "luna_atomic",
+      "runner_ledger",
+      "seven fields and one trigger version",
+      true
+    ],
+    [
+      "luna_atomic",
+      "runner_ledger",
+      "foreign subscription exact",
+      true
+    ],
+    [
+      "luna_atomic",
+      "runner_ledger",
+      "offer consume one trigger version",
+      true
+    ],
+    [
+      "luna_atomic",
+      "runner_ledger",
+      "preserved telecom.accounts",
+      true
+    ],
+    [
+      "luna_atomic",
+      "runner_ledger",
+      "preserved telecom.impact_memberships",
+      true
+    ],
+    [
+      "luna_atomic",
+      "runner_ledger",
+      "preserved telecom.unrelated",
+      true
+    ],
+    [
+      "luna_atomic",
+      "runner_ledger",
+      "durable unknown fence",
+      true
+    ],
+    [
+      "luna_atomic",
+      "runner_ledger",
+      "no atomic Source receipt",
+      true
+    ],
+    [
+      "anchored_insert",
+      "source_db",
+      "child closes",
+      true
+    ],
+    [
+      "anchored_insert",
+      "source_db",
+      "actual COMMIT lost",
+      true
+    ],
+    [
+      "anchored_insert",
+      "source_db",
+      "structured unknown",
+      true
+    ],
+    [
+      "anchored_insert",
+      "source_db",
+      "original job id",
+      true
+    ],
+    [
+      "anchored_insert",
+      "source_db",
+      "one enquiry/one audit",
+      true
+    ],
+    [
+      "anchored_insert",
+      "source_db",
+      "exact mapped patch",
+      true
+    ],
+    [
+      "anchored_insert",
+      "source_db",
+      "queued/time/default audit",
+      true
+    ],
+    [
+      "anchored_insert",
+      "source_db",
+      "preserved enquiry_native.customers",
+      true
+    ],
+    [
+      "anchored_insert",
+      "source_db",
+      "preserved enquiry_native.unrelated",
+      true
+    ],
+    [
+      "anchored_insert",
+      "source_db",
+      "one actual applied Source receipt",
+      true
+    ],
+    [
+      "ordinary_update",
+      "source_db",
+      "child closes",
+      true
+    ],
+    [
+      "ordinary_update",
+      "source_db",
+      "actual COMMIT lost",
+      true
+    ],
+    [
+      "ordinary_update",
+      "source_db",
+      "structured unknown",
+      true
+    ],
+    [
+      "ordinary_update",
+      "source_db",
+      "original job id",
+      true
+    ],
+    [
+      "ordinary_update",
+      "source_db",
+      "exact guarded update",
+      true
+    ],
+    [
+      "ordinary_update",
+      "source_db",
+      "sibling/foreign exact",
+      true
+    ],
+    [
+      "ordinary_update",
+      "source_db",
+      "preserved ordinary_native.unrelated",
+      true
+    ],
+    [
+      "ordinary_update",
+      "source_db",
+      "one actual applied Source receipt",
+      true
+    ],
+    [
+      "anchored_insert",
+      "runner_ledger",
+      "child closes",
+      true
+    ],
+    [
+      "anchored_insert",
+      "runner_ledger",
+      "actual COMMIT lost",
+      true
+    ],
+    [
+      "anchored_insert",
+      "runner_ledger",
+      "structured unknown",
+      true
+    ],
+    [
+      "anchored_insert",
+      "runner_ledger",
+      "original job id",
+      true
+    ],
+    [
+      "anchored_insert",
+      "runner_ledger",
+      "one enquiry/one audit",
+      true
+    ],
+    [
+      "anchored_insert",
+      "runner_ledger",
+      "exact mapped patch",
+      true
+    ],
+    [
+      "anchored_insert",
+      "runner_ledger",
+      "queued/time/default audit",
+      true
+    ],
+    [
+      "anchored_insert",
+      "runner_ledger",
+      "preserved enquiry_native.customers",
+      true
+    ],
+    [
+      "anchored_insert",
+      "runner_ledger",
+      "preserved enquiry_native.unrelated",
+      true
+    ],
+    [
+      "anchored_insert",
+      "runner_ledger",
+      "durable unknown fence",
+      true
+    ],
+    [
+      "anchored_insert",
+      "runner_ledger",
+      "no atomic Source receipt",
+      true
+    ],
+    [
+      "ordinary_update",
+      "runner_ledger",
+      "child closes",
+      true
+    ],
+    [
+      "ordinary_update",
+      "runner_ledger",
+      "actual COMMIT lost",
+      true
+    ],
+    [
+      "ordinary_update",
+      "runner_ledger",
+      "structured unknown",
+      true
+    ],
+    [
+      "ordinary_update",
+      "runner_ledger",
+      "original job id",
+      true
+    ],
+    [
+      "ordinary_update",
+      "runner_ledger",
+      "exact guarded update",
+      true
+    ],
+    [
+      "ordinary_update",
+      "runner_ledger",
+      "sibling/foreign exact",
+      true
+    ],
+    [
+      "ordinary_update",
+      "runner_ledger",
+      "preserved ordinary_native.unrelated",
+      true
+    ],
+    [
+      "ordinary_update",
+      "runner_ledger",
+      "durable unknown fence",
+      true
+    ],
+    [
+      "ordinary_update",
+      "runner_ledger",
+      "no atomic Source receipt",
+      true
+    ],
+    [
+      "luna_atomic",
+      "source_db",
+      "child closes",
+      true
+    ],
+    [
+      "luna_atomic",
+      "source_db",
+      "actual COMMIT lost",
+      true
+    ],
+    [
+      "luna_atomic",
+      "source_db",
+      "structured unknown",
+      true
+    ],
+    [
+      "luna_atomic",
+      "source_db",
+      "original job id",
+      true
+    ],
+    [
+      "luna_atomic",
+      "source_db",
+      "seven fields and one trigger version",
+      true
+    ],
+    [
+      "luna_atomic",
+      "source_db",
+      "foreign subscription exact",
+      true
+    ],
+    [
+      "luna_atomic",
+      "source_db",
+      "offer consume one trigger version",
+      true
+    ],
+    [
+      "luna_atomic",
+      "source_db",
+      "preserved telecom.accounts",
+      true
+    ],
+    [
+      "luna_atomic",
+      "source_db",
+      "preserved telecom.impact_memberships",
+      true
+    ],
+    [
+      "luna_atomic",
+      "source_db",
+      "preserved telecom.unrelated",
+      true
+    ],
+    [
+      "luna_atomic",
+      "source_db",
+      "one actual applied Source receipt",
+      true
+    ]
+  ],
+  "scope": "connection classification/effect preservation only, not receipt-backed reconciliation acceptance"
+}

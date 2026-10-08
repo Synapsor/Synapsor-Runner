@@ -1,0 +1,30 @@
+{
+  "result": {
+    "protocol_version": "5.0",
+    "job_id": "wbj_wrp_new_impact_95118e4b4e7440fa9d2954a769fd7ce2",
+    "runner_id": "fresh_impact_runner",
+    "operation": "single_row_update",
+    "receipt_authority": "runner_ledger",
+    "status": "reconciliation_required",
+    "affected_rows": 0,
+    "target_identity": [
+      {
+        "column": "subscription_id",
+        "value": "f3333333-3333-4333-8333-333333333333"
+      }
+    ],
+    "semantic_verification": {
+      "status": "not_run",
+      "proof_digest": "sha256:8b746c8e0a0e842790d3edcd2f99cdb7aee360f2a238448a617d076562102b7d",
+      "action_rule_digest": "sha256:64b473f357e8f399b6a2c5a68d5df2139379976ad6e5da2ca8cc9eab1fd0d3b0",
+      "compiled_plan_digest": "sha256:0928e3ccdf0e9c61b59aae0765ca87aa1737470cf6bac07b0a6099f5a69cf083",
+      "proposal_dependency_set_digest": "sha256:40831f9c7564d59f96f5a876047f9d35ee7baa712295ccc1ddab52656bb0fc99",
+      "effect_digest": "sha256:c9f04f8b5ab00ad05e43927deac3ddc5f756fe8294b3edebe7f828d515f809f5"
+    },
+    "result_hash": "sha256:e1b8da0aaaf692da8fd353485e4d9a9160e62ce0ca66efd37fa7f3c989c8757e",
+    "error_code": "RECONCILIATION_REQUIRED",
+    "intent_id": "wbi:wbj_wrp_new_impact_95118e4b4e7440fa9d2954a769fd7ce2",
+    "completed_at": "2026-10-08T01:06:39.041Z"
+  },
+  "pid": 3773068
+}
