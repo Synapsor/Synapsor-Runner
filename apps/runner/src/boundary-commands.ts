@@ -7688,6 +7688,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       if (!intent) throw new Error("A new Read mapping requires a reviewed Read intent.");
       let failure: BoundaryModelDraftFailure | undefined;
       try {
+        await assertAuthoringResumeCurrent(undefined);
+        const meaningWorkloads = await listReadWorkloadAnalyses({ projectRoot: input.projectRoot, generatedBoundary: mappingBoundary });
+        await assertAuthoringResumeCurrent(undefined);
         mapped = await runWithProgress(
           "Mapping requested reads with the selected model",
           () => (input.modelReadWorkloadGenerator ?? generateModelReadWorkload)({
@@ -7698,6 +7701,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             provider: mappingSession.provider,
             model: mappingSession.model,
             generatedBoundary: mappingBoundary,
+            currentEvidenceRecords: () => ({ source: authoringConversation?.policySources,
+              questions: operatorQuestions, handoffs: ownerHandoffs, history: resumeRead?.assistance_history,
+              checkpoint: readAssistanceCheckpoint, workloads: meaningWorkloads, boundary: mappingBoundary }),
             ...(principalScopedRootResources ? { principalScopedRootResources } : {}),
             ...(mappingSession.apiKey ? { apiKey: mappingSession.apiKey } : {}),
             ...(mappingSession.apiKeyEnv ? { apiKeyEnv: mappingSession.apiKeyEnv } : {}),
@@ -9785,6 +9791,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           const revisionKey = (revision: ModelReadBoundaryExposureRevisionInput["revision"]) =>
             canonicalJsonDigest({ changes: revision.changes, policy_changes: revision.policy_changes ?? [], read_prerequisite: revision.read_prerequisite ?? null,
               reviewed_relationship: revision.reviewed_relationship ?? null });
+          await assertAuthoringResumeCurrent(undefined);
+          const meaningWorkloads = preparedRevision ? [] : await listReadWorkloadAnalyses({
+            projectRoot: input.projectRoot, generatedBoundary: context.candidate });
+          await assertAuthoringResumeCurrent(undefined);
           const revision = preparedRevision ?? await runWithProgress(
             `${boundaryModelLabel(modelSession)} is drafting the exact field-exposure revision`,
             () => (input.modelReadBoundaryRevisionGenerator ?? generateModelReadBoundaryRevision)({
@@ -9792,8 +9802,12 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               provider: modelSession.provider,
               model: modelSession.model,
               boundary: context.candidate,
+              operatorNamingContext: (canonicalJobIntent ?? jobIntent).trim(),
+              currentEvidenceRecords: () => ({ source: authoringConversation?.policySources,
+                questions: operatorQuestions, handoffs: ownerHandoffs, history: resumeRead?.assistance_history,
+                checkpoint: readAssistanceCheckpoint, workloads: meaningWorkloads, boundary: context.candidate }),
               ...(request.privacyOnly ? { privacyOnly: true } : {}),
-              ...(request.vocabularyOnly ? { vocabularyOnly: true, operatorNamingContext: jobIntent.trim() } : {}),
+              ...(request.vocabularyOnly ? { vocabularyOnly: true } : {}),
               env: process.env,
               ...(modelSession.apiKey ? { apiKey: modelSession.apiKey } : {}),
               ...(modelSession.apiKeyEnv ? { apiKeyEnv: modelSession.apiKeyEnv } : {}),
