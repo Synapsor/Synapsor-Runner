@@ -35,5 +35,7 @@ export function assertCurrentAuthoringEnvelope(value: unknown): void {
   if (["synapsor.boundary-authoring-resume.v1", "synapsor.boundary-authoring-resume.v2"]
     .includes(typeof envelope.schema_version === "string" ? envelope.schema_version : "") || olderStructured)
     throw Object.assign(new Error(OLDER_AUTHORING_SETUP_MESSAGE), { code: "AUTHORING_SETUP_OLDER_VERSION" });
-  if (envelope.schema_version === STRUCTURED_AUTHORING_RESUME_VERSION) parseStructuredAuthoringProtocol(pin);
+  if (envelope.schema_version !== STRUCTURED_AUTHORING_RESUME_VERSION)
+    throw new Error("AUTHORING_PROTOCOL_INVALID: This saved setup envelope is unsupported. Preserve it; no interpretation was selected.");
+  parseStructuredAuthoringProtocol(pin);
 }

@@ -142,4 +142,21 @@ describe("B64 protocol pin in native Resume", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
+  it("refuses an unknown native envelope before public metadata or menus", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-b64-future-envelope-"));
+    try {
+      const relative = await writeBoundaryAuthoringResumeState(root, structured(), { expectedRevisionDigest: null });
+      const file = path.resolve(root, relative);
+      const bytes = JSON.stringify(seal({ ...structured(), schema_version: "synapsor.boundary-authoring-resume.v99" }));
+      await fs.writeFile(file, bytes);
+      const files = await fs.readdir(path.join(root, ".synapsor"));
+      await expect(boundaryReviewCommand(["--project-root", root, "--access", "--job-first"],
+        async () => { throw new Error("Future envelope must not inspect Source"); }, undefined, undefined,
+        { boundaryAuthoringChatFactory: () => { throw new Error("Future envelope must not open chat"); } }))
+        .rejects.toThrow("AUTHORING_PROTOCOL_INVALID");
+      expect(await fs.readdir(path.join(root, ".synapsor"))).toEqual(files);
+      expect(await fs.readFile(file, "utf8")).toBe(bytes);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
 });
