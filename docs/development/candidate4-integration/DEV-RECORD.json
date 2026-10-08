@@ -279,12 +279,19 @@
       "commit": "6d8bc338",
       "before": "R2 actualCAS2PASS2FAIL; wrong-mode writes preserved",
       "after_main": "unchanged independent4cases PASS retained-mode-after.log",
-      "independent_after": "pending",
+      "independent_after": "R2 same4byteexactcases PASS own08dddd0889 report e23aaacf",
       "change": "same live checkpoint parser includes pending_action_addition.retained_action.checkpoint; historical dispositions untouched"
     },
     "last_usage_check": {
       "at": "2026-10-08T07:19:10.541089+00:00",
       "used_percent": 11
+    },
+    "native_scope_host_wip": {
+      "read_dependencies": "f04830b2/6e641fee/c5b9fe17",
+      "before": "native-scope-host-before.log1FAIL question absent beforeactualUI",
+      "after": "native-scope-host-after.log1PASS/7filtered; native-scope-host-affected.log79PASS; native-scope-host-types.logexit0",
+      "changes": "scope waits persist actualconsumedproposal+native question beforeUI; decided checkpoints resolve actualnative captured rawanswer ratherthan fabricate reference prose. Resume validates exactquestion/requirement/handoff.",
+      "coverage_limit": "Hostwait checked; captured answer continuation/public/nativewholeflow pending. Nativefixture now passes actualtypedpayload through decoder beforeScopeCAS; coldprocess notyet."
     }
   }
 }

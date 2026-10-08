@@ -6,7 +6,10 @@ import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceDecisionAn
   type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import { activePolicySource, PolicySourceChangedError, type PolicySourceSession } from "./authoring-policy-source.js";
 import { createOwnerHandoff, answerOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
-import { createOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
+import { createReadScopeQuestion } from "./authoring-read-scope-question.js";
+import { readScopeConsumption } from "./authoring-read-scope-binding.js";
+import { authoringReadCheckpoint } from "./authoring-generation-recovery.js";
+import { createOperatorQuestion, presentOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { rememberModelAuthoringTurn, type ModelAuthoringConversation } from "./model-authoring-conversation.js";
 import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
@@ -136,6 +139,16 @@ export function createReadAssistanceCheckpointHost({ access }: { access: ReadAss
             }
             access.readHandoffs().push(next);
           }
+          if (q.kind === "scope" && !access.readQuestions().some(record => record.handoff_id === access.readHandoffs().at(-1)!.id)) {
+            const h = access.readHandoffs().at(-1)!;
+            const requirement = q.request.scope.requirement_bindings.find(r => r.digest === q.request.requirement_digest);
+            if (!q.completion || !requirement) throw access.checkpointFailure("The actual typed Read question");
+            const question = presentOperatorQuestion(createReadScopeQuestion({ id: h.id, revision: 1, handoff_id: h.id,
+              scope_digest: h.scope_digest, context_digest: h.context_digest,
+              read_scope: { mode: "missing_answer", record: q.request.scope, requirement_id: requirement.id, completion: q.completion } }), h.question);
+            access.install({ recovery: authoringReadCheckpoint(access.readRecovery(), q.completion, readScopeConsumption(question.read_scope!)) });
+            access.readQuestions().push(question);
+          }
           if (q.kind === "clarification" && !access.readQuestions().some(record => record.handoff_id === access.readHandoffs().at(-1)!.id)) {
             const h = access.readHandoffs().at(-1)!;
             access.readQuestions().push(createOperatorQuestion({ id: h.id, revision: 1, handoff_id: h.id,
@@ -148,16 +161,28 @@ export function createReadAssistanceCheckpointHost({ access }: { access: ReadAss
           }
         } else {
           const reviewedRelationshipAnswer = access.readReviewedRelationshipAnswer();
-          const acknowledged = sameQuestion && last?.state === "answered" && q.kind === "clarification"
+          const acknowledged = sameQuestion && last?.state === "answered" && (q.kind === "clarification"
             && access.readQuestions().some(record => record.handoff_id === last.id && record.confirmation
-              && record.raw_answer?.text === readWorkloadAssistanceDecisionAnswer(q));
+              && record.raw_answer?.text === readWorkloadAssistanceDecisionAnswer(q))
+            || q.kind === "scope" && access.readQuestions().some(record => record.id === q.decision?.answer_reference.question_id
+              && record.revision === q.decision.answer_reference.revision && record.raw_answer?.id === q.decision.answer_reference.answer_id
+              && record.raw_answer.text === last.answer));
           if (!sameQuestion || !last || !acknowledged && last.state !== "waiting" || last.scope_digest !== access.scopeDigest()
             || last.context_digest !== currentContext && !(q.kind === "relationship"
               && reviewedRelationshipAnswer?.id === last.id && reviewedRelationshipAnswer.digest === last.digest
               && reviewedRelationshipAnswer.context === currentContext)) {
             throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: Source, permissions or the exact Read question changed. Its answer was not accepted.");
           }
-          const answer = readWorkloadAssistanceDecisionAnswer(q);
+          const scopeQuestion = q.kind === "scope" ? access.readQuestions().find(record =>
+            record.id === q.decision?.answer_reference.question_id && record.revision === q.decision.answer_reference.revision) : undefined;
+          if (q.kind === "scope" && (!scopeQuestion || scopeQuestion.kind !== "read_scope" || scopeQuestion.read_scope?.mode !== "missing_answer"
+            || scopeQuestion.handoff_id !== last.id || scopeQuestion.scope_digest !== access.scopeDigest()
+            || scopeQuestion.context_digest !== currentContext || scopeQuestion.read_scope.record.digest !== q.request.scope.digest
+            || scopeQuestion.read_scope.record.requirement_bindings.find(r => r.id === scopeQuestion.read_scope!.requirement_id)?.digest !== q.request.requirement_digest
+            || scopeQuestion.disposition || !scopeQuestion.raw_answer?.text.trim()
+            || scopeQuestion.raw_answer.id !== q.decision?.answer_reference.answer_id))
+            throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The Read scope decision has no exact current captured answer.");
+          const answer = q.kind === "scope" ? scopeQuestion!.raw_answer!.text : readWorkloadAssistanceDecisionAnswer(q);
           if (!acknowledged) {
             const next = answerOwnerHandoff(last, answer, currentContext);
             if (last.completion) access.install({ recovery: authoringQuestionAnswerCheckpoint(access.readRecovery(),

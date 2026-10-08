@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest as d } from "@synapsor-runner/protocol";
 import { parseOperatorQuestion } from "./authoring-operator-question.js";
-import { READ_SCOPE_PROTOCOL, resolveReadScopeProposal } from "./read-structured-scope.js";
+import { READ_SCOPE_PROTOCOL, resolveReadScopeProposal, readScopeProposalSchema, type ReadScopeRecord } from "./read-structured-scope.js";
 import { READ_WORKLOAD_ANALYSIS_VERSION, type ReadWorkloadAnalysis } from "./read-workload-assist.js";
 
 const target = { root_resource: "work.items", resource: "work.items", operation: "resource" as const };
@@ -17,7 +17,7 @@ function analysis(): ReadWorkloadAnalysis {
     source_query_executed: false, explore_budget_consumed: false, source_database_changed: false };
 }
 function question() {
-  const record = resolveReadScopeProposal({ protocol: READ_SCOPE_PROTOCOL, original_request: "job", requirements: [
+  const record = resolveReadScopeProposal({ protocol: READ_SCOPE_PROTOCOL, applicability: "read_requested", original_request: "job", requirements: [
     { id: "items", intended_use: "Show items", references: ["job"], disposition: "include", targets: [target] },
   ] }, { expectedBinding: binding, references: [{ id: "job", kind: "request", digest: binding.request_digest, text: "Show items" }],
     catalog: { resources: [{ id: "work.items", fields: [] }], relationships: [] }, analysis: analysis() });
@@ -60,20 +60,27 @@ async function nativeFixture() {
   const produce = async (predecessor?: ReturnType<typeof parseOperatorQuestion>) => withAuthoringGenerationRecovery(async () => {
     configureAuthoringGenerationRecovery({ available: () => true, read: () => state.generation_recovery, current: async () => d("current"),
       progress: () => {}, write: generationRecovery => persist(buildBoundaryAuthoringResumeState({ ...input, previous: state, generationRecovery })) });
+    const raw = question();
+    let submitted: ReadScopeRecord | undefined;
     const tools: AskToolDefinition[] = [{ name: "runner.propose_scope", title: "Propose scope", description: "No authority.",
-      input_schema: { type: "object", additionalProperties: false, properties: {}, required: [] } }];
+      input_schema: { type: "object", additionalProperties: false, properties: { read_scope: readScopeProposalSchema }, required: ["read_scope"] } }];
     const result = await runAskProviderTurn({ configuration: resolveAskProviderConfiguration({ provider: "openai", model: "controlled",
       api_key: "inert-local-credential", egress_acknowledged: true, authority_digest: askToolSurfaceDigest(tools) }, {}, new Date()),
-      question: "Propose the visible scope.", history: [], tools, signal: new AbortController().signal, authorityDigest: askToolSurfaceDigest(tools),
+      question: JSON.stringify({ request: "Show items", original_request: "job", references: raw.read_scope.record.references,
+        catalog: { resources: [{ id: "work.items", fields: [] }], relationships: [] } }), history: [], tools, signal: new AbortController().signal, authorityDigest: askToolSurfaceDigest(tools),
       requiredInitialToolName: tools[0]!.name, completeAfterRequiredTool: true,
-      gateway: { mode: "authoring", listTools: () => tools, close: async () => {}, callTool: async () => ({ ok: true, value: { proposed: true } }) },
+      gateway: { mode: "authoring", listTools: () => tools, close: async () => {}, callTool: async (_tool, args) => {
+        submitted = resolveReadScopeProposal((args as { read_scope: unknown }).read_scope, { expectedBinding: binding,
+          references: raw.read_scope.record.references, catalog: { resources: [{ id: "work.items", fields: [] }], relationships: [] }, analysis: analysis() });
+        return { ok: true, value: { proposed: true } };
+      } },
       dependencies: { requestJson: async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: randomUUID(),
-        name: "runner__propose_scope", arguments: "{}" }] } }) } });
+        name: "runner__propose_scope", arguments: JSON.stringify({ read_scope: raw.read_scope.record.proposal }) }] } }) } });
     const completion = completedAuthoringQuestion(result); if (!completion) throw new Error("Missing actual completion");
-    const raw = question();
+    if (!submitted) throw new Error("Missing parsed actual submission");
     const q = createReadScopeQuestion({ id: raw.id, revision: predecessor ? predecessor.revision + 1 : 1,
       scope_digest: raw.scope_digest, context_digest: raw.context_digest,
-      read_scope: { mode: "review", record: raw.read_scope.record, completion, ...(predecessor ? { predecessor_id: predecessor.id } : {}) } });
+      read_scope: { mode: "review", record: submitted, completion, ...(predecessor ? { predecessor_id: predecessor.id } : {}) } });
     const generationRecovery = authoringReadCheckpoint(state.generation_recovery, completion, readScopeConsumption(q.read_scope!));
     await persist(buildBoundaryAuthoringResumeState({ ...input, previous: state, generationRecovery, operatorQuestions: [...(state.operator_questions ?? []), q] }));
     return q;

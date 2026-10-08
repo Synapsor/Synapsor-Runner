@@ -906,7 +906,7 @@ function assertAnsweredOwnerHandoff(generation: AuthoringTransportState | undefi
 /** Link the producer's canonical typed decision to its actual owner record.
  * The transport checkpoint binds that owner record, never the producer digest. */
 function assertReadAssistanceHandoff(value: {
-  read_assistance?: unknown; generation_recovery?: unknown; owner_handoffs?: unknown;
+  read_assistance?: unknown; generation_recovery?: unknown; owner_handoffs?: unknown; operator_questions?: unknown;
 }): void {
   if (value.read_assistance === undefined) return;
   const checkpoint = parseReadWorkloadAssistanceCheckpoint(value.read_assistance);
@@ -939,11 +939,26 @@ function assertReadAssistanceHandoff(value: {
     }
     return;
   }
+  if (question.kind === "scope") {
+    const native = parseOperatorQuestions(value.operator_questions ?? [], handoffs, generation).find(q => q.handoff_id === handoff.id);
+    if (!native || native.kind !== "read_scope" || native.read_scope?.mode !== "missing_answer"
+      || native.read_scope.record.digest !== question.request.scope.digest
+      || native.read_scope.record.requirement_bindings.find(r => r.id === native.read_scope!.requirement_id)?.digest !== question.request.requirement_digest)
+      throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The scope wait has no exact native question.");
+  }
   if (checkpoint.stage === "waiting") {
     if (handoff.state !== "waiting") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Read assistance is waiting on an already answered owner question.");
     if (question.completion) assertAuthoringQuestionHandoff(generation, ownerHandoffCheckpoint(handoff));
   } else {
-    if (handoff.state !== "answered" || handoff.answer !== readWorkloadAssistanceDecisionAnswer(question)) {
+    const nativeQuestion = question.kind === "scope" ? parseOperatorQuestions(value.operator_questions ?? [], handoffs, generation).find(q =>
+      q.id === question.decision?.answer_reference.question_id && q.revision === question.decision.answer_reference.revision) : undefined;
+    if (question.kind === "scope" && (!nativeQuestion || nativeQuestion.kind !== "read_scope"
+      || nativeQuestion.read_scope?.mode !== "missing_answer" || nativeQuestion.handoff_id !== handoff.id
+      || nativeQuestion.read_scope.record.digest !== question.request.scope.digest
+      || nativeQuestion.raw_answer?.id !== question.decision?.answer_reference.answer_id || nativeQuestion.disposition))
+      throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The scope decision has no exact native captured answer.");
+    const answer = question.kind === "scope" ? nativeQuestion!.raw_answer!.text : readWorkloadAssistanceDecisionAnswer(question);
+    if (handoff.state !== "answered" || handoff.answer !== answer) {
       throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Read assistance decision has no exact attributable owner answer.");
     }
     assertAnsweredOwnerHandoff(generation, handoff);

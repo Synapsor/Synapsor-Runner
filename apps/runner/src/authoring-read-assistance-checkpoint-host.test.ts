@@ -189,3 +189,44 @@ function generatedBoundary(): ExplorationBoundaryDraft {
     unresolved_decisions: [],
   };
 }
+
+describe("B64 typed missing-scope question host", () => {
+  it("persists the real scope and consumed question before presenting, without manufacturing an answer", async () => {
+    const h = await harness();
+    const binding = { request_digest: canonicalJsonDigest("List my orders"), source_digest: canonicalJsonDigest("policy"),
+      catalog_digest: canonicalJsonDigest("catalog"), meaning_digest: canonicalJsonDigest("meaning"),
+      applicability_digest: canonicalJsonDigest("purpose"), operation_digest: canonicalJsonDigest("read") };
+    let answered = 0;
+    try {
+      await expect(withAuthoringGenerationRecovery(async () => {
+        configureAuthoringGenerationRecovery({ available: () => true, read: () => h.state().recovery,
+          current: async () => canonicalJsonDigest("declared current Source and reader"),
+          write: async value => h.setRecovery(value), progress: () => {} });
+        return generateModelReadWorkload({ name: "typed_scope", allowedQuestions: ["List my orders"], provider: "openai", model: "controlled",
+          generatedBoundary: h.boundary, apiKey: "inert-test-key", egressAcknowledged: true, deferNarration: true,
+          onCheckpoint: h.host.persist,
+          structuredScope: { protocol: "synapsor.read-scope.v1", current: () => ({ binding,
+            references: [{ id: "job", kind: "request", digest: binding.request_digest, text: "List my orders" }],
+            catalog: { resources: [{ id: "public.orders", fields: [{ id: "status" }] }], relationships: [] } }),
+            answer: async (request, completion) => {
+              answered++;
+              const q = h.state().questions.at(-1)!;
+              expect(q).toMatchObject({ version: 2, kind: "read_scope", read_scope: { mode: "missing_answer", record: request.scope, completion } });
+              expect(q.raw_answer).toBeUndefined(); expect(q.confirmation).toBeUndefined();
+              expect(h.state().recovery?.operations.at(-1)?.read_checkpoint?.material_digest).toBe(canonicalJsonDigest(request.scope));
+              expect(h.saves.at(-1)?.state.questions.at(-1)?.digest).toBe(q.digest);
+              return undefined;
+            } },
+          dependencies: { requestJson: async () => response({ allowed: [], forbidden: [], read_scope: {
+            protocol: "synapsor.read-scope.v1", applicability: "read_requested", original_request: "job", requirements: [{
+              id: "order-meaning", intended_use: "List my orders", references: ["job"], disposition: "unresolved", targets: [],
+              unresolved: "Which orders should appear?",
+            }],
+          } }) },
+        });
+      })).rejects.toThrow("AUTHORING_PAUSED");
+      expect(answered).toBe(1); expect(h.state().checkpoint?.stage).toBe("waiting");
+      expect(h.state().handoffs.at(-1)?.state).toBe("waiting");
+    } finally { await h.cleanup(); }
+  });
+});
