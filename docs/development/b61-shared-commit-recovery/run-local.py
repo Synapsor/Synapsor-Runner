@@ -4,7 +4,7 @@ import json,os,pathlib,subprocess,sys,time,uuid
 W=pathlib.Path(__file__).resolve().parents[3]
 E=pathlib.Path('/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b61-shared-commit-recovery-20261007-v1')
 name,mode=sys.argv[1:3]
-if not name.replace('-','').isalnum() or mode not in ['build','apps','intents','adapter','binding','receipt','legacy']:raise SystemExit('Known finite local checkpoint required')
+if not name.replace('-','').isalnum() or mode not in ['build','apps','intents','adapter','binding','receipt','legacy','contracts']:raise SystemExit('Known finite local checkpoint required')
 record=E/name;record.mkdir(mode=0o700,parents=True,exist_ok=False)
 owned=pathlib.Path('/var/tmp/synapsor-b61-recovery-local-'+uuid.uuid4().hex[:8]);owned.mkdir(mode=0o700)
 for n in ['home','tmp','.git']:(owned/n).mkdir(mode=0o700)
@@ -13,7 +13,8 @@ if mode in ['build','apps']:args=['node',str(W/'node_modules/typescript/bin/tsc'
 else:
  config=owned/'vitest.config.mjs';config.write_text('export default '+json.dumps({'root':str(W),'cacheDir':str(owned/'vite-cache'),'test':{'pool':'forks','isolate':True,'minWorkers':1,'maxWorkers':1,'fileParallelism':False,'testTimeout':30000}})+';\n')
  args=['node',str(W/'node_modules/vitest/vitest.mjs'),'run','--config',str(config),'--reporter=json','--outputFile',str(record/'vitest.json')]
- if mode=='legacy':args+=['apps/runner/src/cli.test.ts','-t','emits an exact v3 receipt when a frozen set|treats an entirely absent frozen DELETE|refuses legacy PostgreSQL frozen-set']
+ if mode=='contracts':args+=['apps/runner/src/source-completion-contract.test.ts'];env['SYNAPSOR_B61_READONLY_NATIVE_WITNESS']='/var/tmp/synapsor-b61-recovery-owned-recovery-luna-v2-159dde94/luna_atomic-source_db'
+ elif mode=='legacy':args+=['apps/runner/src/cli.test.ts','-t','emits an exact v3 receipt when a frozen set|treats an entirely absent frozen DELETE|refuses legacy PostgreSQL frozen-set']
  elif mode=='receipt':args+=['apps/runner/src/source-completion-receipt.test.ts']
  elif mode=='binding':args+=['packages/postgres/src/source-completion-binding.test.ts']
  elif mode=='adapter':args+=['packages/postgres/src/connection-lifetime.test.ts','packages/postgres/src/index.test.ts','packages/postgres/src/atomic-updates.test.ts']

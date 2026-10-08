@@ -1,0 +1,60 @@
+{
+  "status": "FINITE_CONTRACT_SUPPLEMENT_OBSERVED_PENDING_R2_ADJUDICATION",
+  "accepted_original_packet": "27adecb991e3d18c7d151b1a2f239145afca8f68",
+  "runtime": "dd35675f",
+  "runtime_change": false,
+  "original_packets_rewritten": false,
+  "new_pg_fixture": false,
+  "provider_paid_calls": 0,
+  "scope": "actual native Ed25519 current roster/decision verification and SQLite adoption guards; typed Source witness is unit-only, plus read-only validation of existing accepted physical Luna Source evidence; below public CLI/physical execution",
+  "focus": {
+    "tests_passed": 3,
+    "tests_failed": 0,
+    "seconds": 19.174214124679565,
+    "pgid": 3894398,
+    "app_types_exit": 0,
+    "types_seconds": 7.0889573097229,
+    "owned_live": 0
+  },
+  "authentication": {
+    "actual_native_signature_verification": true,
+    "signed_APPLY_proof_in_store_RECONCILE": "OPERATOR_DECISION_MISMATCH",
+    "APPLY_only_native_signer_requesting_RECONCILE": "OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED",
+    "changed_current_pinned_public_key": "OPERATOR_PUBLIC_KEY_CHANGED",
+    "revoked_current_recovery_role": "required_role_refusal",
+    "all_local_records_equal_after_each_refusal": true
+  },
+  "whole_proof_validation": {
+    "foreign_Source_scope_job_requested_effect_headers": 4,
+    "wrong_native_version_identity_results": 2,
+    "conflicting_valid_envelope_after_completion": 1,
+    "conflict_refusal": "SOURCE_COMPLETION_QUEUE_NOT_QUARANTINED (whole adoption refused before projections/event/CAS; original completed queue remains exact)",
+    "all_local_records_equal_after_each_refusal": true,
+    "successful_unit_control_adoption": "typed witness only; not a new physical Source proof",
+    "completion_events_after_conflict": 1
+  },
+  "atomic_native_witness": {
+    "accepted_readonly_root": "/var/tmp/synapsor-b61-recovery-owned-recovery-luna-v2-159dde94/luna_atomic-source_db",
+    "full_result_fields_altered_with_digest_recomputed": [
+      "companion effect digest",
+      "companion schema",
+      "companion identity",
+      "semantic proof digest"
+    ],
+    "all_rejected": "SOURCE_COMPLETION_PROOF_INVALID",
+    "original_saved_Source_job_evidence_and_rows_bytes_equal": true,
+    "original_Control_store_opened_or_changed": false,
+    "Source_connection_or_SQL": false
+  },
+  "related_accepted_native_observations": [
+    "cold PGUSER ambient destination drift rejects positive proof",
+    "changed trusted principal Source scope returns unknown with local/whole Source snapshots equal",
+    "wrong/missing full receipt proof and wrong V2 new_version denied before adoption"
+  ],
+  "preserved_mechanical_failures": {
+    "contract-limits-v1": "2P1F; conflict expectation assumed receipt mismatch but existing whole queue guard refused earlier; exact actual code now asserted",
+    "contract-limits-types-v1": "test needed native ordinary operation narrowing; runtime unchanged"
+  },
+  "oracle_claim": "No all-12 group PASS or new physical conflict-envelope mutation claim; R2 owns scoped adjudication",
+  "record_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b61-shared-commit-recovery-20261007-v1/contract-limits-v4"
+}
