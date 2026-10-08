@@ -133,6 +133,7 @@ describe("original requested Read scope versus routing summary", () => {
     const retained = structuredClone(checkpoint);
     if (checkpoint?.stage !== "waiting" || checkpoint.pending_question.kind !== "clarification") throw new Error("native scope question not reached");
     const { digest: _digest, schema_version: _schema, ...legacyBody } = structuredClone(checkpoint);
+    if (legacyBody.pending_question.kind !== "clarification") throw new Error("expected legacy clarification fixture");
     delete legacyBody.pending_question.request.reason_binding;
     const legacy = readWorkloadAssistanceCheckpoint(legacyBody);
     const noLegacySend = vi.fn(), noLegacyAnswer = vi.fn(), noLegacySave = vi.fn();
@@ -142,6 +143,7 @@ describe("original requested Read scope versus routing summary", () => {
     expect(noLegacySend).not.toHaveBeenCalled(); expect(noLegacyAnswer).not.toHaveBeenCalled(); expect(noLegacySave).not.toHaveBeenCalled();
     expect(legacy.state.call_count).toBe(checkpoint.state.call_count);
     const { digest: _hash, schema_version: _version, ...wrongBody } = structuredClone(checkpoint);
+    if (wrongBody.pending_question.kind !== "clarification") throw new Error("expected wrong-binding clarification fixture");
     wrongBody.pending_question.request.reason_binding!.digest = `sha256:${"f".repeat(64)}`;
     const wrong = readWorkloadAssistanceCheckpoint(wrongBody);
     await expect(generateModelReadWorkload({ ...base, resumeCheckpoint: wrong,
