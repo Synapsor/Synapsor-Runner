@@ -280,11 +280,11 @@ export function createReadMeaningHost(input: {
     return { kind: "answer", id: `answer:${q.id}:${q.revision}:${q.raw_answer.id}`, digest: canonicalJsonDigest(q.raw_answer),
       question_id: q.id, question_revision: q.revision, answer_id: q.raw_answer.id, text: q.raw_answer.text };
   };
-  const replacementState = (reviewId: string) => {
+  const replacementState = (reviewId: string, historicalTestimony = false) => {
     const questions = parseOperatorQuestions(access.readQuestions(), access.readHandoffs(), access.readRecovery());
     const review = questions.find(q => q.id === reviewId);
     if (!review || review.read_scope?.mode !== "review" || !review.disposition || review.confirmation
-      || questions.some(q => q.read_scope?.predecessor_id === reviewId))
+      || !historicalTestimony && questions.some(q => q.read_scope?.predecessor_id === reviewId))
       throw access.checkpointFailure("The exact declined Read scope");
     const raw = [...questions].reverse().find(q => q.read_scope?.mode === "replacement_answer" && q.read_scope.review_question_id === reviewId);
     const handoff = raw && access.readHandoffs().find(h => h.id === raw.handoff_id);
@@ -354,7 +354,9 @@ export function createReadMeaningHost(input: {
     });
   };
   const resolveScopeReplacementAnswer = (reference: ReadScopeAnswerReference, reviewId: string): ReadScopeReference | undefined => {
-    const { raw, handoff } = replacementState(reviewId);
+    // A completed successor retires the ability to reopen this review, not its
+    // exact immutable testimony. Native parsing still validates the full chain.
+    const { raw, handoff } = replacementState(reviewId, true);
     if (!raw || raw.disposition || raw.confirmation || raw.id !== reference.question_id || raw.revision !== reference.revision
       || raw.raw_answer?.id !== reference.answer_id || !raw.raw_answer.text.trim() || handoff?.state !== "answered"
       || handoff.answer !== raw.raw_answer.text) return undefined;

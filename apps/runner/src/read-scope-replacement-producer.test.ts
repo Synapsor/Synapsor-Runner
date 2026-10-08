@@ -19,7 +19,7 @@ import type { ReadScopeReplacementOwner } from "./read-current-evidence.js";
 // Genuine mapping completion and native saved history, not a fabricated dispatch.
 // The operator's declared correction only changes the requested row limit.
 describe("Read post-review replacement producer", () => {
-  it.each(["ordinary", "captured_before_restart", "cancel_then_resume", "changed_model", "changed_task"] as const)("continues %s with one new mapping call, retained history and separate default-No review", async mode => {
+  it.each(["ordinary", "captured_before_restart", "cancel_then_resume", "changed_model", "changed_task", "second_decline"] as const)("continues %s with one new mapping call, retained history and separate default-No review", async mode => {
     const f = await nativeFixture();
     try {
       const boundary = (await loadBoundaryReviewContext(f.dir)).candidate;
@@ -58,7 +58,7 @@ describe("Read post-review replacement producer", () => {
         checkpointFailure: message => new Error(message),
       } });
       let prompts = 0, calls = 0, cancelAnswer = false;
-      const raw = "Show one item label at a time; keep the same signed-in person's records and all other restrictions.";
+      let raw = "Show one item label at a time; keep the same signed-in person's records and all other restrictions.";
       const meaning = createReadMeaningHost({ answerTooLarge: () => {}, access: {
         mutate, readQuestions: () => staged.questions ?? questions, readHandoffs: () => staged.handoffs ?? f.state().owner_handoffs ?? [],
         readCheckpoint: () => f.state().read_assistance, readRecovery: () => f.state().generation_recovery,
@@ -85,14 +85,14 @@ describe("Read post-review replacement producer", () => {
             const refs: ReadScopeReference[] = line("Host scope reference inventory: ");
             const subjects = line("Host reviewed subject scope inventory: ");
             const catalog = line("Structural catalog: ");
-            const requestRef = refs.find(r => r.kind === "request")!, answer = refs.find(r => r.kind === "answer");
+            const requestRef = refs.find(r => r.kind === "request")!, answer = refs.filter(r => r.kind === "answer").at(-1);
             const resource = catalog.resources.find((r: {id:string}) => r.id === "work.items");
             const subject = subjects.find((s: {root_resource:string}) => s.root_resource === resource.id);
             if (!resource.fields.some((field: {id:string}) => field.id === "label")) throw new Error("Declared label unavailable");
             if (owner) expect(answer?.text).toBe(raw); else expect(answer).toBeUndefined();
             return { status: 200, body: { output: [{ type: "function_call", call_id: randomUUID(), name: "runner__submit_read_workloads",
               arguments: JSON.stringify({ allowed: [{ id: "items", description: answer?.text ?? requestRef.text,
-                plan: { kind: "rows", resource: resource.id, select: ["label"], ...(answer ? { limit: 1 } : {}) } }], forbidden: [],
+                plan: { kind: "rows", resource: resource.id, select: ["label"], ...(answer ? { limit: answer.text.startsWith("Show two ") ? 2 : 1 } : {}) } }], forbidden: [],
                 read_scope: { protocol: READ_SCOPE_PROTOCOL, applicability: "read_requested", original_request: requestRef.id,
                   requirements: [{ id: "items", intended_use: answer?.text ?? requestRef.text,
                     references: [requestRef.id, ...(answer ? [answer.id] : [])], disposition: "include",
@@ -108,7 +108,7 @@ describe("Read post-review replacement producer", () => {
         const disk = await readBoundaryAuthoringResumeState(f.dir, f.nativeBinding);
         if (disk.status !== "ready") throw new Error("Cold native load unavailable");
         return { read: disk.value.read!, questions: disk.value.operator_questions!, handoffs: disk.value.owner_handoffs ?? [],
-          generation: disk.value.generation_recovery, question_id: old.id, analysis: lastAnalysis!.analysis };
+          generation: disk.value.generation_recovery, question_id: disk.value.read!.scope_question_id!, analysis: lastAnalysis!.analysis };
       };
       if (mode === "changed_model" || mode === "changed_task") {
         const before = d(f.state());
@@ -132,6 +132,20 @@ describe("Read post-review replacement producer", () => {
       const next = questions.at(-1)!;
       expect(next.read_scope!.predecessor_id).toBe(old.id); expect(next.confirmation).toBeUndefined();
       expect(questions.find(q => q.id === old.id)!.confirmation).toBeUndefined();
+      if (mode === "second_decline") {
+        await saveQuestion(leaveOperatorQuestionPending(next, "declined")); questions = f.state().operator_questions!;
+        const priorWords = structuredClone(questions.filter(q => q.raw_answer));
+        await expect(meaning.answerScopeReplacement(old.id)).rejects.toThrow("exact declined Read scope");
+        raw = "Show two item labels at a time; keep the same signed-in person's records and all other restrictions.";
+        const third = await run(await reloadOwner());
+        expect(third.workload.allowed[0]!.plan).toMatchObject({ limit: 2 });
+        expect(third.read_scope_predecessor_id).toBe(next.id); expect(calls).toBe(3); expect(prompts).toBe(2);
+        expect(f.state().read!.assistance_history!.state.call_count).toBe(3);
+        expect(f.state().read!.assistance_history!.state.scope_replacements).toHaveLength(2);
+        expect(f.state().generation_recovery!.operations).toHaveLength(3);
+        for (const prior of priorWords) expect(questions.find(q => q.id === prior.id)).toEqual(prior);
+        expect(questions.every(q => !q.confirmation)).toBe(true); return;
+      }
       let reviewed = false;
       const group = createReadScopeHost({ access: { mutate,
         load: async question_id => ({ ...current().native!, question_id, expectedBinding: f.binding, references: references(), catalog: f.inventory.catalog,
