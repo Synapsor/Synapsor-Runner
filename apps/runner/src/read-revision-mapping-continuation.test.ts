@@ -13,6 +13,7 @@ import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, authoringReadCheckpoint } from "./authoring-generation-recovery.js";
 import { createReadScopeQuestion, proposeReadScopeReview } from "./authoring-read-scope-question.js";
+import { createNativeReadScope } from "./authoring-read-scope-native.js";
 import { readScopeConsumption } from "./authoring-read-scope-binding.js";
 import { createReadRevisionCheckpointHost, type ReadRevisionCheckpointAccess } from "./authoring-read-revision-checkpoint-host.js";
 import { generateModelReadBoundaryRevision } from "./read-boundary-revision-model.js";
@@ -20,6 +21,7 @@ import { readWorkloadAssistanceCheckpoint } from "./read-workload-assistance-che
 import { generateModelReadWorkload, type ModelReadWorkloadInput } from "./read-workload-model.js";
 import { READ_SCOPE_PROTOCOL, type ReadScopeProposal } from "./read-structured-scope.js";
 import { storeReadWorkloadAnalysis, type ReadWorkloadView } from "./read-workloads.js";
+import type { ReadRevisionMappingOwner } from "./read-revision-mapping-continuation.js";
 import { prepareReadRevisionAnalysis } from "./authoring-read-revision-scope.js";
 
 // The setup, mapping, revision, consumed records and commit are real owners.
@@ -44,7 +46,8 @@ function proposal(refs: Array<{kind:string;id:string;text:string}>, subjects: Ar
   }] };
 }
 const response = (tool: string, args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: randomUUID(), name: tool, arguments: JSON.stringify(args) }] } });
-it.each(["ordinary", "changed_model", "changed_task", "changed_provider_destination", "missing_binding", "wrong_saved_candidate", "foreign_question"] as const)("continues only the exact actually committed revision: %s", async mode => {
+it.each(["ordinary", "native_adapter", "native_wrong_commit", "native_foreign_commit", "native_no_ack", "native_save_failure", "changed_model", "changed_task", "changed_provider_destination", "missing_binding", "wrong_saved_candidate", "foreign_question"] as const)("continues only the exact actually committed revision: %s", async mode => {
+  const nativeCase = mode.startsWith("native_");
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "native-read-revision-continuation-"));
   try {
     const prepared = await prepareReviewedReadScope(root, { resources: ["work.items"], field: "label", review: { filterable_fields: ["label"] } });
@@ -66,7 +69,7 @@ it.each(["ordinary", "changed_model", "changed_task", "changed_provider_destinat
         write: generationRecovery => save({ generationRecovery }) }); return run();
     });
     let calls = 0;
-    const mapping = (owner?: { question_id: string } & Record<string, unknown>) => generation(() => generateModelReadWorkload({ name: "labels", allowedQuestions: [owner && mode === "changed_task" ? "Show every person all labels" : job],
+    const mapping = (owner?: ReadRevisionMappingOwner) => generation(() => generateModelReadWorkload({ name: "labels", allowedQuestions: [owner && mode === "changed_task" ? "Show every person all labels" : job],
       operatorNamingContext: job, provider: owner && mode === "changed_provider_destination" ? "openai_compatible" : "openai", model: owner && mode === "changed_model" ? "other-model" : "controlled",
       ...(owner && mode === "changed_provider_destination" ? { baseUrl: "https://different.example/v1" } : {}), apiKey: "inert-test-key", egressAcknowledged: true,
       deferNarration: true, generatedBoundary: boundary, ...(owner ? { postRevisionMapping: owner } : {}),
@@ -99,9 +102,23 @@ it.each(["ordinary", "changed_model", "changed_task", "changed_provider_destinat
     const retained = prepareReadRevisionAnalysis({ selected: stored, expected: state.read!, currentBoundary: boundary, preparedCandidate: mutation.candidate });
     expect(retained).toMatchObject({ state: "pending_mapping", reason: "exact_plan_unavailable" });
     await save({ pendingReadRevision: instruction, pendingReadRevisionState: { instruction, provenance: "operator", privacy_only: false } });
+    const native = createNativeReadScope({ projectRoot: root, ports: {
+      snapshot: () => ({ resume: state, revision: state.revision_digest, blocked: false, ...records(), read: state.read }),
+      assertCurrent: async () => { const actual = await readBoundaryAuthoringResumeState(root, state.binding); expect(actual.status).toBe("ready");
+        if (actual.status !== "ready" || actual.value.revision_digest !== state.revision_digest) throw new Error("Fixture native context changed"); },
+      questionContext: async () => contextDigest(), questionScope: () => scopeDigest,
+      mutate: async op => { expect(locked).toBe(false); locked = true; try { return await op({ owned: true } as never); } finally { locked = false; } },
+      failure: subject => new Error(`NATIVE_SCOPE_UNAVAILABLE: ${subject}`),
+      save: async (update, permit) => { expect(locked).toBe(true); expect(permit).toBeTruthy();
+        if (mode === "native_no_ack") return;
+        if (mode === "native_save_failure") throw new Error("Fixture saved-commit acknowledgment unavailable");
+        await save({ operatorQuestions: update.questions,
+        generationRecovery: update.generation ?? state.generation_recovery, pendingReadRevisionState: update.pendingReadRevisionState ?? state.pending_read_revision_state }); },
+    }, interact: async () => { throw new Error("No fabricated review"); } });
     const preview = () => ({ scope: projectAuthoringReadScopePreview({ resume: state, boundary, structuralReview: structural,
       records: records(), preparedCandidate: mutation.candidate, preparedLock: mutation.build.lock }) });
     let locked = false;
+    if (nativeCase) expect(await native.preview(boundary, mutation)).toEqual(preview().scope);
     let staged: Parameters<ReadRevisionCheckpointAccess["install"]>[0] & { questions?: typeof state.operator_questions } = {};
     const access: ReadRevisionCheckpointAccess = { mutate: async op => { expect(locked).toBe(false); locked = true; try { return await op({ owned: true } as never); } finally { locked = false; } },
       contextDigest: async () => contextDigest(), scopeDigest: () => scopeDigest,
@@ -123,12 +140,33 @@ it.each(["ordinary", "changed_model", "changed_task", "changed_provider_destinat
     await commitBoundaryResourceReviewMutation(root, mutation); structural = await loadBoundaryReviewContext(root); boundary = structural.candidate;
     await save({ binding: boundaryAuthoringResumeBinding(structural.bundle), pendingReadRevisionState: { ...state.pending_read_revision_state!, saved_read_digest: explorationBoundaryCandidateDigest(boundary) } });
     const old = state.operator_questions!.find(q => q.id === state.pending_read_revision_state!.scope_question_id)!;
-    const current = createReadScopeQuestion({ id: randomUUID(), revision: old.revision + 1, scope_digest: old.scope_digest, context_digest: contextDigest(),
+    let current = createReadScopeQuestion({ id: randomUUID(), revision: old.revision + 1, scope_digest: old.scope_digest, context_digest: contextDigest(),
       read_scope: { ...old.read_scope!, predecessor_id: old.id } });
-    await save({ operatorQuestions: [...state.operator_questions!, current], pendingReadRevisionState: { ...state.pending_read_revision_state!, scope_question_id: current.id } });
+    if (nativeCase) {
+      const before = structuredClone(state.generation_recovery), priorRead = structuredClone(state.read);
+      if (mode !== "native_adapter") {
+        const beforeState = d(state);
+        await expect(native.commitPendingRevisionScope({ boundary,
+          questionId: mode === "native_foreign_commit" ? randomUUID() : old.id,
+          savedReadDigest: mode === "native_wrong_commit" ? d("wrong commit") : explorationBoundaryCandidateDigest(boundary),
+        })).rejects.toThrow(mode === "native_save_failure" ? "acknowledgment unavailable" : "NATIVE_SCOPE_UNAVAILABLE");
+        expect(d(state)).toBe(beforeState); expect(calls).toBe(1); return;
+      }
+      const id = await native.commitPendingRevisionScope({ boundary, questionId: old.id, savedReadDigest: explorationBoundaryCandidateDigest(boundary) });
+      current = state.operator_questions!.find(q => q.id === id)!;
+      expect(state.generation_recovery).toEqual(before); expect(state.read).toEqual(priorRead);
+      expect(current.read_scope!.completion).toEqual(old.read_scope!.completion);
+      expect(current.read_scope!.record).toEqual(old.read_scope!.record); expect(current.confirmation).toBeUndefined();
+    } else await save({ operatorQuestions: [...state.operator_questions!, current], pendingReadRevisionState: { ...state.pending_read_revision_state!, scope_question_id: current.id } });
     const disk = await readBoundaryAuthoringResumeState(root, state.binding); expect(disk.status).toBe("ready"); if (disk.status !== "ready") throw new Error("Cold native read failed");
     state = disk.value;
-    const owner = { ...records(), read: state.read!, revision: state.pending_read_revision_state!, question_id: current.id, currentBoundary: boundary, priorAnalysis: previousAnalysis };
+    let owner: ReadRevisionMappingOwner = { ...records(), read: state.read!, revision: state.pending_read_revision_state!, question_id: current.id, currentBoundary: boundary, priorAnalysis: previousAnalysis };
+    if (nativeCase) {
+      const selected = await native.pendingRevision(boundary);
+      owner = selected.owner;
+      expect(selected.context.native?.question_id).toBe(current.id);
+      expect((await native.context(boundary)).native?.question_id).toBe(state.read!.scope_question_id);
+    }
     if (mode === "missing_binding") {
       const retained = structuredClone(owner.read.assistance_history!); delete retained.state.scope_invocation_binding;
       const { schema_version: _version, digest: _digest, ...body } = retained;
@@ -136,7 +174,7 @@ it.each(["ordinary", "changed_model", "changed_task", "changed_provider_destinat
     }
     if (mode === "wrong_saved_candidate") owner.revision = { ...owner.revision, saved_read_digest: d("another committed Read") };
     if (mode === "foreign_question") owner.question_id = randomUUID();
-    if (mode !== "ordinary") {
+    if (mode !== "ordinary" && !nativeCase) {
       const before = d(state);
       await expect(mapping(owner)).rejects.toThrow(mode === "missing_binding" ? "READ_REVISION_MAPPING_HISTORY_UNSUPPORTED"
         : mode === "foreign_question" ? "READ_SCOPE_QUESTION_MISSING" : mode === "wrong_saved_candidate" ? "READ_REVISION_MAPPING_STALE" : "READ_REVISION_MAPPING_INVOCATION_CHANGED");

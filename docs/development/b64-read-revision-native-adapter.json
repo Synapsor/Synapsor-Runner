@@ -1,0 +1,31 @@
+{
+  "status": "DEV native adapter; independent and public wiring pending",
+  "base": "d9246353",
+  "before": {
+    "result": "0 PASS / 1 FAIL",
+    "cause": "actual native.preview adapter missing",
+    "evidence": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/native-revision-adapter-before.json"
+  },
+  "after": {
+    "result": "13 PASS / 0 FAIL",
+    "types": "PASS",
+    "evidence": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/native-revision-adapter-guards.json"
+  },
+  "api": {
+    "preview": "preview(boundary,{candidate,build:{lock}},answerQuestionIds?,permit?) -> current actual native/prepared projection; no save or confirmation",
+    "pendingRevision": "pendingRevision(boundary,permit?) -> {owner,context}; exact actual pending_read_revision_state question and prior stored analysis, no prior read pointer mutation",
+    "commitPendingRevisionScope": "commitPendingRevisionScope({boundary,questionId,savedReadDigest}) -> acknowledged successor id; mutate/CAS only, analysis-absent result_received, exact current consumed proposal, same record/completion and explicit predecessor, no new consumption",
+    "save_port": "NativeReadScopePorts.save adds optional pendingReadRevisionState; Main must install through existing protected native Resume CAS, preserving read and generation"
+  },
+  "proof": [
+    "Real structural review, genuine mapping and revision completion, guarded disabled commit, native disk reload, new actual mapping with carried counters",
+    "Existing ordinary context still selects prior Read; only explicit pendingRevision projection selects pending revision",
+    "Wrong question/commit, silent missing acknowledgment and save failure preserve state and prevent new mapping",
+    "Same completion and scope record, no confirmation, generation byte-equivalent at successor save"
+  ],
+  "limits": [
+    "This method supports analysis-absent pending mapping only; analyzed postcommit route remains Main existing analysis/store owners",
+    "Main public producer/checkpoint route still requires wiring and independent end-to-end result; no public PASS claimed",
+    "d924 independent PM01\u201309 review remains separate"
+  ]
+}

@@ -7,7 +7,7 @@ import type { CurrentStructuredReadEvidence } from "./read-current-evidence.js";
 import type { ReadWorkloadView } from "./read-workloads.js";
 
 export type ReadRevisionMappingOwner = Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id">
-  & { read: BoundaryAuthoringResumeRead; revision: BoundaryAuthoringReadRevision; currentBoundary: ExplorationBoundaryDraft; priorAnalysis: ReadWorkloadView };
+  & { read: BoundaryAuthoringResumeRead; revision: BoundaryAuthoringReadRevision; currentBoundary: ExplorationBoundaryDraft; priorAnalysis: Pick<ReadWorkloadView, "analysis_id" | "analysis_digest" | "analysis"> };
 /** Existing native records only; this is admission to a new bounded mapping,
  * never permission to replay the completed revision or reuse its predecessor Yes. */
 export function readRevisionMappingContinuation(input: ReadRevisionMappingOwner,
