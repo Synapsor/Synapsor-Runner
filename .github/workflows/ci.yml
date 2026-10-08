@@ -15,4 +15,5 @@ jobs:
           node-version: 22
       - run: corepack enable
       - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm check:authoring-language
       - run: corepack pnpm test:smoke

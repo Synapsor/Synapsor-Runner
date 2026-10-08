@@ -1,0 +1,12 @@
+{
+  "status": "IN_REVIEW_NOT_EXIT_ACCEPTED",
+  "owner_exit": "All canonical250typed+66delete plus independent reclassifications must close; no deferral",
+  "guard": "scripts/check-authoring-language.mjs; CI+main test+release gate",
+  "controls": "11PASS; original10PASS1FAIL error-kind collision preserved; collision correction does not change enforcement",
+  "runtime_note": "Initial repository scanner stopped cleanly due redundant printing; cached declaration rendering then completed. No product tests or Source operation involved.",
+  "independent_audit": "R1 audits all141legitimate groups on49798f15; early reclassifications assigned owners; final per-ID verdict pending",
+  "allowlist": "empty, no historical decision grandfathered; current repository scan fails closed",
+  "counts_warning": "63682 conservative AST candidates across571files are not English decision-site counts. Guard scope and exact allowlist require independent review.",
+  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/language-guard-current-v2.json",
+  "open": ["Independent guard review", "Complete141legitimate audit", "Populate only exact reviewed legitimate allowances", "Close canonical and reclassified decisions"]
+}

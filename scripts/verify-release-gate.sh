@@ -24,6 +24,7 @@ fi
 
 log "Release gate for @synapsor/runner $EXPECTED_VERSION"
 
+run corepack pnpm --dir "$ROOT" check:authoring-language
 run corepack pnpm --dir "$ROOT" typecheck
 run corepack pnpm --dir "$ROOT" exec vitest run \
   --maxWorkers=4 \
