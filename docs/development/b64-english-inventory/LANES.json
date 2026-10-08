@@ -38,10 +38,10 @@
     }
   },
   "heavy_slots": {
-    "1": "R1 runtime14 completed; released",
-    "2": "B65 native namespace/receipt finite controls",
-    "3": "Privacy scope7 before/fix/after finite",
-    "4": "Main Chat integration80/types completed; B66 CLIhook review next"
+    "1": "B65 Tester PRE01 ordinary eligibility then Action independent lifetime controls",
+    "2": "B65 Runtime receipt replay evidence / single INSERT upper SUM successor",
+    "3": "Privacy compatibility R2 review and inventory binding",
+    "4": "Action exact Mainlabel8cb adoption/types; R1 I02097 completed"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -1274,10 +1274,10 @@
       "source": "R2scoped178PASS/build0:all57originalRead11typed+46deleteclosed onownedbranch. Last6 notMainintegrated; native/public11Mainhook sites separate."
     },
     "main": {
-      "pin": "d565098e",
+      "pin": "d6c14630",
       "typed": 30,
       "delete": 0,
-      "source": "Original30typed/0delete +six audit sites remain. I02087/I02100 independently accepted e52adbf1 on6159e5ea; owner126PASS/types0. No message-derived retry/freshness.",
+      "source": "Original30typed/0delete +five audit sites remain. I02087/I02100 accepted e52adbf1 owner126PASS/types0; I02097 accepted13292688 independent10PASS before1P9F, owner96PASS/types0. No English error/message or singular/plural query inference.",
       "reclassified_provisional": [],
       "audit_reclassified_ids": [
         "I02087",
@@ -1290,12 +1290,13 @@
         "I03594"
       ],
       "with_reclassifications": {
-        "typed": 36,
+        "typed": 35,
         "delete": 0
       },
       "audit_closed_ids": [
         "I02087",
-        "I02100"
+        "I02100",
+        "I02097"
       ]
     }
   },

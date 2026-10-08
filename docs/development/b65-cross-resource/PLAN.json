@@ -75,5 +75,18 @@
     ],
     "review_evidence": "../b65-oracle-independent/SOURCE-VERDICT.json"
   },
-  "literal_insert_boundary": "Existing fe885 compiler admission refuses designated single INSERT (PG and MySQL); keep literal25/20/10 and T09 INSERT shapes. Runtime is inspecting whether the already authorized single-INSERT upper-SUM contract can be supported without new authority; unsupported is not ENFORCED. Historical unused-row UPDATE is not INSERT evidence."
+  "literal_insert_boundary": "Existing fe885 compiler admission refuses designated single INSERT (PG and MySQL); keep literal25/20/10 and T09 INSERT shapes. Runtime is inspecting whether the already authorized single-INSERT upper-SUM contract can be supported without new authority; unsupported is not ENFORCED. Historical unused-row UPDATE is not INSERT evidence.",
+  "first_native_checkpoint": {
+    "evidence_pin": "8734998b66c288a9346b7c1d50799b42375f6558",
+    "runtime_pin": "fe885b08",
+    "matrix": "SUPPORT-MATRIX.json",
+    "report": "REPORT.txt",
+    "outcomes": {
+      "UNSUPPORTED_REFUSED": 54,
+      "NOT_REACHED_HARNESS": 2,
+      "ENFORCED": 0,
+      "DEFECT": 0
+    },
+    "limits": "56 per-engine characterization rows; most interface/compiler refusal. PG actual seven native admissions refuse namespace privilege before evaluator/DML. No public/race/poststate/progress proof. PRE01 two-engine next; Runtime literal INSERT successor separate."
+  }
 }

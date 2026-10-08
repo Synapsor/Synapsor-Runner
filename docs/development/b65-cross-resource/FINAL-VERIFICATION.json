@@ -1,0 +1,148 @@
+{
+  "manifest_revalidation": [
+    {
+      "file": "CASE-MANIFEST.json",
+      "hash_match": true,
+      "immutable_match": true
+    },
+    {
+      "file": "fixtures/SCENARIOS.json",
+      "hash_match": true,
+      "immutable_match": true
+    },
+    {
+      "file": "fixtures/OPERATOR-FACTS.json",
+      "hash_match": true,
+      "immutable_match": true
+    },
+    {
+      "file": "private-oracle/reference-state.mjs",
+      "hash_match": true,
+      "immutable_match": true
+    },
+    {
+      "file": "private-oracle/reference-state.test.mjs",
+      "hash_match": true,
+      "immutable_match": true
+    },
+    {
+      "file": "private-oracle/README.md",
+      "hash_match": true,
+      "immutable_match": true
+    },
+    {
+      "file": "private-oracle/CONTROL-RESULT.json",
+      "hash_match": true,
+      "immutable_match": true
+    }
+  ],
+  "all_match": true,
+  "container_revalidated": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-10-08T23:17:50.913488334Z",
+    "FinishedAt": "2026-10-08T23:17:55.92614192Z"
+  },
+  "raw": [
+    {
+      "path": "evidence/SOURCE-SNAPSHOT.json",
+      "sha256": "8de3bc9e9622172c4913934c3e56957c1a9e8d3fbb72d461c865e9f30720e861"
+    },
+    {
+      "path": "evidence/compiler-results.json",
+      "sha256": "e84333fb6904c8d74bd71e0f81c64ff4129fbbea89b8e69ea8dd98af8c25a497"
+    },
+    {
+      "path": "evidence/compiler-stderr.txt",
+      "sha256": "86072a6eeac489c7193415114a081eef5153ee6f47bb6c4c385ab0d59d57b06f"
+    },
+    {
+      "path": "evidence/compiler-stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/compiler-v2-stderr.txt",
+      "sha256": "86072a6eeac489c7193415114a081eef5153ee6f47bb6c4c385ab0d59d57b06f"
+    },
+    {
+      "path": "evidence/compiler-v2-stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/compiler-v3-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/compiler-v3-stdout.txt",
+      "sha256": "0fc9a64cb097bd402417c29423d68cb822095fd3bedd99afd9427a488820091b"
+    },
+    {
+      "path": "evidence/native-admission-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/native-admission-stdout.txt",
+      "sha256": "9c40c5353180a2ce7874bb90321386b6071e59ba237cd73ed8b8074ebb54979b"
+    },
+    {
+      "path": "evidence/remaining-compiler-and-oracle-results.json",
+      "sha256": "df55ecf1cc79db52af7d15265aecf6db44121c67a6d717f56a160c7d6d93edd9"
+    },
+    {
+      "path": "evidence/remaining-compiler-oracle-stderr.txt",
+      "sha256": "1015a74c915882970383db731176c7780b6bc9ca80edd0195d8405ccfb162e12"
+    },
+    {
+      "path": "evidence/remaining-compiler-oracle-stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/remaining-compiler-oracle-v2-stderr.txt",
+      "sha256": "2e1f9fc05684d53eb2b2a49d23e9f5cad6eb25b9a5d7195e9dfd6a8465a298c2"
+    },
+    {
+      "path": "evidence/remaining-compiler-oracle-v2-stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/remaining-compiler-oracle-v3-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/remaining-compiler-oracle-v3-stdout.txt",
+      "sha256": "18d621da9c3f80e7fc9b5a9d2e42319487c88cf307d11e756be8b47266f7d944"
+    },
+    {
+      "path": "evidence/sequential-compiler-results.json",
+      "sha256": "6335361dcdb87855a89c44f4b3f6fa8a388ed77a30ac6cb1d14b2a49b9bf83db"
+    },
+    {
+      "path": "evidence/sequential-compiler-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/sequential-compiler-stdout.txt",
+      "sha256": "8a99eaf53192f1a993555ecf892e8bf84b2d58a223a2d198ca520f0c11c296ae"
+    },
+    {
+      "path": "native-admission-v1/RESULTS.json",
+      "sha256": "6c687c4aa845fdd337113bd6affa6a122dc9d79b3dcf8aa9a599f93fa0b661a8"
+    }
+  ],
+  "scripts": {
+    "sequential-compiler-probe.mjs": "2e1e7ea4ce302933aae0f31ff2b2e5ee6934464374d5f6d74f93ab5dac999aa3",
+    "native-admission-probe.mjs": "83e19a4f058a2cb0e3f57098c8c670bb165349244d34be5649c6798cf9315a50",
+    "remaining-compiler-and-oracle-probe.mjs": "2b76d7b1f7bb6df47b7e82867aecb47385e564ae07a96beb78928d68b51e51da",
+    "compiler-probe.mjs": "f1e42e3fd256a22b64bf09e134a340f7c168ff6595fce4e8e3cb0f24b07ccd08"
+  },
+  "existing_pin": "fe885b08b762307ceaf8b3eebc45d9c84f745b14",
+  "slot1": "released",
+  "resource_retention": "Only own new container stopped; volumes,databases,private raw/history retained. No public origin push."
+}

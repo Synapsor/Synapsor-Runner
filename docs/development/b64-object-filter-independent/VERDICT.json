@@ -1,0 +1,33 @@
+{
+  "verdict": "ACCEPT_SCOPED",
+  "site": "I02097",
+  "before_pin": "b9c8ff33",
+  "owner_pin": "d6c14630347d351013b91791b6f890b694d4b60a",
+  "independent_fixture": "7831e452",
+  "tested_composition": "944579e4",
+  "results": {
+    "before": {
+      "path": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/object-identity-independent-before.log",
+      "sha256": "e7ca18983aa8aff112d20b549ca42f8e8806d718c1d707e05c9f5c4630493965",
+      "pass": 1,
+      "fail": 9,
+      "skip": 0
+    },
+    "after": {
+      "path": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/object-identity-independent-after.log",
+      "sha256": "5fd956cd3e18c4bc5f7491370369ddf4cf4004fce92076e54c1a56788ca455c9",
+      "pass": 10,
+      "fail": 0,
+      "skip": 0
+    }
+  },
+  "evidence": "Ten unchanged independent cases execute actual production builders against in-memory SQLite. Four builder families, literal SQL injection-shaped/percent/underscore/non-English/case tokens, tenant/principal/source/objectID collisions, exact business-object/table OR, count/list equality and unchanged id-only/table-option semantics.",
+  "source": "objectTypeVariants removed entirely, zero production callers; parameterized equality with parenthesized OR retained. No singular/plural/public-prefixed aliases for objectType.",
+  "contract": "objectType remains local search token against either existing exact identity column. It is not unique authority binding; collisions may legitimately match both records subject to all supplied filters. No new typed discriminator needed for this bounded retirement.",
+  "limits": [
+    "No live PostgreSQL/MySQL/Source/provider calls; SQLite private in-memory fixture only.",
+    "Owner96P/types0 not added to independent counts; no broad suite rerun.",
+    "addTableFilter separate unqualified/public behavior remains unchanged and is not closed by this review.",
+    "No freeze/release or unrelated identity parser acceptance."
+  ]
+}
