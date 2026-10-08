@@ -17,6 +17,31 @@ import {
 } from "./boundary-review-mutation.js";
 
 describe("boundary review terminal picker", () => {
+  it("preserves supplied blocker prose even when an English prefix resembles a scope kind", () => {
+    const resource = summary("public.check_ins", 1);
+    resource.status = "blocked_scope";
+    resource.blockers = ["trusted tenant scope is unresolved; this is an untranslated diagnostic"];
+    resource.scope_resolution_guidance = { why: ["Direct tenant scope unavailable: literal source wording"], remediation: [] };
+    const rendered = formatBoundaryOverviewMap([resource], { exhaustive: true });
+    const details = asciiTableColumnText(rendered, 3);
+    expect(details).toContain("trusted tenant scope is unresolved; this is an untranslated diagnostic");
+    expect(details).toContain("Direct tenant scope unavailable: literal source wording");
+  });
+
+  it("preserves review text instead of inferring a permission kind from a mentioned phrase", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const resource = summary("public.check_ins", 1);
+    resource.pending_decisions = ["public.check_ins: The phrase principal scope mystery is quoted in this unresolved business note"];
+    const pending = session.chooseResource([resource]);
+    await send(input, "\r");
+    await send(input, "p");
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    await send(input, "q");
+    await pending;
+    expect(rendered).toContain("The phrase principal scope mystery is quoted in this unresolved business note");
+    expect(rendered).not.toContain("User row scope: mystery");
+  });
   it.each([80, 120])("keeps full-width authority tables aligned in the execution confirmation at %s columns", async (columns) => {
     const terminal = fakeTerminal(columns, 36);
     const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
