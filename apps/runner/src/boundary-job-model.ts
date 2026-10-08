@@ -364,6 +364,14 @@ export async function planModelBoundaryJob(input: {
   return result;
 }
 
+/** Exact modes advertised from native state; this is guidance, not a route
+ * selection or permission to discard retained scope. */
+function readScopeCorrectionGuidance(state: BoundaryJobCurrentState): string {
+  return (state.read.revision_eligible ?? state.read.fully_reviewed)
+    ? "Choose revise or create. Retain the requested work and existing scope; either proposal still needs its ordinary review."
+    : "Use read_mode=create to prepare the corrected disabled mapping; revise is unavailable in this state. Retain the requested work and existing scope for ordinary review.";
+}
+
 function jobPlanToolDefinition(state: BoundaryJobCurrentState, workflow?: "program", structuredScope = false): AskToolDefinition {
   const readModes = [
     "create",
@@ -575,15 +583,15 @@ function parseJobPlan(
       throw new Error("READ_SCOPE_ROUTE_INVALID: No-Read interpretation cannot create or revise Read access.");
     if (readMode === "reuse" || readMode === "resume") {
       const native = readMode === "reuse" ? structured.reusable : structured.resumable;
-      if (!native) throw new Error("READ_SCOPE_NATIVE_COVERAGE_REQUIRED: This route needs the exact native scope and analyzed workload.");
+      if (!native) throw new Error("READ_SCOPE_NATIVE_COVERAGE_REQUIRED: This route needs the exact native scope and analyzed workload. " + readScopeCorrectionGuidance(state));
       const resolved = currentStructuredReadEvidence({ ...native, expectedBinding: structured.binding,
         references: structured.references, catalog: structured.catalog });
       if (resolved.status !== "confirmed") throw new Error("READ_SCOPE_NATIVE_PENDING: Inspect the exact unconfirmed or replaced scope before reuse.");
       const delta = readScopeDelta(resolved.record, typedScope);
       if (delta.added.length || delta.removed.length || resolved.record.proposal.applicability !== typedScope.proposal.applicability)
-        throw new Error("READ_SCOPE_REVIEWED_DELTA_REQUIRED: Reuse cannot replace the native scope interpretation.");
+        throw new Error("READ_SCOPE_REVIEWED_DELTA_REQUIRED: Reuse cannot replace the native scope interpretation. " + readScopeCorrectionGuidance(state));
       if (assessReadScopeDraft(typedScope, native.analysis).status !== "compatible")
-        throw new Error("READ_SCOPE_NATIVE_COVERAGE_REQUIRED: The exact native analysis does not cover the proposed scope.");
+        throw new Error("READ_SCOPE_NATIVE_COVERAGE_REQUIRED: The exact native analysis does not cover the proposed scope. " + readScopeCorrectionGuidance(state));
     }
   }
   const actionIntent = value.action_intent === undefined
