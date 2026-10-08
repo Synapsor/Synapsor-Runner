@@ -6276,6 +6276,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         }
       } catch (error) {
         assertRunning(error);
+        if (jobPlan?.state === "planned") throw error;
         planningFailure = error;
       }
       if (jobPlan?.state === "planned") break;

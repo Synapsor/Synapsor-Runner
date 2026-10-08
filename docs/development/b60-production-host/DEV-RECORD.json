@@ -62,5 +62,11 @@
     "public_successor": "pending",
     "boundary_lines": 20097,
     "line_accounting": "includes acceptedB59fiveportlines; genericassessmentportwiring+14. Compared owner20100 still-3. No receiptif or copiedselection."
+  },
+  "planned_checkpoint_failure": {
+    "before": "independent staticR2 thennative52455ce4 planner-race-before-v1 0P1F: actualPLANNING_ACCEPTED\u2192competing nativeResume\u2192publicreturns0 silently, noSETUPNEEDSATTENTION; competingrecordretained, noadditionalprovider inthisprefix",
+    "fix": "Generic planning catch propagates any failure after a validated planned result before the planned break. It cannot reuse that result for dispatch or open a fresh planner fallback after its protected checkpoint failed.",
+    "after": "pendingnative exactsuccessor",
+    "boundary_lines_root": 20093
   }
 }
