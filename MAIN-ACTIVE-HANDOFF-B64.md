@@ -1,15 +1,14 @@
-ACTIVE B64 + B65 + Owner-authorized B66; paid CLOSED; usage pauses removed.
-B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z; final24h Oct12. Frozen candidate3/history/holds untouched.
-Main codex/b64-authoring-protocol-20261008 @80f26781; [contract](docs/development/adr-b51-shared-input-interaction.md); boundary19195 lines; private backup only.
-Main typed permission projection38eb: before6F1P + missing actual adapter metadata1F; after17PASS/types0; independent f85cbe81 15PASS/types0 scoped ACCEPT.
-Read actual commit-binding227 R1accepted9b037809/integrated32a; thinMain150f6c10 24PASS/types0. Pending-map d924/native795 owner13PASS/types0; R1 exactACK fixes2ae/57 reviewed22PASS/verdict pending; prospective binding B64§7 only; Main publichook NEXT.
-Action selector7c73 accepted;4fa source-cycle R2 scoped24PASS+new-process3PASS, original7P17F retained; actual public whole-Source completion Main-owned/OPEN; packet not integrated.
-Privacy2e6/4d/829 source scopedR2accepted; full typed review bindings85a, codec/actual old-reader refusal, vocabulary/current-meaning and global scope remain OPEN.
-CLI f1 actual typed recovery R2scopedACCEPT24PASS/types0; role7f Main11PASS/types0/R2accepted15PASS/types0; broad175P2F preserved, isolateddemo1PASS. Chat remaining callers OPEN.
-Ask seven-file2d7db correction acceptedR1da1b2a73 5PASS; whole branch NONINTEGRABLE (Balanced decision/held cases/transitive privacy helper); no Owner answer inferred.
-B65 native49233: fresh30+25=55 FAIL; fresh10=40PASS; actual stricter ACTION_RULE_AUTHORITY_STALE beforeSource; signed human+separate executor oneeffect/receipt.
-B65 e94receipt21PASS scoped; Source-trigger9db1P1F preserved; corrected025native6PASS mechanics/R2a316scopedaccepted, originalsetup0P6SKIP kept; Sourcequalification repair OPEN; receipt-trigger8bca native1P1F/R2confirmed, record2d9621cb; mutable business-field snapshots only.
-B66 integrated518b9c21, R1 scoped24PASS/Main100PASS/types0; Tester7ddce77a final native/publicboth30/40ordersPASS; dependency-stale loser, oneeffect/receipt; [proof](docs/development/b66-mysql-writer/MAIN-PUBLIC-RESULT.json).
-Main NEXT Read public integration;80f before0P1F implicit review preserved; nativeACK/core verdict then e7fb final checkpoint/analyzed method; Source completion fence OPEN; [compact evidence](docs/development/b64-english-inventory/PARALLEL-CHECKPOINT.json).
-Slots Runtime1 design/R1review2/Main3 idle/Tester4 nextmatrix; four actualheavy max8workers/run; isolated0700HOME/TMP/DB,8GiB floors; keepstorage/revisitbelow30GB.
-No paid/model operation open; Luna35total/liabilities15.27063125 inclhold1.2693125/remain19.72936875. Commit/privatepush all checkpoints; never origin/rootconfig/secrets.
+ACTIVE B64 retirement; paid CLOSED; usage pauses removed; private backup only.
+B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z unchanged; candidate3/history/holds untouched.
+Main codex/b64-authoring-protocol-20261008 @4bce4bf5; current owners/counts [LANES](docs/development/b64-english-inventory/LANES.json).
+Read9675 R1 scopedACCEPT26PASS/types0 integratedc8a13434; pending/core ACK accepted; actual public Replace/map/commit hooks NEXT, implicit-review before80f remains open.
+Ask182 currency deletion R1 scopedACCEPT29PASS/types0 integrated3996cb8e; latestf7a source3typed/0delete remaining, GA01-03; R1 reviews other deltas.
+Ask Balanced exact question-plan native owner/creation contract awaits Owner choice; unaffected retirement continues, no English fallback or unbound dead end approved.
+Privacy31bf source36typed/0delete remain; slot3 tests; R2 review. Mainaf477 exact immutable origin native5PASS/types0; NEXT progressv4/strict codec/origin protected save/public submission.
+Chat444573cf actual332PASS/types0, branch0typed/0delete; Main28typed/1delete pending independentB66 and caller integration; inactive producer supplied4bce4bf5.
+Action child resumed underB66; B65Tester independentAP01-10 preseal; current remaining count reconciliation pending. Main NEXT exact whole-Source candidate/completion fence; no blanket completion.
+B66 integrated518b9c21 independently accepted native/public both30/40orders; deciding loser check dependency stale, not hardlimit; [proof](docs/development/b66-mysql-writer/MAIN-PUBLIC-RESULT.json).
+B65 fresh30then25=55 remainsFAIL; receipt trigger8bca1P1F preserved; finite admission design763303cf underR2review, no new native DB while review priority.
+Slots1Ask/2R1/3Privacy/4B66Chat finite;4actualheavy max8workers/run; owned0700HOME/TMP/DB,8GiBmemory+diskfloor; keepallstorage/revisitbelow30GB.
+Evidence [checkpoint](docs/development/b64-english-inventory/PARALLEL-CHECKPOINT.json), [origin](docs/development/b64-read-review-origin.json); no release/fullpublic PASS claimed.
+No paid operation; Luna35total/liabilities15.27063125 inclhold1.2693125/remain19.72936875 preserved; commit/privatepush each checkpoint.

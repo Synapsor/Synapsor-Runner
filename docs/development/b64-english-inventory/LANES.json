@@ -6,9 +6,9 @@
   "reviewers": {
     "read": "R1 presealed ZR; R2 may independently review current candidate",
     "privacy_visibility": "R2",
-    "chat_presentation": "R2",
+    "chat_presentation": "B66 independent task 01a11d25-18fd-7b12-aff5-adec1c9679c6",
     "ask": "R1 (independent of R2 Ask delegate)",
-    "action": "R1",
+    "action": "B65 Tester independent task 01a117fd-4600-76a3-baf7-e404eb16d0d3",
     "main": "R1/R2 independent existing owners"
   },
   "lanes": {
@@ -21,7 +21,7 @@
       "workspace": "../b64-visibility-retirement"
     },
     "chat_presentation": {
-      "agent": "/root/b64_chat_retirement",
+      "agent": "B65 Tester /root/b64_chat_resume",
       "workspace": "../b64-chat-retirement"
     },
     "ask": {
@@ -29,7 +29,7 @@
       "workspace": "../b64-ask-typed"
     },
     "action": {
-      "agent": "/root/b64_action_typed",
+      "agent": "B66 /root/b64_action_resume",
       "workspace": "../b64-action-typed"
     },
     "main": {
@@ -38,10 +38,10 @@
     }
   },
   "heavy_slots": {
-    "1": "B65 Source/native runtime qualification",
-    "2": "Read missing public instrumentation/fixture batch (R1 returned)",
-    "3": "R2 sealed Action Source-cycle",
-    "4": "B66 native MySQL writer repair"
+    "1": "Ask finite focused checks; currently returned",
+    "2": "R1 Read/Ask independent checks; sequential finite loans",
+    "3": "Privacy focused checks/types",
+    "4": "B66 independent Chat review; finite checks"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -994,7 +994,35 @@
     "task": "01a11d25-18fd-7b12-aff5-adec1c9679c6",
     "finding": "B66",
     "file": "packages/schema-inspector/src/index.ts",
-    "owner": "B66 implementer; Privacy must coordinate before further index edits",
+    "owner": "Privacy resumed; B66 accepted exact MySQL privilege parser preserved",
     "handoff": "../b66-mysql-writer"
+  },
+  "remaining_checkpoint": {
+    "count_unit": "Canonical decision annotations, not raw grep line count; branch implementation counts distinct from Main acceptance",
+    "ask": {
+      "pin": "f7a0f353",
+      "typed": 3,
+      "delete": 0,
+      "source": "Owner per-site reconciliation; GA04 independently accepted and integrated3996cb8e; remaining GA01-03 decision pending"
+    },
+    "privacy_visibility": {
+      "pin": "31bf96ca",
+      "typed": 36,
+      "delete": 0,
+      "source": "Owner branch checkpoint; successor review and Main bindings pending"
+    },
+    "chat_presentation": {
+      "pin": "444573cf",
+      "branch_typed": 0,
+      "branch_delete": 0,
+      "main_pending_typed": 28,
+      "main_pending_delete": 1,
+      "source": "332PASS/types0; independent source and real callers pending"
+    },
+    "action": {
+      "typed": null,
+      "delete": null,
+      "source": "Reconciliation requested; previous50/18 is baseline, not verified remaining"
+    }
   }
 }

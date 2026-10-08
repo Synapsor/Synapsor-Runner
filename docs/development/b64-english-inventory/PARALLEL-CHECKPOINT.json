@@ -1,6 +1,6 @@
 {
-  "recorded_at": "2026-10-08T21:16:09.057846+00:00",
-  "main_pin": "7f9009f5",
+  "recorded_at": "2026-10-08T21:41:37.761969+00:00",
+  "main_pin": "4bce4bf5",
   "owner_map": "LANES.json",
   "paid": "CLOSED",
   "main_hooks": {
@@ -20,27 +20,31 @@
     "independent_acceptance": "Scoped Read19e5161c / Main binding93603e62",
     "integration": "a5502d42",
     "main_checks": "41PASS; types0; public instrumentation remains open",
-    "public_revision": "Original768 failure preserved. Adapter227 actualpostcommitbinding R1accepted9b037809/integrated32a3281f, thin wrapper150f6c10 Main24PASS/types0. Prospective mapping d9246353/native795646d8 owner13PASS/types0; R1 resumed exact presealed independent review. Main public integration OPEN."
+    "public_revision": "Original768 failure preserved. Adapter227 actualpostcommitbinding R1accepted9b037809/integrated32a3281f, thin wrapper150f6c10 Main24PASS/types0. Prospective mapping d9246353/native795646d8 owner13PASS/types0; R1 resumed exact presealed independent review. Main public integration OPEN.",
+    "analyzed": "9675 scopedR1 ACCEPT1b8a2275 independent5+owner21=26PASS/types0; integratedc8a13434; public hooks open"
   },
   "privacy": {
     "pin": "583c0738",
     "owner_report": "284 PASS affected suites plus3 catalog-role/protocol controls; before failures retained",
     "independent_acceptance": "R2 source scoped17b46226 for2e6/4d/829; broader typed review and actual old-reader refusal pending",
-    "latest_owner_pin": "2e6a1dca"
+    "latest_owner_pin": "31bf96ca",
+    "native_origin": "Mainaf477dc9 exact historical native resolver5PASS/types0; independent/save/format hooks pending"
   },
   "chat": {
     "pin": "9a7f1c7e",
-    "owner_report": "331PASS4FAIL/types0 original full; separate unchanged-product fixture ports4PASS43filtered/types0. No combined single-run claim.",
+    "owner_report": "actual332PASS0FAIL0SKIP/types0 at444573cf; independentB66 review underway",
     "independent_acceptance": "R2 source scoped38ce42d6; actual caller and GP01 budget still open",
     "latest_owner_pin": "444573cf",
-    "cli": "Typed error projection79da + actualcallerf1d independently acceptedR2: same24 before6P18F ->24P/types0. Role successor7f Main11P/types0 independentpending; broad175P2F retained, demo launcher fix selected1P."
+    "cli": "Typed error projection79da + actualcallerf1d independently acceptedR2: same24 before6P18F ->24P/types0. Role successor7f Main11P/types0 independentpending; broad175P2F retained, demo launcher fix selected1P.",
+    "inactive_producer": "Main4bce4bf5 exact accepted Privacy error-code hunk"
   },
   "ask": {
     "before_pin": "546830b3",
     "before": "17 controls:7PASS10FAIL",
     "held_contract": "Default Balanced currently promises contradiction refusal, and explicit confirmation to opt out. AT02/03/05 would permit wrong-resource/changed-constraint/accidental reads with false semantic-proof flag. Owner decision requested; no approval inferred.",
     "continue": "Typed suppression, truthful result display, catalog tokens, metadata guidance; existing safety checks unchanged.",
-    "independent": "R1da1b2a73 scoped seven-file/test-port ACCEPT after exact2d7db repair5PASS; fullbranchNONINTEGRABLE"
+    "independent": "R1da1b2a73 scoped seven-file/test-port ACCEPT after exact2d7db repair5PASS; fullbranchNONINTEGRABLE",
+    "currency": "182 scopedR1 ACCEPT263754ce independent3+owner12+existing14=29PASS/types0; integrated3996cb8e; GA01-03 live"
   },
   "b65": {
     "native_pin": "49233e92",
@@ -58,7 +62,7 @@
       "successor": "e94f8a03 complete exact actual claim/receipt repair independent21PASS0FAIL0SKIP scoped native helper acceptance ac2f0847; prior failed draft remains historical"
     },
     "native_resume": "Completed B66public checks; no owned native containers running. More Source-effect qualification remains necessary.",
-    "source_qualification": "025 native6PASS lock mechanics/R2 scopedsource+artifactaccepted. New8bca receipt-trigger BEFORE2case strict0/constructionreviewaccepted; originalnative running slot1. Product safe-bootstrap/authority/phase design not yet approved.",
+    "source_qualification": "Receipt-trigger native8bca1P1F confirmed; design763303cf finite admission/effect phases under independent review, no product admission claim",
     "pg_final": "e428fabb11newnative rows scopedPASS onoriginal2887; notB66transfer; outsidebypass70 andfresh55 findingsremain"
   },
   "limits": {
@@ -90,5 +94,6 @@
     "limitation": "Database-pattern scope without verified server setting refuses. Exact-table narrowing for owned fixture separately sealed; no broader grants.",
     "evidence": "../b66-mysql-writer/MAIN-PUBLIC-RESULT.json",
     "independent_final": "7ddce77a clean/privatebackupequalHEAD; NATIVE-REPORT andR2-COVERAGE readbyMain; parentnarrow/publicbothordersPASS; explicitpartial/NOTRUN preserved"
-  }
+  },
+  "remaining_counts": "LANES.json remaining_checkpoint; no raw113 grep-count completion claim"
 }
