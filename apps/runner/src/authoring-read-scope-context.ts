@@ -7,6 +7,7 @@ import { projectReadScopeHostContext, type ReadScopeHostContextInput } from "./r
 import { projectReadSubjectContext, type ReadSubjectReviewContext } from "./authoring-read-subject-context.js";
 import { explorationBoundaryCandidateDigest as candidateDigest } from "./auto-boundary.js";
 import { readSubjectConfigurationDigest, type ReadSubjectBinding } from "./read-structured-scope.js";
+import { projectBoundaryAuthoringResumeBinding } from "./authoring-resume-binding.js";
 import { readWorkloadCatalog } from "./read-workload-model.js";
 
 /** The public host supplies an acknowledged job and currently inspected Read
@@ -53,7 +54,10 @@ export function projectAuthoringReadScopePreview(input: AuthoringReadScopeContex
     const resource = preview.pack.resources.find(resource => resource.id === subject.root_resource);
     return resource && readSubjectConfigurationDigest(resource, preview) === subject.configuration_digest;
   });
-  return project({ ...input, boundary: preview, native: undefined }, subjects);
+  // The consumed proposal must already bind the exact identity that the guarded
+  // save will produce. This local projection never writes/revalidates a Resume.
+  const resume = { ...input.resume, binding: projectBoundaryAuthoringResumeBinding(preview, lock) };
+  return project({ ...input, resume, boundary: preview, native: undefined }, subjects);
 }
 
 function project(input: AuthoringReadScopeContextInput, subjects: readonly ReadSubjectBinding[]) {

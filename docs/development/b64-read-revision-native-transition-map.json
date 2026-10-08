@@ -1,6 +1,6 @@
 {
-  "base": "e8c99c58",
-  "status": "SOURCE_MAP_NOT_IMPLEMENTED",
+  "base": "c2e21145",
+  "status": "BINDING_COMPONENT_FIXED_NATIVE_MAPPING_OPEN",
   "owners": {
     "Main": "protected public hooks/native adapter/checkpoint owner",
     "Read": "pure context+actual workload adapter; no hook edit in map"
@@ -36,10 +36,23 @@
   "pending_mapping_gap": {
     "current": "boundary-commands result_received guard throws before ordinary mapping; saved consumed record provides scope interpretation/provenance but settings result cannot prove work.",
     "minimum": "After exact saved_read_digest/committed candidate reconciliation, transfer retained native pending review pointer into ordinary read_mapping using existing Resume/read stage fields. Preserve original generation/checkpoint history; ordinary mapper makes its own actual next completion and successor. Never resume/replay consumed revision producer.",
-    "limitation": "No actual target-plan data may be reconstructed from redacted plan placeholders. If commit itself is not acknowledged/current, preserve uncertain state and inspect supported current records first."
+    "limitation": "No actual target-plan data may be reconstructed from redacted plan placeholders. If commit itself is not acknowledged/current, preserve uncertain state and inspect supported current records first.",
+    "additional_gate": "read-workload-model.ts rejects any native pending scope without postReviewReplacement; that mode is unsuitable. A typed exact consumed-revision admission must validate current saved commit identity/actual completion/analysis-absent unconfirmed q before ordinary new mapping; never drop native to bypass."
   },
   "open": [
-    "Exact future native Resume binding must be supplied/projected from actual prepared lock; e8 preview currently preserves precommit resume binding.",
+    "Binding component fixed; Main must remove duplicate public helper and wire actual native successor, then independent variant/public proof.",
     "Main must implement/prove explicit mapping continuation and native CAS failure/currentness cuts; this source map is not a public PASS."
-  ]
+  ],
+  "binding_fix": {
+    "module": "authoring-resume-binding.ts",
+    "exports": [
+      "boundaryAuthoringResumeBinding(bundle)",
+      "projectBoundaryAuthoringResumeBinding(candidate,lock)"
+    ],
+    "construction": "One four-field constructor; prepared candidate exact lock+role validated. Preview projects local future binding through existing scope owner, never saves/revalidates Resume or creates structural acknowledgment.",
+    "Main_hook": "Import/re-export boundaryAuthoringResumeBinding from new module; delete old inline wrapper body.",
+    "before": "c2e21145 exact actual mutation/commit/rebound native Resume, 0P1F",
+    "after": "24PASS adapter/context, original failing assertion unchanged; typecheck exit0",
+    "evidence": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/preview-resume-binding-{before,after}.json"
+  }
 }
