@@ -10,7 +10,8 @@
     "requested_scope_consumer": "0 pass / 2 fail before full original-job/workload hook; requested-read-evidence-before.log",
     "native_context": "native-source-context-before-v2.log: 2 pass / 1 fail on1cd096d4; actual producer nested Source+draft+messages identity rejected by bare-draft caller; prior manually declared identity tests were insufficient",
     "saved_review_adapter": "Public v6 on8707: 0 pass / 1 fail; callback0, native Source+Resume unchanged, receipt_requirement_review notice only; independent helper204be90f and reviewer1316cbbe",
-    "cancelled_unanswered": "public cold Replace\u2192cancel on5168 then005/006 onlyKeep (independent b57); Main shared-host initial +replacement cancel tests0P2F, cancel-unanswered-before.log"
+    "cancelled_unanswered": "public cold Replace\u2192cancel on5168 then005/006 onlyKeep (independent b57); Main shared-host initial +replacement cancel tests0P2F, cancel-unanswered-before.log",
+    "saved_review_reuse": "Practice f14d4db5 native boundary-cli443:11 failures (10 expected validated_reuse got provider; saved post-edit Resume expected1 call got2); first native full run continuing/preserved. pending review-only item removed on completion and absent routing summary inconsistent with normal Resume fallback."
   },
   "checks": {
     "focused_wip8": "244 pass / 0 fail / 1 skip (live model admission opt-in; paid closed)",
@@ -26,13 +27,15 @@
     "native_context": "176 pass / 0 fail / 1 live-model opt-in skip; actual native producer + persisted preflight; types exit0",
     "saved_review_adapter": "212 pass / 0 fail / 29 PostgreSQL env-gated skips in8 affected files; new pending route regression included; types exit0",
     "test_isolation_correction": "initial structured attempt found parent decoy due missing test-root .git stop; added owned .git directory per existing full1378 isolation; assertions/customer discovery unchanged; initial failure preserved",
-    "cancelled_unanswered": "75 pass / 0 fail / 0 skip in6 shared host/presenter/receipt files; types exit0; independent different-stage variants presealedNOT_RUN until thispin"
+    "cancelled_unanswered": "75 pass / 0 fail / 0 skip in6 shared host/presenter/receipt files; types exit0; independent different-stage variants presealedNOT_RUN until thispin",
+    "saved_review_reuse_types": "exit0; review-scope-types.log",
+    "saved_review_reuse_focused": "NOT_RUN_WAITING_SHARED_PROOF_SLOT"
   },
   "open": [
-    "independent public cold/cancel/save-fault controls+newhiddenstagevariant",
-    "remaining B59 ordinary PUBLIC continuation checks (existing nativecontrols alreadyqualified)",
-    "unofficial practice full/type/liveDB/offline/package/composed Luna only; no credit toward ONE finalgate",
-    "final accepted integrated gates/composed Luna/studio and exact installed acceptance"
+    "independent two sealed different-stage cancellation variants + original cancelled-root cold public continuation on981; compact six-route verdict",
+    "remaining B59 ordinary PUBLIC continuation checks; native controls already qualified; pretarget responder exception preserved as harness failure",
+    "unofficial practice full6/liveDB42 serial1 running on f14d4db5/fda97d09; offline/package/composed Luna pending, no credit toward ONE final gate",
+    "serial accepted integration + final exact-pin gates/composed Luna/studio and independent installed acceptance"
   ],
   "paid": "CLOSED; no calls/reservations/ledger change",
   "changes_wip9": [
@@ -40,7 +43,7 @@
     "finish only missing Source projection from an acknowledged native confirmation, under currentness/CAS, no replay/remap/reconfirmation",
     "original job + actual saved workload restored for final and saved Review consumers; routing summary is not authority"
   ],
-  "product_pin": "5168db4e83aef24033363a0771f59c696c4b8803",
+  "product_pin": "981f0f9de6217d00fd071eb7a3a82f0df3f6757c",
   "independent_native_review": {
     "reviewer": "codex/b60-independent-review-20261007",
     "checkpoint": "1316cbbe77a4fec315d9679b00d165547b734c73",
@@ -63,5 +66,48 @@
   "changes_cancelled_unanswered": [
     "nonterminal cancelled/unanswered question offers existing Replace route; no phantom adoption of nonexistent old words",
     "newrevision preserves old questions/handoff/history, exactbindings and receipt budget_owner/counters; terminal behavior unchanged"
-  ]
+  ],
+  "independent_cancel_static_review": {
+    "head": "981f0f9de6217d00fd071eb7a3a82f0df3f6757c",
+    "verdict": "SCOPED_STATIC_ACCEPT",
+    "runtime_verdict": "PENDING",
+    "report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b60-981f0f9d-cancel-unanswered-static-review.json",
+    "sha256": "0c028bd9a43431a2b25ae72c775ad4c9871bf0c5c916965f5f0b054c9c323727"
+  },
+  "public_observations": {
+    "same_root": "Exact5168 v7: question/raw/exact whitespace/map/default-No decline + retained Review/explicitYes/native confirmation + Source projection scopedPASS; same process, inert metadata, no source effect or activation claim",
+    "cold_decline": "Exact5168 fresh process declined-answer reopen: same raw/question/budget, no remap; scopedPASS",
+    "source_fault_cold": "Exact5168 native confirmation durable + injected final Source projection failure; fresh process finishes only missing Source projection, target prefix no prompt/remap/reconfirmation, original budget preserved. Later separate FINISH/Clarify narration callback retained; whole trace not zero callbacks",
+    "cancel_before_raw": "Exact5168 cancelled replacement then cold public route offered onlyKeep: actual failing before;981 fixes shared host, independent continuation pending",
+    "currentness": "Exact native Source reattachment and competing Resume writer refuse POLICY_SOURCE_CHANGED/BOUNDARY_AUTHORING_RESUME_CHANGED with history retained; native-writer seam scope, not whole concurrent public-user test"
+  },
+  "owner_parallel_items": {
+    "B59_public": "ACTIVE b48 independent helper; one shared proof worker",
+    "practice": "ACTIVE unofficial preview f14d4db5 plus DB overlay fda97d09, bundle prefix298bd6d5; full6+DB1. Evidence E/candidate4-practice1645/DEV-RECORD.json; no final credit",
+    "runbook": {
+      "status": "DONE_DOCUMENTATION_ONLY",
+      "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-07/luna-independent-tester-replacement-20261007/outputs/LUNA-DEMO-REHEARSAL-RUNBOOK-CANDIDATE3-EVIDENCE.md",
+      "sha256": "e50ddf4979981a1a67d41f6dc14d831308d57f93864d99eab648789bd538f037",
+      "private_checkpoint": "4ca0b83d4a013af17d19e196ef775ea5700d2c91",
+      "limitations": "real stop versus scripted successes labelled; unknown commands/screens remain UNKNOWN; original runbook untouched"
+    },
+    "B61_design": {
+      "status": "DONE_WRITTEN_ONLY",
+      "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/B61-LOST-COMMIT-ACK-RECOVERY-DESIGN.txt",
+      "sha256": "b560ff2186e57645dfe79fc0b204d75889ed11ec6597ec4395bba54b0bf64225",
+      "limitations": "Source receipt proves applied effect only with exact trusted binding; existing no-Runner-ledger-intent/legacy partial hash unresolved; proposed recovery requires future authorization, no code/replay"
+    }
+  },
+  "changes_saved_review_reuse": [
+    "saved Review uses same original-job routing fallback as normal Resume when no saved read_intent; full original request and actual immutable workload retained",
+    "only exact native operator review-only classification excludes its superseded mistaken edit item from pending business-change evidence; independent edits remain in full key and history",
+    "complete key formula/source/metadata/workload/authority/currentness unchanged; original provider call-count and validated_reuse assertions unchanged; request-level meaning assertions added"
+  ],
+  "independent_cancel_runtime": {
+    "checkpoint": "feca1d67c5e7e0ceb57a66ace307aea96160c5a0",
+    "head": "981f0f9de6217d00fd071eb7a3a82f0df3f6757c",
+    "result": "two sealed native Action-stage controls + original cancelled receipt-root public cold Replace/map/default-No decline satisfied their stated scopes",
+    "limitations": "not physical TTY/effect, cumulative receipt budget1/1->2/2, all history retained; unrelated R06 later narration callback retained"
+  },
+  "saved_review_reuse_review": "Reviewer2 presealed finite2cases/6observations, public seal b59-saved-review-reuse-public-seal-v1.json; NOT_RUN while sole shared proof slot occupied; private oracle withheld."
 }

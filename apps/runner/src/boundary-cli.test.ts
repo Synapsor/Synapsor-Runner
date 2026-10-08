@@ -17954,6 +17954,17 @@ describe("saved review operation dispatch and persistence", () => {
         modelDiscovery: { discoverHostedModels: async () => ["gpt-selected-review"] },
         modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "captured-only", dependencies: { requestJson: async request => {
           providerCalls++;
+          const messages = (request.body as { input: Array<{ content?: string }> }).input;
+          const prefix = "Current draft (JSON pointer root): ";
+          const line = messages.flatMap(message => (message.content ?? "").split("\n")).find(line => line.startsWith(prefix));
+          expect(line).toBeDefined();
+          const requestedScope = JSON.parse(line!.slice(prefix.length)).runner_evidence.requested_read_scope;
+          expect(requestedScope.original_job).toBe("Maintain the reviewed visit job.");
+          expect(requestedScope.routing_read_summary).toBe("Maintain the reviewed visit job.");
+          // Only the operator's explicit review-only classification removes the
+          // mistaken edit item. A retained independent request stays in scope.
+          expect(requestedScope.pending_change).toBe(mode === "context-renew" ? exact
+            : ["unrelated-edit", "model-review-edit"].includes(mode) ? "Change the maximum to four." : null);
           if (changingModel) expect(request.body.model).toBe("gpt-selected-review");
           // After removal of the unsafe acknowledgement read, preserve the same
           // competing save at the next outside-lock provider boundary.
@@ -18300,6 +18311,14 @@ describe("saved post-edit review uses reader evidence after writer setup", () =>
         startWithAgentJob: true, exitAfterAgentJob: true, actionProjectInspector: async () => mixed,
         modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "local-transport-only", dependencies: { requestJson: async request => {
           calls++;
+          const messages = (request.body as { input: Array<{ content?: string }> }).input;
+          const prefix = "Current draft (JSON pointer root): ";
+          const line = messages.flatMap(message => (message.content ?? "").split("\n")).find(line => line.startsWith(prefix));
+          expect(line).toBeDefined();
+          expect(JSON.parse(line!.slice(prefix.length)).runner_evidence.requested_read_scope).toMatchObject({
+            original_job: "Keep the saved visit job.", routing_read_summary: "Keep the saved visit job.", pending_change: null,
+            workload: { analysis_id: storedWorkload.analysis_id, analysis_digest: storedWorkload.analysis_digest },
+          });
           const text: string[] = [];
           const strings = (value: unknown): void => { if (typeof value === "string") text.push(value);
             else if (value && typeof value === "object") Object.values(value).forEach(strings); };

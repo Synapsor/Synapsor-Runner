@@ -12467,8 +12467,11 @@ async function reviewSavedBoundaryPolicyInner(input: {
     if (requestedWorkload && requestedWorkload.analysis_digest !== resume.read!.analysis_digest)
       throw new Error('BOUNDARY_AUTHORING_RESUME_CHANGED: The saved Read analysis no longer matches this authoring checkpoint.');
     const currentDraft = () => policyCoverageDraft({ client: resume.intended_client, read: context.candidate, decisions: context.bundle.decisions,
-      requestedRead:{jobIntent:resume.job_intent,readIntent:resume.read_intent,
-        ...(resume.pending_job_revision ? {pendingJobRevision:resume.pending_job_revision} : {}),
+      requestedRead:{jobIntent:resume.job_intent,readIntent:resume.read_intent ?? resume.job_intent,
+        // An explicitly classified review request is retained in review history,
+        // not a business change. Independent unfinished changes remain evidence.
+        ...(resume.pending_job_revision && resume.pending_job_revision !== request.supersedes_pending_job_revision
+          ? {pendingJobRevision:resume.pending_job_revision} : {}),
         ...(requestedWorkload ? {workload:requestedWorkload} : {})},
       actions: [], authority, source: sourceInspection, reviewedVersionFields: boundaryAuthoringVersionReviews(resume),
       policySources: input.sources, countingDomain: domain, executionReview, receiptConfiguration,
