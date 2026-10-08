@@ -1,0 +1,33 @@
+{
+  "base": "e8c99c58",
+  "scope": "MIG159\u2013160 only; test-only successor",
+  "rows": [
+    {
+      "case_id": "B64-READ-MIG-159",
+      "disposition": "typed_port",
+      "case": "corrects shared-table reads into owned-root related projections without a scope-review detour",
+      "before": "READ_SCOPE_PROTOCOL_REQUIRED; compiler guard not reached",
+      "after": "PASS original2calls, OWN_RECORD_ROOT_REQUIRED correction, zero clarification, exact relationship-only candidate/root path, authority false, input unchanged",
+      "changed": "Declare original task and exact root/return/relationship/related-return requirements before provider replies; root subject inventory comes from existing actual structural-review fixture. Existing catalog relationship test fixture unchanged."
+    },
+    {
+      "case_id": "B64-READ-MIG-160",
+      "disposition": "typed_port",
+      "case": "refuses a repeated independent read of a related-only resource without dropping the job or weakening scope",
+      "before": "READ_SCOPE_PROTOCOL_REQUIRED; compiler guard not reached",
+      "after": "PASS original2calls, OWN_RECORD_ROOT_REQUIRED refusal, exact input unchanged, catalog related-only flags unchanged",
+      "changed": "Declare typed status-row scope using existing current subject fixture; no provider-derived scope or expected authority."
+    }
+  ],
+  "tests": {
+    "command": "vitest run read-workload-model.test.ts --testNamePattern=\"corrects shared-table reads|repeated independent read\" --maxWorkers=1 --minWorkers=1",
+    "before": "0 PASS / 2 FAIL; related-root-before.json",
+    "after": "2 PASS / 0 FAIL; related-root-after1.json",
+    "types": "PASS exit0 related-root-types.log",
+    "evidence": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence"
+  },
+  "assertion_changes": 0,
+  "product_changes": 0,
+  "independent_verdict": "PENDING",
+  "inventory_note": "Canonical212 is a historic classification snapshot; this supplement closes only these two execution gaps and does not claim current global remaining count."
+}

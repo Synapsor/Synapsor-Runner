@@ -6,10 +6,10 @@
 6. New authoring-read-revision-scope.ts reanalyzes exact saved/original workload on actual prepared candidate; redacted/nonexact cold plans stay pending.
 7. Store helper writes actual analysis only after exact committed preview match; never creates review/confirmation/authority/Resume records.
 8. Central scope preview validates actual prepared lock plus current structural acknowledgment; only exact unchanged subjects survive; no future bundle invented.
-9. Component evidence23PASS (19 context/analysis+4 lock controls); overstrict lock before14P5F retained; types result in compact record.
+9. e8 adapter23PASS/types0 independently scoped ACCEPT R1 39d58bf9; public/native postcommit path still open.
 10. Compact API/sequence/results: b64-read-revision-scope-adapter.json; evidence /var/tmp/synapsor-b64-read-public-retirement-owned/evidence/.
 11. Main owns boundary/native hooks: pass actual preparedLock/current context, save actual analysis+scope pointer through protected CAS, separate grouped review.
 12. Postcommit native q context must truthfully match current projection; no fake completion/reused oldYes. Pending mapping must retain consumed result and use ordinary mapping without replay.
-13. Next: Main integrates adapter, R1 independent variant, unchanged public revision after-proof; no whole212 migration closure claim.
-14. No new format/store/model call or Source write; no arbitrary latest adoption. Existing authority/privacy/currentness/counters retained.
+13. MIG159–160 test-only typed ports now2PASS/types0, original assertions/counts unchanged; before0P2F retained in related-root evidence.
+14. Native successor/pending map: b64-read-revision-native-transition-map.json. Next central preview must project exact future Resume binding before consumed record; Main owns hooks.
 15. Private-backup checkpoint; no owned test/Runner/model operation after checks finish. Public path remains OPEN until native integration proof.

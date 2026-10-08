@@ -1201,14 +1201,32 @@ describe("model-assisted Read workload mapping", () => {
       proof: { source: "database_catalog", links: [link], digest: canonicalJsonDigest([link]) } });
     boundary.pack.resources.push(products);
     const before = structuredClone(boundary);
+    // Declared task scope precedes both provider replies; the invalid first plan
+    // cannot redefine an owned-root related projection as a shared-table grant.
+    const job = "Show my purchases with product details";
+    const catalog = readWorkloadCatalog(boundary, [orders.id]);
+    const context = projectReadScopeHostContext({ request: { id: "job", text: job },
+      catalog: { digest: catalog.digest, resources: catalog.resources, subject_scopes: reviewedTestSubjects,
+        relationships: [{ id: link.constraint_name, from: orders.id, to: products.id }] },
+      binding: { meaning_digest: canonicalJsonDigest(job), applicability_digest: canonicalJsonDigest("declared related projection"),
+        operation_digest: canonicalJsonDigest(boundary) } });
+    const read_scope: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
+      id: "purchases-with-product-details", intended_use: job, references: ["job"], disposition: "include",
+      subjects: [{ root_resource: orders.id, mode: "trusted_principal" }], targets: [
+        { root_resource: orders.id, resource: orders.id, operation: "resource" },
+        { root_resource: orders.id, resource: orders.id, operation: "return", field: "status" },
+        { root_resource: orders.id, resource: orders.id, operation: "relationship", relationship: link.constraint_name, qualifier: products.id },
+        { root_resource: orders.id, resource: products.id, operation: "return", field: "amount", relationship: link.constraint_name },
+      ],
+    }] };
     const response = (plan: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "scope_fix",
-      name: "runner__submit_read_workloads", arguments: JSON.stringify({ allowed: [{ id: "my_purchases",
+      name: "runner__submit_read_workloads", arguments: JSON.stringify({ read_scope, allowed: [{ id: "my_purchases",
         description: "My purchases with related product details", plan }], forbidden: [] }) }] } });
     const requestJson = vi.fn().mockResolvedValueOnce(response({ kind: "rows", resource: products.id, select: ["status"] }))
       .mockResolvedValueOnce(response({ kind: "rows", resource: orders.id, select: ["status"],
         related: [{ relationship: link.constraint_name, select: ["amount"] }] }));
     const clarificationHandler = vi.fn();
-    const result = await generateModelReadWorkload({ name: "my_purchases", allowedQuestions: ["Show my purchases with product details"],
+    const result = await generateModelReadWorkload({ name: "my_purchases", structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context }, allowedQuestions: ["Show my purchases with product details"],
       // Additional declared root facts; the relationship proof still governs
       // products access. Neither a name nor this statement grants a root read.
       operatorNamingContext: "Show my purchases with product details\npublic.orders means purchases. public.products means product details.",
@@ -1227,8 +1245,9 @@ describe("model-assisted Read workload mapping", () => {
   it("refuses a repeated independent read of a related-only resource without dropping the job or weakening scope", async () => {
     const boundary = generatedBoundary();
     const before = structuredClone(boundary);
-    const requestJson = vi.fn().mockResolvedValue(diagnosticResponse("valid"));
-    await expect(generateModelReadWorkload({ name: "owned_only", allowedQuestions: ["My orders"], provider: "openai",
+    const typed = declaredWorkloadScope("My orders", "status_rows", boundary);
+    const requestJson = vi.fn().mockResolvedValue(diagnosticResponse("valid", typed.proposal));
+    await expect(generateModelReadWorkload({ name: "owned_only", structuredScope: typed.structuredScope, allowedQuestions: ["My orders"], provider: "openai",
       model: "gpt-5.6-terra", generatedBoundary: boundary, principalScopedRootResources: [], egressAcknowledged: true,
       env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson } }))
       .rejects.toMatchObject({ message: expect.stringContaining("READ_WORKLOAD_OWN_RECORD_ROOT_REQUIRED") });
