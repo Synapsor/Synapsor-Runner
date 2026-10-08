@@ -9,7 +9,7 @@ import { projectAuthoringReadScopeContext } from "./authoring-read-scope-context
 import { createReadScopeHost, type ReadScopeHostAccess, type ReadScopeInteraction, type ReadScopeInteractionResponse } from "./authoring-read-scope-host.js";
 import { createReadScopeQuestion, proposeReadScopeReview } from "./authoring-read-scope-question.js";
 import { readScopeConsumption } from "./authoring-read-scope-binding.js";
-import type { ReadScopeRecord } from "./read-structured-scope.js";
+import { assertReadScopeProvenance, assessReadScopeRecordCurrentness, parseReadScopeRecord, type ReadScopeRecord } from "./read-structured-scope.js";
 import { loadBoundaryReviewContext } from "./boundary-review-context.js";
 import { readStoredReadWorkloadAnalysis } from "./read-workloads.js";
 import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
@@ -95,5 +95,27 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
       acknowledgeCompletedTurn: false, subject: "The no-Read scope proposal" }, permit);
     return question.id;
   });
-  return { context, answerIds, review: host.review, recordNoRead };
+  const principalRequirement = async (resources: readonly string[], proposed?: ReadScopeRecord) => {
+    const roots = [...new Set(resources)].sort();
+    const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot();
+    const scope = await context(current.candidate);
+    const saved = state.read?.scope_question_id ? state.questions.find(q => q.id === state.read!.scope_question_id) : undefined;
+    const record = saved?.read_scope?.record ?? proposed;
+    if (!record || saved?.disposition || state.questions.some(q => q.read_scope?.predecessor_id === saved?.id && saved))
+      return { required: [], unresolved: roots };
+    const parsed = parseReadScopeRecord(record);
+    if (assessReadScopeRecordCurrentness({ record: parsed, expectedBinding: scope.binding }).status === "stale")
+      return { required: [], unresolved: roots };
+    assertReadScopeProvenance(parsed, { ...scope, expectedBinding: scope.binding });
+    const required: string[] = [], unresolved: string[] = [];
+    for (const root of roots) {
+      const requirements = parsed.proposal.requirements.filter(r => r.targets.some(t => t.root_resource === root));
+      const subjects = requirements.filter(r => r.disposition === "include").flatMap(r => r.subjects.filter(s => s.root_resource === root));
+      if (!subjects.length || requirements.some(r => r.disposition === "unresolved") || subjects.some(s => s.mode === "unresolved")) unresolved.push(root);
+      else if (subjects.some(s => s.mode === "trusted_principal")
+        || parsed.subject_bindings.some(binding => binding.root_resource === root && binding.kind === "principal")) required.push(root);
+    }
+    return { required, unresolved };
+  };
+  return { context, answerIds, review: host.review, recordNoRead, principalRequirement };
 }
