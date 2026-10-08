@@ -1,4 +1,11 @@
 import { OLDER_AUTHORING_SETUP_MESSAGE } from "./authoring-protocol.js";
+import { projectAuthoringReadScopeContext } from "./authoring-read-scope-context.js";
+import { READ_SCOPE_PROTOCOL } from "./read-structured-scope.js";
+import { createReadScopeHost } from "./authoring-read-scope-host.js";
+import { createReadScopeQuestion, proposeReadScopeReview } from "./authoring-read-scope-question.js";
+import { readScopeConsumption } from "./authoring-read-scope-binding.js";
+import { authoringReadCheckpoint } from "./authoring-generation-recovery.js";
+import { readStoredReadWorkloadAnalysis } from "./read-workloads.js";
 import { currentBoundaryJobReadRequests } from './boundary-job-read-requests.js';
 import { reviewPolicyWithPendingDecision, policyReviewNextStep, policyDecisionAllowsSavedReview, resumePolicyDecision, resolvePolicyDecision, reviewPolicyWithDecision } from './authoring-policy-decision-route.js';
 import { createReadRevisionCheckpointHost } from "./authoring-read-revision-checkpoint-host.js";
@@ -20,7 +27,7 @@ import { runSourceInputConversation } from "./authoring-input-policy-conversatio
 import { assertSourceInputRootBinding, createSourceInputHost } from "./authoring-input-host.js";
 import { runVersionConversation } from "./authoring-version-conversation.js";
 import { createVersionQuestionHost } from "./authoring-version-host.js";
-import { presentSourceInputInteraction, presentVersionInteraction, presentReadMeaningInteraction,
+import { presentSourceInputInteraction, presentVersionInteraction, presentReadMeaningInteraction, presentReadScopeInteraction,
   presentBusinessStatementInteraction, rememberActionQuestionDetails, promptActionBusinessQuestion,
   presentMetadataEgress, rememberSavedMetadataEgress, presentActionEditSave,
   rememberRequestedActionRevision, presentUnchangedActionRequest } from "./authoring-question-presenter.js";
@@ -4807,6 +4814,38 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       throw error;
     }
   };
+  const acknowledgedReadAnswerIds = () => operatorQuestions.filter(q => q.read_scope?.mode === "missing_answer"
+    && q.raw_answer?.text.trim() && !q.disposition
+    && !operatorQuestions.some(next => next.read_scope?.predecessor_id === q.id)).map(q => q.id);
+  const typedReadContext = (boundary: ExplorationBoundaryDraft, answerQuestionIds = acknowledgedReadAnswerIds()) => {
+    if (!activeResume || resumePersistenceBlocked) throw checkpointSaveFailure("The native typed Read context");
+    return projectAuthoringReadScopeContext({ resume: activeResume, boundary, sources: authoringConversation?.policySources,
+      records: { questions: operatorQuestions, handoffs: ownerHandoffs, generation: generationRecovery }, answerQuestionIds });
+  };
+  const readScopeReview = createReadScopeHost({ access: {
+    mutate: mutateOwnerHandoff,
+    load: async (questionId, permit) => {
+      await assertAuthoringResumeCurrent(undefined, false, permit);
+      if (!activeResume || !savedResumeRevision) throw checkpointSaveFailure("The native Read review");
+      const current = await loadBoundaryReviewContext(input.projectRoot), scope = typedReadContext(current.candidate);
+      const question = operatorQuestions.find(q => q.id === questionId);
+      if (!question?.read_scope) throw checkpointSaveFailure("The exact native Read question");
+      const stored = question.read_scope.record.analysis_digest
+        ? resumeRead?.scope_question_id === questionId
+          ? await readStoredReadWorkloadAnalysis({ projectRoot: input.projectRoot, analysisId: resumeRead.analysis_id })
+          : undefined : undefined;
+      if (question.read_scope.record.analysis_digest && !stored) throw checkpointSaveFailure("The exact analyzed Read proposal");
+      return { questions: operatorQuestions, handoffs: ownerHandoffs, generation: generationRecovery,
+        question_id: questionId, expectedBinding: scope.binding, references: scope.references, catalog: scope.catalog,
+        ...(stored ? { analysis: stored.analysis } : {}), resume_revision_digest: savedResumeRevision,
+        context_digest: await ownerQuestionContext(permit), scope_digest: ownerQuestionScope() };
+    },
+    save: async (question, options) => {
+      operatorQuestions = operatorQuestions.map(q => q.id === question.id ? question : q);
+      await persistAuthoringResume(activeResume!.stage, options.permit);
+      if (resumePersistenceBlocked) throw checkpointSaveFailure(options.subject);
+    },
+  }, interact: view => presentReadScopeInteraction({ view, session: input.session }) });
   const persistOwnerQuestion = async (question: string, consumer: AuthoringOwnerHandoff["consumer"],
     completion?: AuthoringOwnerHandoff["completion"], expectedContext?: `sha256:${string}`) => mutateOwnerHandoff(async permit => {
     const currentContext = await ownerQuestionContext(permit, consumer);
@@ -6219,11 +6258,14 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             jobPlan = { state: "clarification", question: handoff.question, correction_used: false,
               authority_granted: false, source_database_changed: false };
           } else {
+          const planningAnswerIds = acknowledgedReadAnswerIds();
           jobPlan = await runWithProgress(
             clarificationTranscript.length ? "Updating the Boundary plan" : "Planning Read and Action work",
             () => (input.modelBoundaryJobPlanner ?? planModelBoundaryJob)({
               session: planningSession,
               jobIntent: jobIntent!.trim(),
+              structuredScope: { protocol: READ_SCOPE_PROTOCOL,
+                current: () => typedReadContext(context.candidate, planningAnswerIds) },
               ...(planCompleteProgram ? { workflow: "program" as const,
                 ...(resumeAction?.intended_outcomes ? { expectedActionOutcomes: resumeAction.intended_outcomes } : {}) } : {}),
               currentState: reusableState!.current_state,
@@ -6240,7 +6282,23 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             }),
           );
           if (jobPlan.state === "clarification") handoff = await persistOwnerQuestion(jobPlan.question, "planning", jobPlan.completion);
-          else if (jobPlan.completion) {
+          else if (jobPlan.completion && jobPlan.read_scope?.proposal.applicability === "no_read_requested") {
+            const proposal = jobPlan.read_scope, completion = jobPlan.completion;
+            let questionId: string | undefined;
+            await mutateOwnerHandoff(async permit => {
+              await assertAuthoringResumeCurrent(undefined, false, permit);
+              const current = await loadBoundaryReviewContext(input.projectRoot), inventory = typedReadContext(current.candidate);
+              const question = proposeReadScopeReview(createReadScopeQuestion({ id: randomUUID(), revision: 1,
+                scope_digest: ownerQuestionScope(), context_digest: await ownerQuestionContext(permit),
+                read_scope: { mode: "review", record: proposal, completion } }), inventory.binding, undefined, inventory);
+              generationRecovery = authoringReadCheckpoint(generationRecovery, completion, readScopeConsumption(question.read_scope!));
+              operatorQuestions.push(question); questionId = question.id;
+              await persistAuthoringResume("planning", permit, false);
+              if (resumePersistenceBlocked) throw checkpointSaveFailure("The no-Read scope proposal");
+            });
+            if (!questionId || (await readScopeReview.review(questionId)).state !== "confirmed")
+              return boundaryAssistResult(boundaryAssistBackNotice("The proposed no-Read interpretation remains pending; no Action or activation was inferred."));
+          } else if (jobPlan.completion) {
             await persistAuthoringResume("planning", undefined, jobPlan.completion);
             if (resumePersistenceBlocked) throw checkpointSaveFailure("The completed planning turn");
           }
@@ -7601,6 +7659,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       mutate: mutateOwnerHandoff, contextDigest: ownerQuestionContext, scopeDigest: ownerQuestionScope,
       currentCandidate: async () => (await loadBoundaryReviewContext(input.projectRoot)).bundle,
       readCheckpoint: () => readAssistanceCheckpoint, readHandoffs: () => ownerHandoffs,
+      scopeInventory: async permit => {
+        await assertAuthoringResumeCurrent(undefined, false, permit);
+        const current = await loadBoundaryReviewContext(input.projectRoot), scope = typedReadContext(current.candidate);
+        return { ...scope, questions: operatorQuestions, handoffs: ownerHandoffs, generation: generationRecovery };
+      },
       readQuestions: () => operatorQuestions, readRecovery: () => generationRecovery,
       readConversation: () => authoringConversation, readReviewedRelationshipAnswer: () => reviewedRelationshipAnswer,
       install: update => {
@@ -7706,6 +7769,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         await assertAuthoringResumeCurrent(undefined);
         const meaningWorkloads = await listReadWorkloadAnalyses({ projectRoot: input.projectRoot, generatedBoundary: mappingBoundary });
         await assertAuthoringResumeCurrent(undefined);
+        const mappingAnswerIds = acknowledgedReadAnswerIds();
         mapped = await runWithProgress(
           "Mapping requested reads with the selected model",
           () => (input.modelReadWorkloadGenerator ?? generateModelReadWorkload)({
@@ -7716,6 +7780,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             provider: mappingSession.provider,
             model: mappingSession.model,
             generatedBoundary: mappingBoundary,
+            structuredScope: { protocol: READ_SCOPE_PROTOCOL,
+              current: () => typedReadContext(mappingBoundary, mappingAnswerIds),
+              answer: request => readMeaningHost.answerScope(request),
+              resolveAnswer: readMeaningHost.resolveScopeAnswer },
             currentEvidenceRecords: () => ({ source: authoringConversation?.policySources,
               questions: operatorQuestions, handoffs: ownerHandoffs, history: resumeRead?.assistance_history,
               checkpoint: readAssistanceCheckpoint, workloads: meaningWorkloads, boundary: mappingBoundary }),
@@ -7837,6 +7905,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           structural_metadata_egress_acknowledged: true,
         };
       }
+    }
+    if (mapped?.read_scope) {
+      const scopeId = resumeRead?.scope_question_id;
+      if (!scopeId || (await readScopeReview.review(scopeId)).state !== "confirmed")
+        return boundaryAssistResult(boundaryAssistBackNotice("The complete analyzed Read scope remains pending; no disabled authority or activation was inferred."));
     }
     if (mapped
       || (resumingDisabledRead && workload && actionIntents.length > 0)
