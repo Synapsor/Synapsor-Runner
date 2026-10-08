@@ -106,6 +106,8 @@ export type ReadMeaningAttempt = ReadMeaningTarget & {
   question: string; request_digest: `sha256:${string}`; context_digest: `sha256:${string}`;
   answer: string; actor: "local_installation_operator"; recorded_at: string;
 };
+/** Historical raw audit only. Its text never establishes meaning or resumes a
+ * typed mapping; the native producer refuses unsupported semantic history. */
 export function normalizeReadMeaningAttempts(value: unknown): ReadMeaningAttempt[] {
   if (!Array.isArray(value) || value.length > 4) throw new Error("READ_WORKLOAD_MEANING_ATTEMPTS_INVALID");
   for (const entry of value) {
@@ -115,7 +117,7 @@ export function normalizeReadMeaningAttempts(value: unknown): ReadMeaningAttempt
       || entry.field !== undefined && (typeof entry.field !== "string" || !entry.field || entry.field.length > 256)
       || typeof entry.question !== "string" || !entry.question || entry.question.length > 500
       || !/^sha256:[a-f0-9]{64}$/u.test(entry.request_digest) || !/^sha256:[a-f0-9]{64}$/u.test(entry.context_digest)
-      || typeof entry.answer !== "string" || entry.answer.length > 1_000 || !isUnknownReadMeaning(entry.answer)
+      || typeof entry.answer !== "string" || entry.answer.length > 1_000
       || entry.actor !== "local_installation_operator" || typeof entry.recorded_at !== "string" || !Number.isFinite(Date.parse(entry.recorded_at))) {
       throw new Error("READ_WORKLOAD_MEANING_ATTEMPTS_INVALID");
     }
