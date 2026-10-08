@@ -363,16 +363,20 @@ describe("durable Read assistance producer checkpoint", () => {
   });
 
   it("stops at a failed coordinated checkpoint save before dispatching the human handler or another generation", async () => {
-    const requestJson = vi.fn(async () => response({ clarification_request: request })), handler = vi.fn();
-    await expect(generateModelReadWorkload({ ...setup(requestJson), onCheckpoint: async (value:ReadWorkloadAssistanceCheckpoint|undefined) => { if (value?.stage === "waiting") throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED"); }, clarificationHandler: handler } as any)).rejects.toThrow("BOUNDARY_AUTHORING_RESUME_CHANGED");
+    const typed = declaredWorkloadScope("List my orders", "status_rows");
+    const missing = { ...typed.proposal, requirements: [{ ...typed.proposal.requirements[0]!, disposition: "unresolved", targets: [], unresolved: request.question }] };
+    const requestJson = vi.fn(async () => response({ allowed: [], forbidden: [], read_scope: missing })), handler = vi.fn();
+    await expect(generateModelReadWorkload({ ...setup(requestJson), structuredScope: { ...typed.structuredScope, answer: handler }, onCheckpoint: async (value:ReadWorkloadAssistanceCheckpoint|undefined) => { if (value?.stage === "waiting") throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED"); }, clarificationHandler: handler } as any)).rejects.toThrow("BOUNDARY_AUTHORING_RESUME_CHANGED");
     expect(handler).not.toHaveBeenCalled(); expect(requestJson).toHaveBeenCalledOnce();
   });
 
   it.each(["name", "questions", "catalog", "roots", "model"] as const)("refuses changed canonical %s before reopened handler or provider dispatch", async change => {
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
-    const first = setup(async () => response({ clarification_request: request }));
+    const typed = declaredWorkloadScope("List my orders", "status_rows");
+    const missing = { ...typed.proposal, requirements: [{ ...typed.proposal.requirements[0]!, disposition: "unresolved", targets: [], unresolved: request.question }] };
+    const first = { ...setup(async () => response({ allowed: [], forbidden: [], read_scope: missing })), structuredScope: typed.structuredScope };
     await expect(generateModelReadWorkload({ ...first, onCheckpoint: async value => { checkpoint = value; }, clarificationHandler: async () => undefined })).rejects.toThrow("AUTHORING_PAUSED");
-    const noSend = vi.fn(), handler = vi.fn(), resumed = { ...setup(noSend), resumeCheckpoint: checkpoint, clarificationHandler: handler };
+    const noSend = vi.fn(), handler = vi.fn(), resumed = { ...setup(noSend), structuredScope: { ...typed.structuredScope, answer: handler }, resumeCheckpoint: checkpoint, clarificationHandler: handler };
     if (change === "name") resumed.name = "different_read_job";
     if (change === "questions") resumed.allowedQuestions = ["A different business read"];
     if (change === "catalog") resumed.generatedBoundary.pack.resources[0]!.label = "Changed meaning";
@@ -409,9 +413,10 @@ describe("durable Read assistance producer checkpoint", () => {
   });
 
   it("exposes a cleared checkpoint only with the actual accepted Read result and stops if its CAS commit fails", async () => {
+    const typed = declaredWorkloadScope("List my orders", "status_rows");
     const seen: Array<{ checkpoint: ReadWorkloadAssistanceCheckpoint | undefined; result: unknown }> = [];
-    const valid = vi.fn(async () => diagnosticResponse("valid"));
-    await expect(generateModelReadWorkload({ ...setup(valid), onCheckpoint: async (checkpoint, _boundary, result) => {
+    const valid = vi.fn(async () => diagnosticResponse("valid", typed.proposal));
+    await expect(generateModelReadWorkload({ ...setup(valid), structuredScope: typed.structuredScope, onCheckpoint: async (checkpoint, _boundary, result) => {
       seen.push({ checkpoint, result }); if (!checkpoint) throw new Error("OWNED_ACCEPTED_READ_CAS_CHANGED");
     } })).rejects.toThrow("OWNED_ACCEPTED_READ_CAS_CHANGED");
     expect(seen).toHaveLength(3); expect(seen.slice(0,2).every(event => event.checkpoint?.stage === "dispatching" && event.result === undefined)).toBe(true); expect(seen[2]!.checkpoint).toBeUndefined();
@@ -551,16 +556,17 @@ describe("durable Read assistance producer checkpoint", () => {
   });
 
   it("outer controller callback reservation survives a raw save acknowledgement loss without accepting its result", async () => {
+    const typed = declaredWorkloadScope("List my orders", "status_rows");
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, state: AuthoringTransportState = { version: 1, operations: [] }, sends = 0;
     const snapshots: ReadWorkloadAssistanceCheckpoint[] = [];
     const server = createServer(async (req, res) => { for await (const _chunk of req) {} sends++;
-      res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ status: "completed", ...diagnosticResponse("valid").body })); });
+      res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ status: "completed", ...diagnosticResponse("valid", typed.proposal).body })); });
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
     const host = { available: () => true, read: () => state, current: async () => canonicalJsonDigest("fixed current workload business input"),
       write: async (value: AuthoringTransportState) => { validateAuthoringTransportState(value); state = structuredClone(value); } };
     const entering = (resume: boolean) => withAuthoringGenerationRecovery(() => { configureAuthoringGenerationRecovery(host);
-      return generateModelReadWorkload({ ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })),
+      return generateModelReadWorkload({ ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })), structuredScope: typed.structuredScope,
         ...(resume ? { resumeCheckpoint: checkpoint } : {}), onCheckpoint: async value => {
           checkpoint = structuredClone(value); if (value) snapshots.push(structuredClone(value));
           if (!resume && value?.stage === "dispatching" && value.state.call_count === 1) throw new Error("OWNED_RAW_COUNTER_ACK_LOST");
@@ -575,16 +581,17 @@ describe("durable Read assistance producer checkpoint", () => {
     } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
   });
   it("outer controller callback limit refuses an exhausted checkpoint before another HTTP request", async () => {
+    const typed = declaredWorkloadScope("List my orders", "status_rows");
     let saved: ReadWorkloadAssistanceCheckpoint | undefined;
     const never = vi.fn();
-    await expect(generateModelReadWorkload({ ...setup(never), onCheckpoint: async value => {
+    await expect(generateModelReadWorkload({ ...setup(never), structuredScope: typed.structuredScope, onCheckpoint: async value => {
       if(value?.stage === "dispatching") { saved = value; throw new Error("OWNED_FIRST_DISPATCH_CAPTURED"); }
     } })).rejects.toThrow("OWNED_FIRST_DISPATCH_CAPTURED"); expect(never).not.toHaveBeenCalled();
     if(!saved || saved.stage !== "dispatching") throw new Error("Expected the actual initial dispatch checkpoint");
     const { digest: _digest, schema_version: _schema, ...body } = saved;
     // Pure controller boundary fixture, not historical evidence or business authority.
     const exhausted = readWorkloadAssistanceCheckpoint({ ...body, state: { ...body.state, call_count: 8 } });
-    const noHttp = vi.fn(); await expect(generateModelReadWorkload({ ...setup(noHttp), resumeCheckpoint: exhausted }))
+    const noHttp = vi.fn(); await expect(generateModelReadWorkload({ ...setup(noHttp), structuredScope: typed.structuredScope, resumeCheckpoint: exhausted }))
       .rejects.toThrow("READ_WORKLOAD_SUBMISSION_REFUSED"); expect(noHttp).not.toHaveBeenCalled(); expect(exhausted.state.call_count).toBe(8);
   });
 
