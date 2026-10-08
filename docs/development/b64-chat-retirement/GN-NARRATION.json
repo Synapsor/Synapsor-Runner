@@ -1,0 +1,40 @@
+{
+  "inventory": [
+    "GN01",
+    "GN02"
+  ],
+  "before_pin": "a41307d8",
+  "before": {
+    "failed": 9,
+    "note": "Arbitrary unrestricted-access/completed-change prose accepted; typed record response absent; opening spends provider request. Seven cases also demonstrate absent advertised typed contract."
+  },
+  "after": {
+    "passed": 48,
+    "files": 3,
+    "types_exit": 0
+  },
+  "response_contract": {
+    "kind": "validated_record",
+    "record_digest": "exact current operator_message/response_style/facts/next_question digest",
+    "fact_indexes": "Every supplied index exactly once, in original order; no extra keys; no arbitrary prose"
+  },
+  "style_effects": {
+    "opening": "Fixed host greeting + every supplied fact + exact next question; zero provider request and no model-history append. Missing question unavailable; abort propagates.",
+    "validated_result": "Complete host-supplied record and exact next question, if present; no model interpretation.",
+    "permission": "Complete permitted facts and exact pending question; no inferred permission or extra claims.",
+    "inspection": "Complete current supplied evidence, not a free-form generated answer; unavailable evidence remains as supplied.",
+    "clarification": "Exact supplied pending question retained, not regenerated. Typed business-question layer owns wording.",
+    "business_questions": "Exact supplied questions retained alongside every caveat; narrator does not author suggestions."
+  },
+  "callers": {
+    "boundary-commands": "Permission guide4697; opening5046; revision8424/8863/9061; saved-question explanation10155; grouped business10253/10418 and blocker10375. Main owns narrow binding/operation retirement.",
+    "authoring-principal-scope-host": "Exact option question already supplied; all facts survive.",
+    "action-tui": "1897/2070/2215/4126. Some validatedFacts contain instructional strings; never parse/filter them; Action owner may relocate instructions explicitly.",
+    "action-boundary-interview": "563/602/640 existing facts/question remain.",
+    "read-workload-model": "1424 saved draft facts preserved.",
+    "action-suggestion-model": "200/392 saved disabled record remains."
+  },
+  "continuity": "Accepted typed acknowledgement appends exact rendered record via existing conversation function. Invalid response returns existing unavailable diagnostic without changing history. Existing configuration/request/recovery/cancellation budget remains; no added calls. Opening intentionally removes one optional call.",
+  "isolation": "slot1, owned0700 HOME/TMP, bwrap --unshare-net, oneworker; no paid calls",
+  "limits": "Independent/public caller acceptance pending; no full installed-path claim. Full factual rendering may be longer than previous short prose; no omission is used to shorten it."
+}

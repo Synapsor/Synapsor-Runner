@@ -1,3 +1,4 @@
+import { typedNarrationReply } from "./test-fixtures/typed-authoring-narration.js";
 import { expect, it } from "vitest";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
@@ -19,13 +20,7 @@ async function run(reply: (body: string) => string, style: "inspection" | "openi
 }
 
 function advertisedReply(body: string): { kind: string; record_digest: string; fact_indexes: number[] } {
-  const decoded = JSON.parse(body);
-  const text = JSON.stringify(decoded).replace(/\\n/g, "\n").replace(/\\"/g, '"');
-  const line = text.split("\n").find(line => line.startsWith("Typed narration record: "));
-  if (!line) throw new Error("The model did not receive a typed narration record.");
-  const record = JSON.parse(line.slice("Typed narration record: ".length));
-  return { kind: "validated_record", record_digest: record.record_digest,
-    fact_indexes: record.facts.map((fact: { index: number }) => fact.index) };
+  return JSON.parse(typedNarrationReply(JSON.parse(body)));
 }
 
 it("rejects arbitrary prose even when no English safety pattern recognizes its claim", async () => {

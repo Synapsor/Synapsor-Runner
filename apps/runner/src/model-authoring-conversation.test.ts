@@ -1,3 +1,4 @@
+import { typedNarrationReply } from "./test-fixtures/typed-authoring-narration.js";
 import { describe, expect, it, vi } from "vitest";
 import {
   createModelAuthoringConversation,
@@ -39,7 +40,7 @@ describe("model-assisted Boundary authoring conversation", () => {
     ["Read authority is not active and the database has been updated.", false],
     ["Read authority is active. Source data has not changed.", false],
     ["No source writes occurred earlier. The database has been updated now.", false],
-  ])("validates actual state assertions without rejecting negations: %s", async (text, accepted) => {
+  ])("rejects free assertions without interpreting English negation: %s", async (text, _accepted) => {
     const result = await narrateValidatedAuthoringStep({
       session: { provider: "openai", model: "gpt-5.6-terra", apiKey: "test-key",
         conversation: createModelAuthoringConversation(), dependencies: { requestJson: async () => ({ status: 200,
@@ -47,7 +48,7 @@ describe("model-assisted Boundary authoring conversation", () => {
       operatorMessage: "Explain this pending decision.", egressAcknowledged: true,
       validatedFacts: ["Read authority is disabled. No source data changed."],
     });
-    expect(result).toBe(accepted ? text : undefined);
+    expect(result).toBeUndefined();
   });
   it.each([
     { provider: "openai" as const, model: "gpt-5.6-luna" },
@@ -63,7 +64,7 @@ describe("model-assisted Boundary authoring conversation", () => {
     const requests: Array<Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]> = [];
     const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
       requests.push(request);
-      const text = "I mapped the refund request to the reviewed refund action. It is still disabled.";
+      const text = typedNarrationReply(request.body);
       return provider === "openai"
         ? {
             status: 200,
@@ -100,7 +101,7 @@ describe("model-assisted Boundary authoring conversation", () => {
       ],
       egressAcknowledged: true,
     })).resolves.toBe(
-      "I mapped the refund request to the reviewed refund action. It is still disabled.",
+      "INSERT support_ops.refund_requests passed exact catalog validation.\nProposal, approval, apply, and source writes remain off.",
     );
 
     expect(requestJson).toHaveBeenCalledOnce();
@@ -117,7 +118,7 @@ describe("model-assisted Boundary authoring conversation", () => {
       },
       {
         question: "Prepare a bounded refund request.",
-        answer: "I mapped the refund request to the reviewed refund action. It is still disabled.",
+        answer: "INSERT support_ops.refund_requests passed exact catalog validation.\nProposal, approval, apply, and source writes remain off.",
       },
     ]);
   });
@@ -229,10 +230,11 @@ describe("model-assisted Boundary authoring conversation", () => {
       responseStyle: "opening",
       egressAcknowledged: true,
     })).resolves.toContain("What should this agent be able to read or propose?");
-    expect(modelAuthoringHistory(conversation)).toHaveLength(1);
+    expect(modelAuthoringHistory(conversation)).toHaveLength(0);
+    expect(requestJson).not.toHaveBeenCalled();
   });
 
-  it("discards a local-model greeting that invents capability or proposal limits", async () => {
+  it("never requests a local-model greeting that could invent capabilities", async () => {
     const conversation = createModelAuthoringConversation();
     const requestJson = vi.fn(async () => ({
       status: 200,
@@ -263,7 +265,8 @@ describe("model-assisted Boundary authoring conversation", () => {
       nextQuestion: "What should this agent be able to read or propose?",
       responseStyle: "opening",
       egressAcknowledged: true,
-    })).resolves.toBeUndefined();
+    })).resolves.toContain("What should this agent be able to read or propose?");
+    expect(requestJson).not.toHaveBeenCalled();
     expect(modelAuthoringHistory(conversation)).toEqual([]);
   });
 
@@ -369,7 +372,7 @@ describe("model-assisted Boundary authoring conversation", () => {
       egressAcknowledged: true,
     })).resolves.toBeUndefined();
     expect(failure).toHaveBeenCalledWith(expect.objectContaining({
-      code: "NARRATION_VALIDATION_REJECTED", mismatch: expect.stringMatching(/ceiling/iu),
+      code: "NARRATION_VALIDATION_REJECTED", mismatch: expect.stringMatching(/typed record/iu),
     }));
     expect(modelAuthoringHistory(conversation)).toEqual([]);
   });
