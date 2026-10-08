@@ -1,0 +1,14 @@
+{
+  "base": "edcdf4ee",
+  "kind": "test-only typed protocol migration",
+  "before": "Main ddd8843f wider4files47PASS7FAIL; /var/tmp/synapsor-b64-main-owned/evidence/read-assistance-integratedddd.log. All7 missing protocol, not newly reproduced product defects.",
+  "after": "/var/tmp/synapsor-b64-read-owned/evidence/typed-relationship-seven-after.log: full file25PASS, zero filtered,1worker8.03s",
+  "ports": [
+    "unavailable link reaches exact existing host once",
+    "failed_save/noop_save/wrong_root/stale_return refuses before remap",
+    "proof drift after genuine ordinary relationship commit refuses at second provider turn",
+    "host principal-root catalog mutation refuses at first provider turn"
+  ],
+  "fixtures": "Reuse real disabled structural preparation/confirmation, exact commit/cold reload projector. Original request parameter now matches each actual caller. Standalone typed relationship request replaces retired English category. Positive accepted path retains actual commit; deliberately failed callbacks remain uncommitted. All existing expected errors/provider counts/immutability/privacy assertions unchanged.",
+  "remaining": "Independent test-only review / Main integration"
+}

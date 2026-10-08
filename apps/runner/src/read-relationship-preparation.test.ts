@@ -67,7 +67,7 @@ function fixture(renamed = false) {
 
 const nativeRoots: string[] = [];
 afterEach(async () => { for (const root of nativeRoots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
-async function nativeRelationshipContext(f: ReturnType<typeof fixture>) {
+async function nativeRelationshipContext(f: ReturnType<typeof fixture>, original = "Read the release and both selected business references.", principalRoots?: readonly string[]) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "typed-relationship-transition-")); nativeRoots.push(root);
   await fs.mkdir(path.join(root, ".git"));
   const build = f.build(root), generated = build.exploration_boundary, pending = withoutLinks(generated);
@@ -86,9 +86,8 @@ async function nativeRelationshipContext(f: ReturnType<typeof fixture>) {
       if (!options?.context?.length) throw new Error("Actual structural review must display current settings"); return true;
     } });
   context = await loadBoundaryReviewContext(root);
-  const original = "Read the release and both selected business references.";
   const current = () => {
-    const catalog = readWorkloadCatalog(context.candidate);
+    const catalog = readWorkloadCatalog(context.candidate, principalRoots);
     return projectReadScopeHostContext({ request: { id: "job", text: original },
       catalog: { digest: catalog.digest, resources: catalog.resources,
         relationships: catalog.resources.flatMap(resource => resource.relationships.map(link => ({ id: link.id, from: resource.id, to: link.target_resource }))),
@@ -123,9 +122,8 @@ describe("Read relationship preparation orchestration", () => {
   });
 
   it("routes an unavailable-link question to exact host review instead of repeating Available links []", async () => {
-    const f = fixture(), boundary = f.build().exploration_boundary;
-    for (const r of boundary.pack.resources) r.relationships = [];
-    const question = { clarification_request: { resource: f.root, category: "relationship_support",
+    const f = fixture(), native = await nativeRelationshipContext(f, "Read the release and its two associated business references."), boundary = native.pending;
+    const question = { relationship_review_request: { resource: f.root,
       reason: "The requested associated business references need exact reviewed links.",
       question: "Which available links return the selected review and clearance references?" } };
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "relationship_question",
@@ -133,7 +131,7 @@ describe("Read relationship preparation orchestration", () => {
     const relationshipReviewHandler = vi.fn(async () => undefined);
     const input = { name: "release_references", allowedQuestions: ["Read the release and its two associated business references."],
       generatedBoundary: boundary, provider: "openai" as const, model: "gpt-test", apiKey: "test-key", egressAcknowledged: true,
-      deferNarration: true, dependencies: { requestJson }, relationshipReviewHandler };
+      deferNarration: true, structuredScope: native.structuredScope, dependencies: { requestJson }, relationshipReviewHandler };
     await expect(generateModelReadWorkload(input)).rejects.toThrow("READ_RELATIONSHIP_REVIEW_PENDING");
     expect(relationshipReviewHandler).toHaveBeenCalledOnce();
     expect(requestJson).toHaveBeenCalledOnce();
@@ -269,9 +267,9 @@ describe("Read relationship preparation orchestration", () => {
   });
 
   it.each(["failed_save", "noop_save", "wrong_root", "stale_return"])("does not remap against an uncommitted or mismatched callback result (%s)", async mode => {
-    const f = fixture(), generated = f.build().exploration_boundary, pending = withoutLinks(generated);
+    const f = fixture(), native = await nativeRelationshipContext(f, "Read selected related references."), generated = native.generated, pending = native.pending;
     const before = structuredClone(pending);
-    const requestJson = vi.fn(async () => response({ clarification_request: { resource: f.root, category: "relationship_support",
+    const requestJson = vi.fn(async () => response({ relationship_review_request: { resource: f.root,
       reason: "A selected record link is unavailable.", question: "Prepare the exact selected record association." } }));
     const relationshipReviewHandler: NonNullable<Parameters<typeof generateModelReadWorkload>[0]["relationshipReviewHandler"]> = async (_request, boundary) => {
       const prepared = await prepareReadWorkloadRelationship({ projectRoot: "/synthetic/review", boundary,
@@ -284,7 +282,7 @@ describe("Read relationship preparation orchestration", () => {
     };
     await expect(generateModelReadWorkload({ name: "references", allowedQuestions: ["Read selected related references."],
       provider: "openai", model: "gpt-test", apiKey: "test-key", egressAcknowledged: true, deferNarration: true,
-      generatedBoundary: pending, dependencies: { requestJson }, relationshipReviewHandler }))
+      generatedBoundary: pending, structuredScope: native.structuredScope, dependencies: { requestJson }, relationshipReviewHandler }))
       .rejects.toThrow(mode === "failed_save" ? "TEST_SAVE_FAILED" : mode === "noop_save" ? "READ_RELATIONSHIP_PREPARATION_WIDENED"
         : mode === "wrong_root" ? "READ_RELATIONSHIP_REVIEW_MISMATCH" : "READ_RELATIONSHIP_CANDIDATE_STALE");
     expect(requestJson).toHaveBeenCalledOnce();
@@ -305,44 +303,59 @@ describe("Read relationship preparation orchestration", () => {
   });
 
   it("detects proof drift during the model follow-up even though the public catalog shape is unchanged", async () => {
-    const f = fixture(), generated = f.build().exploration_boundary, pending = withoutLinks(generated);
+    const f = fixture(), native = await nativeRelationshipContext(f, "Read related references."), generated = native.generated, pending = native.pending;
     let prepared: Awaited<ReturnType<typeof prepareReadWorkloadRelationship>>;
     let calls = 0;
     const requestJson = vi.fn(async () => {
-      if (++calls === 1) return response({ clarification_request: { resource: f.root, category: "relationship_support",
+      if (++calls === 1) return response({ relationship_review_request: { resource: f.root,
         reason: "A selected record link is unavailable.", question: "Prepare its exact record link." } });
       const current = prepared!.candidate;
       const catalogBefore = readWorkloadCatalog(current);
       current.pack.resources.find(r => r.id === f.root)!.relationships[0]!.proof!.links[0]!.constraint_name = "changed_during_model";
       expect(readWorkloadCatalog(current)).toEqual(catalogBefore);
-      return response({ allowed: [{ id: "references", description: "Read related reference", plan: { kind: "rows", resource: f.root,
+      return response({ read_scope: relatedScope(f, [prepared!.reviewed_relationship.relationship_id], "Read related references."), allowed: [{ id: "references", description: "Read related reference", plan: { kind: "rows", resource: f.root,
         select: ["business_ref"], related: [{ relationship: prepared!.reviewed_relationship.relationship_id, select: ["business_ref"] }] } }], forbidden: [] });
     });
     await expect(generateModelReadWorkload({ name: "references", allowedQuestions: ["Read related references."],
       provider: "openai", model: "gpt-test", apiKey: "test-key", egressAcknowledged: true, deferNarration: true,
-      generatedBoundary: pending, dependencies: { requestJson }, relationshipReviewHandler: async (_request, boundary) => {
+      generatedBoundary: pending, structuredScope: native.structuredScope, dependencies: { requestJson }, relationshipReviewHandler: async (_request, boundary) => {
         prepared = await prepareReadWorkloadRelationship({ projectRoot: "/synthetic/review", boundary,
           generatedBoundary: generated, fromResource: f.root, modelLabel: "test provider", assertCurrent: async () => {}, session: session(async () => "0") });
+        if (prepared) prepared = { ...prepared, candidate: await native.commit(prepared.candidate) };
         return prepared;
       } })).rejects.toMatchObject({ code: "ASK_AUTHORITY_CHANGED" });
     expect(calls).toBe(2);
   });
 
   it("retains the existing model-catalog guard when the host's own-record root projection changes", async () => {
-    const f = fixture(), generated = f.build().exploration_boundary;
-    const roots = [f.root];
+    const f = fixture(), roots = [f.root], native = await nativeRelationshipContext(f, "Read my business reference.", roots), generated = native.pending;
     const requestJson = vi.fn(async () => {
       roots.push(f.targets[0]!);
-      return response({ allowed: [{ id: "references", description: "Read a business reference",
+      return response({ read_scope: relatedScope(f, [], "Read my business reference."), allowed: [{ id: "references", description: "Read a business reference",
         plan: { kind: "rows", resource: f.root, select: ["business_ref"] } }], forbidden: [] });
     });
     await expect(generateModelReadWorkload({ name: "references", allowedQuestions: ["Read my business reference."],
       provider: "openai", model: "gpt-test", apiKey: "test-key", egressAcknowledged: true, deferNarration: true,
-      generatedBoundary: generated, principalScopedRootResources: roots, dependencies: { requestJson } }))
+      generatedBoundary: generated, principalScopedRootResources: roots, structuredScope: native.structuredScope, dependencies: { requestJson } }))
       .rejects.toMatchObject({ code: "ASK_AUTHORITY_CHANGED" });
     expect(requestJson).toHaveBeenCalledOnce();
   });
 });
+
+// Exact test-request mapping, declared independently of the provider's plan.
+function relatedScope(f: ReturnType<typeof fixture>, relationshipIds: string[], request: string) {
+  const links = f.build().exploration_boundary.pack.resources.find(resource => resource.id === f.root)!.relationships;
+  return { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
+    id: "references", intended_use: request, references: ["job"], disposition: "include", subjects: [{ root_resource: f.root, mode: "trusted_principal" }],
+    targets: [{ root_resource: f.root, resource: f.root, operation: "resource" },
+      { root_resource: f.root, resource: f.root, operation: "return", field: "business_ref" },
+      ...relationshipIds.flatMap(id => {
+        const link = links.find(link => link.id === id); if (!link) throw new Error("Only the declared inspected relationship may be mapped");
+        return [{ root_resource: f.root, resource: f.root, operation: "relationship", relationship: id, qualifier: link.target_resource },
+          { root_resource: f.root, resource: link.target_resource, operation: "return", relationship: id, field: "business_ref" }];
+      })],
+  }] };
+}
 
 function withoutLinks(generated: ExplorationBoundaryDraft) {
   const pending = structuredClone(generated);
