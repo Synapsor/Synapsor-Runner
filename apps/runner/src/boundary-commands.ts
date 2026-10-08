@@ -1,3 +1,4 @@
+import { currentBoundaryJobReadRequests } from './boundary-job-read-requests.js';
 import { createReadRevisionCheckpointHost } from "./authoring-read-revision-checkpoint-host.js";
 import { createReadAssistanceCheckpointHost } from "./authoring-read-assistance-checkpoint-host.js";
 import { presentAuthoringRecovery } from "./authoring-interrupted-step-review.js";
@@ -12183,6 +12184,10 @@ async function inspectBoundaryJobAuthoringState(input: {
         ...(activeResourceIds.length ? { active_resource_ids: activeResourceIds } : {}),
         candidate_resource_ids: input.context.candidate.pack.resources.map((resource) => resource.id).sort(),
         exact_reusable_revision_count: reusableReadWorkloads.length,
+        reviewed_requests: currentBoundaryJobReadRequests({workloads: reusableReadWorkloads,
+          candidateDigests: reusableDigests, mode: 'reviewed'}),
+        resumable_requests: currentBoundaryJobReadRequests({workloads: resumableReadWorkloads,
+          candidateDigests: new Set([candidateDigest]), mode: 'resumable'}),
         resumable_draft_count: resumableReadWorkloads.length,
         resumable_resource_ids: resumableReadWorkloads[0]?.analysis.candidate?.pack.resources
           .map((resource) => resource.id)
