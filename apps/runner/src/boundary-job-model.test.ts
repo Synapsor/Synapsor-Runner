@@ -37,6 +37,7 @@ describe("B64 structured planning scope", () => {
     catalog: { resources: [{ id: "telecom.accounts", fields: [{ id: "name" }] }], relationships: [] } });
   const scope = (): ReadScopeProposal => ({ protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested",
     requirements: [{ id: "account", references: ["job"], intended_use: "Selected account information", disposition: "include",
+      subjects: [{root_resource:"telecom.accounts",mode:"trusted_principal"}],
       targets: [{ root_resource: "telecom.accounts", resource: "telecom.accounts", operation: "resource" },
         { root_resource: "telecom.accounts", resource: "telecom.accounts", operation: "return", field: "name" }] }] });
   const planned = () => ({ status: "planned", read_mode: "create", read_intent: "Show selected account information", action_mode: "none",
