@@ -19,14 +19,15 @@ import type { ReadScopeReplacementOwner } from "./read-current-evidence.js";
 // Genuine mapping completion and native saved history, not a fabricated dispatch.
 // The operator's declared correction only changes the requested row limit.
 describe("Read post-review replacement producer", () => {
-  it.each(["ordinary", "captured_before_restart", "cancel_then_resume", "changed_model", "changed_task", "second_decline", "spent_answer_allowance"] as const)("continues %s with one new mapping call, retained history and separate default-No review", async mode => {
+  it.each(["ordinary", "captured_before_restart", "cancel_then_resume", "blank_then_resume", "changed_model", "changed_task", "second_decline", "spent_answer_allowance"] as const)("continues %s with one new mapping call, retained history and separate default-No review", async mode => {
     const f = await nativeFixture();
     try {
       const boundary = (await loadBoundaryReviewContext(f.dir)).candidate;
       const scopeDigest = d({ job: f.input.jobIntent }), contextDigest = d({ binding: f.binding });
       let staged: ReadAssistanceCheckpointUpdate & ReadMeaningRecordUpdate = {};
       let questions: OperatorQuestion[] = [], lastAnalysis: ReadWorkloadView | undefined, locked = false;
-      const references = (): ReadScopeReference[] => [...f.inventory.references, ...questions.flatMap(q => q.read_scope?.mode === "replacement_answer" && q.raw_answer
+      const references = (): ReadScopeReference[] => [...f.inventory.references, ...questions.flatMap(q => q.read_scope?.mode === "replacement_answer" && q.raw_answer?.text.trim() && !q.disposition
+        && !questions.some(next => next.read_scope?.predecessor_id === q.id)
         ? [{ kind: "answer" as const, id: `answer:${q.id}:${q.revision}:${q.raw_answer.id}`, question_id: q.id, question_revision: q.revision,
           answer_id: q.raw_answer.id, digest: d(q.raw_answer), text: q.raw_answer.text }] : [])];
       const current = (): ModelReadScopeContext => ({ binding: f.binding, catalog: f.inventory.catalog, references: references(),
@@ -65,7 +66,10 @@ describe("Read post-review replacement producer", () => {
         readConversationTurns: () => [], scopeDigest: () => scopeDigest, contextDigest: async () => contextDigest,
         assertFresh: async () => {}, checkpointFailure: message => new Error(message),
         install: update => { staged = { ...staged, ...update }; }, save,
-      }, interact: async view => { expect(locked).toBe(false); prompts++; return { kind: "answer", binding: view.binding, raw: cancelAnswer ? null : raw }; } });
+      }, interact: async view => { expect(locked).toBe(false);
+        const shown = (staged.questions ?? questions).find(question => question.id === view.binding.question_id)!;
+        expect(shown.disposition).toBeUndefined(); expect(shown.raw_answer).toBeUndefined();
+        prompts++; return { kind: "answer", binding: view.binding, raw: cancelAnswer ? null : raw }; } });
       const run = (owner?: ReadScopeReplacementOwner) => withAuthoringGenerationRecovery(async () => {
         configureAuthoringGenerationRecovery({ available: () => true, read: () => f.state().generation_recovery,
           current: async () => contextDigest, progress: () => {}, write: generationRecovery => f.persist(buildBoundaryAuthoringResumeState({
@@ -116,15 +120,23 @@ describe("Read post-review replacement producer", () => {
         expect(calls).toBe(1); expect(prompts).toBe(0); expect(d(f.state())).toBe(before); return;
       }
       if (mode === "captured_before_restart") await meaning.answerScopeReplacement(old.id);
-      if (mode === "cancel_then_resume") {
-        cancelAnswer = true;
+      if (mode === "cancel_then_resume" || mode === "blank_then_resume") {
+        cancelAnswer = mode === "cancel_then_resume";
+        const intended = raw; if (mode === "blank_then_resume") raw = " \t ";
         const generation = d(f.state().generation_recovery), history = d(f.state().read!.assistance_history);
         await expect(run(await reloadOwner())).rejects.toThrow("operator correction is still pending");
         expect(calls).toBe(1); expect(d(f.state().generation_recovery)).toBe(generation);
-        expect(d(f.state().read!.assistance_history)).toBe(history); cancelAnswer = false;
+        expect(d(f.state().read!.assistance_history)).toBe(history);
+        const retained = structuredClone(questions.at(-1)!); cancelAnswer = false; raw = intended;
+        if (mode === "blank_then_resume") {
+          expect(retained.raw_answer?.text).toBe(" \t ");
+          const ref = await meaning.answerScopeReplacement(old.id);
+          expect(ref?.revision).toBe(retained.revision + 1);
+          expect(questions.find(question => question.id === retained.id)).toEqual(retained);
+        }
       }
       const result = await run(await reloadOwner());
-      expect(calls).toBe(2); expect(prompts).toBe(mode === "cancel_then_resume" ? 2 : 1); expect(result.read_scope_predecessor_id).toBe(old.id);
+      expect(calls).toBe(2); expect(prompts).toBe(mode === "cancel_then_resume" || mode === "blank_then_resume" ? 2 : 1); expect(result.read_scope_predecessor_id).toBe(old.id);
       expect(f.state().read!.assistance_history!.state.call_count).toBe(2);
       expect(f.state().generation_recovery!.operations).toHaveLength(2);
       expect(f.state().read!.assistance_history!.state.scope_replacements).toHaveLength(1);

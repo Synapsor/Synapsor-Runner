@@ -1,0 +1,9 @@
+{
+  "base": "16522034",
+  "cause": "Existing raw-question reopen happened after exchange; native prompt acknowledgement correctly refuses a disposed question.",
+  "fix": "Protected-currentness save reopens an unanswered cancellation before waiting. Prior blank testimony receives its next native successor before waiting and stays immutable. Capture binds exact displayed live unanswered question. No counter reset, fabricated completion or relaxed public validator.",
+  "before": "Independent public cancel/resume on476:0P1F, raw prompts1 expected2. Local actual producer2F cancel/blank at prompt ingress: /var/tmp/synapsor-b64-read-owned/evidence/replacement-prompt-reentry-before.log",
+  "after": "17 PASS across real producer8 and scope meaning9: /var/tmp/synapsor-b64-read-owned/evidence/replacement-prompt-reentry-final.log",
+  "intermediate": "16P1F initial after: new blank test inventory incorrectly included disposed blank text. Corrected to current nonblank/unretired testimony matching production projector, original counters/assertions retained. Intermediate trace preserved.",
+  "remaining": "Independent unchanged public cancel/resume after required; no public success claim here."
+}

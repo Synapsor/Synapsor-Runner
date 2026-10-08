@@ -326,6 +326,27 @@ export function createReadMeaningHost(input: {
       if (!saved.raw_answer?.text.trim() || saved.disposition) throw access.checkpointFailure("The captured replacement answer");
       return { question_id: saved.id, revision: saved.revision, answer_id: saved.raw_answer.id };
     }
+    if (saved.disposition || saved.raw_answer) {
+      // The prompt's native acknowledgement binds a live unanswered question.
+      // Reopen cancellation before that wait; keep earlier blank testimony in
+      // its immutable revision rather than displaying or overwriting it.
+      await access.mutate(async permit => {
+        const current = await assertReplacementCurrent(reviewId, permit);
+        if (current.digest !== state.digest || current.handoff?.state !== "waiting" || !current.raw)
+          throw new PolicySourceChangedError();
+        let question = reopenOperatorQuestion(current.raw);
+        if (question.raw_answer) question = presentOperatorQuestion(createReadScopeQuestion({
+          id: randomUUID(), revision: question.revision + 1, handoff_id: handoff.id,
+          context_digest: question.context_digest, scope_digest: question.scope_digest,
+          read_scope: { ...question.read_scope!, predecessor_id: question.id },
+        }), handoff.question);
+        access.install({ questions: question.id === current.raw.id
+          ? access.readQuestions().map(q => q.id === question.id ? question : q)
+          : [...access.readQuestions(), question] });
+        await access.save(permit, "The reopened operator Read correction question");
+      });
+      state = await assertReplacementCurrent(reviewId);
+    }
     const controls = { assertCurrent: async () => { await assertReplacementCurrent(reviewId); }, binding: () => replacementBinding(reviewId) };
     const response = await exchange({ kind: "question", binding: controls.binding(), replacement_review_id: reviewId,
       text: handoff.question, material: ["Your exact correction is raw testimony. The revised mapping will require separate explicit review."],
@@ -334,15 +355,9 @@ export function createReadMeaningHost(input: {
     return access.mutate(async permit => {
       const current = await assertReplacementCurrent(reviewId, permit);
       if (current.digest !== state.digest || current.handoff?.state !== "waiting" || !current.raw) throw new PolicySourceChangedError();
-      let question = reopenOperatorQuestion(current.raw);
-      if (question.raw_answer) {
-        // Earlier blank testimony stays in its own immutable answer revision.
-        question = presentOperatorQuestion(createReadScopeQuestion({ id: randomUUID(), revision: question.revision + 1,
-          handoff_id: handoff.id, context_digest: question.context_digest, scope_digest: question.scope_digest,
-          read_scope: { ...question.read_scope!, predecessor_id: question.id } }), handoff.question);
-      }
-      question = raw === null ? leaveOperatorQuestionPending(question, "cancelled")
-        : captureOperatorAnswer(question, raw);
+      if (current.raw.disposition || current.raw.raw_answer) throw access.checkpointFailure("The displayed replacement question");
+      let question = raw === null ? leaveOperatorQuestionPending(current.raw, "cancelled")
+        : captureOperatorAnswer(current.raw, raw);
       if (raw !== null && (!raw.trim() || raw.length > 1000)) question = leaveOperatorQuestionPending(question, "unknown");
       const accepted = raw !== null && !!raw.trim() && raw.length <= 1000;
       access.install({ questions: question.id === current.raw.id ? access.readQuestions().map(q => q.id === question.id ? question : q)

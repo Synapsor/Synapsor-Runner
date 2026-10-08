@@ -8,5 +8,5 @@
 8. Main hook: postReviewReplacement exact read+records+analysis; structuredScope replacementAnswer/resolveReplacementAnswer; checkpoint access.readPreparedRead.
 9. Main must wire public Resume/group routes and same held permit; public and interrupted replacement dispatch remain NOT RUN here.
 10. RP01–07 producer scope accepted; Main public/CAS wait proofs and no-Read planning continuation remain separate.
-11. Host v2 fixture ports14P,17filtered; next independent RP verdict/public wiring.212-row migration remains proposed, no waiver.
-12. Typecheck retains old v2 fixture migration errors; no touched product error. No running provider/test operations at checkpoint.
+11. Five remaining v2 subject sites ported via actual reviewed inventory:44P,130filtered; revision relationship8P fixture-only; two mapping assistance repros cover10 open adapter rows.
+12. Checkpoint7 now9P; prompt reentry cancelled/blank before2F→17P shared fix, R1 public after pending. Assistance proposal16522034/preseal4fc approved contract only; implementation next after public repair.
