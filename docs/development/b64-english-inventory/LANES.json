@@ -39,7 +39,7 @@
   },
   "heavy_slots": {
     "1": "Action finite before/affected tests (Ask released)",
-    "2": "Main Ask group complete; finite slot released",
+    "2": "B65runtime bounded activated-hardlimit and SourceTxn tests; MainAsk complete",
     "3": "R2 Privacy missing-origin independent regression",
     "4": "Chat CP08 typed record before/fix"
   },
@@ -1020,10 +1020,10 @@
       "source": "Allsourceintegratedd73;340P5F before+affected5PASS standardprofile/types0; CP08owner267 independentpending; CP0618dindependentpending"
     },
     "action": {
-      "pin": "89ee9868",
-      "typed": 50,
+      "pin": "5f04859d",
+      "typed": 49,
       "delete": 5,
-      "source": "Actual per-site reconciliation;13deletions removed, independent acceptance pending; slot1 assigned now"
+      "source": "Actualownercheckpoint:1typedcomplete,6partial,13deletions; broader155PASS33FAIL3existingSKIP retained; independentpending"
     }
   }
 }

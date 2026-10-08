@@ -6,9 +6,9 @@ Ask exact98350 integrated0032979d, R1scopedACCEPT4beb:26engine+4UI/types0; Mainc
 Ask Owner typedExplorePlan contract implemented: reviewedcatalogvalidation+Runnerreadback, nohostplan/Englishacceptance; [evidence](docs/development/b64-ask-main-presentation.json). HistoricalEnglishtestports still explicitremaining regression work.
 Privacya733 source23typed/0delete remain; R2scopedaccepted; emptyreduce5b56pendingseed before2FAIL→128PASS. Readowner nativeprogressv4/protectedorigin12controls active; Main public/activewrappers pending.
 Chat444 sourceB66scopedACCEPT,332ownerPASS; branch0/0,Main28typed/1delete integratedd73, 340PASS5FAIL then affected5PASS/types0; CP08owner267independentreview; CP06Main18d before1FAIL→13PASS/types0; inactive4bce.
-Action89ee child resumed underB66 slot1; B65Tester independentAP01-10 preseal;50typed/5delete remain (13deleted). Main NEXT exact whole-Source candidate/completion fence; no blanket completion.
+Action5f048 child underB66 slot1; B65Tester independentAP01-10 preseal;49typed/5delete remain(13deleted), broader155PASS33FAIL3skip retained. Main NEXT exact whole-Source candidate/completion fence; no blanket completion.
 B66 integrated518b9c21 independently accepted native/public both30/40orders; deciding loser check dependency stale, not hardlimit; [proof](docs/development/b66-mysql-writer/MAIN-PUBLIC-RESULT.json).
 B65 fresh30then25=55 remainsFAIL; receipt trigger8bca1P1F preserved; finite admission design763303cf underR2review, no new native DB while review priority.
-Slots1Action/2released/3Readnative/4Chatreview finite;4actualheavy max8workers/run; owned0700HOME/TMP/DB,8GiBmemory+diskfloor; keepallstorage/revisitbelow30GB.
+Slots1Action/2B65runtime/3Readnative/4Chatreview finite;4actualheavy max8workers/run; owned0700HOME/TMP/DB,8GiBmemory+diskfloor; keepallstorage/revisitbelow30GB.
 Evidence [checkpoint](docs/development/b64-english-inventory/PARALLEL-CHECKPOINT.json), [origin](docs/development/b64-read-review-origin.json); no release/fullpublic PASS claimed.
 No paid operation; Luna35total/liabilities15.27063125 inclhold1.2693125/remain19.72936875 preserved; commit/privatepush each checkpoint.
