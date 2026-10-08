@@ -4,7 +4,7 @@ import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ExplorationBoundaryDraft } f
 import { generateModelReadWorkload } from "./read-workload-model.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
 import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
-import { type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
+import { readWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 
 // Public fixture facts: seven requested areas and their actual inspected IDs.
 // The response is a routing summary, not a replacement business policy.
@@ -131,6 +131,23 @@ describe("original requested Read scope versus routing summary", () => {
       reason_binding: { kind: "requested_read_scope", digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u) },
     });
     const retained = structuredClone(checkpoint);
+    if (checkpoint?.stage !== "waiting" || checkpoint.pending_question.kind !== "clarification") throw new Error("native scope question not reached");
+    const { digest: _digest, schema_version: _schema, ...legacyBody } = structuredClone(checkpoint);
+    delete legacyBody.pending_question.request.reason_binding;
+    const legacy = readWorkloadAssistanceCheckpoint(legacyBody);
+    const noLegacySend = vi.fn(), noLegacyAnswer = vi.fn(), noLegacySave = vi.fn();
+    await expect(generateModelReadWorkload({ ...base, resumeCheckpoint: legacy,
+      dependencies: { requestJson: noLegacySend }, clarificationHandler: noLegacyAnswer, onCheckpoint: noLegacySave,
+    })).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
+    expect(noLegacySend).not.toHaveBeenCalled(); expect(noLegacyAnswer).not.toHaveBeenCalled(); expect(noLegacySave).not.toHaveBeenCalled();
+    expect(legacy.state.call_count).toBe(checkpoint.state.call_count);
+    const { digest: _hash, schema_version: _version, ...wrongBody } = structuredClone(checkpoint);
+    wrongBody.pending_question.request.reason_binding!.digest = `sha256:${"f".repeat(64)}`;
+    const wrong = readWorkloadAssistanceCheckpoint(wrongBody);
+    await expect(generateModelReadWorkload({ ...base, resumeCheckpoint: wrong,
+      dependencies: { requestJson: noLegacySend }, clarificationHandler: noLegacyAnswer,
+    })).rejects.toThrow("CHECKPOINT_STALE");
+    expect(noLegacySend).not.toHaveBeenCalled(); expect(noLegacyAnswer).not.toHaveBeenCalled();
     const noSend = vi.fn(), noAnswer = vi.fn();
     await expect(generateModelReadWorkload({ ...base, operatorNamingContext: "Read payments.", resumeCheckpoint: checkpoint,
       dependencies: { requestJson: noSend }, clarificationHandler: noAnswer,
@@ -314,6 +331,25 @@ describe("native bounded requested-scope evidence", () => {
     if (refusal) await expect(operation).rejects.toThrow(refusal);
     else expect(await operation).toMatchObject({ analysis: { status: "ready" }, authority_granted: false,
       source_database_changed: false, source_query_executed: false });
+    expect(boundary).toEqual(before);
+  });
+});
+
+
+describe("host-only scope reason binding", () => {
+  it("refuses a model-supplied scope-purpose tag without asking or accepting it", async () => {
+    const boundary = scopeBoundary(["finance.accounts"]), before = structuredClone(boundary);
+    const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Not a host question." }));
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "false_scope_purpose",
+      name: "runner__submit_read_workloads", arguments: JSON.stringify({ clarification_request: { resource: "finance.accounts",
+        reason: "Business records", question: "Which records?", reason_binding: { kind: "requested_read_scope",
+          alternatives: ["finance.accounts"], digest: `sha256:${"0".repeat(64)}` } } }) }] } }));
+    await expect(generateModelReadWorkload({ name: "finance_reads", generatedBoundary: boundary,
+      allowedQuestions: ["Read account status."], operatorNamingContext: "Read finance.accounts.",
+      provider: "openai", model: "declared-scope-fixture", apiKey: "local-fixture-only", egressAcknowledged: true,
+      deferNarration: true, dependencies: { requestJson }, clarificationHandler })).rejects.toThrow(/reason_binding|CLARIFICATION_REFUSED/u);
+    expect(clarificationHandler).not.toHaveBeenCalled();
+    expect(requestJson).toHaveBeenCalledTimes(2);
     expect(boundary).toEqual(before);
   });
 });

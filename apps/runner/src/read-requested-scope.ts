@@ -68,10 +68,18 @@ export function resolveRequestedReadScope(input: {
           && phraseWords.every((word, index) => word === negativeWords[index]);
       })) excluded.add(definition.resource);
   }
-  const unknownReference = qualifiedReferences(text).some(token => !ids.some(id => token === id || token.startsWith(`${id}.`)));
+  // An established clause cannot erase a separate unsupported positive clause.
+  // This remains bounded syntax evidence, not general English entailment.
+  const unresolved = readOrientedJobFragments(input.original).some(fragment => {
+    const references = qualifiedReferences(fragment), localWords = requestWords(fragment);
+    return references.some(token => !ids.some(id => token === id || token.startsWith(`${id}.`)))
+      || references.length === 0 && candidateGroups(localWords, input.resources, new Set()).length === 0
+        && !input.definitions.some(definition => ids.includes(definition.resource)
+          && definition.phrases.some(phrase => containsWordSequence(localWords, normalizedSemanticWords(phrase))));
+  });
   return { required: [...required], excluded: [...excluded], candidates,
     ambiguous: candidates.filter(group => group.length > 1), conflicts: [...required].filter(id => excluded.has(id)),
-    unresolved: Boolean(text) && (unknownReference || required.size === 0 && candidates.length === 0) };
+    unresolved };
 }
 
 function qualifiedReferences(text: string): string[] {
@@ -133,6 +141,10 @@ export function exactOnlyReadResourceIds(text: string, availableResourceIds: rea
 }
 
 function readOrientedJobText(jobIntent: string): string {
+  return readOrientedJobFragments(jobIntent).join(" ");
+}
+
+function readOrientedJobFragments(jobIntent: string): string[] {
   const fragments = requestClauses(jobIntent).filter(clause => !negativeTarget(clause)).join("; ")
     // Keep nominal Read authority and its explicit exception in the same
     // clause: splitting "saved job and Read Boundary" loses preservation,
@@ -150,7 +162,7 @@ function readOrientedJobText(jobIntent: string): string {
       const actionConnector = /\b(?:and|then)\s+(?:(?:let|allow)\s+(?:the\s+)?(?:agent|model|user|customer|them|it)\s+)?(?:propos(?:e|ing)|update|insert|delete|write|apply|approve|change)\b/iu.exec(afterRead);
       return [actionConnector ? afterRead.slice(0, actionConnector.index) : afterRead];
     });
-  return fragments.join(" ");
+  return fragments;
 }
 
 function unquotedRequest(text: string): string {
