@@ -1,0 +1,14 @@
+{
+  "state": "BEFORE_NOTRUN_OWNER_CONTROLLING_DECISION_NO_PRODUCT_EDIT",
+  "source_pin": "ad269c52bb55310aa2e37794806813e0c2b726aa",
+  "fixtures_sha256": {
+    "apps/runner/src/model-ask-typed-retirement.test.ts": "f823dc781b55200d817776545eba118babe9d0629a491d660964b2675e7bdff1",
+    "apps/runner/src/model-ask-typed-plan.test.ts": "bf3be5adfdeb0914138d673fe3f0a4894e04d0a3eb4aea864c9b64c1b3eb69e7"
+  },
+  "new_cases": 15,
+  "original_typed_plan_cases": 12,
+  "design": "Owner now explicitly chooses model typed ExplorePlan and actual reviewed gateway validator only with actual CLI Runner readback. Remove entire localPlanRequirements/requirements matching/direct-call/answerability/resource choices and all transitive GA01-03 question-English intent gates/recovery/semantic repairs/forced catalog or query. No English acceptance/fallback, guessed binding or native proof store/unbound gate. Keep existing opt-out preference resolver/validation/UI confirmation ownership; false question_to_plan_checked both modes. Retain formal AskPlanSyntaxRepair (typed exact semantic preservation), source gateway/tool schema/currentness/privacy/scope/budget/egress/authoring controls. Renderer shows actual session trace plan via collector, full structure/limits, existing value/start/end literal redaction, status and actual code; bounded terminal output, no semantic proof claim. Invalid typed catalog/boundary contract refuses before query/budget as before. Prior AT02/03/05 semantic-risk tests become current Owner choice, originals never rewritten. Conditional unbound9 remains obsolete proposal preserved, not acceptance.",
+  "before_historical": "original17=7P10F0bf and every laterfailure/log retained; new before required prior semanticreplacement",
+  "slot": "HOLD heavy until explicit Main slot2 release; then finite max1/offline >=8GiB floors",
+  "review": "R1 independent verdict mandatory; no delegate/R2 acceptance"
+}
