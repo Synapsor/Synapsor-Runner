@@ -4535,6 +4535,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   // Read edits and metadata recovery recompile saved outcomes, not an unfinished agenda.
   let retainedReadEdit: { action?: BoundaryAuthoringResumeAction; addition?: BoundaryAuthoringActionAddition } | undefined = pendingReadRevision
     ? { action: structuredClone(resumeAction), addition: structuredClone(pendingActionAddition) } : undefined;
+  const currentProgramAction = () => retainedReadEdit ? retainedReadEdit.action : preserveProgramRevisionAgenda ? programRevisionAgenda : resumeAction;
   // A prepared business edit may outlive a separate disabled Read review.
   // Keep its acknowledged request while the existing unchanged-AST path
   // revalidates dependencies; this is not permission to apply that edit.
@@ -4568,7 +4569,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     return {context,store};
   };
   const ensureInputPolicyAgenda = async (preserveCurrentReview = false, savedRoot?: OperatorQuestion) => {
-    const sources=authoringConversation?.policySources,outcomes=resumeAction?.intended_outcomes,source=activePolicySource(sources);
+    const sources=authoringConversation?.policySources,outcomes=currentProgramAction()?.intended_outcomes,source=activePolicySource(sources);
     if(actionWorkflow!=='program'||!sources||!source||!outcomes?.length){
       if(savedRoot)throw new PolicySourceChangedError();
       return;
@@ -4582,7 +4583,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           readHandoffs:()=>ownerHandoffs,
           readRecovery:()=>generationRecovery,
           readConversationTurns:()=>authoringConversation?.turns,
-          readOutcomes:()=>resumeAction?.intended_outcomes,
+          readOutcomes:()=>currentProgramAction()?.intended_outcomes,
           scopeDigest:ownerQuestionScope,
           contextDigest:(permit,sourceContext,savedSourceContext)=>ownerQuestionContext(permit,'input_policy',sourceContext,savedSourceContext),
           assertResumeCurrent:permit=>assertAuthoringResumeCurrent(undefined,false,permit),
@@ -4683,8 +4684,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         ...((retainedReadEdit ? retainedReadEdit.addition : pendingActionAddition)
           ? { pendingActionAddition: retainedReadEdit ? retainedReadEdit.addition : pendingActionAddition } : {}),
         ...(resumeRead ? { read: resumeRead } : {}),
-        ...((retainedReadEdit ? retainedReadEdit.action : preserveProgramRevisionAgenda ? programRevisionAgenda : resumeAction)
-          ? { action: retainedReadEdit ? retainedReadEdit.action : preserveProgramRevisionAgenda ? programRevisionAgenda : resumeAction } : {}),
+        ...(currentProgramAction() ? { action: currentProgramAction() } : {}),
         ...(activeResume ? { previous: activeResume } : {}),
       });
       assertRunning();

@@ -52,21 +52,21 @@
     "before": "helper01f97f8d real planner ordinaryResume: native PLANNING_ACCEPTED1, coverage1, receiptmapping0, ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION; resume-native-v1 retained",
     "cause": "planned review-only returns into saved Review before normal planning persistence; unlike clarification, planned result discarded actual decoded completion sidecar",
     "fix": "Every actually decoded planned routing sequence carries its host-only completion. Existing planning Resume CAS saves conversation and checkpoints only those exact owned turns before dispatch. Shared consumed-turn checkpoint also underlies durable Source producer ACK. No receipt-specific branch, no new schema or authority, no historical/partial/unknown promotion. Completed correction turns are included from actual returned objects.",
-    "validation": "types0, existinggeneration+planning200P; actualpublicsuccessor pending",
+    "validation": "types0, generation+planning200P, boundary-cli443P; actual native planner Resume1P. Fault successor2P includes native competing CAS.",
     "boundary_size": "20078; +6 for generic completion protected-save wiring over routeextraction20072, net-22 vs20100"
   },
   "pre_action_assessment_route": {
     "before": "studio-edit-b59-v2: original studio editPASS; supplemental receipt editFAIL ACTION_WORK_UNIT_SOURCE_ASSESSMENT_INCOMPLETE after realtyped OBLIGATION_RECEIPT_REQUIREMENT_UNESTABLISHED, no receipt question",
     "fix": "Existing complete-assessment consumers use shared typed pending-decision adapter once, existing host and protected ports, then recheck only after saved meaning; complete report still required and all old assessment refusals remain. Applies before/after confined repair, not specific receipt/table/fixture logic. Native Action/Source currentness checked around every assessment.",
     "types": 0,
-    "public_successor": "pending",
+    "public_successor": "studio-edit-route-v3: receipt question/mapping/confirmation1/1/1 and native Source/Resume saved; later Action validate callback requires inspection, edit not saved. Under diagnosis; no PASS.",
     "boundary_lines": 20097,
     "line_accounting": "includes acceptedB59fiveportlines; genericassessmentportwiring+14. Compared owner20100 still-3. No receiptif or copiedselection."
   },
   "planned_checkpoint_failure": {
     "before": "independent staticR2 thennative52455ce4 planner-race-before-v1 0P1F: actualPLANNING_ACCEPTED\u2192competing nativeResume\u2192publicreturns0 silently, noSETUPNEEDSATTENTION; competingrecordretained, noadditionalprovider inthisprefix",
     "fix": "Generic planning catch propagates any failure after a validated planned result before the planned break. It cannot reuse that result for dispatch or open a fresh planner fallback after its protected checkpoint failed.",
-    "after": "pendingnative exactsuccessor",
+    "after": "Exact native race + healthy actual Resume2P0F/12.41sec; competing record preserved, error surfaced, no downstream dispatch; helper97cb2dfc/types0; planner-race-after-v1. Independent adjudication pending.",
     "boundary_lines_root": 20093
   }
 }
