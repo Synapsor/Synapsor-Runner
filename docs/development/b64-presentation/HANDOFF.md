@@ -1,0 +1,14 @@
+# COMPLETE — finite Read planning fixture port
+- Paid CLOSED; no usage-triggered pause (Owner controls pause); no new feature lane.
+- B64 T0 2026-10-08T06:32:23Z; end Oct13 same; final24 Oct12 same, unchanged.
+- Workspace b56-owned-dir-remedy; branch codex/b64-read-fixture-context-20261008 from Maina6a59a62; prior branch preserved.
+- Own only typed-read-context/reviewed-read-scope helpers and boundary-job-model.test; no product/shared hotspot edit.
+- Actual ordinary disabled structural review + compiler + real Read producer + native generation/question/confirmation CAS + cold read replaces synthetic saved boundary.
+- Pure planning contexts remain unconfirmed explicit typed subjects; finite responder uses actual transmitted context and declared facts.
+- Planning before18PASS67FAIL; final80PASS5FAIL; original default native18PASS unchanged; assertions/call counts unchanged.
+- Types12 remaining unrelated Read migration errors; zero owned-file diagnostics.
+- Five preserved legacy-positive contracts: threshold English redirect; zero-call sole-outcome shortcut; unchanged historical capture; two description-only exact reuse/resume.
+- Existing actual native reusable/resumable positives PASS; five old assertions await independent contract verdict, not silently relaxed.
+- [Compact evidence record](PLANNING-FIXTURE-DEV-RECORD.json); raw logs /var/tmp/synapsor-b64-action-clarification-owned/out/.
+- Exact next: Main/R1/R2 review ports and five contract decisions; integrate only accepted scope; original history/captures preserved.
+- All WIP private committed/pushed; no owned tests/Runner/model processes or pending paid operation.

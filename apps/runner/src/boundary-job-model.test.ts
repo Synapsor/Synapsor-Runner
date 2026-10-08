@@ -286,25 +286,27 @@ describe("model Boundary job planning", () => {
   });
 
   it("does not invent explicit resource requests from individual words in a mixed business job", async () => {
+    const typed=declaredReadContext("Help customers understand their services and handle offered plan changes according to this policy, including automatic completion where allowed.",["telecom.service_lines"]);
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "plan", name: "runner__plan_boundary_job",
-      arguments: JSON.stringify({ status: "planned", read_mode: "create", read_intent: "Customer information according to the attached policy.",
+      arguments: JSON.stringify({ status: "planned", read_scope:typed.proposal, read_mode: "create", read_intent: "Customer information according to the attached policy.",
         action_mode: "create", action_intent: "Handle offered plan changes according to the policy with separately reviewed automatic completion.",
         summary: "Map the policy's customer information and one plan-change outcome." }),
     }] } }));
     const result = await planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
       jobIntent: "Help customers understand their services and handle offered plan changes according to this policy, including automatic completion where allowed.",
-      availableResourceIds: ["telecom.plan_change_offers", "telecom.service_lines"], currentState: reusableState, egressAcknowledged: true });
+      availableResourceIds: ["telecom.plan_change_offers", "telecom.service_lines"], currentState: reusableState, egressAcknowledged: true, structuredScope:typed.structuredScope });
     expect(result).toMatchObject({ state: "planned", correction_used: false });
     expect(requestJson).toHaveBeenCalledOnce();
   });
   it.each(["schema", "missing_intent", "incomplete", "wrong_tool", "malformed"])("preserves precise %s failure and the approved source through exactly one correction", async (failure) => {
+    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
     const bodies: Array<Record<string, unknown>> = [];
     let diagnostic: BoundaryJobPlanningDiagnostic | undefined;
     const policy = newPolicySourceSession();
     const source = policyTextSnapshot(Buffer.from("Allow routine changes. Keep account IDs private.\nAt most 10 overall, 3 per account. Complete only after separate execution review."), "policy.txt");
     policy.snapshots = [source]; policy.active = 1;
     policy.approvals = [{ digest: source.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
-    const valid = { status: "planned", read_mode: "reuse", action_mode: "create", action_strategy: "rule_derived",
+    const valid = { status: "planned", read_scope: typed.proposal, read_mode: "reuse", action_mode: "create", action_strategy: "rule_derived",
       action_intent: "Apply the attached policy to offered plan changes, including approval limits and separately reviewed automatic completion.", summary: "Preserve Read and draft one bounded action." };
     const stateBefore = structuredClone(reusableState);
     const result = await planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "secret-test-key",
@@ -319,7 +321,7 @@ describe("model Boundary job planning", () => {
             name: first && failure === "wrong_tool" ? "untrusted_secret_tool_name" : "runner__plan_boundary_job",
             arguments: first && failure === "malformed" ? "{unparseable" : JSON.stringify(args) }],
         } };
-      } } }, jobIntent: "Draft the changes in my attached policy.", currentState: reusableState, egressAcknowledged: true,
+      } } }, jobIntent: "Draft the changes in my attached policy.", currentState: reusableState, egressAcknowledged: true, structuredScope: typed.structuredScope,
       onDiagnostic: (value) => { diagnostic = value; } });
     expect(result).toMatchObject({ correction_used: true, state: "planned", action_mode: "create", read_mode: "reuse" });
     expect(bodies).toHaveLength(2);
@@ -365,6 +367,8 @@ describe("model Boundary job planning", () => {
   });
 
   it("resumes an exact disabled Read mapping instead of asking the model to map it again", async () => {
+    const typed=await preparedNativeReadContext(reusableState.read.resource_ids);
+    const resumable={protocol:READ_SCOPE_PROTOCOL,current:()=>{const c=typed.structuredScope.current();return {...c,resumable:c.reusable};}};
     let requestBody = "";
     const requestJson = vi.fn(async (request) => {
       requestBody = JSON.stringify(request.body);
@@ -376,7 +380,7 @@ describe("model Boundary job planning", () => {
             call_id: "call_resume_boundary_job",
             name: "runner__plan_boundary_job",
             arguments: JSON.stringify({
-              status: "planned",
+              status: "planned", read_scope:typed.proposal,
               read_mode: "resume",
               action_mode: "create",
               action_intent: "Continue the bounded spend-alert proposal against the already mapped customer reads.",
@@ -406,7 +410,7 @@ describe("model Boundary job planning", () => {
           resumable_resource_ids: ["telecom.accounts", "telecom.billing_preferences"],
         },
       },
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope:resumable,
     })).resolves.toMatchObject({
       state: "planned",
       read_mode: "resume",
@@ -423,6 +427,7 @@ describe("model Boundary job planning", () => {
   });
 
   it("keeps Action thresholds out of job routing and repairs to a focused Action intent", async () => {
+    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
     let attempt = 0;
     const requestJson = vi.fn(async () => {
       attempt += 1;
@@ -439,7 +444,7 @@ describe("model Boundary job planning", () => {
                   question: "What maximum approval count and rolling window should apply to this proposal?",
                 }
               : {
-                  status: "planned",
+                  status: "planned", read_scope: typed.proposal,
                   read_mode: "reuse",
                   action_mode: "create",
                   action_intent: "Prepare the bounded spend-alert proposal and retain its unresolved rolling approval policy for focused Action authoring.",
@@ -460,7 +465,7 @@ describe("model Boundary job planning", () => {
       },
       jobIntent: "Keep the current reads and add a spend-alert proposal with a rolling approval limit.",
       currentState: reusableState,
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope: typed.structuredScope,
     })).resolves.toMatchObject({
       state: "planned",
       read_mode: "reuse",
@@ -471,6 +476,7 @@ describe("model Boundary job planning", () => {
   });
 
   it("routes new outcomes to fixed tools even when a model uses the legacy strategy label", async () => {
+    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
     let attempt = 0;
     const requestBodies: string[] = [];
     const requestJson = vi.fn(async (request: { body: unknown }) => {
@@ -484,7 +490,7 @@ describe("model Boundary job planning", () => {
             call_id: `call_exact_refund_${attempt}`,
             name: "runner__plan_boundary_job",
             arguments: JSON.stringify({
-              status: "planned",
+              status: "planned", read_scope: typed.proposal,
               read_mode: "reuse",
               action_mode: "create",
               action_intent: "For a selected posted charge confirmed as duplicate, request an exact refund equal to that charge.",
@@ -505,7 +511,7 @@ describe("model Boundary job planning", () => {
       },
       jobIntent: "For a selected posted charge that is authoritatively confirmed as duplicate, let the agent request an exact refund equal to that charge.",
       currentState: reusableState,
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope: typed.structuredScope,
     })).resolves.toMatchObject({
       state: "planned",
       read_mode: "reuse",
@@ -518,6 +524,8 @@ describe("model Boundary job planning", () => {
   });
 
   it("routes a copied source-row refund through verified Action Rules", async () => {
+    const job = "Let an authenticated support customer inspect only their own account, tickets, and charges. For a posted, duplicate-confirmed charge at most 2500 cents, let the agent propose one submitted account-credit refund copying the charge and amount. Auto-approve at most 100 per 24 hours and one per trusted tenant plus principal per 15 days; otherwise require one support_reviewer. Proposal only; never apply or write source data.";
+    const typed=declaredReadContext(job,["support_ops.customer_accounts","support_ops.support_tickets","support_ops.charges"]);
     let attempt = 0;
     const requestBodies: string[] = [];
     const requestJson = vi.fn(async (request: { body: unknown }) => {
@@ -531,7 +539,7 @@ describe("model Boundary job planning", () => {
             call_id: `call_copied_refund_${attempt}`,
             name: "runner__plan_boundary_job",
             arguments: JSON.stringify({
-              status: "planned",
+              status: "planned", read_scope:typed.proposal,
               read_mode: "create",
               read_intent: "Let the authenticated customer inspect only their own account, tickets, and charges.",
               action_mode: "create",
@@ -543,7 +551,6 @@ describe("model Boundary job planning", () => {
         },
       };
     });
-    const job = "Let an authenticated support customer inspect only their own account, tickets, and charges. For a posted, duplicate-confirmed charge at most 2500 cents, let the agent propose one submitted account-credit refund copying the charge and amount. Auto-approve at most 100 per 24 hours and one per trusted tenant plus principal per 15 days; otherwise require one support_reviewer. Proposal only; never apply or write source data.";
 
     await expect(planModelBoundaryJob({
       session: {
@@ -568,7 +575,7 @@ describe("model Boundary job planning", () => {
         "support_ops.refund_requests",
         "support_ops.support_tickets",
       ],
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope:typed.structuredScope,
     })).resolves.toMatchObject({
       state: "planned",
       read_mode: "create",
@@ -581,6 +588,7 @@ describe("model Boundary job planning", () => {
   });
 
   it("reuses an exact Read revision and routes an action-only continuation to Action drafting", async () => {
+    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
     const requests: string[] = [];
     const requestJson = vi.fn(async (request) => {
       requests.push(JSON.stringify(request.body));
@@ -592,7 +600,7 @@ describe("model Boundary job planning", () => {
             call_id: "call_boundary_job",
             name: "runner__plan_boundary_job",
             arguments: JSON.stringify({
-              status: "planned",
+              status: "planned", read_scope: typed.proposal,
               read_mode: "reuse",
               action_mode: "create",
               action_intent: "Propose changing only monthly_spend_alert_cents with reviewed bounds and rolling approval limits.",
@@ -612,7 +620,7 @@ describe("model Boundary job planning", () => {
       },
       jobIntent: "Reuse the existing Read Boundary and add only a bounded spend-alert proposal.",
       currentState: reusableState,
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope: typed.structuredScope,
     })).resolves.toMatchObject({
       state: "planned",
       read_mode: "reuse",
@@ -627,6 +635,7 @@ describe("model Boundary job planning", () => {
   });
 
   it("accepts a bounded expanded Action routing intent", async () => {
+    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
     const expandedIntent = `Propose only the reviewed spend-alert update. ${"Keep proposal-only policy detail. ".repeat(18)}`.trim();
     expect([...expandedIntent].length).toBeGreaterThan(500);
     expect([...expandedIntent].length).toBeLessThanOrEqual(1_000);
@@ -638,7 +647,7 @@ describe("model Boundary job planning", () => {
           call_id: "call_expanded_action_intent",
           name: "runner__plan_boundary_job",
           arguments: JSON.stringify({
-            status: "planned",
+            status: "planned", read_scope: typed.proposal,
             read_mode: "reuse",
             action_mode: "create",
             action_intent: expandedIntent,
@@ -657,7 +666,7 @@ describe("model Boundary job planning", () => {
       },
       jobIntent: "Reuse the reviewed reads and add only the bounded spend-alert proposal.",
       currentState: reusableState,
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope: typed.structuredScope,
     })).resolves.toMatchObject({
       state: "planned",
       read_mode: "reuse",
@@ -674,6 +683,8 @@ describe("model Boundary job planning", () => {
       "Auto-approve only duplicate-charge refunds at or below 2500 cents, at most 100 for this outcome per rolling 24 hours and one per trusted tenant plus principal per rolling 15 days.",
       "Anything missing, stale, ineligible, or outside those limits requires one support_reviewer, and source writeback must remain disabled.",
     ].join(" ");
+    const typed=declaredReadContext(job,["support_ops.customer_accounts","support_ops.support_tickets","support_ops.charges","support_ops.refund_requests"]);
+
     expect([...job].length).toBeGreaterThan(500);
     expect([...job].length).toBeLessThanOrEqual(2_000);
     const requestBodies: string[] = [];
@@ -687,7 +698,7 @@ describe("model Boundary job planning", () => {
             call_id: "call_long_job",
             name: "runner__plan_boundary_job",
             arguments: JSON.stringify({
-              status: "planned",
+              status: "planned", read_scope:typed.proposal,
               read_mode: "create",
               read_intent: "Let the authenticated customer inspect only their own account, tickets, charges, and refund history.",
               action_mode: "create",
@@ -717,7 +728,7 @@ describe("model Boundary job planning", () => {
           exact_reusable_revision_count: 0,
         },
       },
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope:typed.structuredScope,
     })).resolves.toMatchObject({
       state: "planned",
       read_mode: "create",
@@ -728,6 +739,7 @@ describe("model Boundary job planning", () => {
   });
 
   it("splits fresh Read and Action intent instead of sending policy wording as a Read question", async () => {
+    const typed=declaredReadContext("Read my account and propose a spend-alert update, but never apply it.",["telecom.accounts"]);
     const requestJson = vi.fn(async () => ({
       status: 200,
       body: {
@@ -736,7 +748,7 @@ describe("model Boundary job planning", () => {
           call_id: "call_boundary_job",
           name: "runner__plan_boundary_job",
           arguments: JSON.stringify({
-            status: "planned",
+            status: "planned", read_scope:typed.proposal,
             read_mode: "create",
             read_intent: "Let the authenticated customer inspect their own account and invoices.",
             action_mode: "create",
@@ -765,7 +777,7 @@ describe("model Boundary job planning", () => {
           resource_ids: [],
         },
       },
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope:typed.structuredScope,
     })).resolves.toMatchObject({
       state: "planned",
       read_mode: "create",
@@ -776,6 +788,7 @@ describe("model Boundary job planning", () => {
   });
 
   it("retains the full request when a routing summary does not repeat every area", async () => {
+    const typed=declaredReadContext("Let the authenticated telecom customer read only their own account, subscription, service lines, recent usage, invoices, payments, billing preferences, and support cases. Let the agent propose changing only monthly_spend_alert_cents. Never apply or write source changes.",["telecom.accounts","telecom.subscriptions","telecom.service_lines","telecom.usage_daily","telecom.invoices","telecom.payments","telecom.billing_preferences","telecom.support_cases"]);
     let attempt = 0;
     const requests: string[] = [];
     const requestJson = vi.fn(async (request) => {
@@ -792,7 +805,7 @@ describe("model Boundary job planning", () => {
             call_id: `call_boundary_job_${attempt}`,
             name: "runner__plan_boundary_job",
             arguments: JSON.stringify({
-              status: "planned",
+              status: "planned", read_scope:typed.proposal,
               read_mode: "create",
               read_intent: readIntent,
               action_mode: "create",
@@ -836,7 +849,7 @@ describe("model Boundary job planning", () => {
           resource_ids: [],
         },
       },
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope:typed.structuredScope,
     });
 
     expect(result).toMatchObject({
@@ -853,6 +866,7 @@ describe("model Boundary job planning", () => {
   });
 
   it("returns one model clarification rather than inventing a source field", async () => {
+    const typed = declaredReadContext("Continue the customer setup.", reusableState.read.resource_ids);
     const requestJson = vi.fn(async () => ({
       status: 200,
       body: {
@@ -877,7 +891,7 @@ describe("model Boundary job planning", () => {
       },
       jobIntent: "Continue the customer setup.",
       currentState: reusableState,
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope: typed.structuredScope,
     })).resolves.toMatchObject({
       state: "clarification",
       question: expect.stringContaining("remain unchanged"),
@@ -887,6 +901,7 @@ describe("model Boundary job planning", () => {
   });
 
   it("gives a new conversation both live authority and disabled Action changes without exposing values", async () => {
+    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
     let requestBody = "";
     const requestJson = vi.fn(async (request) => {
       requestBody = JSON.stringify(request.body);
@@ -898,7 +913,7 @@ describe("model Boundary job planning", () => {
             call_id: "call_existing_state",
             name: "runner__plan_boundary_job",
             arguments: JSON.stringify({
-              status: "planned",
+              status: "planned", read_scope: typed.proposal,
               read_mode: "reuse",
               action_mode: "reuse",
               summary: "I will keep the live Read authority and the existing Action revisions unchanged.",
@@ -937,7 +952,7 @@ describe("model Boundary job planning", () => {
           },
         ],
       },
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope: typed.structuredScope,
     })).resolves.toMatchObject({
       state: "planned",
       read_mode: "reuse",
@@ -952,6 +967,7 @@ describe("model Boundary job planning", () => {
   });
 
   it("selects one exact semantic outcome for a natural-language revision", async () => {
+    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
     let attempt = 0;
     const requestJson = vi.fn(async () => {
       attempt += 1;
@@ -963,7 +979,7 @@ describe("model Boundary job planning", () => {
             call_id: `call_action_revision_${attempt}`,
             name: "runner__plan_boundary_job",
             arguments: JSON.stringify({
-              status: "planned",
+              status: "planned", read_scope: typed.proposal,
               read_mode: "reuse",
               action_mode: "revise",
               action_intent: "Keep the pause outcome but require two billing reviewers.",
@@ -1008,7 +1024,7 @@ describe("model Boundary job planning", () => {
       },
       jobIntent: "Change the account pause policy to require two billing reviewers.",
       currentState,
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope: typed.structuredScope,
     })).resolves.toMatchObject({
       state: "planned",
       read_mode: "reuse",
@@ -1021,6 +1037,7 @@ describe("model Boundary job planning", () => {
   });
 
   it("canonicalizes a redundant Read intent while revising the sole semantic outcome", async () => {
+    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
     const requestJson = vi.fn(async () => ({
       status: 200,
       body: {
@@ -1029,7 +1046,7 @@ describe("model Boundary job planning", () => {
           call_id: "call_existing_refund_revision",
           name: "runner__plan_boundary_job",
           arguments: JSON.stringify({
-            status: "planned",
+            status: "planned", read_scope: typed.proposal,
             read_mode: "reuse",
             read_intent: "Keep the current customer Read Boundary unchanged.",
             action_mode: "revise",
@@ -1063,7 +1080,7 @@ describe("model Boundary job planning", () => {
       },
       jobIntent: "Keep the active Read boundary unchanged. Change only the existing refund request outcome to require two support_reviewer approvals.",
       currentState,
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope: typed.structuredScope,
     })).resolves.toMatchObject({
       state: "planned",
       read_mode: "reuse",
@@ -1081,12 +1098,13 @@ describe("model Boundary job planning", () => {
       },
       jobIntent: "Keep the active Read boundary unchanged. Change only the existing refund request outcome to require two support_reviewer approvals.",
       currentState,
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope: typed.structuredScope,
     });
     expect(result).not.toHaveProperty("read_intent");
   });
 
   it("exposes a bounded removal route and prepares only one exact disabled outcome replacement", async () => {
+    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
     let removalSchema: Record<string, unknown> | undefined;
     const requestJson = vi.fn(async (request) => {
       const tool = (request.body.tools as Array<Record<string, unknown>>).find((candidate) =>
@@ -1095,7 +1113,7 @@ describe("model Boundary job planning", () => {
       removalSchema = schema.oneOf.find((candidate) =>
         (candidate.properties as Record<string, { enum?: string[] }>).action_mode?.enum?.includes("remove"));
       return { status: 200, body: { output: [{ type: "function_call", call_id: "remove",
-        name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "reuse",
+        name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_scope: typed.proposal, read_mode: "reuse",
           action_mode: "remove", action_outcome: "billing.pause_account",
           summary: "Prepare a disabled replacement without the pause-account outcome." }) }] } };
     });
@@ -1110,7 +1128,7 @@ describe("model Boundary job planning", () => {
     await expect(planModelBoundaryJob({
       session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
       jobIntent: "Remove the existing pause-account outcome and keep the other action.", currentState: state,
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope: typed.structuredScope,
     })).resolves.toMatchObject({
       state: "planned",
       read_mode: "reuse",
@@ -1135,6 +1153,7 @@ describe("model Boundary job planning", () => {
   });
 
   it.each(["unknown", "missing", "read_create", "action_intent", "action_intents", "action_strategy"])("repairs a refused removal route without substituting create (%s)", async (failure) => {
+    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
     let attempt = 0;
     const requestJson = vi.fn(async () => {
       attempt += 1;
@@ -1151,7 +1170,7 @@ describe("model Boundary job planning", () => {
                   ? { action_intents: ["Remove the pause outcome."] }
                   : { action_strategy: "rule_derived" };
       return { status: 200, body: { output: [{ type: "function_call", call_id: `remove_${attempt}`,
-        name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned",
+        name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_scope: typed.proposal,
           read_mode: "reuse", action_mode: "remove", action_outcome: "billing.pause_account",
           summary: "Prepare the exact disabled removal replacement.", ...(first ? invalid : {}) }) }] } };
     });
@@ -1162,13 +1181,14 @@ describe("model Boundary job planning", () => {
 
     await expect(planModelBoundaryJob({
       session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
-      jobIntent: "Remove the existing pause-account outcome.", currentState: state, egressAcknowledged: true,
+      jobIntent: "Remove the existing pause-account outcome.", currentState: state, egressAcknowledged: true, structuredScope: typed.structuredScope,
     })).resolves.toMatchObject({ state: "planned", read_mode: "reuse", action_mode: "remove",
       action_outcome: "billing.pause_account", correction_used: true });
     expect(requestJson).toHaveBeenCalledTimes(2);
   });
 
   it("asks for clarification instead of guessing which semantic outcome to remove", async () => {
+    const typed = declaredReadContext("Remove one billing outcome.", reusableState.read.resource_ids);
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "clarify_remove",
       name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "clarification",
         question: "Which current semantic outcome should be removed?" }) }] } }));
@@ -1182,14 +1202,15 @@ describe("model Boundary job planning", () => {
 
     await expect(planModelBoundaryJob({
       session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
-      jobIntent: "Remove one billing outcome.", currentState: state, egressAcknowledged: true,
+      jobIntent: "Remove one billing outcome.", currentState: state, egressAcknowledged: true, structuredScope: typed.structuredScope,
     })).resolves.toMatchObject({ state: "clarification", correction_used: false });
     expect(requestJson).toHaveBeenCalledOnce();
   });
 
   it("does not let the sole-outcome revision shortcut preempt an explicit removal", async () => {
+    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "remove_sole",
-      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "reuse",
+      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_scope: typed.proposal, read_mode: "reuse",
         action_mode: "remove", action_outcome: "support.refund_request_submitted",
         summary: "Prepare the disabled removal replacement and leave activation separate." }) }] } }));
     const state: BoundaryJobCurrentState = {
@@ -1200,7 +1221,7 @@ describe("model Boundary job planning", () => {
     await expect(planModelBoundaryJob({
       session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
       jobIntent: "Remove the existing refund outcome, but keep the Read boundary unchanged.", currentState: state,
-      egressAcknowledged: true,
+      egressAcknowledged: true, structuredScope: typed.structuredScope,
     })).resolves.toMatchObject({ state: "planned", action_mode: "remove", correction_used: false });
     expect(requestJson).toHaveBeenCalledOnce();
   });
@@ -1300,17 +1321,18 @@ describe("unestablished requested Read routing", () => {
     ["Read outstanding obligations.", "none"], ["Read outstanding obligations.", "reuse"],
   ])("retains unresolved %s before %s routing", async (jobIntent, readMode) => {
     const currentState = { ...reusableState, read: { ...reusableState.read, resource_ids: ["finance.accounts"] } };
+    const typed=declaredReadContext(jobIntent,["finance.accounts"]);
     const before = structuredClone(currentState);
     const requestJson = vi.fn(async (request: { body: unknown }) => {
       expect(JSON.stringify(request.body)).toContain(jobIntent);
       const args = requestJson.mock.calls.length === 1
-        ? { status: "planned", read_mode: readMode, action_mode: "none", summary: "Keep existing access." }
+        ? { status: "planned", read_scope:typed.proposal, read_mode: readMode, action_mode: "none", summary: "Keep existing access." }
         : { status: "clarification", question: "Which business records should this request cover, and should the reviewed access remain unchanged?" };
       return { status: 200, body: { output: [{ type: "function_call", call_id: "scope_route",
         name: "runner__plan_boundary_job", arguments: JSON.stringify(args) }] } };
     });
     const result = await planModelBoundaryJob({ jobIntent, currentState, availableResourceIds: ["finance.accounts"],
-      session: { provider: "openai", model: "declared-routing-fixture", apiKey: "local-fixture-only", dependencies: { requestJson } }, egressAcknowledged: true });
+      session: { provider: "openai", model: "declared-routing-fixture", apiKey: "local-fixture-only", dependencies: { requestJson } }, egressAcknowledged: true, structuredScope:typed.structuredScope });
     expect(result).toMatchObject({ state: "clarification", authority_granted: false, source_database_changed: false });
     expect(requestJson).toHaveBeenCalledTimes(2);
     expect(currentState).toEqual(before);
@@ -1346,12 +1368,13 @@ describe("exact saved Read association boundaries", () => {
     } };
     const jobIntent = control === "changed" ? "Read membership names and expiry dates for all customers."
       : control === "added" ? `${description} Read outstanding obligations.` : description;
+    const typed=declaredReadContext(jobIntent,state.read.resource_ids);
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "scope_boundary",
       name: "runner__plan_boundary_job", arguments: JSON.stringify(requestJson.mock.calls.length === 1
-        ? { status: "planned", read_mode: control === "none" ? "none" : "reuse", action_mode: "none", summary: "Keep access." }
+        ? { status: "planned", read_scope:typed.proposal, read_mode: control === "none" ? "none" : "reuse", action_mode: "none", summary: "Keep access." }
         : { status: "clarification", question: "Which records should the changed request cover?" }) }] } }));
     const result = await planModelBoundaryJob({ jobIntent, currentState: state, availableResourceIds: state.read.resource_ids,
-      egressAcknowledged: true, session: { provider: "openai", model: "declared-request-binding", apiKey: "local-only", dependencies: { requestJson } } });
+      egressAcknowledged: true, structuredScope:typed.structuredScope, session: { provider: "openai", model: "declared-request-binding", apiKey: "local-only", dependencies: { requestJson } } });
     expect(result).toMatchObject({ state: "clarification", authority_granted: false, source_database_changed: false });
     expect(requestJson).toHaveBeenCalledTimes(2);
   });

@@ -1,0 +1,48 @@
+{
+  "status": "FINITE_FIXTURE_PORT_COMPLETE_INDEPENDENT_CONTRACT_REVIEW_PENDING",
+  "base": "a6a59a62",
+  "branch": "codex/b64-read-fixture-context-20261008",
+  "scope": [
+    "test-fixtures/typed-read-context.ts",
+    "test-fixtures/reviewed-read-scope.ts",
+    "boundary-job-model.test.ts"
+  ],
+  "product_changes": false,
+  "proof": "Parameterized ordinary structural preparation only for declared resource identities and name/label fields; actual reviewed disabled candidate; real generateModelReadWorkload using actual transmitted catalogs/refs; native generation/Q/proposal/confirmation saved through Resume CAS and cold read. No private oracle or fabricated subject references. Pure planning declarations are unconfirmed trusted_principal proposals.",
+  "results": {
+    "before": "boundary-job-model18PASS67FAIL",
+    "after": "boundary-job-model80PASS5FAIL",
+    "native_regression": "existing default native18PASS",
+    "types": "12 unrelated old Read fixture diagnostics, zero assigned-file diagnostics"
+  },
+  "evidence": "/var/tmp/synapsor-b64-action-clarification-owned/out/",
+  "logs": [
+    "planning-fixture-before-a6.json",
+    "planning-fixture-after802.json",
+    "planning-fixture-explicit-routes2.json",
+    "planning-fixture-explicit-routes3.json",
+    "planning-fixture-explicit-routes4.json",
+    "planning-fixture-final.json",
+    "planning-fixture-types-final.log"
+  ],
+  "preserved_failures": [
+    {
+      "case": "keeps Action thresholds out of job routing",
+      "finding": "Typed clarification accepted immediately; old English question classifier expected a semantic correction and two provider calls. Before and unchanged expectation preserved; independent retirement/replacement verdict required."
+    },
+    {
+      "case": "sole semantic outcome policy-only edit",
+      "finding": "Legacy zero-provider English edit shortcut lacks B64 typed scope/plan; no expectation/call count changed."
+    },
+    {
+      "case": "unchanged historical captured planning replies",
+      "finding": "Historical captures omit read_scope; preserved bytes and original replay expectation. No forged retroactive typed meaning."
+    },
+    {
+      "case": "current exact reuse/resume description associations (2)",
+      "finding": "Descriptions/resource IDs alone are not native confirmed scope. Existing actual-native prepared reuse and new resumable positive pass; replacing old English-positive contract requires independent verdict."
+    }
+  ],
+  "limits": "Native fixture preparation supports literal name/label return scope; it is not public CLI installed acceptance, no provider access, no Source row sampling/writes. Helper returns cold saved evidence snapshot after cleaning only its owned disposable root; no retained production record altered.",
+  "next": "Main/R1/R2 review fixture ports and five legacy-positive contract decisions. No blanket wrapper, no model response reroll, no assertion relaxation."
+}
