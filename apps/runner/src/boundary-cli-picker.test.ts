@@ -2718,6 +2718,20 @@ describe("boundary review terminal picker", () => {
     expect(rendered).toContain("O User/owner scope - restrict rows per user [not configured]");
   });
 
+  it("does not bind candidate evidence by an identifier mentioned inside prose", async () => {
+    const { input, output } = fakeTerminal();
+    const session = createBoundaryReviewInteractiveSession(input, output);
+    const view = reviewView();
+    view.row_identity.selected = undefined;
+    view.row_identity.evidence = [{ source: "database", detail: "outcome appears in this unrelated explanation" }];
+    const resolution = session.resolveBlockedResource!(view);
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    await emitKey(input, { name: "escape", sequence: "\u001b" });
+    await resolution;
+    expect(rendered).not.toContain("Evidence: outcome appears in this unrelated explanation");
+    expect(rendered).toContain("No evidence is bound to this candidate");
+  });
+
   it("resolves blocked identity and tenant choices without leaving the terminal editor", async () => {
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);
