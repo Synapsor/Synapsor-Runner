@@ -1,0 +1,9 @@
+{
+  "source": "e980b854",
+  "packet": "bd156753",
+  "baseline": "38eb51dc",
+  "scope": "Independent source audit; R2 owns native16 matrix",
+  "distinct_counterexample": "Database-level wildcard grant cannot be silently discarded while verified=true: for GRANT UPDATE ON archive_%.* and visible archive_2026.extra, result must retain effective update or mark unknown/unverified. The API has no partial_revokes context; conservative refusal is sufficient. This is a pre-existing parser scope concern, not attributed to the new column parser without baseline evidence.",
+  "reference": "https://dev.mysql.com/doc/refman/8.4/en/grant.html",
+  "native_limit": "Official8.4 grammar confirms pattern semantics; no native wildcard run claimed. R2 owns disposable native resource."
+}

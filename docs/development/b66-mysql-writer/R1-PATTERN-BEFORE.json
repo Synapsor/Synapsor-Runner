@@ -1,0 +1,10 @@
+{
+ "verdict":"CHANGES REQUIRED for effective privilege safety within B66 scope; pre-existing, not caused by new column parser",
+ "source":"e980b854", "fixture":"2e537946", "result":"1 PASS / 2 FAIL", "log":"/var/tmp/synapsor-r1-signoff-review-owned/evidence/b66-e980-pattern-before.log",
+ "baseline":{"source":"38eb51dc","fixture":"f5961670 unchanged pattern cases","result":"2 FAIL / 1 filtered","log":"/var/tmp/synapsor-r1-signoff-review-owned/evidence/b66-38eb-pattern-baseline.log"},
+ "cause":"mysqlGrantPosture literal schema equality ignores database-level GRANT pattern authority while returning verified=true/elevated=false. API has no partial_revokes setting; cannot decide these are literal. Known patterns archive_% and archive_ both omitted actual candidate matching relations.",
+ "acceptable_contract":"Without established server partial_revokes semantics, mark unverified or conservatively retain possible effective permission; do not silently certify absent UPDATE.",
+ "native_status":"R2 separately owns native wildcard witness; no native effect or actual server setting inferred from pure counterexample.",
+ "official_reference":"https://dev.mysql.com/doc/refman/8.4/en/grant.html",
+ "other_source_scope":"New exact column union, narrow grant generator/admin wording and unchanged PG/RLS checks source-reviewed; full native matrix belongs to R2."
+}

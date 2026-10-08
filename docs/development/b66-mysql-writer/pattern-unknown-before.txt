@@ -1,0 +1,81 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b66-mysql-writer
+
+ ❯ packages/schema-inspector/src/mysql-column-privileges.test.ts (21 tests | 4 failed) 12ms
+   ✓ MySQL exact column grant representation > keeps column UPDATE separate from table UPDATE, unions/sorts exact fields and preserves read-only relation grants 3ms
+   ✓ MySQL exact column grant representation > parses quoted commas, parentheses, escaped backticks and case without widening identifiers 0ms
+   ✓ MySQL exact column grant representation > fails closed on malformed or unsupported syntax: UPDATE () 0ms
+   ✓ MySQL exact column grant representation > fails closed on malformed or unsupported syntax: UPDATE (`id`,) 0ms
+   ✓ MySQL exact column grant representation > fails closed on malformed or unsupported syntax: UPDATE (`id` 0ms
+   ✓ MySQL exact column grant representation > fails closed on malformed or unsupported syntax: UPDATE (`id`)) 0ms
+   ✓ MySQL exact column grant representation > fails closed on malformed or unsupported syntax: UPDATE ((id)) 0ms
+   ✓ MySQL exact column grant representation > fails closed on malformed or unsupported syntax: UPDATE (id) garbage 0ms
+   ✓ MySQL exact column grant representation > fails closed on malformed or unsupported syntax: DELETE (`id`) 0ms
+   ✓ MySQL exact column grant representation > fails closed on malformed or unsupported syntax: ALL (`id`) 0ms
+   ✓ MySQL exact column grant representation > fails closed on malformed or unsupported syntax: FUTURE (`id`) 0ms
+   ✓ MySQL exact column grant representation > fails closed on malformed or unsupported syntax: UPDATE (`unterminated) 0ms
+   ✓ MySQL exact column grant representation > fails closed on malformed or unsupported syntax: UPDATE, 0ms
+   ✓ MySQL exact column grant representation > fails closed on malformed or unsupported syntax: UPDATE (* ) 0ms
+   ✓ MySQL exact column grant representation > refuses role assignments and column grants on wildcard targets 0ms
+   ✓ MySQL exact column grant representation > preserves elevated and table-wide authority alongside exact column grants 0ms
+   × MySQL exact column grant representation > refuses unrecognized SHOW GRANTS rows: REVOKE UPDATE ON `app`.* FROM 'writer'@'localhost' 4ms
+     → expected true to be false // Object.is equality
+   × MySQL exact column grant representation > refuses unrecognized SHOW GRANTS rows: SET DEFAULT ROLE ALL TO 'writer'@'localhost' 1ms
+     → expected true to be false // Object.is equality
+   × MySQL exact column grant representation > refuses unrecognized SHOW GRANTS rows:  0ms
+     → expected true to be false // Object.is equality
+   × MySQL exact column grant representation > refuses unrecognized SHOW GRANTS rows: FUTURE SERVER GRANT OUTPUT 0ms
+     → expected true to be false // Object.is equality
+   ✓ MySQL exact column grant representation > keeps exact table identifiers containing pattern characters and ordinary database-wide scope verifiable 0ms
+ ❯ packages/schema-inspector/src/mysql-grant-effective-scope-independent.test.ts (3 tests | 2 failed) 7ms
+   × independent MySQL effective grant scope > does not silently certify unresolved database-pattern authority archive_% 6ms
+     → expected false to be true // Object.is equality
+   × independent MySQL effective grant scope > does not silently certify unresolved database-pattern authority archive_ 1ms
+     → expected false to be true // Object.is equality
+   ✓ independent MySQL effective grant scope > retains exact extra-schema table column grants independently of similar names 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/schema-inspector/src/mysql-column-privileges.test.ts > MySQL exact column grant representation > refuses unrecognized SHOW GRANTS rows: REVOKE UPDATE ON `app`.* FROM 'writer'@'localhost'
+ FAIL  packages/schema-inspector/src/mysql-column-privileges.test.ts > MySQL exact column grant representation > refuses unrecognized SHOW GRANTS rows: SET DEFAULT ROLE ALL TO 'writer'@'localhost'
+ FAIL  packages/schema-inspector/src/mysql-column-privileges.test.ts > MySQL exact column grant representation > refuses unrecognized SHOW GRANTS rows: 
+ FAIL  packages/schema-inspector/src/mysql-column-privileges.test.ts > MySQL exact column grant representation > refuses unrecognized SHOW GRANTS rows: FUTURE SERVER GRANT OUTPUT
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ packages/schema-inspector/src/mysql-column-privileges.test.ts:31:116
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  packages/schema-inspector/src/mysql-grant-effective-scope-independent.test.ts > independent MySQL effective grant scope > does not silently certify unresolved database-pattern authority archive_%
+ FAIL  packages/schema-inspector/src/mysql-grant-effective-scope-independent.test.ts > independent MySQL effective grant scope > does not silently certify unresolved database-pattern authority archive_
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ packages/schema-inspector/src/mysql-grant-effective-scope-independent.test.ts:6:106
+      4|   it.each([['archive_%','archive_2026'],['archive_','archiveX']])("doe…
+      5|     const posture=mysqlGrantPosture([`GRANT UPDATE ON \`${pattern}\`.*…
+      6|     expect(!posture.verified || posture.elevated || posture.relations[…
+       |                                                                                                          ^
+      7|   });
+      8|   it("retains exact extra-schema table column grants independently of …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  6 failed | 18 passed (24)
+   Start at  13:29:30
+   Duration  689ms (transform 171ms, setup 0ms, collect 343ms, tests 19ms, environment 0ms, prepare 99ms)
+

@@ -27,4 +27,17 @@ describe("MySQL exact column grant representation", () => {
     expect(mysqlGrantPosture(["GRANT SELECT, UPDATE (`id`) ON app.parent TO 'w'@'%' WITH GRANT OPTION"], relations).elevated).toBe(true);
     expect(inspect("ALL PRIVILEGES")).toMatchObject({ elevated: true, relations: { "app.parent": { update: true, delete: true } } });
   });
+  it.each(["REVOKE UPDATE ON `app`.* FROM 'writer'@'localhost'", "SET DEFAULT ROLE ALL TO 'writer'@'localhost'", "", "FUTURE SERVER GRANT OUTPUT"])("refuses unrecognized SHOW GRANTS rows: %s", row => {
+    expect(mysqlGrantPosture(["GRANT SELECT ON `app`.`parent` TO 'writer'@'localhost'", row], relations).verified).toBe(false);
+  });
+  it("keeps exact table identifiers containing pattern characters and ordinary database-wide scope verifiable", () => {
+    const p = mysqlGrantPosture([
+      "GRANT UPDATE (`id`) ON `app_%`.`parent` TO 'writer'@'localhost'",
+      "GRANT SELECT ON `app`.* TO 'writer'@'localhost'",
+    ], [{ schema: "app_%", table: "parent" }, { schema: "app", table: "other" }]);
+    expect(p.verified).toBe(true);
+    expect(p.column_privileges["app_%.parent"]?.update).toEqual(["id"]);
+    expect(p.relations["app.other"]?.select).toBe(true);
+  });
+
 });
