@@ -1,0 +1,108 @@
+{
+  "candidate_head": "9aba9443",
+  "independent_acceptance": "Pending; R2 GP01 pure check only is scoped and does not close caller proof.",
+  "groups": [
+    {
+      "group": "GN01/GN02",
+      "implementation_pin": "d8cf1dd5",
+      "evidence": "GN-NARRATION.json",
+      "boundary": "Strict request-bound all-facts indexes; host renders every supplied fact and exact question. Opening fixed host record, no generation.",
+      "status": "implementation_candidate"
+    },
+    {
+      "group": "GC01/GC03/GC04",
+      "implementation_pin": "75cd01b8",
+      "evidence": "GC-ACTION-PICKER-GUIDED.json",
+      "boundary": "Existing typed decisionKind/activationView and explicit callbacks route prompts; caller initial default retained; absent or disabled permission default unresolved.",
+      "status": "implementation_candidate"
+    },
+    {
+      "group": "GC02/GC05",
+      "implementation_pin": "ce41250d",
+      "evidence": "GP02-GC-RECORDS.json",
+      "boundary": "No prose-based provenance, compact-state claims, suppression or diff selection. Supplied records preserved.",
+      "status": "implementation_candidate"
+    },
+    {
+      "group": "GP01",
+      "implementation_pin": "70c4e458",
+      "evidence": "GP01.json",
+      "boundary": "No quantifier/number/negation word-bag equivalence. One bounded correction then original retained question through metadata-only rendering. Existing target/context/currentness/raw evidence unchanged.",
+      "status": "implementation_candidate"
+    },
+    {
+      "group": "GP02",
+      "implementation_pin": "ce41250d",
+      "evidence": "GP02-GC-RECORDS.json",
+      "boundary": "Mixed untyped readback preserved verbatim; labels do not establish evidence provenance.",
+      "status": "implementation_candidate"
+    },
+    {
+      "group": "MAIN-EN-015/016/017",
+      "implementation_pin": "75cd01b8",
+      "evidence": "GC-ACTION-PICKER-GUIDED.json",
+      "boundary": "Untyped blockers and required decisions preserve supplied wording; no scope/target inference or blocker suppression.",
+      "status": "implementation_candidate"
+    },
+    {
+      "group": "MAIN-EN-019",
+      "implementation_pin": "cc6e38b2",
+      "evidence": "MAIN-EN-019.txt",
+      "boundary": "Deleted unreachable legacy parser; current exported typed delegate unchanged.",
+      "status": "implementation_candidate"
+    },
+    {
+      "group": "MAIN-EN-023",
+      "implementation_pin": "9aba9443",
+      "evidence": "INACTIVE-AND-OWNED-CHECKS.json",
+      "boundary": "Consume owner-produced inactive error code; retain exact ENOENT activation artifact identity handling.",
+      "status": "implementation_candidate"
+    },
+    {
+      "group": "MAIN-EN-031",
+      "implementation_pin": "7b71fdbc",
+      "evidence": "CLI-RECOVERY.txt",
+      "boundary": "Project actual typed Error.recovery only; unavailable outcome remains unknown. Main owns cli.ts caller/producer integration.",
+      "status": "implementation_candidate"
+    },
+    {
+      "group": "I04405",
+      "implementation_pin": "75cd01b8",
+      "evidence": "GC-ACTION-PICKER-GUIDED.json",
+      "boundary": "Existing reviewed principal scope predicate includes RLS; no first-query prose classification.",
+      "status": "implementation_candidate"
+    },
+    {
+      "group": "ACTION-FINAL01/02/03/04",
+      "implementation_pin": "9a7f1c7e",
+      "evidence": "GC-ROUTING.json",
+      "boundary": "Candidate evidence bound to typed selected candidate; completion from existing signoff counts, not display label.",
+      "status": "implementation_candidate"
+    },
+    {
+      "group": "sensitivity-picker-hook",
+      "implementation_pin": "b244eecf",
+      "evidence": "SENSITIVITY-HOOK.json",
+      "boundary": "Explicit structurally_low_risk only; unknown/review_required unresolved presentation.",
+      "status": "implementation_candidate"
+    }
+  ],
+  "legitimate_retained": {
+    "GN03/GC06/MAIN-EN-018": "Surface syntax, punctuation, Markdown/terminal layout and colors do not infer authority or business meaning; narrator prose shape became strict JSON instead.",
+    "GC07": "Exact documented slash-command dispatch.",
+    "GP03": "Known metadata identifiers and control-character presentation; not semantic equivalence.",
+    "MAIN-EN-020/021": "External tool-name risk display and explicit technical actor-marker provenance; not grants.",
+    "MAIN-EN-022/032": "Existing credential/token redaction.",
+    "MAIN-EN-033": "Certificate diagnostic troubleshooting hint, not a success/authority assertion.",
+    "other": "Identifier/SQL grammar, shell quoting, escaping, resource identity and exact local command checks retained."
+  },
+  "open": [
+    "Independent review of latest typed narrator/omission protection and caller consequences.",
+    "Main typed caller/permission-guide/cli error integrations.",
+    "Action instruction-as-fact producer cleanup; no English filtering introduced.",
+    "Actual caller GP01 budget proof; no pure-unit acceptance overclaim.",
+    "No full installed-path or release-gate claim."
+  ],
+  "legacy_static": "Unexported renderBoundaryShell has no callers across apps/packages; embedded reviewDecisionLabel inside it is unreachable. Active GET/ uses renderBoundaryWorkbench.",
+  "fixture_followup": "GUIDED-FIXTURE-PORTS.json: separate4FAIL\u21924PASS and types0; product unchanged; original full331PASS4FAIL history retained."
+}

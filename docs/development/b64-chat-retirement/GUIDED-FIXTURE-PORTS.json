@@ -1,0 +1,19 @@
+{
+  "before_pin": "50c4da21",
+  "before": { "failed": 4, "skipped": 43, "files": 1 },
+  "after": { "passed": 4, "skipped": 43, "files": 1, "typecheck_exit": 0 },
+  "original_causes": {
+    "status_generation_and_policy": "Existing fixtures replaced pinned structured continuations without original created_at and acknowledged revision options; unchanged production guard at boundary-authoring-resume482 rejected both.",
+    "start_and_onboard_timeout": "Existing planner fixture omitted structuredScope; unchanged boundary-job-model175 rejected it before a provider call. Its later reuse reply also had no native reusable analysis, which cannot be manufactured from a count/name."
+  },
+  "ports": {
+    "positive_saved_state": "Initial expected-null and continuation expected-revision use existing writeBoundaryAuthoringResumeState. Every save is read through readBoundaryAuthoringResumeState; the acknowledged revision is checked and used for the next write. Healthy decoder completion/handoff remains actual and checkpointed rows run through real saves before negative fixtures.",
+    "negative_storage": "Unknown/partial/received/in_flight/unsent/handled/replacement-refused/ordinary-refused and missing-Source rows are explicitly labeled negative-storage status projection fixtures. They do not prove admitted recovery, successful transport, or valid transitions. Test asserts production no-CAS replacement still rejects and preserves all files before writing those isolated fixture records.",
+    "timeout": "Existing projectReadScopeHostContext supplies declared request/catalog facts. Fake callback parses actual outgoing Operator job and Host Read context, checks visible original reference, then returns one typed clarification after one deliberately invalid reply. No model-facing positive reply reads expected hidden evidence or invents native reuse. Selected timeout values300/default120/600/1 and exact two-send expectation are unchanged."
+  },
+  "product_changes": "None. Only guided-start.test.ts and evidence documentation changed.",
+  "intermediate": "First port attempt caught a missing test import (2 status ReferenceErrors, 2 timeout passes); import fixed before final four-case pass.",
+  "related_evidence": "Prior full owned group331PASS/4FAIL remains recorded in INACTIVE-AND-OWNED-CHECKS.json. This targeted four-case pass is separate; it is not represented as a fresh single-run335PASS.",
+  "isolation": "Slot4, max/min workers1, bwrap --unshare-net, owned0700 HOME/TMP, available RAM21079460KiB/disk77302508KiB. Slot returned after targeted tests/types.",
+  "independent_acceptance": "Pending. Original status assertions, no-mutation hashes, authority-off checks, and timeout expectations retained."
+}

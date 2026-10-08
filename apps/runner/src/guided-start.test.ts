@@ -1,4 +1,6 @@
 import { planModelBoundaryJob } from "./boundary-job-model.js";
+import { projectReadScopeHostContext } from "./read-current-evidence.js";
+import { READ_SCOPE_PROTOCOL } from "./read-structured-scope.js";
 import { clientDutyInventory } from "./authoring-client-duties.js";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -12,7 +14,7 @@ import { activateExplorationBoundary, buildAutoBoundary, explorationBoundaryCand
 import { boundaryDeleteCommand, boundaryReviewCommand, loadBoundaryReviewContext, boundaryAuthoringResumeBinding } from "./boundary-commands.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { listActionRuleAuthorityDrafts, readActionRuleAuthorityActivation } from "./action-rule-authority.js";
-import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import {
   saveInstantBoundaryEditBaseline,
   saveInstantBoundaryReviewBaseline,
@@ -87,12 +89,19 @@ describe("guided start surfaces", () => {
       // Actual offline decoder completion, followed by the existing owner-question
       // checkpoint and CAS. No historical operation or generation consumption is invented.
       let current = build();
-      await writeBoundaryAuthoringResumeState(root, current);
+      const persist = async (next: typeof current, expected: typeof current.revision_digest | null) => {
+        await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: expected });
+        const saved = await readBoundaryAuthoringResumeState(root, binding);
+        if (saved.status !== "ready") throw new Error("Expected the exact acknowledged status fixture save");
+        expect(saved.value.revision_digest).toBe(next.revision_digest);
+        current = saved.value;
+      };
+      await persist(current, null);
       const healthy = await withAuthoringGenerationRecovery(async () => {
         configureAuthoringGenerationRecovery({ available: () => true, read: () => current.generation_recovery,
           current: async () => canonicalJsonDigest(binding), write: async recovery => {
             const next = build({ previous: current, generationRecovery: recovery });
-            await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: current.revision_digest }); current = next;
+            await persist(next, current.revision_digest);
           } });
         const tools = [{ name: "runner.inspect", description: "OWNED OFFLINE", input_schema: { type: "object", properties: {}, additionalProperties: false } }];
         const authorityDigest = askToolSurfaceDigest(tools);
@@ -106,7 +115,7 @@ describe("guided start surfaces", () => {
           context_digest: canonicalJsonDigest(binding), question: result.answer, completion: completedAuthoringQuestion(result) });
         const generation = authoringQuestionCheckpoint(current.generation_recovery, ownerHandoffCheckpoint(handoff));
         const next = build({ previous: current, ownerHandoffs: [handoff], generationRecovery: generation });
-        await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: current.revision_digest });
+        await persist(next, current.revision_digest);
         return { generation, handoff };
       });
       expect(healthy.generation!.operations[0]!.state).toBe("checkpointed");
@@ -131,13 +140,23 @@ describe("guided start surfaces", () => {
         prior_attempt_id: prior.id, checkpoint_digest: canonicalJsonDigest("owned checkpoint"), state_digest: canonicalJsonDigest("owned state"),
         status: "admitted", replacement_attempt_id: refused.attempts[1]!.id, attempt_deadline: now, failure_code: "ASK_PROVIDER_MODEL_UNAVAILABLE" };
       const blocked = ["unknown", "partial", "received", "in_flight", "unsent", "handled"] as const;
-      for (const pending of [true, false]) {
-        for (const variant of [...blocked, "replacement_refused", "ordinary_refused", "checkpointed"] as const) {
+      const resumeFile = path.join(root, ".synapsor/boundary-authoring/resume.json");
+      const beforeRejectedReplacement = await savedStatusFixtureFiles(root);
+      await expect(writeBoundaryAuthoringResumeState(root, build({ generationRecovery: unfinished("unknown") })))
+        .rejects.toThrow("BOUNDARY_AUTHORING_RESUME_CHANGED");
+      expect(await savedStatusFixtureFiles(root)).toEqual(beforeRejectedReplacement);
+      // The healthy rows use actual decoder/checkpoint completion and acknowledged
+      // saves. Remaining rows are explicitly negative-storage projection fixtures:
+      // they do not establish an admitted recovery, a transition, or provider work.
+      for (const variant of ["checkpointed", ...blocked, "replacement_refused", "ordinary_refused"] as const) {
+        for (const pending of [true, false]) {
           const generation = variant === "replacement_refused" ? replacementRefused : variant === "checkpointed" ? healthy.generation
             : unfinished(variant === "ordinary_refused" ? "refused" : variant);
-          await writeBoundaryAuthoringResumeState(root, build({ generationRecovery: generation,
-            ...(variant === "checkpointed" ? { ownerHandoffs: [healthy.handoff] } : {}),
-            ...(pending ? { pendingReadRevision: "Review the exact private field mapping." } : {}) }));
+          const fixture = build({ generationRecovery: generation,
+            ...(variant === "checkpointed" ? { previous: current, ownerHandoffs: [healthy.handoff] } : {}),
+            ...(pending ? { pendingReadRevision: "Review the exact private field mapping." } : {}) });
+          if (variant === "checkpointed") await persist(fixture, current.revision_digest);
+          else await fs.writeFile(resumeFile, `${JSON.stringify(fixture)}\n`);
           const before = await savedStatusFixtureFiles(root);
           output.mockClear();
           await expect(boundaryCommand(["status", "--project-root", root, "--json"])).resolves.toBe(0);
@@ -169,7 +188,9 @@ describe("guided start surfaces", () => {
         }
       }
       // A generation fence is visible even without an attached Source session.
-      await writeBoundaryAuthoringResumeState(root, build({ policySourceSession: undefined, generationRecovery: unfinished("unknown") }));
+      // Negative-storage fixture: no Source and an unverified generation record.
+      await fs.writeFile(resumeFile, `${JSON.stringify(build({ policySourceSession: undefined,
+        generationRecovery: unfinished("unknown") }))}\n`);
       output.mockClear();
       const noSourceBefore = await savedStatusFixtureFiles(root);
       await boundaryCommand(["status", "--project-root", root, "--json"]);
@@ -178,7 +199,6 @@ describe("guided start surfaces", () => {
       expect(noSource.next_action).toMatch(/^Inspect saved generation/);
       expect(await savedStatusFixtureFiles(root)).toEqual(noSourceBefore);
       // Invalid saved metadata cannot safely be described as a resumable review.
-      const resumeFile = path.join(root, ".synapsor/boundary-authoring/resume.json");
       await fs.writeFile(resumeFile, "{invalid controlled fixture");
       const invalidBefore = await savedStatusFixtureFiles(root);
       output.mockClear();
@@ -212,10 +232,19 @@ describe("guided start surfaces", () => {
         draft_paths: [], next_step: "Keep the original requirement and saved draft pending support.",
       }] };
       await savePolicySources(root, sources);
-      await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({
-        binding: boundaryAuthoringResumeBinding(context.bundle), stage: "authority_review", jobIntent: "Release eligible records.",
+      const binding = boundaryAuthoringResumeBinding(context.bundle);
+      let acknowledged = buildBoundaryAuthoringResumeState({
+        binding, stage: "authority_review", jobIntent: "Release eligible records.",
         provider: "openai", model: "gpt-5.6-terra", policySourceSession: sources.id,
-      }));
+      });
+      const persist = async (next: typeof acknowledged, expected: typeof acknowledged.revision_digest | null) => {
+        await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: expected });
+        const saved = await readBoundaryAuthoringResumeState(root, binding);
+        if (saved.status !== "ready") throw new Error("Expected the exact acknowledged policy status save");
+        expect(saved.value.revision_digest).toBe(next.revision_digest);
+        acknowledged = saved.value;
+      };
+      await persist(acknowledged, null);
       output.mockClear();
       await expect(boundaryCommand(["status", "--project-root", root, "--json"])).resolves.toBe(0);
       const status = JSON.parse(output.mock.calls.map(([chunk]) => String(chunk)).join(""));
@@ -239,11 +268,11 @@ describe("guided start surfaces", () => {
         if (variant === "changed_read") changed.coverage_authority_digest = canonicalJsonDigest({ different: true });
         if (variant === "changed_source") { changed.snapshots.push(policyTextSnapshot(Buffer.from("A new restriction."), "rules.txt", 2)); changed.active = 2; }
         await savePolicySources(root, changed);
-        await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({
-          binding: boundaryAuthoringResumeBinding(context.bundle), stage: variant === "unfinished_action" ? "action_drafting" : "authority_review",
+        await persist(buildBoundaryAuthoringResumeState({
+          previous: acknowledged, binding, stage: variant === "unfinished_action" ? "action_drafting" : "authority_review",
           jobIntent: "Release eligible records.", provider: "openai", model: "gpt-5.6-terra", policySourceSession: changed.id,
           ...(variant === "pending_edit" ? { pendingReadRevision: "Keep the private release check unavailable to model analysis." } : {}),
-        }));
+        }), acknowledged.revision_digest);
         output.mockClear();
         await boundaryCommand(["status", "--project-root", root, "--json"]);
         const current = JSON.parse(output.mock.calls.map(([chunk]) => String(chunk)).join(""));
@@ -270,21 +299,43 @@ describe("guided start surfaces", () => {
     const observed: number[] = [];
     const runBoundaryReview = async () => {
       let calls = 0;
-      await planModelBoundaryJob({
+      const jobIntent = "Review current rules without changing them.";
+      const catalog = { resources: [{ id: "public.orders", fields: [] }], relationships: [] };
+      const context = projectReadScopeHostContext({ request: { id: "timeout-job", text: jobIntent },
+        catalog: { ...catalog, digest: canonicalJsonDigest(catalog) },
+        binding: { meaning_digest: canonicalJsonDigest({ jobIntent }), applicability_digest: canonicalJsonDigest("review only"),
+          operation_digest: canonicalJsonDigest(catalog) } });
+      const result = await planModelBoundaryJob({
         session: { provider: "openai", model: "fixture-model", apiKey: "fixture-key", dependencies: {
           requestJson: async request => {
             observed.push(request.timeoutMs!);
+            const texts: string[] = [];
+            const visit = (value: unknown): void => { if (typeof value === "string") texts.push(value);
+              else if (value && typeof value === "object") Object.values(value).forEach(visit); };
+            visit(request.body);
+            const lines = texts.flatMap(text => text.split("\n"));
+            const actualJob = lines.find(line => line.startsWith("Operator job: "));
+            const actualContext = lines.find(line => line.startsWith("Host Read context: "));
+            if (!actualJob || !actualContext) throw new Error("Expected the actual typed planning request");
+            const visibleJob = JSON.parse(actualJob.slice("Operator job: ".length)) as string;
+            const visibleContext = JSON.parse(actualContext.slice("Host Read context: ".length)) as { references: Array<{ text?: string }> };
+            expect(visibleContext.references.some(reference => reference.text === visibleJob)).toBe(true);
+            // The fixture has no native reusable analysis. Its corrected reply
+            // asks about the actual visible request; it cannot invent reuse proof.
             return { status: 200, body: { output: [{ type: "function_call", call_id: `call_${++calls}`,
               name: "runner__plan_boundary_job", arguments: JSON.stringify(calls === 1 ? {} : {
-                status: "planned", operation: "review_rules", read_mode: "reuse", action_mode: "none", summary: "Review current rules." }) }] } };
+                status: "clarification", question: `Which current rules does “${visibleJob}” refer to?` }) }] } };
           },
         } },
-        jobIntent: "Review current rules without changing them.", egressAcknowledged: true,
+        jobIntent, egressAcknowledged: true,
+        structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context },
         currentState: { read: { boundary_name: "fixture", authority: "disabled", fully_reviewed: true,
           resource_ids: ["public.orders"], exact_reusable_revision_count: 1 }, actions: [],
           control_plane: { trusted_scope: "runner_injected", approval_history: "runner_proposal_ledger",
             model_may_supply_scope_values: false, model_may_supply_approval_history: false } },
       });
+      expect(result).toMatchObject({ state: "clarification", question: `Which current rules does “${jobIntent}” refer to?`,
+        authority_granted: false, source_database_changed: false });
       return 0;
     };
     try {
