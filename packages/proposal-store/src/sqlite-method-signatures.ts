@@ -189,7 +189,7 @@ export interface ProposalStoreWritebackMethods {
   claimWritebackIntent(jobInput: unknown, runnerId: string, sourceBinding?: import("@synapsor-runner/protocol").SourceCompletionBinding): WritebackIntentClaim;
   markWritebackIntentApplying(intentId: string, runnerId: string): void;
   completeWritebackIntent(intentId: string, resultInput: WritebackResult): void;
-  requireWritebackReconciliation(intentId: string, reason: string): void;
+  requireWritebackReconciliation(intentId: string, reason: string, sourceOutcomeUnknown?: true): void;
   getWritebackIntent(intentId: string): StoredWritebackIntent | undefined;
   listWritebackIntents(options?: { status?: WritebackIntentStatus; proposal_id?: string; limit?: number }): StoredWritebackIntent[];
   reconcileWritebackIntent(input: ReconcileWritebackIntentInput): StoredWritebackIntent;

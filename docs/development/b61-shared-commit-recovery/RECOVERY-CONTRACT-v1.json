@@ -1,5 +1,5 @@
 {
-  "state": "PROSPECTIVE_INTERFACE_DESIGN_NOT_IMPLEMENTED",
+  "state": "IMPLEMENTED_WIP_NATIVE_AND_INDEPENDENT_PENDING",
   "purpose": "Complete existing fenced local control records from an exact atomically committed Source completion, without another business write.",
   "existing_surfaces": [
     "selected Source receipt table",
@@ -25,7 +25,7 @@
   "legacy_behavior": "Normal supported old receipt schema may still apply. Missing prospective column, original binding or full envelope supplies no recovery guarantee. No synthetic envelope or new evidence is written during recovery.",
   "inspection": "Reconnect using current supported native Source configuration and perform SELECT for the original key only. Validate original full job/binding, row IDs/status/hash, full parsed result, scope/target and semantic/atomic proof. Receipt absence is unknown, not rollback.",
   "authorization": "Current authenticated exact RECONCILE authority is distinct from APPLY; original proposal/approval/job and Source binding must remain exact. Expired execution eligibility is never renewed for recovery.",
-  "local_completion": "Within the existing control transaction, CAS only the original applying/reconciliation_required intent, record the exact proven completion receipt/proposal event and reconcile only the original unknown worker item. Preserve all original failed/unknown attempts and approvals.",
+  "local_completion": "Existing control transaction CAS original intent/current unknown receipt to full Source-proven completion, preserving entire original unknown receipt in append-only reconciliation event; proposal/idempotency/job/unknown worker projections update together. Late unknown ACK cannot overwrite proven completion.",
   "idempotency_and_concurrency": "One matching completion may win. Repeated identical completed bookkeeping may be observed without new Source effect; conflicting or competing records refuse. A crash inside the local transaction retains either the original fence or the complete bookkeeping, never partial adoption.",
   "forbidden": [
     "APPLY or source receipt claim during recovery",

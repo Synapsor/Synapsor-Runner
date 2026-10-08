@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { canonicalJsonDigest, parseWritebackJob, principalScopeFingerprint, protocolVersions } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseWritebackJob, parseWritebackResult, principalScopeFingerprint, protocolVersions } from "@synapsor-runner/protocol";
 import {
   PostgresProposalRuntimeStore,
   PostgresWritebackIntentStore,
@@ -1708,7 +1708,7 @@ describe("proposal store", () => {
     } finally { first.close(); restored.close(); await fleet.close(); }
   });
 
-  it("records a signed reconciliation as an immutable terminal receipt", () => {
+  it("records a signed Source-proven reconciliation while retaining unknown history", () => {
     const store = new ProposalStore();
     try {
       const change = operationChangeSet("single_row_update", "reconcile");
@@ -1732,7 +1732,11 @@ describe("proposal store", () => {
       });
       if (!workerLease?.lease_id) throw new Error("expected worker lease");
       const job = store.createWritebackJobFromProposal(change.proposal_id);
-      const claim = store.claimWritebackIntent(job, "runner_a");
+      const normalized = parseWritebackJob(job);
+      const body = { schema_version: "synapsor.source-completion-binding.v1" as const, job_digest: canonicalJsonDigest(normalized),
+        source_binding_digest: canonicalJsonDigest({ unit: "declared Source destination" }), execution_binding_digest: canonicalJsonDigest({ unit: "admission" }), writer_reference: "UNIT_WRITER" };
+      const binding = { ...body, digest: canonicalJsonDigest(body) };
+      const claim = store.claimWritebackIntent(normalized, "runner_a", binding);
       if (claim.decision !== "proceed") throw new Error("expected new intent");
       store.markWritebackIntentApplying(claim.intent_id, "runner_a");
       store.requireWritebackReconciliation(claim.intent_id, "commit acknowledgement missing");
@@ -1764,15 +1768,22 @@ describe("proposal store", () => {
         signature: "signed-proof",
         integrity_hash: "sha256:identity",
       };
+      // Typed Source witness is a unit fixture, not connected PostgreSQL proof.
+      const result = parseWritebackResult({ protocol_version: "2.0", job_id: normalized.job_id, runner_id: "runner_a",
+        operation: "single_row_update", receipt_authority: "source_db", status: "applied", affected_rows: 1,
+        target_identity: [{ column: "id", value: "credit_reconcile" }], result_version: 8,
+        after_digest: "sha256:observed", result_hash: "sha256:reconciled", completed_at: "2026-07-13T02:00:00Z" });
+      const evidence = { schema_version: "synapsor.postgres.source-completion.v1" as const, job_digest: canonicalJsonDigest(normalized),
+        binding_digest: binding.digest, result, result_digest: canonicalJsonDigest(result) };
       const receipt = {
         schema_version: "synapsor.execution-receipt.v2" as const,
         writeback_job_id: job.writeback_job_id,
         proposal_id: change.proposal_id,
         proposal_hash: change.integrity.proposal_hash,
         approval_id: job.proposal_hash,
-        runner_id: "fleet_operator",
+        runner_id: "runner_a",
         operation: "single_row_update" as const,
-        receipt_authority: "runner_ledger" as const,
+        receipt_authority: "source_db" as const,
         status: "applied" as const,
         target: {
           source_id: job.runner_scope.source_id,
@@ -1780,7 +1791,7 @@ describe("proposal store", () => {
           table: job.target.table,
           identity: [{ column: "id", value: "credit_reconcile" }],
         },
-        rows_affected: 0,
+        rows_affected: 1,
         idempotency_key: job.idempotency_key,
         after_digest: "sha256:observed",
         source_database_mutated: true,
@@ -1790,9 +1801,14 @@ describe("proposal store", () => {
         reconciliation: { intent_id: claim.intent_id, reason: "source version proves the reviewed update committed" },
       };
 
+      const unknown = { ...receipt, status: "reconciliation_required", rows_affected: 0, source_database_mutated: false,
+        safe_outcome_code: "OUTCOME_UNKNOWN", receipt_hash: "sha256:original_unknown" };
+      store.recordExecutionReceipt(unknown);
+      const originals = store.receipts(change.proposal_id);
       const resolved = store.reconcileWritebackIntent({
         intent_id: claim.intent_id,
         receipt,
+        source_completion: evidence,
         actor: "fleet_operator",
         reason: "source version proves the reviewed update committed",
         observation: { classification: "matches_proposed", observed_digest: "sha256:observed" },
@@ -1812,15 +1828,19 @@ describe("proposal store", () => {
         expect.objectContaining({ kind: "writeback_reconciled", actor: "fleet_operator" }),
         expect.objectContaining({ kind: "writeback_worker_reconciled", actor: "fleet_operator" }),
       ]));
-      expect(() => store.reconcileWritebackIntent({
+      expect(store.events(change.proposal_id)).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "writeback_reconciled", payload: expect.objectContaining({ original_receipt: originals[0]!.receipt }) })]));
+      const history = store.events(change.proposal_id);
+      expect(store.reconcileWritebackIntent({
         intent_id: claim.intent_id,
         receipt,
+        source_completion: evidence,
         actor: "fleet_operator",
         reason: "try to rewrite history",
         observation: {},
         identity,
         require_verified_identity: true,
-      })).toThrow(/is applied/i);
+      })).toEqual(resolved);
+      expect(store.events(change.proposal_id)).toEqual(history);
     } finally {
       store.close();
     }

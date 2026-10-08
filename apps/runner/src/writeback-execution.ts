@@ -88,15 +88,18 @@ async function applyAdmittedSqlJob(job: unknown, configPath: string, storePath: 
   };
   const semanticVerifier = semanticActionVerifierForRuntime(runtimeConfig, configPath, storePath);
   if (semanticVerifier) config.semanticActionVerifier = semanticVerifier;
+  const policy = parsedJob.protocol_version === "5.0" ? runtimeConfig.supervised_worker?.outcomes?.find(p =>
+    p.outcome === parsedJob.semantic_authority.proof.outcome && p.action_boundary_digest === parsedJob.semantic_authority.proof.action_boundary_digest) : undefined;
+  const writer = policy ? resolveSemanticSupervisedWriterSource(runtimeConfig, parsedJob.source_id, policy) : runtimeConfig.sources?.[parsedJob.source_id];
+  if (writer?.write_url_env) config.sourceCompletionAdmission = {
+    execution_binding_digest: executionBindingDigest(runtimeConfig) as `sha256:${string}`, writer_reference: writer.write_url_env,
+  };
   const intentAuthority = createWritebackIntentAuthority(runtimeConfig, parsedJob.source_id, env, store);
   if (config.receipts?.authority === "runner_ledger" && !intentAuthority.store) throw new Error("runner_ledger receipt authority requires --store or an authoritative shared runtime store");
   if (intentAuthority.store) config.writebackIntentStore = intentAuthority.store;
   try {
     const result = await applyRuntimeDatabaseJob({ job: parsedJob, runnerConfig: config, runtimeConfig, configPath,
       adapter: adapters[parsedJob.engine], env });
-    const policy = parsedJob.protocol_version === "5.0" ? runtimeConfig.supervised_worker?.outcomes?.find(p =>
-      p.outcome === parsedJob.semantic_authority.proof.outcome && p.action_boundary_digest === parsedJob.semantic_authority.proof.action_boundary_digest) : undefined;
-    const writer = policy ? resolveSemanticSupervisedWriterSource(runtimeConfig, parsedJob.source_id, policy) : runtimeConfig.sources?.[parsedJob.source_id];
     const queue = store?.getWorkerQueueItem(parsedJob.proposal_id);
     const receipt = toExecutionReceipt(parsedJob, result, config.dryRun);
     store?.recordExecutionReceipt(receipt, rollback && queue?.status === "leased" && writer?.write_url_env && config.receipts?.schema ? {
@@ -189,7 +192,8 @@ export function createWritebackIntentAuthority(
   env: NodeJS.ProcessEnv,
   localStore: ProposalStore | undefined,
 ): { store?: WritebackIntentStore; close(): Promise<void> } {
-  if (runnerReceiptConfig(config?.sources?.[sourceId])?.authority !== "runner_ledger") return { close: async () => undefined };
+  const authority = runnerReceiptConfig(config?.sources?.[sourceId])?.authority;
+  if (authority !== "runner_ledger" && config?.sources?.[sourceId]?.engine !== "postgres") return { close: async () => undefined };
   const shared = config?.storage?.shared_postgres;
   if (shared?.mode === "runtime_store") {
     const databaseUrl = envValue(env, shared.url_env);

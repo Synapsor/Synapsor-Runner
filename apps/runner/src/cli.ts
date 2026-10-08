@@ -142,7 +142,7 @@ export function reconciliationReceipt(
   outcome: "applied" | "conflict" | "failed",
   runnerId: string,
   reason: string,
-): ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4 {
+): ReturnType<typeof reconciliationReceiptImpl> {
   return reconciliationReceiptImpl(intent, observation, outcome, runnerId, reason);
 }
 

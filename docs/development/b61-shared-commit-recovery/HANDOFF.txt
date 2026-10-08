@@ -1,0 +1,15 @@
+B61 shared recovery WIP; independent/native acceptance pending.
+Base ab91163d; branch codex/b61-shared-commit-recovery-20261007; old eb608 held fixture untouched.
+Actual lost-COMMIT before: six native child failures, six committed Source witnesses.
+Actual Luna uses runner_ledger: two Source effects, no atomic Source receipt, remains UNKNOWN.
+Necessary client-lifetime fix102: six structured unknowns/three durable Runner-ledger fences after.
+Destination c41: actual pg ambient resolution before1P2F→after3P/types0; cold control pending.
+Typed full original job/Source/execution/writer binding and all atomic completion members.
+Source producer writes optional evidence only with eligible existing jsonb UPDATE privilege.
+Fresh receipt CREATE adds optional field; old Source receives no automatic ALTER/grants.
+Existing original PostgreSQL markApplying records sticky uncertainty before Source boundary.
+Recovery SELECTs only original receipt; missing/legacy/changed evidence stays UNKNOWN.
+Current RECONCILE native actor; zero Source business SQL/replay/lease renewal.
+Control transaction CAS current unknown receipt; full old receipt retained in append-only event.
+Finite package/app types0 and intent5P; physical cold/concurrent/lifecycle gates NOT_RUN.
+Backup only private remote; all strong uncertain captures/owned stopped Source retained.

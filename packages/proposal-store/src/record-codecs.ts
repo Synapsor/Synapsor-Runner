@@ -523,6 +523,7 @@ export function rowToWritebackIntent(row: unknown): StoredWritebackIntent | unde
     result: row.result_json == null ? undefined : parseWritebackResult(JSON.parse(String(row.result_json))),
     reconciliation_reason: row.reconciliation_reason == null ? undefined : String(row.reconciliation_reason),
     source_completion_binding: row.source_completion_binding_json == null ? undefined : parseSourceCompletionBinding(JSON.parse(String(row.source_completion_binding_json))),
+    ...(row.source_outcome_unknown === 1 ? { source_outcome_unknown: true as const } : {}),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
   };
@@ -543,6 +544,7 @@ export function writebackIntentPayload(intent: StoredWritebackIntent): Record<st
     ...(intent.result ? { result: intent.result } : {}),
     ...(intent.reconciliation_reason ? { reconciliation_reason: intent.reconciliation_reason } : {}),
     ...(intent.source_completion_binding ? { source_completion_binding: intent.source_completion_binding } : {}),
+    ...(intent.source_outcome_unknown ? { source_outcome_unknown: true } : {}),
     created_at: intent.created_at,
     updated_at: intent.updated_at,
   };
@@ -567,6 +569,7 @@ export function writebackIntentFromPayload(payload: Record<string, unknown>): St
     result: isRecord(payload.result) ? parseWritebackResult(payload.result) : undefined,
     reconciliation_reason: payload.reconciliation_reason == null ? undefined : String(payload.reconciliation_reason),
     source_completion_binding: payload.source_completion_binding == null ? undefined : parseSourceCompletionBinding(payload.source_completion_binding),
+    ...(payload.source_outcome_unknown === true ? { source_outcome_unknown: true as const } : {}),
     created_at: String(payload.created_at),
     updated_at: String(payload.updated_at),
   };

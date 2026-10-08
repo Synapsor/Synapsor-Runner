@@ -1,5 +1,5 @@
 {
-  "status": "CONNECTION_REPAIR_PROVED_PROSPECTIVE_BINDING_WIP",
+  "status": "COHERENT_RECOVERY_WIP_NATIVE_INDEPENDENT_PENDING",
   "product_base": "ab91163d641fced8f97c7d80750183192d6e4389",
   "new_native_execution": "6_RUNTIME_FAILURES_6_COMMITTED_SOURCE_EFFECT_WITNESSES",
   "original_lost_ack_checkpoint_preserved": "eb608c27d50e6a9f7108fc57c85530650fe29aa6",
@@ -151,7 +151,7 @@
     "seconds_focus": 2.0476419925689697,
     "owned_live": 0
   },
-  "remaining": "Prospective full-bound atomic Source receipt, durable Source-db intent and authorized zero-business-write recovery are not yet implemented; legacy/missing evidence stays unknown.",
+  "remaining": "Fresh physical cold/concurrent/missing/wrong binding/ambient drift/Source ACK/control ACK loss/rollback/legacy privilege and ordinary lifecycle/accounting controls plus independent judgment remain; actual runner_ledger lacks Source proof and stays UNKNOWN.",
   "prospective": {
     "typed_envelope_binding_pin": "93b52520",
     "types_exit": 0,
@@ -183,6 +183,18 @@
       "fix": "Positive binding requires explicit URL user and port; ordinary execution remains compatible",
       "cold_wrong_destination_ambient_control": "NOT_RUN_REQUIRED_BEFORE_POSITIVE_RECOVERY_ACCEPTANCE",
       "owned_live": 0
+    },
+    "producer_inspection_store": {
+      "implemented": true,
+      "native_positive_recovery": "NOT_RUN",
+      "independent_acceptance": "PENDING",
+      "source_producer": "Optional full-bound atomic completion JSON in the same selected Source receipt transaction; native column UPDATE permission required",
+      "legacy_source": "No silent ALTER or grants; absent/unwritable column supplies no evidence",
+      "intent_fence": "Existing PostgreSQL markApplying persists sticky uncertainty before Source boundary, not a new state",
+      "recovery": "Original receipt SELECT only; full job/binding/semantic/all-atomic-result validation; current signed RECONCILE separate from APPLY",
+      "control_projection": "Same-transaction CAS current unknown receipt to Source-proven applied; complete original receipt retained in immutable reconciliation event; original job/key/approval/attempt unchanged",
+      "concurrency": "Original intent/projection CAS and exact completion deduplication; native controls pending",
+      "compatibility": "Package builds0; app types corrected to0; finite intent checks5P; original unsafe row-match unit observed refusal1F and converted to explicit Source-proven unit fixture, not physical proof"
     }
   },
   "setup_only_correction": "run-local launcher first had newline syntax error before native launch; corrected narrow syntax only, not runtime outcome"

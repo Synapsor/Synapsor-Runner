@@ -275,7 +275,7 @@ export async function ui(args: string[]): Promise<number> {
       const authority = await workbenchStore("read", "worker-reconciliation-authority-read", (store) => {
         const intent = store.getWritebackIntent(intentId);
         if (!intent) throw new Error(`writeback intent not found: ${intentId}`);
-        if (intent.status !== "reconciliation_required" && intent.status !== "applying") {
+        if (intent.status !== "reconciliation_required" && intent.status !== "applying" && !(intent.status === "applied" && intent.source_completion_binding)) {
           throw new Error(`writeback intent ${intentId} is ${intent.status}, not reconcilable`);
         }
         const proposal = requireLocalProposal(store, intent.proposal_id);
@@ -329,6 +329,7 @@ export async function ui(args: string[]): Promise<number> {
           store.reconcileWritebackIntent({
             intent_id: context.intent.intent_id,
             receipt,
+            ...(context.observation.source_completion?.status === "proven" ? { source_completion: context.observation.source_completion.evidence } : {}),
             actor: identity.subject,
             reason: input.reason,
             observation: context.observation,

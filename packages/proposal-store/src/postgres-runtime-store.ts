@@ -152,7 +152,7 @@ export class PostgresWritebackIntentStore {
     await this.withIntent(intentJobId(intentId), async (client, existing) => {
       if (!existing) throw new ProposalStoreError("WRITEBACK_INTENT_NOT_FOUND", `writeback intent not found: ${intentId}`);
       if (existing.status !== "intent_recorded") throw new ProposalStoreError("WRITEBACK_INTENT_NOT_CLAIMABLE", `writeback intent ${intentId} is ${existing.status}`);
-      await this.writeIntent(client, { ...existing, runner_id: runnerId, status: "applying", reconciliation_reason: undefined, updated_at: new Date().toISOString() });
+      await this.writeIntent(client, { ...existing, runner_id: runnerId, status: "applying", reconciliation_reason: undefined, ...(existing.intent.engine === "postgres" ? { source_outcome_unknown: true as const } : {}), updated_at: new Date().toISOString() });
     });
   }
 
@@ -173,11 +173,11 @@ export class PostgresWritebackIntentStore {
     });
   }
 
-  async requireWritebackReconciliation(intentId: string, reason: string): Promise<void> {
+  async requireWritebackReconciliation(intentId: string, reason: string, sourceOutcomeUnknown?: true): Promise<void> {
     await this.withIntent(intentJobId(intentId), async (client, existing) => {
       if (!existing) throw new ProposalStoreError("WRITEBACK_INTENT_NOT_FOUND", `writeback intent not found: ${intentId}`);
       if (existing.status === "applied" || existing.status === "already_applied") return;
-      await this.writeIntent(client, { ...existing, status: "reconciliation_required", reconciliation_reason: String(reason).slice(0, 500), updated_at: new Date().toISOString() });
+      await this.writeIntent(client, { ...existing, status: "reconciliation_required", reconciliation_reason: String(reason).slice(0, 500), ...(sourceOutcomeUnknown ? { source_outcome_unknown: true as const } : {}), updated_at: new Date().toISOString() });
     });
   }
 
@@ -859,8 +859,8 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
     return await this.withWrite("replay", (store) => store.replay(proposalId));
   }
 
-  async claimWritebackIntent(job: unknown, runnerId: string): Promise<WritebackIntentClaim> {
-    return await this.withWrite("claimWritebackIntent", (store) => store.claimWritebackIntent(job, runnerId));
+  async claimWritebackIntent(job: unknown, runnerId: string, sourceBinding?: SourceCompletionBinding): Promise<WritebackIntentClaim> {
+    return await this.withWrite("claimWritebackIntent", (store) => store.claimWritebackIntent(job, runnerId, sourceBinding));
   }
 
   async markWritebackIntentApplying(intentId: string, runnerId: string): Promise<void> {
@@ -871,8 +871,8 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
     await this.withWrite("completeWritebackIntent", (store) => store.completeWritebackIntent(intentId, result));
   }
 
-  async requireWritebackReconciliation(intentId: string, reason: string): Promise<void> {
-    await this.withWrite("requireWritebackReconciliation", (store) => store.requireWritebackReconciliation(intentId, reason));
+  async requireWritebackReconciliation(intentId: string, reason: string, sourceOutcomeUnknown?: true): Promise<void> {
+    await this.withWrite("requireWritebackReconciliation", (store) => store.requireWritebackReconciliation(intentId, reason, sourceOutcomeUnknown));
   }
 
   async enqueueWorkerProposal(input: Parameters<NonNullable<ProposalRuntimeStore["enqueueWorkerProposal"]>>[0]): Promise<WorkerQueueItem> {

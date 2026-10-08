@@ -1,0 +1,35 @@
+{
+  "command": [
+    "bwrap",
+    "--unshare-net",
+    "--bind",
+    "/",
+    "/",
+    "--dev",
+    "/dev",
+    "--proc",
+    "/proc",
+    "--chdir",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review",
+    "node",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review/node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    "/var/tmp/synapsor-b61-recovery-local-be6eee57/vitest.config.mjs",
+    "--reporter=json",
+    "--outputFile",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b61-shared-commit-recovery-20261007-v1/recovery-intents-after-v2/vitest.json",
+    "packages/proposal-store/src/index.test.ts",
+    "-t",
+    "retains an original Source binding|persists fleet writeback intents|round-trips protocol-v3 writeback intents|requires reconciliation after an incomplete|records a signed"
+  ],
+  "env": {
+    "PATH": "/home/sandesh-tiwari/.local/bin:/home/sandesh-tiwari/.codex/tmp/arg0/codex-arg0Zgewla:/home/sandesh-tiwari/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override:/home/sandesh-tiwari/.local/bin:/home/sandesh-tiwari/.npm-global/bin:/home/sandesh-tiwari/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin:/home/sandesh-tiwari/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/usr/lib/chatgpt/resources",
+    "HOME": "/var/tmp/synapsor-b61-recovery-local-be6eee57/home",
+    "TMPDIR": "/var/tmp/synapsor-b61-recovery-local-be6eee57/tmp",
+    "CI": "1",
+    "COREPACK_ENABLE_NETWORK": "0"
+  },
+  "head": "c41c3c94f4aabf214c45d73b9286ab1fc3e78b12",
+  "scope": "one bounded local worker/no PG/provider"
+}

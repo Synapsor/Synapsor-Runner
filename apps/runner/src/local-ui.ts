@@ -454,7 +454,7 @@ export type WorkbenchReconciliationView = {
   intent_status: string;
   reconciliation_reason?: string;
   classification: string;
-  supported_outcome: "applied" | "conflict" | "failed";
+  supported_outcome: "applied" | "conflict" | "failed" | "unknown";
   observed_digest: `sha256:${string}`;
   expected_fields: string[];
   observed_fields: string[];
@@ -5472,7 +5472,7 @@ async function handleRequest(input: {
       sendJson(response, 200, {
         ok: true,
         reconciliation: inspection,
-        required_confirmation: `RECONCILE ${intentId} AS ${inspection.supported_outcome.toUpperCase()}`,
+        required_confirmation: inspection.supported_outcome === "unknown" ? null : `RECONCILE ${intentId} AS ${inspection.supported_outcome.toUpperCase()}`,
         source_database_changed: false,
       });
     } catch {
@@ -9161,6 +9161,10 @@ async function loadWorker() {
                 + " · members: " + view.member_count }),
               el("p", { text: "Runner returns only field names, classification, and digests here; source-row values remain outside Workbench." }),
             );
+            if (view.supported_outcome === "unknown") {
+              inspectionRoot.append(el("p", { text: "The Source outcome remains unknown. Keep this attempt fenced; no resolution is available from row similarity or a missing receipt." }));
+              return;
+            }
             const confirmation = document.createElement("input");
             confirmation.className = "exact-confirmation";
             confirmation.placeholder = payload.required_confirmation;

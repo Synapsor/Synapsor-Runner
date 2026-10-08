@@ -2,15 +2,16 @@ import {
   buildAnalyticsCatalog,
   type ResultFormat,
   type RuntimeConfig,
+  resolveSemanticSupervisedWriterSource,
 } from "@synapsor-runner/mcp-server";
 import { inspectMysqlWritebackSource, mysqlReceiptMigration } from "@synapsor-runner/mysql";
-import { createPostgresPool, inspectPostgresWritebackSource, postgresReceiptMigration } from "@synapsor-runner/postgres";
+import { createPostgresPool, inspectPostgresWritebackSource, inspectPostgresSourceCompletion, postgresReceiptMigration } from "@synapsor-runner/postgres";
 import {
   ProposalStore,
   type StoredProposal,
   type StoredWritebackIntent
 } from "@synapsor-runner/proposal-store";
-import { canonicalJsonDigest, protocolVersions, type ExecutionReceiptV2, type ExecutionReceiptV3, type ExecutionReceiptV4 } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseExecutionReceipt, protocolVersions, type ExecutionReceiptV2, type ExecutionReceiptV3, type ExecutionReceiptV4, type ExecutionReceiptV5 } from "@synapsor-runner/protocol";
 import {
   compensationInverseFromJob,
   type ReconciliationObservation,
@@ -42,7 +43,8 @@ import {
   renderTerminalSql,
   terminalSyntaxColorEnabled,
 } from "./terminal-syntax.js";
-import { formatSourceReceiptMode, hashReceipt, receiptTableGuidance, runnerReceiptConfig, sourceNeedsSqlWriteback, writebackDatabaseScope, writebackTimeoutMs } from "./writeback-domain.js";
+import { formatSourceReceiptMode, hashReceipt, receiptTableGuidance, runnerReceiptConfig, sourceNeedsSqlWriteback, toExecutionReceipt, writebackDatabaseScope, writebackTimeoutMs } from "./writeback-domain.js";
+import { executionBindingDigest } from "./control-policy-execution.js";
 import { resolveSqlWriteDatabaseUrl } from "./writeback-execution.js";
 import { inspectSemanticReceiptSetup, previewSemanticReceiptSelection, saveSemanticReceiptSelection, selectedSemanticReceipts, type SemanticReceiptMode } from "./semantic-receipt-setup.js";
 import { withPreservedCleanup } from "./resource-lifecycle.js";
@@ -172,6 +174,7 @@ async function writebackReconcileResolve(args: string[], configPath: string, sto
     const resolved = store.reconcileWritebackIntent({
       intent_id: context.intent.intent_id,
       receipt,
+      ...(context.observation.source_completion?.status === "proven" ? { source_completion: context.observation.source_completion.evidence } : {}),
       actor: identity.subject,
       reason,
       observation: context.observation,
@@ -207,7 +210,8 @@ async function inspectWritebackIntentContext(
     intent = requested === "latest"
       ? store.listWritebackIntents({ status: "reconciliation_required", limit: 1 })[0] ?? (() => { throw new Error("no writeback intents require reconciliation"); })()
       : store.getWritebackIntent(requested) ?? (() => { throw new Error(`writeback intent not found: ${requested}`); })();
-    if (intent.status !== "reconciliation_required" && intent.status !== "applying") throw new Error(`writeback intent ${intent.intent_id} is ${intent.status}, not reconcilable`);
+    if (intent.status !== "reconciliation_required" && intent.status !== "applying"
+      && !(intent.status === "applied" && intent.source_completion_binding)) throw new Error(`writeback intent ${intent.intent_id} is ${intent.status}, not reconcilable`);
     proposal = requireLocalProposal(store, intent.proposal_id);
   } finally {
     store.close();
@@ -224,19 +228,35 @@ export async function inspectWritebackSourceContext(
   config: RuntimeConfig,
 ): Promise<ReconciliationObservation> {
   const source = config.sources?.[intent.intent.source_id];
+  if (intent.intent.engine === "postgres") {
+    const job = intent.intent;
+    const policy = job.protocol_version === "5.0" ? config.supervised_worker?.outcomes?.find(p =>
+      p.outcome === job.semantic_authority.proof.outcome && p.action_boundary_digest === job.semantic_authority.proof.action_boundary_digest) : undefined;
+    const writer = policy ? resolveSemanticSupervisedWriterSource(config, job.source_id, policy) : source;
+    const receipts = runnerReceiptConfig(source);
+    const completion = receipts?.authority === "source_db" ? await inspectPostgresSourceCompletion(job, {
+      controlPlaneUrl: "", runnerToken: "", runnerId: intent.runner_id, sourceId: job.source_id,
+      engine: "postgres", databaseUrl: await resolveSqlWriteDatabaseUrl(job, configPath, process.env),
+      receipts, databaseScope: writebackDatabaseScope(source, proposal, job), pollIntervalMs: 1,
+      logLevel: "error", dryRun: false, stateDir: "",
+      ...(writer?.write_url_env ? { sourceCompletionAdmission: {
+        execution_binding_digest: executionBindingDigest(config) as `sha256:${string}`, writer_reference: writer.write_url_env,
+      } } : {}),
+    }, intent.source_completion_binding) : { status: "unknown" as const, reason: "RUNNER_LEDGER_HAS_NO_ATOMIC_SOURCE_COMPLETION" };
+    return { operation: intent.operation, classification: completion.status === "proven" ? "completion_proven" : "outcome_unknown",
+      target_identity: job.target.primary_key.value === undefined ? [] : [{ column: job.target.primary_key.column, value: job.target.primary_key.value }], expected: {}, observed: {}, observed_digest: canonicalJsonDigest(completion), source_completion: completion };
+  }
   if (runnerReceiptConfig(source)?.authority !== "runner_ledger") throw new Error(`source ${intent.intent.source_id} does not use runner_ledger receipt authority`);
   const databaseUrl = await resolveSqlWriteDatabaseUrl(intent.intent, configPath, process.env);
-  return intent.intent.engine === "postgres"
-    ? await inspectPostgresWritebackSource(
-      intent.intent,
-      databaseUrl,
-      writebackDatabaseScope(source, proposal, intent.intent),
-    )
-    : await inspectMysqlWritebackSource(intent.intent, databaseUrl);
+  return await inspectMysqlWritebackSource(intent.intent, databaseUrl);
 }
 
 
 export function reconciliationSupportedOutcome(observation: ReconciliationObservation): "applied" | "conflict" | "failed" {
+  if (observation.classification === "completion_proven" && observation.source_completion?.status === "proven") return "applied";
+  if (observation.classification === "outcome_unknown" || observation.source_completion?.status === "unknown") {
+    throw new Error("SOURCE_COMPLETION_UNKNOWN: keep the original attempt fenced; row observations or receipt absence cannot prove its outcome");
+  }
   if (observation.classification === "matches_proposed") return "applied";
   if ((observation.operation === "single_row_delete" || observation.operation === "set_delete") && observation.classification === "target_absent") return "applied";
   if (observation.classification === "matches_reviewed_before" || observation.classification === "not_observed") return "failed";
@@ -259,7 +279,7 @@ export function workbenchReconciliationView(
     intent_status: intent.status,
     ...(intent.reconciliation_reason ? { reconciliation_reason: intent.reconciliation_reason } : {}),
     classification: observation.classification,
-    supported_outcome: reconciliationSupportedOutcome(observation),
+    supported_outcome: observation.classification === "outcome_unknown" ? "unknown" : reconciliationSupportedOutcome(observation),
     observed_digest: observation.observed_digest,
     expected_fields: Object.keys(observation.expected).sort(),
     observed_fields: Object.keys(observation.observed).sort(),
@@ -276,8 +296,18 @@ export function reconciliationReceipt(
   outcome: "applied" | "conflict" | "failed",
   runnerId: string,
   reason: string,
-): ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4 {
+): ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4 | ExecutionReceiptV5 {
   const job = intent.intent;
+  if (observation.source_completion?.status === "proven") {
+    if (outcome !== "applied") throw new Error("SOURCE_COMPLETION_OUTCOME_MISMATCH");
+    const receipt = toExecutionReceipt(job, observation.source_completion.evidence.result, false);
+    const { receipt_hash: _hash, ...body } = receipt;
+    const core = { ...body, reconciliation: { intent_id: intent.intent_id, reason: reason.slice(0, 500) } };
+    return parseExecutionReceipt({ ...core, receipt_hash: canonicalJsonDigest(core) }) as ExecutionReceiptV2 | ExecutionReceiptV5;
+  }
+  if (job.engine === "postgres" && (intent.status === "applying" || intent.status === "reconciliation_required")) {
+    throw new Error("SOURCE_COMPLETION_PROOF_REQUIRED: Source outcome remains unknown without exact atomic evidence");
+  }
   if (job.protocol_version === protocolVersions.normalizedWritebackJobV4) {
     const executedAt = new Date().toISOString();
     const memberEffects: ExecutionReceiptV4["member_effects"] = outcome === "applied"
@@ -428,7 +458,7 @@ function formatReconciliationInspection(intent: StoredWritebackIntent, observati
     `Intent state: ${intent.status}`,
     `Live observation: ${observation.classification}`,
     ...setSummary,
-    `Supported resolution: ${reconciliationSupportedOutcome(observation)}`,
+    `Supported resolution: ${observation.classification === "outcome_unknown" ? "unknown; preserve the original fence" : reconciliationSupportedOutcome(observation)}`,
     `Expected safe metadata: ${JSON.stringify(observation.expected)}`,
     `Observed allowlisted metadata: ${JSON.stringify(observation.observed)}`,
     `Observation digest: ${observation.observed_digest}`,

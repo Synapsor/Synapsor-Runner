@@ -1,4 +1,4 @@
-import { sourceRollbackBinding } from "@synapsor-runner/worker-core";
+import { sourceRollbackBinding, sourceCompletionBinding } from "@synapsor-runner/worker-core";
 import crypto from "node:crypto";
 import { observePostgresClientErrors, postgresClientConnectionFailed } from "./connection-lifetime.js";
 import { isCompleteCollectionScopeExpression } from "./complete-collection-scope.js";
@@ -17,6 +17,9 @@ import type {
 import {
   canonicalJsonDigest,
   parseSemanticVerificationResult,
+  parseSourceCompletionEvidence,
+  type SourceCompletionBinding,
+  type SourceCompletionEvidence,
   type InverseDescriptorV1,
   type NormalizedWritebackJobV5,
   type NormalizedWritebackResultV5,
@@ -35,6 +38,7 @@ export const postgresReceiptMigration = `CREATE TABLE IF NOT EXISTS synapsor_wri
   status text NOT NULL,
   result_hash text,
   semantic_verification_json jsonb,
+  completion_evidence_json jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
   completed_at timestamptz
 );
@@ -628,6 +632,61 @@ function sourceReceiptTable(config: RunnerConfig): string {
 
 export function postgresReceiptMigrationForConfig(config: RunnerConfig): string {
   return postgresReceiptMigration.replaceAll("synapsor_writeback_receipts", sourceReceiptTable(config));
+}
+
+/** Explicit Source-owner export only. Execution and recovery never run this
+ * upgrade against an existing receipt table. */
+export function postgresSourceCompletionMigrationForConfig(config: RunnerConfig): string {
+  return `ALTER TABLE ${sourceReceiptTable(config)} ADD COLUMN IF NOT EXISTS completion_evidence_json jsonb;`;
+}
+
+async function sourceCompletionColumnAvailable(client: PostgresApplyClient, config: RunnerConfig, forWrite = false): Promise<boolean> {
+  const result = await client.query(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute
+    WHERE attrelid = to_regclass($1) AND attname = 'completion_evidence_json'
+      AND atttypid = 'jsonb'::regtype AND NOT attisdropped
+      AND (NOT $2::boolean OR has_column_privilege(current_user, attrelid, attnum, 'UPDATE'))) AS available`, [sourceReceiptTable(config), forWrite]);
+  return result.rows[0]?.available === true;
+}
+
+export type PostgresSourceCompletionInspection =
+  | { status: "proven"; evidence: SourceCompletionEvidence }
+  | { status: "unknown"; reason: string };
+
+/** Read only the original receipt. No mutation, idempotency claim, target-row
+ * inference, schema upgrade, or execution-eligibility renewal is performed. */
+export async function inspectPostgresSourceCompletion(job: WritebackJob, config: RunnerConfig,
+  originalBinding?: SourceCompletionBinding): Promise<PostgresSourceCompletionInspection> {
+  const current = sourceCompletionBinding(job, config);
+  if (!originalBinding || !current || canonicalJsonDigest(originalBinding) !== canonicalJsonDigest(current)) {
+    return { status: "unknown", reason: "SOURCE_COMPLETION_BINDING_UNAVAILABLE_OR_CHANGED" };
+  }
+  const pool = createPostgresPool(config.databaseUrl);
+  let client: PoolClient | undefined;
+  try {
+    client = await pool.connect();
+    if (!await sourceCompletionColumnAvailable(client, config)) return { status: "unknown", reason: "SOURCE_COMPLETION_LEGACY_SCHEMA" };
+    await client.query("BEGIN READ ONLY");
+    if (config.databaseScope) await bindPostgresRlsScope(client, config.databaseScope);
+    const selected = await client.query(`SELECT job_id, proposal_id, status, result_hash, semantic_verification_json,
+      CASE WHEN octet_length(completion_evidence_json::text) <= 1048576 THEN completion_evidence_json END AS completion_evidence_json
+      FROM ${sourceReceiptTable(config)} WHERE idempotency_key = $1`, [job.idempotency_key]);
+    await client.query("COMMIT");
+    const row = selected.rows[0];
+    if (selected.rowCount !== 1 || !row || row.job_id !== job.job_id || row.proposal_id !== job.proposal_id
+      || row.status !== "applied" || !row.completion_evidence_json) return { status: "unknown", reason: "SOURCE_COMPLETION_RECEIPT_UNAVAILABLE_OR_MISMATCH" };
+    const evidence = parseSourceCompletionEvidence(row.completion_evidence_json, job, originalBinding);
+    if (row.result_hash !== evidence.result.result_hash || (evidence.result.protocol_version === "5.0"
+      && canonicalJsonDigest(row.semantic_verification_json) !== canonicalJsonDigest(evidence.result.semantic_verification))) {
+      return { status: "unknown", reason: "SOURCE_COMPLETION_RECEIPT_MISMATCH" };
+    }
+    return { status: "proven", evidence };
+  } catch {
+    await client?.query("ROLLBACK").catch(() => undefined);
+    return { status: "unknown", reason: "SOURCE_COMPLETION_PROOF_UNAVAILABLE" };
+  } finally {
+    try { client?.release(postgresClientConnectionFailed(client)); } catch { /* preserve unknown */ }
+    await pool.end().catch(() => undefined);
+  }
 }
 
 export function buildPostgresUpdate(job: WritebackJob): { sql: string; values: unknown[] } {
@@ -1229,21 +1288,55 @@ export async function applyPostgresJobWithClient(job: WritebackJob, config: Runn
   validateOperation(job);
   if (receiptAuthority(config) === "runner_ledger") return await applyWithRunnerLedger(job, config, client);
   if (config.receipts?.provisioning === "auto_migrate") await client.query(postgresReceiptMigrationForConfig(config));
+  const store = config.writebackIntentStore;
+  const binding = sourceCompletionBinding(job, config);
+  const claim = store ? await store.claimWritebackIntent(job, config.runnerId, binding) : undefined;
+  if (claim?.decision === "existing_result") return asAlreadyApplied(claim.result, job, config);
+  if (claim?.decision === "reconciliation_required") return reconciliationResult(job, config, claim.intent_id);
+  if (claim && store) {
+    await config.testFailpoint?.("after_intent_recorded");
+    try { await store.markWritebackIntentApplying(claim.intent_id, config.runnerId); }
+    catch { return reconciliationResult(job, config, claim.intent_id); }
+    await config.testFailpoint?.("after_intent_applying");
+  }
+  // An old table remains usable but supplies no new positive recovery proof.
+  // This metadata inspection never upgrades it or changes grants.
+  const completionBinding = store && binding && (job.protocol_version === "5.0" || (job.protocol_version === "2.0" && job.operation === "single_row_update"))
+    && await sourceCompletionColumnAvailable(client, config, true) ? binding : undefined;
+  let result: WritebackResult;
   try {
-    return await sourceTransaction(client, job, config, async () => {
+    result = await sourceTransaction(client, job, config, async () => {
       const existing = await claimSourceReceipt(client, job, config);
       if (existing) return existing;
       const outcome = await mutatePostgres(job, client, config);
       const result = resultFromOutcome(job, config, outcome);
-      await recordSourceReceipt(client, job, config, result);
+      await recordSourceReceipt(client, job, config, result, completionBinding);
       return result;
     });
   } catch (error) {
     if (error instanceof SourceOutcomeUnknownError) {
-      return reconciliationResult(job, config, sourceReconciliationIntentId(job), "OUTCOME_UNKNOWN");
+      if (claim && store) await preserveSourceUncertainty(store, claim.intent_id, "database COMMIT acknowledgement was not observed");
+      return reconciliationResult(job, config, claim?.intent_id ?? sourceReconciliationIntentId(job), "OUTCOME_UNKNOWN");
     }
+    if (claim && store) await store.completeWritebackIntent(claim.intent_id, failedResult(job, config, safeErrorCode(error, operationOf(job))));
     throw error;
   }
+  if (claim && store) {
+    try {
+      await config.testFailpoint?.("after_source_commit");
+      await store.completeWritebackIntent(claim.intent_id, result);
+    } catch {
+      await preserveSourceUncertainty(store, claim.intent_id, "source acknowledgement or ledger completion was not durably observed");
+      return reconciliationResult(job, config, claim.intent_id);
+    }
+  }
+  return result;
+}
+
+async function preserveSourceUncertainty(store: NonNullable<RunnerConfig["writebackIntentStore"]>, intentId: string, reason: string): Promise<void> {
+  // The original applying intent was durable before Source mutation. Failure
+  // to append bookkeeping cannot make that attempt safe to execute again.
+  try { await store.requireWritebackReconciliation(intentId, reason, true); } catch { /* retain original applying fence */ }
 }
 
 async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, client: PostgresApplyClient): Promise<WritebackResult> {
@@ -1270,7 +1363,7 @@ async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, cl
     result = resultFromOutcome(job, config, outcome);
   } catch (error) {
     if (error instanceof SourceOutcomeUnknownError) {
-      await store.requireWritebackReconciliation(claim.intent_id, "database COMMIT acknowledgement was not observed");
+      await preserveSourceUncertainty(store, claim.intent_id, "database COMMIT acknowledgement was not observed");
       return reconciliationResult(job, config, claim.intent_id);
     }
     result = failedResult(job, config, safeErrorCode(error, operationOf(job)));
@@ -1280,10 +1373,14 @@ async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, cl
   try {
     await config.testFailpoint?.("after_source_commit");
   } catch {
-    await store.requireWritebackReconciliation(claim.intent_id, "process stopped after source COMMIT and before ledger completion");
+    await preserveSourceUncertainty(store, claim.intent_id, "process stopped after source COMMIT and before ledger completion");
     return reconciliationResult(job, config, claim.intent_id);
   }
-  await store.completeWritebackIntent(claim.intent_id, result);
+  try { await store.completeWritebackIntent(claim.intent_id, result); }
+  catch {
+    await preserveSourceUncertainty(store, claim.intent_id, "ledger completion acknowledgement was not observed");
+    return reconciliationResult(job, config, claim.intent_id);
+  }
   await config.testFailpoint?.("after_intent_completed");
   return result;
 }
@@ -1911,7 +2008,19 @@ async function claimSourceReceipt(client: PostgresApplyClient, job: WritebackJob
   return resultFromExistingReceipt(job, config, row);
 }
 
-async function recordSourceReceipt(client: PostgresApplyClient, job: WritebackJob, config: RunnerConfig, result: WritebackResult): Promise<void> {
+async function recordSourceReceipt(client: PostgresApplyClient, job: WritebackJob, config: RunnerConfig, result: WritebackResult, binding?: SourceCompletionBinding): Promise<void> {
+  if (binding && result.status === "applied") {
+    const evidence = parseSourceCompletionEvidence({ schema_version: "synapsor.postgres.source-completion.v1",
+      job_digest: canonicalJsonDigest(job), binding_digest: binding.digest, result, result_digest: canonicalJsonDigest(result) }, job, binding);
+    const updated = await client.query(`UPDATE ${sourceReceiptTable(config)} SET status = $2, result_hash = $3,
+      semantic_verification_json = $4::jsonb, completion_evidence_json = $5::jsonb, completed_at = now()
+      WHERE idempotency_key = $1 AND job_id = $6 AND proposal_id = $7`,
+    [job.idempotency_key, result.status, resultHashFromResult(job, result),
+      result.protocol_version === "5.0" ? JSON.stringify(result.semantic_verification) : null,
+      JSON.stringify(evidence), job.job_id, job.proposal_id]);
+    if (updated.rowCount !== 1) throw new Error("SOURCE_RECEIPT_UNAVAILABLE");
+    return;
+  }
   if (job.protocol_version === "5.0") {
     if (result.protocol_version !== "5.0") throw new Error("SOURCE_RECEIPT_SEMANTIC_PROOF_UNAVAILABLE");
     const updated = await client.query(

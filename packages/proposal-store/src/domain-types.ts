@@ -7,11 +7,13 @@ import type {
   ExecutionReceiptV2,
   ExecutionReceiptV3,
   ExecutionReceiptV4,
+  ExecutionReceiptV5,
   FreshnessProofV1,
   ActionBoundarySharedLimitV1,
   WritebackJob,
   WritebackResult,
   SourceCompletionBinding,
+  SourceCompletionEvidence,
 } from "@synapsor-runner/protocol";
 
 export type LocalProposalState =
@@ -244,6 +246,8 @@ export type StoredWritebackIntent = {
   reconciliation_reason?: string;
   /** Original native binding, recorded before Source mutation; legacy absence cannot be repaired by inference. */
   source_completion_binding?: SourceCompletionBinding;
+  /** Native uncertain Source boundary; row similarity cannot clear this fence. */
+  source_outcome_unknown?: true;
   created_at: string;
   updated_at: string;
 };
@@ -255,7 +259,9 @@ export type WritebackIntentClaim =
 
 export type ReconcileWritebackIntentInput = {
   intent_id: string;
-  receipt: ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4;
+  receipt: ExecutionReceiptV2 | ExecutionReceiptV3 | ExecutionReceiptV4 | ExecutionReceiptV5;
+  /** Trusted native Source inspection only; never a public completion claim. */
+  source_completion?: SourceCompletionEvidence;
   actor: string;
   reason: string;
   observation: Record<string, unknown>;
@@ -1253,10 +1259,10 @@ export type ProposalRuntimeStore = {
   completeProductionExploreBudgetReservation?(input: CompleteExploreBudgetReservationInput): MaybePromise<CompleteExploreBudgetReservationDecision>;
   claimProductionExplorePrivacyRelease?(input: ProductionExplorePrivacyReleaseInput): MaybePromise<ProductionExplorePrivacyReleaseDecision>;
   replay(proposalId: string): MaybePromise<ProposalReplayRecord>;
-  claimWritebackIntent?(job: WritebackJob, runnerId: string): MaybePromise<WritebackIntentClaim>;
+  claimWritebackIntent?(job: WritebackJob, runnerId: string, sourceBinding?: SourceCompletionBinding): MaybePromise<WritebackIntentClaim>;
   markWritebackIntentApplying?(intentId: string, runnerId: string): MaybePromise<void>;
   completeWritebackIntent?(intentId: string, result: WritebackResult): MaybePromise<void>;
-  requireWritebackReconciliation?(intentId: string, reason: string): MaybePromise<void>;
+  requireWritebackReconciliation?(intentId: string, reason: string, sourceOutcomeUnknown?: true): MaybePromise<void>;
   enqueueWorkerProposal?(input: {
     proposal_id: string;
     execution_mode?: WorkerExecutionMode;

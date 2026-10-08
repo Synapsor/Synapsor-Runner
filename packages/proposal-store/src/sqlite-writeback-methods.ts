@@ -1,5 +1,6 @@
+import { assertSourceCompletionReceipt } from "./source-completion-receipt.js";
 import { blockedClosureStoreBinding, type BlockedRollbackEvidence } from "./blocked-closure.js";
-import { canonicalJsonDigest, parseSourceCompletionBinding, type SourceCompletionBinding } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseSourceCompletionBinding, parseSourceCompletionEvidence, type SourceCompletionBinding } from "@synapsor-runner/protocol";
 import {
   type SQLInputValue,
 } from "node:sqlite";
@@ -89,6 +90,19 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       const proposal = this.requireProposal(receipt.proposal_id);
       assertWritebackAllowed(proposal, "recorded with an execution receipt");
       this.transaction(() => {
+      const originalIntent = this.getWritebackIntent(`wbi:${receipt.writeback_job_id}`);
+      if (originalIntent?.status === "applied" && originalIntent.source_completion_binding
+        && this.events(proposal.proposal_id).some(event => event.kind === "writeback_reconciled"
+          && event.payload.intent_id === originalIntent.intent_id && event.payload.source_completion)) {
+        if (receipt.status === "reconciliation_required") {
+          this.appendEvent(proposal.proposal_id, "writeback_late_unknown_observed", receipt.runner_id,
+            { intent_id: originalIntent.intent_id, receipt, current_completion_preserved: true });
+          return;
+        }
+        if (receipt.status !== "applied" && receipt.status !== "already_applied") {
+          throw new ProposalStoreError("SOURCE_COMPLETION_TERMINAL_CONFLICT", "a later receipt cannot replace the proven Source completion");
+        }
+      }
         this.recordExecutionReceiptRows(receipt, proposal);
         if (rollback) {
           const item = this.workerQueueItem(proposal.proposal_id);
@@ -231,9 +245,9 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       const now = new Date().toISOString();
       const result = this.db.prepare(`
         UPDATE writeback_intents
-        SET status = 'applying', runner_id = ?, reconciliation_reason = NULL, updated_at = ?
+        SET status = 'applying', runner_id = ?, reconciliation_reason = NULL, source_outcome_unknown = COALESCE(?, source_outcome_unknown), updated_at = ?
         WHERE intent_id = ? AND status = 'intent_recorded'
-      `).run(runnerId, now, intentId);
+      `).run(runnerId, intent.intent.engine === "postgres" ? 1 : null, now, intentId);
       if (Number(result.changes) !== 1) {
         throw new ProposalStoreError(
           "WRITEBACK_INTENT_NOT_CLAIMABLE",
@@ -278,16 +292,16 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       });
     },
   
-  requireWritebackReconciliation(intentId: string, reason: string): void {
+  requireWritebackReconciliation(intentId: string, reason: string, sourceOutcomeUnknown?: true): void {
       const intent = this.requireWritebackIntent(intentId);
       if (intent.status === "applied" || intent.status === "already_applied") return;
       const safeReason = String(reason || "source outcome is unknown").slice(0, 500);
       const now = new Date().toISOString();
       this.db.prepare(`
         UPDATE writeback_intents
-        SET status = 'reconciliation_required', reconciliation_reason = ?, updated_at = ?
+        SET status = 'reconciliation_required', reconciliation_reason = ?, source_outcome_unknown = COALESCE(?, source_outcome_unknown), updated_at = ?
         WHERE intent_id = ?
-      `).run(safeReason, now, intentId);
+      `).run(safeReason, sourceOutcomeUnknown ? 1 : null, now, intentId);
       this.appendEvent(intent.proposal_id, "writeback_reconciliation_required", intent.runner_id, {
         intent_id: intentId,
         writeback_job_id: intent.writeback_job_id,
@@ -316,12 +330,20 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       const intent = this.requireWritebackIntent(input.intent_id);
       const proposal = this.requireProposal(intent.proposal_id);
       const receipt = parseExecutionReceipt(input.receipt);
-      if (receipt.schema_version !== protocolVersions.executionReceiptV2 && receipt.schema_version !== protocolVersions.executionReceiptV3 && receipt.schema_version !== protocolVersions.executionReceiptV4) throw new ProposalStoreError("RECONCILIATION_RECEIPT_VERSION_REQUIRED", "reconciliation requires an execution-receipt v2, v3, or v4");
+      const completion = input.source_completion === undefined ? undefined : (() => {
+        if (!intent.source_completion_binding) throw new ProposalStoreError("SOURCE_COMPLETION_BINDING_REQUIRED", "the original Source binding is unavailable");
+        const original = this.getWritebackJob(intent.writeback_job_id)?.normalized_job;
+        if (!original || canonicalJsonDigest(original) !== canonicalJsonDigest(intent.intent) || proposal.proposal_hash !== intent.proposal_hash) {
+          throw new ProposalStoreError("SOURCE_COMPLETION_ORIGINAL_JOB_MISMATCH", "the original proposal/job changed or is unavailable");
+        }
+        return parseSourceCompletionEvidence(input.source_completion, intent.intent, intent.source_completion_binding);
+      })();
+      if (!completion && receipt.schema_version !== protocolVersions.executionReceiptV2 && receipt.schema_version !== protocolVersions.executionReceiptV3 && receipt.schema_version !== protocolVersions.executionReceiptV4) throw new ProposalStoreError("RECONCILIATION_RECEIPT_VERSION_REQUIRED", "legacy reconciliation requires an execution-receipt v2, v3, or v4");
       if (!input.reason.trim()) throw new ProposalStoreError("RECONCILIATION_REASON_REQUIRED", "reconciliation requires an operator reason");
-      if (intent.status !== "reconciliation_required" && intent.status !== "applying") {
+      if (intent.status !== "reconciliation_required" && intent.status !== "applying" && !(completion && intent.status === "applied")) {
         throw new ProposalStoreError("WRITEBACK_INTENT_NOT_RECONCILABLE", `writeback intent ${intent.intent_id} is ${intent.status}`);
       }
-      if (receipt.receipt_authority !== "runner_ledger"
+      if (receipt.receipt_authority !== (completion ? "source_db" : "runner_ledger")
         || receipt.writeback_job_id !== intent.writeback_job_id
         || receipt.proposal_id !== intent.proposal_id
         || receipt.proposal_hash !== intent.proposal_hash
@@ -329,15 +351,44 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
         || !["applied", "conflict", "failed"].includes(receipt.status)) {
         throw new ProposalStoreError("RECONCILIATION_RECEIPT_MISMATCH", `reconciliation receipt does not match intent ${intent.intent_id}`);
       }
+      if (!completion && (intent.intent.engine === "postgres" || intent.source_completion_binding || intent.source_outcome_unknown)) {
+        throw new ProposalStoreError("SOURCE_COMPLETION_PROOF_REQUIRED", "uncertain Source outcome requires exact atomic completion proof; business row observations cannot clear it");
+      }
+      if (completion) assertSourceCompletionReceipt(intent, receipt, completion.result);
       assertOperatorDecision(proposal, "reconcile", input.actor, input.identity, input.require_verified_identity === true);
       assertNoSecretMaterial(input.observation, "writeback_reconciliation_observation");
+      if (completion && intent.status === "applied") {
+        if (canonicalJsonDigest(intent.result) !== canonicalJsonDigest(completion.result)) throw new ProposalStoreError("WRITEBACK_INTENT_RECONCILIATION_CONFLICT", "existing completion differs from the Source proof");
+        const prior = this.events(intent.proposal_id).find(event => event.kind === "writeback_reconciled"
+          && event.payload.intent_id === intent.intent_id && event.payload.source_completion_digest === canonicalJsonDigest(completion));
+        if (prior) return intent;
+      }
       const reason = input.reason.trim().slice(0, 500);
       this.transaction(() => {
+        if (completion) {
+          const latest = this.requireWritebackIntent(intent.intent_id);
+          const prior = this.events(intent.proposal_id).find(event => event.kind === "writeback_reconciled"
+            && event.payload.intent_id === intent.intent_id && event.payload.source_completion_digest === canonicalJsonDigest(completion));
+          if (latest.status === "applied" && canonicalJsonDigest(latest.result) === canonicalJsonDigest(completion.result) && prior) return;
+        }
+        const projection = completion ? this.db.prepare(`SELECT * FROM writeback_receipts WHERE writeback_job_id = ? AND idempotency_key = ?`)
+          .get(intent.writeback_job_id, intent.idempotency_key) : undefined;
+        const originalReceipt = projection ? parseExecutionReceipt(JSON.parse(String(projection.receipt_json))) : undefined;
+        if (originalReceipt) {
+          if (originalReceipt.status === "applied") assertSourceCompletionReceipt(intent, originalReceipt, completion!.result);
+          else if (originalReceipt.status !== "reconciliation_required" || originalReceipt.proposal_id !== intent.proposal_id
+            || originalReceipt.writeback_job_id !== intent.writeback_job_id || originalReceipt.idempotency_key !== intent.idempotency_key
+            || !("proposal_hash" in originalReceipt) || originalReceipt.proposal_hash !== intent.proposal_hash
+            || !("receipt_authority" in originalReceipt) || originalReceipt.receipt_authority !== "source_db") {
+            throw new ProposalStoreError("SOURCE_COMPLETION_TERMINAL_CONFLICT", "the current receipt projection differs from the original uncertain attempt");
+          }
+        }
         const updated = this.db.prepare(`
           UPDATE writeback_intents
           SET status = ?, result_json = ?, reconciliation_reason = ?, updated_at = ?
-          WHERE intent_id = ? AND status IN ('applying', 'reconciliation_required')
-        `).run(receipt.status, JSON.stringify(receiptToWritebackResult(receipt)), reason, receipt.executed_at, intent.intent_id);
+          WHERE intent_id = ? AND (status IN ('applying', 'reconciliation_required') OR (? = 1 AND status = 'applied' AND result_json = ?))
+        `).run(receipt.status, JSON.stringify(completion?.result ?? receiptToWritebackResult(receipt as Parameters<typeof receiptToWritebackResult>[0])), reason, receipt.executed_at, intent.intent_id,
+          completion ? 1 : 0, JSON.stringify(completion?.result ?? null));
         if (Number(updated.changes) !== 1) throw new ProposalStoreError("WRITEBACK_INTENT_RECONCILIATION_CONFLICT", `writeback intent ${intent.intent_id} changed during reconciliation`);
         this.appendEvent(intent.proposal_id, "writeback_reconciled", input.actor, {
           intent_id: intent.intent_id,
@@ -348,7 +399,15 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
           observation: input.observation,
           identity: publicIdentitySummary(input.identity),
           decision_hash: input.identity?.decision_hash,
+          ...(completion ? { source_completion_digest: canonicalJsonDigest(completion), receipt, source_completion: completion,
+            ...(originalReceipt ? { original_receipt: originalReceipt } : {}), source_database_changed: false } : {}),
         });
+        if (projection && originalReceipt?.status === "reconciliation_required") {
+          const projected = this.db.prepare(`UPDATE writeback_receipts SET runner_id = ?, status = 'applied', source_database_mutated = 1,
+            receipt_json = ?, created_at = ? WHERE receipt_id = ? AND status = 'reconciliation_required' AND receipt_json = ?`)
+            .run(receipt.runner_id, JSON.stringify(receipt), receipt.executed_at, Number(projection.receipt_id), String(projection.receipt_json));
+          if (Number(projected.changes) !== 1) throw new ProposalStoreError("SOURCE_COMPLETION_PROJECTION_CONFLICT", "the original receipt projection changed during reconciliation");
+        }
         this.recordExecutionReceiptRows(receipt, proposal);
         const workerItem = this.workerQueueItem(intent.proposal_id);
         if (workerItem?.status === "reconciliation_required") {
