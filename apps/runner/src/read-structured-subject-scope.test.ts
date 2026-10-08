@@ -36,7 +36,7 @@ function fixture(principal = true) {
       relationships: [], minimum_cohort_size: 5, suppression_aware_totals: true }] },
     budgets: structuredClone(DEFAULT_REVIEWED_EXPLORATION_BUDGETS), unresolved_decisions: [] };
   const subject = { root_resource: "work.items", reference: "acknowledged-items-scope", source_digest: d(null), review_digest: d("actual fixture review revision"),
-    configuration_digest: readSubjectConfigurationDigest(boundary.pack.resources[0]!), kind: readSubjectScopeKind(boundary.pack.resources[0]!) };
+    configuration_digest: readSubjectConfigurationDigest(boundary.pack.resources[0]!, boundary), kind: readSubjectScopeKind(boundary.pack.resources[0]!) };
   const catalog = { resources: [{ id: "work.items", fields: [{ id: "name" }] }], relationships: [], subject_scopes: [subject] };
   const expectedBinding = { request_digest: d(request), source_digest: d(null), catalog_digest: d(catalog), meaning_digest: d(request),
     applicability_digest: d("owned fixture job"), operation_digest: d(boundary) };
@@ -90,6 +90,13 @@ describe("B64 typed subjects against actual compiled scope", () => {
     expect(() => assertReadScopeProvenance(record, f)).toThrow("READ_SCOPE_PROVENANCE_STALE");
     const changed = structuredClone(f.analysis); delete changed.candidate!.pack.resources[0]!.principal_key;
     expect(assessReadScopeDraft(record, changed).status).toBe("pending");
+  });
+  it("binds the actual trusted-context configuration without depending on presentation labels", () => {
+    const f = fixture(), record = f.resolve(), renamed = structuredClone(f.analysis);
+    renamed.candidate!.pack.resources[0]!.label = "Friendly register";
+    expect(assessReadScopeDraft(record, renamed).status).toBe("compatible");
+    renamed.candidate!.trusted_context.principal_env = "DIFFERENT_PERSON_SOURCE";
+    expect(assessReadScopeDraft(record, renamed).status).toBe("pending");
   });
   it("projects the same required subject shapes to the provider without accepting identity values", () => {
     const f = fixture(), accepts = new Ajv({ strict: false }).compile(readScopeProposalSchema);

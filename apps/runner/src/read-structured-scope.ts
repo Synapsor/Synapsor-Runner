@@ -24,8 +24,8 @@ const subjectBindingSchema = z.object({ root_resource: name, reference: name, so
 /** Supplied only by the protected acknowledged structural-review owner. */
 export type ReadSubjectBinding = z.infer<typeof subjectBindingSchema>;
 type ReadSubjectResource = ExplorationBoundaryDraft["pack"]["resources"][number];
-export function readSubjectConfigurationDigest(resource: ReadSubjectResource) {
-  return canonicalJsonDigest({ root_resource: resource.id, tenant_key: resource.tenant_key ?? null,
+export function readSubjectConfigurationDigest(resource: ReadSubjectResource, boundary: Pick<ExplorationBoundaryDraft, "source" | "trusted_context">) {
+  return canonicalJsonDigest({ source: boundary.source, trusted_context: boundary.trusted_context, root_resource: resource.id, tenant_key: resource.tenant_key ?? null,
     principal_key: resource.principal_key ?? null, tenant_scope: resource.tenant_scope ?? null,
     principal_scope: resource.principal_scope ?? null, rls_session: resource.rls_session ?? null,
     relationship_only: resource.relationship_only ?? false });
@@ -267,7 +267,7 @@ export function assessReadScopeDraft(value: ReadScopeRecord, analysis: ReadWorkl
       const bound = record.subject_bindings.find(subject => subject.root_resource === root);
       const actual = analysis.candidate?.pack.resources.find(resource => resource.id === root);
       return !subject || subject.mode === "unresolved" || !bound || !actual || actual.relationship_only
-        || readSubjectConfigurationDigest(actual) !== bound.configuration_digest
+        || readSubjectConfigurationDigest(actual, analysis.candidate!) !== bound.configuration_digest
         || readSubjectScopeKind(actual) !== bound.kind
         || subject.mode === "trusted_principal" && !hasReviewedPrincipalScope(actual)
         || subject.mode === "reviewed_resource" && subject.scope_reference !== bound.reference;
