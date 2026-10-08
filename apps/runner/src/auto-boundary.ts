@@ -3029,7 +3029,9 @@ async function readLegacyActivatedExplorationBoundary(
 function validateActivatedExplorationBoundary(
   active: ActivatedExplorationBoundary,
 ): ActivatedExplorationBoundary {
-  if (active.activation?.state !== "active") throw new Error("Exploration boundary is not active.");
+  if (active.activation?.state !== "active") {
+    throw Object.assign(new Error("Exploration boundary is not active."), { code: "EXPLORATION_BOUNDARY_INACTIVE" as const });
+  }
   if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(active.pack?.name ?? "")) {
     throw new Error("Activated exploration boundary has an invalid name.");
   }
