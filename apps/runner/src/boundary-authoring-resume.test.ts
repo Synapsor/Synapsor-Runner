@@ -63,10 +63,10 @@ function ownedReadRevisionScope(draft: ExplorationBoundaryDraft) {
         operation_digest: canonicalJsonDigest(candidate) } });
   };
   const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, applicability: "read_requested", original_request: "owned-original-request",
-    requirements: [{ id: "status", intended_use: "Read order status", references: ["owned-original-request"], disposition: "include", targets: [
+    requirements: [{ id: "status", intended_use: "Read order status", references: ["owned-original-request"], disposition: "include", subjects: [{ root_resource: "public.orders", mode: "trusted_principal" }], targets: [
       { root_resource: "public.orders", resource: "public.orders", operation: "resource" },
       { root_resource: "public.orders", resource: "public.orders", operation: "return", field: "status" },
-    ] }, { id: "private-id", intended_use: "Keep order identifiers private", references: ["owned-original-request"], disposition: "exclude", targets: [
+    ] }, { id: "private-id", intended_use: "Keep order identifiers private", references: ["owned-original-request"], disposition: "exclude", subjects: [], targets: [
       { root_resource: "public.orders", resource: "public.orders", operation: "return", field: "id" },
     ] }] };
   return { proposal, structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context(draft) },
