@@ -102,7 +102,7 @@ import {
   type ResolvedRelativeTimeWindow,
 } from "./relative-time-window.js";
 import {
-  exploreFieldSemanticStatus,
+  hasReviewedExploreVocabulary,
   exploreVocabularyCoverage,
 } from "./explore-vocabulary.js";
 import {
@@ -4229,10 +4229,9 @@ function suggestedAggregateQuestionIsExecutable(
 }
 
 function suggestedDimension(resource: BoundaryResource, fields: string[], _allowGenericLabel = false): string | undefined {
-  return [...fields].sort((left, right) => left.localeCompare(right)).find((field) => {
-    const status = exploreFieldSemanticStatus(resource, field);
-    return status !== "opaque_identifier" && status !== "coded_values";
-  });
+  const reviewedFields = [...fields].sort((left, right) => left.localeCompare(right));
+  return reviewedFields.find((field) => hasReviewedExploreVocabulary(resource.field_metadata?.[field]))
+    ?? reviewedFields[0];
 }
 
 function dimensionSubject(resource: BoundaryResource, field: string): string { return reviewedFieldLabel(resource, field); }
