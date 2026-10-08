@@ -121,7 +121,17 @@ export type ModelReadValueRequest = {
   question: string;
 };
 
+/** Host-only purpose; absent on legacy/generic model questions. The exact
+ * alternatives are retained so a later attributed answer cannot rewrite the
+ * historical request binding. This is no mapping or authority assertion. */
+export type ReadScopeReasonBinding = {
+  kind: "requested_read_scope";
+  alternatives: string[];
+  digest: `sha256:${string}`;
+};
+
 export type ModelReadClarificationRequest = {
+  reason_binding?: ReadScopeReasonBinding;
   resource: string;
   field?: string;
   category?: "business_meaning" | "relationship_support";

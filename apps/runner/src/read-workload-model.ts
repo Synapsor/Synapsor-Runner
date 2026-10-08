@@ -1,6 +1,6 @@
 import { exactOnlyReadResourceIds, resolveRequestedReadScope } from "./read-requested-scope.js";
 import { findReadMeaningEvidence, readResourceDefinitionPhrases, isExplicitReadMeaningStatement, explicitReadTaskTargets, ReadMeaningConflictError, isUnknownReadMeaning, type ReadMeaningAttempt, type ReadMeaningEvidence, type ReadMeaningStatement } from "./read-meaning-evidence.js";
-import type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
+import type { ReadScopeReasonBinding, ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 export type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 import { isAuthoringGenerationStop, assertAuthoringGenerationAdmission, authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
   withAuthoringProducerCorrection } from "./authoring-generation-recovery.js";
@@ -244,6 +244,11 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       }
       return [{ resource: resource.id, phrases }];
     }), statements: activeMeaningStatements().map(statement => statement.text) });
+  const scopeReasonBinding = (alternatives: string[]): ReadScopeReasonBinding => ({
+    kind: "requested_read_scope", alternatives: [...alternatives],
+    digest: canonicalJsonDigest({ kind: "requested_read_scope", original: originalNamingSources,
+      alternatives, context: meaningBinding() }),
+  });
   const requestedScopeQuestions = (scope = currentRequestedScope()) => {
     const questions = scope.candidates.map(alternatives => ({ alternatives,
       reason: alternatives.length > 1
@@ -255,10 +260,12 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     if (scope.unresolved) questions.push({ alternatives: catalog.resources.map(resource => resource.id),
       reason: "The retained request has no exact association with the current attributed resource definitions. Preserve the request and establish the intended business mapping before accepting it.",
       question: "What information should this view provide for your task? The current definitions do not yet establish how these records match your request." });
-    return questions;
+    return questions.map(question => ({ ...question, reason_binding: scopeReasonBinding(question.alternatives) }));
   };
   const isCurrentScopeQuestion = (request: ModelReadClarificationRequest) => request.field === undefined
-    && requestedScopeQuestions().some(item => item.reason === request.reason && item.alternatives.includes(request.resource));
+    && request.reason_binding?.kind === "requested_read_scope"
+    && requestedScopeQuestions().some(item => item.reason_binding.digest === request.reason_binding?.digest
+      && item.alternatives.includes(request.resource));
   let suppliedMeanings: OperatorReadMeaning[] = [];
   const clarificationAnswers: string[] = [];
   const clarificationKey = (request: ModelReadClarificationRequest) =>
@@ -526,13 +533,13 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
             authority_granted: false, source_query_executed: false, source_database_changed: false } };
         }
         const scopeQuestions = requestedScopeQuestions(requestedResources);
-        for (const { alternatives, reason, question } of scopeQuestions) {
-          const answered = activeClarifiedTargets().filter(answer => !answer.field && answer.reason === reason
+        for (const { alternatives, reason, question, reason_binding } of scopeQuestions) {
+          const answered = activeClarifiedTargets().filter(answer => !answer.field && answer.reason_binding?.digest === reason_binding.digest
             && alternatives.includes(answer.resource) && !isUnknownReadMeaning(answer.answer));
           const proposed = alternatives.filter(resource => allowedResources.has(resource));
           if (!answered.length) {
             if (proposed.length === 1 && readAnswerCount() < MAX_READ_CLARIFICATIONS && !clarificationRequest && !valueRequest) {
-              clarificationRequest = businessRequest({ resource: proposed[0]!, reason, question });
+              clarificationRequest = businessRequest({ resource: proposed[0]!, reason, question, reason_binding });
               return { ok: true, value: { status: "clarification_required_before_mapping", resource: proposed[0],
                 authority_granted: false, source_query_executed: false, source_database_changed: false } };
             }
@@ -875,8 +882,10 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       || saved.tool_digest !== authorityDigest || saved.state.relationship_review_limit !== relationshipReviewLimit)
       throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The original mapping input, boundary, catalog or provider changed. Preserve the pending question and revalidate; no replacement was sent.");
     const canonicalRequest = (request: ModelReadClarificationRequest) => {
-      const parsed = parseReadClarificationRequest(request as unknown as Record<string, unknown>, catalog);
+      const parsed = parseReadClarificationRequest(request as unknown as Record<string, unknown>, catalog, true);
       if (canonicalJsonDigest(parsed) !== canonicalJsonDigest(request)) throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: The retained request is not canonical for this catalog.");
+      if (parsed.reason_binding && parsed.reason_binding.digest !== scopeReasonBinding(parsed.reason_binding.alternatives).digest)
+        throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The retained scope purpose does not match the original request and current context.");
       return parsed;
     };
     const s = saved.state, q = saved.pending_question;
@@ -970,6 +979,14 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     resolvedMechanicalRequest = s.resolved_mechanical_request; namingCorrectionWorkload = s.naming_correction_workload;
     approvedValueContext = s.approved_value_context; diagnostics.push(...s.diagnostics); usage = s.usage;
     pendingAssistance = q; completion = q?.completion;
+    const retainedPurpose = q ?? saved.previous_question?.pending_question;
+    if (retainedPurpose?.kind === "clarification" && retainedPurpose.request.field === undefined
+      && !retainedPurpose.request.reason_binding
+      && requestedScopeQuestions().some(item => item.alternatives.includes(retainedPurpose.request.resource))) {
+      throw new ReadWorkloadAssistancePausedError("The retained root question has no typed requested-scope purpose. Preserve its original question, answer, counters and history; no purpose was inferred from its explanation.");
+    }
+    if (q?.kind === "clarification" && q.request.reason_binding && !isCurrentScopeQuestion(q.request))
+      throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The pending scope alternatives changed. Preserve the saved question without replay.");
     if (saved.stage === "dispatching") {
       const continued = await (correctionUsed ? run(saved.dispatch_question).then(result => ({ result, correction_used: false }))
         : runRequiredAuthoringToolCall({ run, question: saved.dispatch_question, toolName: SUBMIT_READ_WORKLOAD_TOOL,
@@ -1540,7 +1557,21 @@ function readWorkloadToolDefinition(resourceIds: string[]): AskToolDefinition {
 function parseReadClarificationRequest(
   value: Record<string, unknown>,
   catalog: ReturnType<typeof readWorkloadCatalog>,
+  retainedHostRequest = false,
 ): ModelReadClarificationRequest {
+  let reasonBinding: ReadScopeReasonBinding | undefined;
+  if (value.reason_binding !== undefined) {
+    const binding = value.reason_binding;
+    if (!retainedHostRequest || !isRecord(binding) || binding.kind !== "requested_read_scope"
+      || Object.keys(binding).some(key => !["kind", "alternatives", "digest"].includes(key))
+      || value.field !== undefined || value.category === "relationship_support"
+      || typeof binding.digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(binding.digest)
+      || !Array.isArray(binding.alternatives) || !binding.alternatives.length
+      || binding.alternatives.some(id => typeof id !== "string" || !catalog.resources.some(resource => resource.id === id))
+      || new Set(binding.alternatives).size !== binding.alternatives.length || !binding.alternatives.includes(value.resource))
+      throw new Error("clarification_request.reason_binding is reserved for an exact retained Runner scope question.");
+    reasonBinding = structuredClone(binding) as ReadScopeReasonBinding;
+  }
   const resource = boundedText(value.resource, "clarification_request.resource", 256);
   if (value.category !== undefined && value.category !== "business_meaning" && value.category !== "relationship_support") {
     throw new Error("clarification_request.category must be business_meaning or relationship_support.");
@@ -1559,6 +1590,7 @@ function parseReadClarificationRequest(
     resource,
     ...(value.category ? { category: value.category } : {}),
     ...(field ? { field } : {}),
+    ...(reasonBinding ? { reason_binding: reasonBinding } : {}),
     reason: boundedText(value.reason, "clarification_request.reason", 500),
     question: boundedText(value.question, "clarification_request.question", 500),
   };

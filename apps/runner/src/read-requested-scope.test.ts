@@ -136,3 +136,12 @@ describe("established scope versus candidate and conflicting evidence", () => {
     expect(scope.unresolved).toBe(true);
   });
 });
+
+
+describe("unsupported positive clauses retain unresolved evidence", () => {
+  it.each(["Read finance.accounts. Read outstanding obligations.", "Read finance.accounts and read outstanding obligations."])("does not mask the unsupported clause: %s", original => {
+    const scope = resolveRequestedReadScope({ original, resources: [{ id: "finance.accounts" }], definitions: [], statements: [] });
+    expect(scope.required).toEqual(["finance.accounts"]);
+    expect(scope.unresolved).toBe(true);
+  });
+});

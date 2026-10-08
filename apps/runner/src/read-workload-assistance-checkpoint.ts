@@ -66,10 +66,17 @@ const exact = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).eve
 const digest = (v: unknown) => typeof v === "string" && /^sha256:[a-f0-9]{64}$/u.test(v);
 const text = (v: unknown, max: number) => typeof v === "string" && !!v.trim() && v.length <= max;
 const count = (v: unknown, max: number) => Number.isSafeInteger(v) && (v as number) >= 0 && (v as number) <= max;
-const request = (v: unknown, value = false) => record(v) && exact(v, ["resource", "field", "category", "reason", "question", "answer"])
+const request = (v: unknown, value = false) => record(v) && exact(v, ["resource", "field", "category", "reason", "question", "answer", "reason_binding"])
   && text(v.resource, 256) && (value ? text(v.field, 256) : v.field === undefined || text(v.field, 256))
   && (v.category === undefined || ["business_meaning", "relationship_support"].includes(v.category as string))
-  && text(v.reason, 500) && text(v.question, 500);
+  && text(v.reason, 500) && text(v.question, 500)
+  && (v.reason_binding === undefined || !value && v.field === undefined && v.category !== "relationship_support"
+    && record(v.reason_binding) && exact(v.reason_binding, ["kind", "alternatives", "digest"])
+    && v.reason_binding.kind === "requested_read_scope" && digest(v.reason_binding.digest)
+    && Array.isArray(v.reason_binding.alternatives) && v.reason_binding.alternatives.length > 0
+    && v.reason_binding.alternatives.every(id => text(id, 256))
+    && new Set(v.reason_binding.alternatives).size === v.reason_binding.alternatives.length
+    && v.reason_binding.alternatives.includes(v.resource));
 const provided = (v: unknown) => record(v) && exact(v, ["state", "resource", "field", "values", "egressAcknowledged"])
   && v.state === "provided" && text(v.resource, 256) && text(v.field, 256) && v.egressAcknowledged === true
   && Array.isArray(v.values) && v.values.length > 0 && v.values.length <= 32 && v.values.every(x => text(x, 200))
