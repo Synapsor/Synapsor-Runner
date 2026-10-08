@@ -393,6 +393,18 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
         || predecessor.scope_digest !== q.scope_digest || q.revision !== predecessor.revision + 1
         || result.some(other => other.id !== q.id && other.read_scope?.predecessor_id === predecessor.id)
         : q.revision !== 1) invalid("A Read replacement must retain its exact preceding question, without branching history.");
+      if (q.read_scope.mode === "replacement_answer") {
+        const review = result.find(item => item.id === q.read_scope!.review_question_id);
+        if (!review || !seen.has(review.id) || review.id === q.id || review.read_scope?.mode !== "review"
+          || !review.disposition || review.confirmation || review.scope_digest !== q.scope_digest
+          || review.context_digest !== q.context_digest
+          || canonicalJsonDigest(review.read_scope.record) !== canonicalJsonDigest(q.read_scope.record)
+          || canonicalJsonDigest(review.read_scope.completion) !== canonicalJsonDigest(q.read_scope.completion)
+          || predecessor && predecessor.read_scope?.review_question_id !== review.id
+          || !predecessor && result.some(other => other.id !== q.id && other.read_scope?.mode === "replacement_answer"
+            && other.read_scope.review_question_id === review.id && !other.read_scope.predecessor_id))
+          invalid("A replacement answer must retain its exact declined Read proposal and genuine completion without branching.");
+      }
       for (const ref of q.read_scope.record.references) {
         if (ref.kind !== "answer") continue;
         const captured = result.find(item => item.id === ref.question_id);
@@ -410,9 +422,11 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
       || q.kind === "attributed_meaning" && q.presentation && q.presentation.text !== h.question
       || q.kind === "attributed_meaning" && !(q.continuation === "action_rule_review"
         ? h.consumer === "policy_clarification" : ["read_clarification", "read_revision_clarification", "read_revision_prerequisite"].includes(h.consumer))
-      || q.kind === "read_scope" && (!["read_clarification", "read_revision_clarification"].includes(h.consumer)
-        || q.presentation && q.presentation.text !== h.question
-        || canonicalJsonDigest(h.completion ?? null) !== canonicalJsonDigest(q.read_scope!.completion))
+      || q.kind === "read_scope" && (q.presentation && q.presentation.text !== h.question
+        || (q.read_scope!.mode === "replacement_answer"
+          ? h.consumer !== "read_revision_instruction" || h.completion !== undefined
+          : !["read_clarification", "read_revision_clarification"].includes(h.consumer)
+            || canonicalJsonDigest(h.completion ?? null) !== canonicalJsonDigest(q.read_scope!.completion)))
       || q.kind === "input_bounds" && h.consumer !== "input_policy"
       || q.kind === "writer_maintenance" && h.consumer !== "version_maintenance"
       || q.kind === "receipt_requirement" && h.consumer !== "policy_clarification"
