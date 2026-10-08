@@ -1,6 +1,6 @@
 {
-  "recorded_at": "2026-10-08T19:32:23.924746+00:00",
-  "main_pin": "6264e47c",
+  "recorded_at": "2026-10-08T20:10:14.699046+00:00",
+  "main_pin": "pending permission checkpoint after3ada6e2d",
   "owner_map": "LANES.json",
   "paid": "CLOSED",
   "main_hooks": {
@@ -11,7 +11,8 @@
     ],
     "typecheck": "exit0 before enum-only JSON change",
     "json_parse": "exit0",
-    "independent_privacy_acceptance": "PENDING"
+    "independent_privacy_acceptance": "PENDING",
+    "permission": "Typed projection17PASS/types0; R1 independent pending"
   },
   "read": {
     "pin": "f1a74e84",
@@ -23,23 +24,24 @@
   "privacy": {
     "pin": "583c0738",
     "owner_report": "284 PASS affected suites plus3 catalog-role/protocol controls; before failures retained",
-    "independent_acceptance": "R2 original15 controls14PASS/1 fixture expectation failure retained; separate support pending",
-    "latest_owner_pin": "829649ec"
+    "independent_acceptance": "R2 source scoped17b46226 for2e6/4d/829; broader typed review and actual old-reader refusal pending",
+    "latest_owner_pin": "2e6a1dca"
   },
   "chat": {
     "pin": "9a7f1c7e",
-    "owner_report": "chat92PASS; picker103PASS; GC5FAIL1PASS and exactcandidate1FAIL before",
-    "independent_acceptance": "GP01 pure9PASS scoped R2; remaining runtime/caller contracts open",
-    "latest_owner_pin": "ce41250d"
+    "owner_report": "331PASS4FAIL/types0 original full; separate unchanged-product fixture ports4PASS43filtered/types0. No combined single-run claim.",
+    "independent_acceptance": "R2 source scoped38ce42d6; actual caller and GP01 budget still open",
+    "latest_owner_pin": "444573cf"
   },
   "ask": {
     "before_pin": "546830b3",
     "before": "17 controls:7PASS10FAIL",
     "held_contract": "Default Balanced currently promises contradiction refusal, and explicit confirmation to opt out. AT02/03/05 would permit wrong-resource/changed-constraint/accidental reads with false semantic-proof flag. Owner decision requested; no approval inferred.",
-    "continue": "Typed suppression, truthful result display, catalog tokens, metadata guidance; existing safety checks unchanged."
+    "continue": "Typed suppression, truthful result display, catalog tokens, metadata guidance; existing safety checks unchanged.",
+    "independent": "7c93 regression AQ01 shared aggregate defaults; baselinePASS/current4P1F. Narrow2d7db fix uses existing owner; R1 rerun active."
   },
   "b65": {
-    "native_pin": "be941b72",
+    "native_pin": "49233e92",
     "pg": "Native cases recorded; fresh30then25 fails intended50 limit, fresh30then10 passes; existing approved10 refuses stale. Qualified fresh Source URL reconcile twice passes separately from retained unknown history.",
     "mysql": "14 native component PASS; public writer admission blocked by contradictory parent UPDATE privilege checks. No public race or PG transfer.",
     "runtime_before": "96ed4b7b actual native SQLite receipt boundary1PASS1FAIL; independent receipt-only repair review pending",
@@ -50,9 +52,10 @@
       "code_only_draft_after": "6PASS12FAIL",
       "verdict": "NOT ACCEPTED; exact native receipt/job/attempt binding repair required",
       "level": "Native ledger API, not public database-effect proof",
-      "report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b65-96ed-dc9-ledger-receipt-independent-v1.json"
+      "report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b65-96ed-dc9-ledger-receipt-independent-v1.json",
+      "successor": "e94f8a03 complete exact actual claim/receipt repair independent21PASS0FAIL0SKIP scoped native helper acceptance ac2f0847; prior failed draft remains historical"
     },
-    "native_resume": "Owner directly resumed Tester19:45UTC; same MySQL grant preset only (no new Main correction), stricter native-rule recheck and signed-human approval. Dedicated slot1; no product edits."
+    "native_resume": "MySQL public still blocked exact excess grant; stricter actual public apply refuses ACTION_RULE_AUTHORITY_STALE before Source; signed-human reviewed approval+separate executor1effect/receipt. No product patch, no PG transfer."
   },
   "limits": {
     "heavy_jobs": 4,
@@ -62,8 +65,8 @@
     "storage": "KEEP ALL; revisit below30GB"
   },
   "action": {
-    "hold": "7a constraint packet NOT integrated; later owner found declared-selector check moved after normalization could conceal wrong selector.",
-    "next": "Actual producer failing-before then restore pre-normalization comparison, affected controls and independent variant before integration.",
+    "hold": "Selector7c73 scoped accepted57bd9e4c (2F1P\u21923P). Constraint packet not yet integrated; Source-cycle implementation active, whole-Source ACK public fence Main-owned.",
+    "next": "Review Source cycle; integrate accepted constraint packet with current shared modules, no file overwrite.",
     "review_limits": "Earlier d185 scoped acceptance did not establish this counterexample. Source/public continuation still open.",
     "source_cycle_design": "R2 scoped design agreement4cd explicit source_review_required result; implementation and exact ordinary finish fence still pending."
   }

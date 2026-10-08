@@ -30,6 +30,8 @@ export type BoundaryAuthoringPermissionGuideInput = {
   prompt: string;
   context: string[];
   explanationContext?: string[];
+  decisionKind?: NonNullable<Parameters<BoundaryReviewInteractiveSession["confirm"]>[1]>["decisionKind"];
+  activationView?: AuthoringActivationView;
   choices: Array<Pick<BoundaryPromptChoice, "value" | "label" | "detail">>;
   operatorQuestion?: string;
   onFailure?: (failure: AuthoringExplanationFailure) => void;
@@ -77,6 +79,7 @@ type ChoiceInput = {
   onModelQuestion?: (question: string) => Promise<"revise">;
   explanationContext?: string[];
   activationView?: AuthoringActivationView;
+  decisionKind?: BoundaryAuthoringPermissionGuideInput["decisionKind"];
 };
 
 const DEFAULT_TRANSCRIPT_STREAM_DELAY_MS = 32;
@@ -1013,6 +1016,8 @@ export function createBoundaryAuthoringChat(input: {
       title: choice.title,
       prompt: choice.message,
       context: meaningfulContext(context),
+      ...(choice.decisionKind ? { decisionKind: choice.decisionKind } : {}),
+      ...(choice.activationView ? { activationView: structuredClone(choice.activationView) } : {}),
       ...(choice.explanationContext ? { explanationContext: choice.explanationContext.map(transcriptText) } : {}),
       choices: exactChoices.map(({ value, label, detail }) => ({
         value,
@@ -1180,6 +1185,7 @@ export function createBoundaryAuthoringChat(input: {
     const permissionContext = meaningfulContext(options.context);
     const choice = {
       title: permission ? "PERMISSION REQUIRED" : "CONFIRM REVIEWED DECISION",
+      ...(options.decisionKind ? { decisionKind: options.decisionKind } : {}),
       message: permission
         ? permissionQuestion(prompt)
         : prompt,
@@ -1249,6 +1255,7 @@ export function createBoundaryAuthoringChat(input: {
       }
       const choice = {
         title: permission && !options?.reviewOnly ? "PERMISSION REQUIRED" : title,
+        ...(options?.decisionKind ? { decisionKind: options.decisionKind } : {}),
         message: permission && !options?.reviewOnly
           ? permissionQuestion(title)
           : options?.displayContext && options.context?.length ? meaningfulContext(options.context).join("\n")

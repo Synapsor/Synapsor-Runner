@@ -1,0 +1,16 @@
+{
+  "owner": "Main",
+  "before": "7fc75c5e:6FAIL1PASS;3ada6e2d adapter case1FAIL missing typed metadata",
+  "change": "Shared owned presentation derives purpose only from typed decisionKind and activationView. Main boundary thin call replaces prose routing; exact Chat forwarding from fee2e37b reviewed independently by Main. Redaction retained; no authority/default/currentness change. Unknown purpose neutral.",
+  "checks": {
+    "tests": "17PASS0FAIL0SKIP",
+    "types": "exit0",
+    "network": "unshared",
+    "workers": 1,
+    "report": "/var/tmp/synapsor-b64-main-owned/evidence/permission-forward-after-fixed-harness.json"
+  },
+  "harness": "Initial corepack under isolated HOME tried unavailable download: used installed vitest directly. Initial adapter fixture lacked onInterrupt: corrected harness and reproduced missing metadata before source fix; both original harness failures retained.",
+  "scope": "Actual production projection and actual consent adapter. Full public job/installed/producers not claimed. Independent R1 review requested.",
+  "source_dependency": "fee2e37b exact seven source lines only; remaining Chat changes not adopted.",
+  "boundary_lines": 19205
+}
