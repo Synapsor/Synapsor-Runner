@@ -3,7 +3,7 @@ import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { activePolicySource, type PolicySourceSession } from "./authoring-policy-source.js";
 import { parseOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import { parseOwnerHandoffs, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
-import { findReadMeaningEvidence, ReadMeaningConflictError, isUnknownReadMeaning,
+import { findReadMeaningEvidence, readDefinitionPhrases, ReadMeaningConflictError, isUnknownReadMeaning,
   type ReadMeaningCatalog, type ReadMeaningEvidence, type ReadMeaningStatement, type ReadMeaningTarget } from "./read-meaning-evidence.js";
 import type { ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import type { ReadWorkloadView } from "./read-workloads.js";
@@ -57,7 +57,25 @@ export function createCurrentReadEvidence(input: CurrentReadEvidenceInput) {
     const currentAnswers = input.answers.filter(answer => sameTarget(answer, target));
     const answers = currentAnswers.length ? input.answers : [...input.answers, ...(retained.answer ? [retained.answer] : [])];
     try {
-      const evidence = findReadMeaningEvidence({ target, catalog: input.catalog, statements: input.statements.filter(statement => !isConfirmedMeaningIndex(statement)), answers,
+      const statements = input.statements.filter(statement => !isConfirmedMeaningIndex(statement));
+      // A retained decision does not silently overrule newly supplied explicit
+      // meaning. Exact identical definitions may be repeated; different words
+      // require the ordinary attributed conflict decision, not guessed synonymy.
+      if (retained.answer && !currentAnswers.length) {
+        const phrases = readDefinitionPhrases(retained.answer.answer, target, input.catalog);
+        const meanings = phrases.length ? phrases : [retained.answer.answer.trim().replace(/[.!?]+$/u, "").replace(/\s+/gu, " ").toLowerCase()];
+        const conflict = statements.filter(statement => readDefinitionPhrases(statement.text, target, input.catalog)
+          .some(phrase => !meanings.includes(phrase)));
+        if (conflict.length) {
+          const references: CurrentReadEvidenceReference[] = [...retained.references];
+          for (const statement of conflict) {
+            const evidence = findReadMeaningEvidence({ ...input, target, statements: [statement], answers: [] });
+            if (evidence) references.push({ kind: "statement", evidence });
+          }
+          return result("conflicting", { references, reason: "An explicit current definition differs from the retained answer; no current reviewed precedence resolves both." });
+        }
+      }
+      const evidence = findReadMeaningEvidence({ target, catalog: input.catalog, statements, answers,
         context_digest: input.context_digest, requested_use_digest: input.requested_use_digest });
       if (evidence) return result("established", { evidence,
         references: [{ kind: "statement", evidence }, ...(retained.answer && !currentAnswers.length ? retained.references : [])],

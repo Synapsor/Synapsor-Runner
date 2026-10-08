@@ -82,8 +82,13 @@ function readMeaningClauses(text: string, catalog: ReadMeaningCatalog): string[]
  * are attributable naming aliases, not inferred synonyms or access decisions. */
 export function readResourceDefinitionPhrases(evidence: ReadMeaningEvidence, catalog: ReadMeaningCatalog): string[] {
   if (evidence.field !== undefined) return [];
-  return readMeaningClauses(evidence.reference.text, catalog)
-    .flatMap(clause => explicitReadStatements(clause, { resource: evidence.resource }, catalog))
+  return readDefinitionPhrases(evidence.reference.text, { resource: evidence.resource }, catalog);
+}
+/** Finite, exact definition claims only. This provides no semantic entailment
+ * or precedence between an operator answer and an attached Source. */
+export function readDefinitionPhrases(text: string, target: ReadMeaningTarget, catalog: ReadMeaningCatalog): string[] {
+  return readMeaningClauses(text, catalog)
+    .flatMap(clause => explicitReadStatements(clause, target, catalog))
     .filter(claim => claim.kind === "definition").map(claim => claim.meaning);
 }
 export class ReadMeaningConflictError extends Error {

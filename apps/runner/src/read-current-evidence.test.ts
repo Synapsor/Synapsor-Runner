@@ -28,6 +28,10 @@ it("derives a short answer from the actual accepted native lineage after a new p
   expect(evidence, JSON.stringify(evidence)).toMatchObject({ status: "established", progression: "mapped", authority_granted: false,
     evidence: { reference: { kind: "answered_clarification", text: native.mapped.resume.operator_questions!.at(-1)!.raw_answer!.text } } });
   expect(evidence.references.map(ref => ref.kind)).toEqual(["statement", "operator_answer", "workload"]);
+  const changedMeaning = "studio.parcels.units means the shipping weight in kilograms.";
+  const conflicting = { ...input, statements: [...input.statements, { text: changedMeaning,
+    origin: "operator_statement" as const, source_id: "new-declared-meaning", source_digest: canonicalJsonDigest(changedMeaning) }] };
+  expect(createCurrentReadEvidence(conflicting).meaning(target)).toMatchObject({ status: "conflicting", authority_granted: false });
   const forged = structuredClone(input);
   const copied = JSON.parse(forged.records.source.operator_messages![0]!);
   copied.statements[0].raw_answer = "studio.parcels.units means an unconfirmed private balance.";
