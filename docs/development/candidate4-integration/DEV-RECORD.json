@@ -283,7 +283,7 @@
       "change": "same live checkpoint parser includes pending_action_addition.retained_action.checkpoint; historical dispositions untouched"
     },
     "last_usage_check": {
-      "used_percent": 43,
+      "used_percent": 44,
       "pause_threshold_used_percent": 95
     },
     "native_scope_host_wip": {
@@ -322,6 +322,14 @@
       "fixture_changes": "Checkpointfixtures explicitly B64; samejob writes track acknowledged CAS and predecessor; cleanup expectations nowretain structured setup (stronger); external disappearance test explicitly unlinks ownedfixture to retain stale-write assertion. No safety assertion removed. Old successful v1 creation/acceptance expectations replaced by exact refusal/no rewrite tests.",
       "logs": "/var/tmp/synapsor-b64-main-owned/evidence/old-setup-refusal*.log",
       "review": "R2 presealed retirement variants pending; public fullflow remains unqualified"
+    },
+    "english_reader_removed": {
+      "head": "8e5085bb",
+      "change": "Deleted read-requested-scope.ts/all runtime TS callers, exact data association type moved existing owner; missing/unsupported typed pin refuses beforeprovider in planning/mapping/revision.",
+      "tests": "Owner58typedPASS; Main broad selected63PASS10FAIL267filtered. Ten missing-pin old fixtures remain UNQUALIFIED, not silentpass. Integrationtypes0. Native grouped interaction integration60PASS beforeparserremoval.",
+      "removed_test_inventory": "docs/development/b64-read-scope-parser-removal.md",
+      "logs": "/var/tmp/synapsor-b64-main-owned/evidence/no-english-integration{,-types}.log; native-grouped-integration.log",
+      "open": "Migrate old safety/providercount fixtures using declared typed inputs; publicscope context/wiring; native stable-relevant-evidence projection fix inReadlane."
     }
   }
 }
