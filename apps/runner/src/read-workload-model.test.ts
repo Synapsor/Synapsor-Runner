@@ -703,23 +703,24 @@ describe("durable Read assistance producer checkpoint", () => {
 
   it("records mechanical limits before a native interrupted dispatch and restores them without another redirect", async () => {
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, state: AuthoringTransportState = { version: 1, operations: [] }, sends = 0;
-    const mechanical = { resource: request.resource, reason: "Need the opaque selection reference", question: "Which column supplies the opaque selection reference?" };
+    const typed = declaredWorkloadScope("List my orders", "status_rows");
+    const invalid = { ...typed.proposal, requirements: [{ ...typed.proposal.requirements[0]!, references: ["not-a-host-reference"] }] };
     const server = createServer(async (req, res) => {
       for await (const _chunk of req) {} sends++;
       if (sends === 2) { res.writeHead(200, { "content-type": "application/json", "content-length": "9999" }); res.write('{"unfinished":'); setTimeout(() => res.destroy(), 10); return; }
-      res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ status: "completed", ...response({ clarification_request: mechanical }).body }));
+      res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ status: "completed", ...diagnosticResponse("valid", invalid).body }));
     });
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
     const host = { available: () => true, read: () => state, current: async () => canonicalJsonDigest("fixed current Read metadata and ordinary input"),
       write: async (value: AuthoringTransportState) => { validateAuthoringTransportState(value); state = structuredClone(value); } };
     const entering = (resume: boolean) => withAuthoringGenerationRecovery(() => { configureAuthoringGenerationRecovery(host);
-      return generateModelReadWorkload({ ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })),
+      return generateModelReadWorkload({ ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })), structuredScope: typed.structuredScope,
         ...(resume ? { resumeCheckpoint: checkpoint } : {}), onCheckpoint: async value => { checkpoint = structuredClone(value); } }); });
     try {
       await expect(entering(false)).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
       expect(sends).toBe(2); expect(state.operations.at(-1)?.state).toBe("partial");
-      expect(checkpoint).toMatchObject({ stage: "dispatching", state: { call_count: 1, attempt: 2, correction_used: true, mechanical_clarification_resolved: true, resolved_mechanical_request: mechanical } });
+      expect(checkpoint).toMatchObject({ stage: "dispatching", state: { call_count: 1, attempt: 2, correction_used: true, mechanical_clarification_resolved: false } });
       expect(checkpoint).not.toHaveProperty("pending_question");
       const old = JSON.stringify(state.operations.at(-1));
       await withAuthoringGenerationRecovery(async () => {
@@ -727,22 +728,33 @@ describe("durable Read assistance producer checkpoint", () => {
         await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(checkpoint!.digest, undefined, state.operations[0]!.id), { mode: "local_review" });
         await permitAuthoringInterruptedRecovery(await prepareAuthoringInterruptedRecovery(checkpoint!.digest));
       });
-      await expect(entering(true)).rejects.toThrow("READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED");
+      await expect(entering(true)).rejects.toThrow("READ_SCOPE_REFERENCE_INVALID");
       expect(sends).toBe(3); expect(JSON.stringify(state.operations[1])).toBe(old);
       expect(checkpoint?.state.call_count).toBe(2); expect(checkpoint?.state.attempt).toBe(3);
     } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
   });
 
   it("preserves its one mechanical redirect after a later business wait resumes", async () => {
-    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
-    const mechanical = { resource: request.resource, reason: "Need the opaque selection reference", question: "Which column supplies the opaque selection reference?" };
-    const first = vi.fn().mockResolvedValueOnce(response({ clarification_request: mechanical })).mockResolvedValueOnce(response({ clarification_request: request }));
-    await expect(generateModelReadWorkload({ ...setup(first), onCheckpoint: async value => { checkpoint = value; }, clarificationHandler: async () => undefined })).rejects.toThrow("AUTHORING_PAUSED");
-    expect(checkpoint?.state.mechanical_clarification_resolved).toBe(true); expect(checkpoint?.state.correction_used).toBe(true);
-    const next = vi.fn(async () => response({ clarification_request: mechanical }));
-    await expect(generateModelReadWorkload({ ...setup(next), resumeCheckpoint: checkpoint, onCheckpoint: async value => { checkpoint = value; },
-      clarificationHandler: async () => ({ state: "answered", answer: "The fulfillment stage" }) })).rejects.toThrow("READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED");
-    expect(next).toHaveBeenCalledOnce();
+    // Successor: one finite typed correction, then a genuine native business
+    // wait. The removed English-mechanical route never receives a new budget.
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, resumed = false;
+    const h = await typedReadAssistanceFixture("List my orders", async () => resumed ? "The fulfillment stage" : null, "owned-local-fixture");
+    const typed = declaredWorkloadScope("List my orders", "status_rows", h.boundary);
+    const invalid = { ...typed.proposal, requirements: [{ ...typed.proposal.requirements[0]!, references: ["not-a-host-reference"] }] };
+    const missing = { ...typed.proposal, requirements: [{ ...typed.proposal.requirements[0]!, disposition: "unresolved", subjects: [], targets: [], unresolved: request.question }] };
+    const first = vi.fn().mockResolvedValueOnce(diagnosticResponse("valid", invalid))
+      .mockResolvedValueOnce(response({ allowed: [], forbidden: [], read_scope: missing }));
+    try {
+      await expect(h.run({ ...setup(first), onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("AUTHORING_PAUSED");
+      expect(checkpoint?.state.mechanical_clarification_resolved).toBe(false); expect(checkpoint?.state.correction_used).toBe(true);
+      expect(first).toHaveBeenCalledTimes(2); expect(checkpoint?.stage).toBe("waiting");
+      resumed = true;
+      const next = vi.fn(async () => diagnosticResponse("valid", invalid));
+      await expect(h.run({ ...setup(next), resumeCheckpoint: checkpoint, onCheckpoint: async value => { checkpoint = value; } }))
+        .rejects.toThrow("READ_SCOPE_REFERENCE_INVALID");
+      expect(next).toHaveBeenCalledOnce(); expect(checkpoint?.state.correction_used).toBe(true);
+      expect(h.state().operator_questions!.every(q => !q.confirmation)).toBe(true);
+    } finally { await h.cleanup(); }
   });
 });
 
