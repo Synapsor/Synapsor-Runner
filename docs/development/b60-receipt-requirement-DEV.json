@@ -13,7 +13,8 @@
     "cancelled_unanswered": "public cold Replace\u2192cancel on5168 then005/006 onlyKeep (independent b57); Main shared-host initial +replacement cancel tests0P2F, cancel-unanswered-before.log",
     "saved_review_reuse": "Practice f14d4db5 native boundary-cli443:11 failures (10 expected validated_reuse got provider; saved post-edit Resume expected1 call got2); first native full run continuing/preserved. pending review-only item removed on completion and absent routing summary inconsistent with normal Resume fallback.",
     "saved_review_prior_classification": "342 initial affected rerun37P/1F; current-context renewal retained exact native prior review-only item, but new request correctly did not complete old context; history-based agenda classification must remain review-only. review-scope-after.log preserved.",
-    "source_repair": "practice native2fail: Action-only scoped repair replaced Read routing aid, unlike cold continuation; exact first full preserved"
+    "source_repair": "practice native2fail: Action-only scoped repair replaced Read routing aid, unlike cold continuation; exact first full preserved",
+    "reuse_revalidated_intent": "Refreshed unofficial0ff5474f six original files:568P19FAIL. Original20 failures cleared;19 new access-edit failures because reuse caller retained redundant longer revision routing text instead of actual saved Read summary. Native first refresh unchanged preserved."
   },
   "checks": {
     "focused_wip8": "244 pass / 0 fail / 1 skip (live model admission opt-in; paid closed)",
@@ -32,7 +33,8 @@
     "cancelled_unanswered": "75 pass / 0 fail / 0 skip in6 shared host/presenter/receipt files; types exit0; independent different-stage variants presealedNOT_RUN until thispin",
     "saved_review_reuse_types": "exit0; review-scope-types-v2.log",
     "saved_review_reuse_focused": "38 pass / 0 fail;405 filtered by declared two-table selection (not coverage passes). review-scope-after-v2.log,17.54s; original call-count/currentness assertions unchanged.",
-    "source_repair_and_inventory": "6 public Source-repair PASS +107 finite inventory PASS,0fail/skip; types exit0; unchanged old assertions; source-repair-after.log,source-repair-inventory-after.log,source-repair-inventory-types.log"
+    "source_repair_and_inventory": "6 public Source-repair PASS +107 finite inventory PASS,0fail/skip; types exit0; unchanged old assertions; source-repair-after.log,source-repair-inventory-after.log,source-repair-inventory-types.log",
+    "reuse_revalidated_intent": "71PASS/0FAIL;378 filtered (not database skip or covered):27 unchanged general access-edit,38 saved-review reuse,6 public Source repair. types0; reuse-revalidated-intent-after.log/types.log."
   },
   "open": [
     "Reviewer2 B59 guard and Ask dependency independent variants",
@@ -93,7 +95,7 @@
       "result": "one native final-consumer pass,19 read-only immutable-capture observations; actual declared raw/defaultNo decline/fresh-process ReviewYes/native saved workload/further ordinary bounded review final consumer reached",
       "limits": "Bounded aggregate complete per Reviewer2 3af5410f; route/public limitations retained, four newly reproduced Read guard regressions require correction acceptance."
     },
-    "practice": "CLOSED immutable f14d4db5 full9381PASS/20FAIL/576skip; DB42=1167PASS/0FAIL/4explicit SQLite-only skips; offline/package PASS; prospective20/50/64 size12PASS minimum115236B margin, original gold unchanged. First failures preserved; refreshed affected files/final combinedpin still needed.",
+    "practice": "Firstf14full9381P20F576skip preserved; refreshed0ff sixfiles568P19newFAIL preserved; narrow saved-summary correction71P/types0 thensixfiles rerun needed. DB42 original1167P0F4documented skips; offline/package/size12PASS remain exact-original-pin evidence.",
     "runbook": {
       "status": "DONE_DOCUMENTATION_ONLY",
       "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-07/luna-independent-tester-replacement-20261007/outputs/LUNA-DEMO-REHEARSAL-RUNBOOK-CANDIDATE3-EVIDENCE.md",
@@ -130,16 +132,25 @@
     "response": "11 stable reuse38P;2SourceRepair6P;2finiteinventory107P;4Readguards67P separatebranch;1Ask21P separatedependency; independent variants/final6affectedfiles pending"
   },
   "changes_source_repair": [
-    "Keep saved Read routing aid while planner reuses Read; Action repair wording cannot replace retained Read request; cold/live Source scopes and competing writer checks unchanged."
+    "Keep saved Read routing aid while planner reuses Read; Action repair wording cannot replace retained Read request; cold/live Source scopes and competing writer checks unchanged.",
+    "Read reuse uses only actual active/saved Resume read_intent; redundant planner read_intent is ignored, including after revision mode is coerced to reuse. Full original job fallback retained; no500character limit relaxation/no summary seeding."
   ],
   "inventory": "Add existing B60 receipt_requirement_review to strict finite expected inventory and verify actual shared business-host constructor; no missing code hidden/no runtime registry expansion.",
   "shared_runtime": {
     "implementer": "/root/b48_independent_review",
     "reviewer": "B51 Independent Reviewer 2 /01a114f6-d7b7-7103-951e-59bd5959837a",
-    "state": "IMPLEMENTING_IMPACT_BENCH",
+    "state": "IMPACT_ESTABLISHED_SIX_BRANCHES_FIRST_SAFE_UNKNOWN_FIX_TESTING",
     "prerequisite": "Before any candidate4 runtime/paid use; exact Luna runner_ledger compoundUPDATE, source_db supplemental separate. Receipt-backed reconcile only with exact atomic Source proof; no second Source write/requeue.",
     "evidence": "MAIN-B61-LOST-COMMIT-REVIEW1647.json; Tester outputs/LUNA-ACTUAL-UPDATE-STRUCTURAL-REFS.json; reviewer b61-shared-recovery-independent-controls-v1.json",
-    "authorization": "Owner 66a1be83-... amendment read once; no clock reset"
+    "authorization": "Owner 66a1be83-... amendment read once; no clock reset",
+    "connection_fix": "1026279b packages/postgres only; build0/122PASS; before6 realCOMMIT thenprocess crash; after6 child0/structuredreconciliation_required and durableRunnerLedgerfence. Exact atomicreceipt-backed prospective recovery still pending independent review; RunnerLedger absence/legacy partial binding staysunknown."
   },
-  "updated_utc": "2026-10-08T00:55:03.275766+00:00"
+  "updated_utc": "2026-10-08T01:10:40.860041+00:00",
+  "tooling": {
+    "B54_B55": "Actual currenthost consumerclose gap reproduced; prospective018eb432 delivery-only copy three local controlsPASS, Main scoped static ACCEPT; futureroute adoption only, no historical/liveguard mutation/paidopen. Nodefinish not clientparseACK.",
+    "B56": "helper separateowned-dir remedy implementation next, no chmod/chown/permissionchange; candidate unaffected.",
+    "B57": "Actual oldd9f restartSTOPPED atAsk; no new composedPASSyet, strictdependency acceptance alone not restart proof.",
+    "B53": "Original12Actionexhaustion vs latest15paid-callstop separately retained; accountingcomplete not proofclientparse.",
+    "B45": "Docs-only prepared5businessquestions/12futurecontrolsNOTRUN,21626c78private; no subjectlesscreateimplementation."
+  }
 }

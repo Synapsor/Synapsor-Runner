@@ -6569,13 +6569,15 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           lines: ["Your requested edit and unfinished work remain saved. Existing access and actions are unchanged."],
           footer: "Resume this saved edit to clarify it or retry with the model; you do not need to enter the job again." });
       }
-      // Reusing Read does not replace its routing aid with an Action repair
-      // instruction. Keep the same evidence when the saved step resumes cold.
-      mappedReadIntent = jobPlan.read_intent ?? (jobPlan.read_mode === "reuse"
-        ? resumeReadIntent ?? canonicalJobIntent ?? jobIntent.trim() : jobIntent.trim());
+      // Reuse keeps the actual saved routing aid, never a redundant planner
+      // instruction (including a longer revision instruction after revalidation).
+      const retainedReadIntent = activeResume?.read_intent ?? availableResume?.read_intent;
+      mappedReadIntent = jobPlan.read_mode === "reuse"
+        ? retainedReadIntent ?? canonicalJobIntent ?? jobIntent.trim()
+        : jobPlan.read_intent ?? jobIntent.trim();
       resumeReadIntent = jobPlan.read_mode === "create" || jobPlan.read_mode === "revise"
         ? mappedReadIntent
-        : jobPlan.read_mode === "reuse" ? jobPlan.read_intent ?? resumeReadIntent : undefined;
+        : jobPlan.read_mode === "reuse" ? retainedReadIntent : undefined;
       resumeAction = retainedReadEdit ? retainedReadEdit.action : resumesCompletedActionsAfterRevalidation
         ? availableResume?.action
         : jobPlan.action_mode === "create" || jobPlan.action_mode === "revise"
