@@ -22,7 +22,7 @@ export type ReadScopeTarget = z.infer<typeof targetSchema>;
 
 // Provider projection of the canonical codec, checked by the conformance test.
 const stringSchema = { type: "string", minLength: 1, maxLength: 256 };
-const proseSchema = { type: "string", minLength: 1, maxLength: 4000 };
+const proseSchema = { type: "string", minLength: 1, maxLength: 4000, pattern: "\\S" };
 export const readScopeProposalSchema = {
   type: "object", additionalProperties: false, required: ["protocol", "original_request", "requirements"],
   properties: { protocol: { const: READ_SCOPE_PROTOCOL }, original_request: stringSchema,
@@ -56,6 +56,7 @@ const bindingSchema = z.object({ request_digest: digest, source_digest: digest, 
 export type ReadScopeBinding = z.infer<typeof bindingSchema>;
 const recordBodySchema = z.object({ protocol: z.literal(READ_SCOPE_PROTOCOL), proposal: readScopeProposalCodec,
   binding: bindingSchema, references: z.array(referenceSchema).min(1).max(1024),
+  analysis_digest: digest.optional(),
   requirement_bindings: z.array(z.object({ id: name, digest }).strict()).min(1).max(128) }).strict();
 const recordSchema = recordBodySchema.extend({ digest }).strict();
 /** Stored inside the native question, never a separate accepted-meaning store.
@@ -115,6 +116,7 @@ function validateCatalogTarget(target: ReadScopeTarget, catalog: ReadScopeCatalo
 
 export function resolveReadScopeProposal(value: unknown, input: {
   expectedBinding: ReadScopeBinding; references: readonly ReadScopeReference[]; catalog: ReadScopeCatalog;
+  analysis?: ReadWorkloadAnalysis;
 }): ReadScopeRecord {
   const proposal = parseReadScopeProposal(value);
   const binding = bindingSchema.parse(input.expectedBinding);
@@ -132,6 +134,7 @@ export function resolveReadScopeProposal(value: unknown, input: {
   }
   for (const requirement of proposal.requirements) for (const target of requirement.targets) validateCatalogTarget(target, input.catalog);
   const body = { protocol: READ_SCOPE_PROTOCOL, proposal, binding, references,
+    ...(input.analysis ? { analysis_digest: canonicalJsonDigest(input.analysis) } : {}),
     requirement_bindings: proposal.requirements.map(requirement => ({ id: requirement.id, digest: requirementBinding(requirement, references) })) };
   return parseReadScopeRecord({ ...body, digest: canonicalJsonDigest(body) });
 }
@@ -150,6 +153,9 @@ export function parseReadScopeRecord(value: unknown): ReadScopeRecord {
   if (!original || original.kind !== "request" || original.digest !== record.binding.request_digest
     || record.proposal.requirements.some(requirement => requirement.references.some(id => !record.references.some(reference => reference.id === id))))
     invalid("READ_SCOPE_RECORD_INVALID", "The resolved original request or requirement provenance is missing.");
+  if (record.references.some(reference => reference.kind === "source"
+    && (reference.digest !== record.binding.source_digest || reference.end_line < reference.start_line)))
+    invalid("READ_SCOPE_RECORD_INVALID", "The saved Source identity or line range is inconsistent with its binding.");
   return record;
 }
 
@@ -175,6 +181,18 @@ export function assessReadScopeDraft(value: ReadScopeRecord, analysis: ReadWorkl
     unresolved, missing, excluded: forbidden, added, analysis_ready: analysis.status === "ready", authority_granted: false };
 }
 
+/** A changed scope must be shown as a delta. Provider item IDs cannot conceal a
+ * removed exclusion or relabel a different intended use as the old requirement. */
+export function readScopeDelta(before: ReadScopeRecord, after: ReadScopeRecord): {
+  removed: ReadScopeRecord["requirement_bindings"]; added: ReadScopeRecord["requirement_bindings"];
+} {
+  const prior = parseReadScopeRecord(before), next = parseReadScopeRecord(after);
+  const oldDigests = new Set(prior.requirement_bindings.map(requirement => requirement.digest));
+  const newDigests = new Set(next.requirement_bindings.map(requirement => requirement.digest));
+  return { removed: prior.requirement_bindings.filter(requirement => !newDigests.has(requirement.digest)),
+    added: next.requirement_bindings.filter(requirement => !oldDigests.has(requirement.digest)) };
+}
+
 /** Native owner must supply a parsed OperatorQuestion and its current lineage.
  * Passing a provider reply here is never a substitute for that protected loader. */
 export function currentReadScope(input: { record: ReadScopeRecord; expectedBinding: ReadScopeBinding;
@@ -185,7 +203,7 @@ export function currentReadScope(input: { record: ReadScopeRecord; expectedBindi
   const record = parseReadScopeRecord(input.record);
   const current = bindingSchema.parse(input.expectedBinding);
   const status = input.retired || canonicalJsonDigest(record.binding) !== canonicalJsonDigest(current) ? "stale"
-    : input.pendingReplacement || record.proposal.requirements.some(requirement => requirement.disposition === "unresolved") ? "pending"
+    : input.pendingReplacement || !record.analysis_digest || record.proposal.requirements.some(requirement => requirement.disposition === "unresolved") ? "pending"
     : input.confirmation?.actor === "local_installation_operator" && input.confirmation.proposal_digest === record.digest ? "confirmed" : "proposed";
   return { status, record, authority_granted: false };
 }

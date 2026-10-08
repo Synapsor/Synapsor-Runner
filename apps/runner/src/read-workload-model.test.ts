@@ -21,6 +21,72 @@ import {
 import { generateModelReadWorkload, readWorkloadCatalog, type ModelReadWorkloadInput } from "./read-workload-model.js";
 import { ReadWorkloadDraftError } from "./read-workload-diagnostics.js";
 import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
+import { READ_SCOPE_PROTOCOL, type ReadScopeBinding, type ReadScopeProposal } from "./read-structured-scope.js";
+
+describe("B64 structured Read producer adapter", () => {
+  const original = "Show order status. Use public.orders.status for the order status; no other fields.";
+  const response = (args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "structured_read",
+    name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } });
+  const scope = (): ReadScopeProposal => ({ protocol: READ_SCOPE_PROTOCOL, original_request: "job", requirements: [{
+    id: "order-status", intended_use: "Show order status", references: ["job"], disposition: "include", targets: [
+      { root_resource: "public.orders", resource: "public.orders", operation: "resource" },
+      { root_resource: "public.orders", resource: "public.orders", operation: "return", field: "status" },
+    ],
+  }] });
+  const args = () => ({ allowed: [{ id: "order_status", description: "Show order status", plan: {
+    kind: "rows", resource: "public.orders", select: ["status"],
+  } }], forbidden: [], read_scope: scope() });
+  function setup(requestJson: NonNullable<AskProviderDependencies["requestJson"]>) {
+    const boundary = generatedBoundary();
+    const catalog = readWorkloadCatalog(boundary);
+    const binding: ReadScopeBinding = { request_digest: canonicalJsonDigest(original), source_digest: canonicalJsonDigest(null),
+      catalog_digest: catalog.digest, meaning_digest: canonicalJsonDigest(original), applicability_digest: canonicalJsonDigest("this-job"),
+      operation_digest: canonicalJsonDigest(boundary) };
+    const context = { binding, references: [{ kind: "request" as const, id: "job", digest: binding.request_digest, text: original }],
+      catalog: { resources: catalog.resources, relationships: [] } };
+    return { input: { name: "structured_scope", allowedQuestions: [original], operatorNamingContext: original,
+      provider: "openai" as const, model: "local-scripted", generatedBoundary: boundary, apiKey: "test-key",
+      egressAcknowledged: true, deferNarration: true, dependencies: { requestJson },
+      structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context } }, context };
+  }
+  it("uses the actual typed tool, returns unconfirmed scope, and never asks a lexical root question", async () => {
+    const requests: unknown[] = [];
+    const send = vi.fn(async request => { requests.push(request.body); return response(args()); });
+    const result = await generateModelReadWorkload(setup(send).input);
+    expect(send).toHaveBeenCalledOnce();
+    expect(result.analysis.status).toBe("ready");
+    expect(result.read_scope?.proposal).toEqual(scope());
+    expect(result.read_scope?.analysis_digest).toBe(canonicalJsonDigest(result.analysis));
+    expect(result.read_scope).not.toHaveProperty("confirmation");
+    expect(result.authority_granted).toBe(false);
+    expect(JSON.stringify(requests)).toContain(READ_SCOPE_PROTOCOL);
+    expect(JSON.stringify(requests)).not.toContain("Runner refuses guessed business meaning");
+  });
+  it("corrects an exact omitted operation within the existing one-correction allowance", async () => {
+    let call = 0;
+    const send = vi.fn(async () => {
+      const value = args(); if (call++ === 0) value.read_scope.requirements[0]!.targets.pop();
+      return response(value);
+    });
+    const result = await generateModelReadWorkload(setup(send).input);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(result.analysis.status).toBe("ready");
+    expect(result.diagnostics?.some(diagnostic => diagnostic.code === "READ_SCOPE_DELTA_REQUIRED")).toBe(true);
+  });
+  it("never falls back to legacy English handling after a missing typed scope", async () => {
+    const send = vi.fn(async () => { const { read_scope: _scope, ...legacy } = args(); return response(legacy); });
+    await expect(generateModelReadWorkload(setup(send).input)).rejects.toThrow(/READ_SCOPE_INVALID/u);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+  it("rejects scope context drift during a real provider turn before accepting its proposal", async () => {
+    let change = () => {};
+    const send = vi.fn(async () => { change(); return response(args()); });
+    const configured = setup(send);
+    change = () => { configured.context.binding.operation_digest = canonicalJsonDigest("changed-baseline"); };
+    await expect(generateModelReadWorkload(configured.input)).rejects.toMatchObject({ code: "ASK_AUTHORITY_CHANGED" });
+    expect(send).toHaveBeenCalledOnce();
+  });
+});
 
 // Labeled fixture successor: these are additional declared operator root facts,
 // never inferred from metadata. Preserve the complete original request/context;

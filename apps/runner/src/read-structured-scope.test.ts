@@ -25,7 +25,7 @@ function proposal(): ReadScopeProposal {
     { id: "privacy", intended_use: "Keep private notes hidden", references: ["job", "policy:1"], disposition: "exclude", targets: [secret] },
   ] };
 }
-const resolve = (value: unknown = proposal()) => resolveReadScopeProposal(value, { expectedBinding: binding, references, catalog });
+const resolve = (value: unknown = proposal()) => resolveReadScopeProposal(value, { expectedBinding: binding, references, catalog, analysis: analysis() });
 function analysis(targets: ReadScopeTarget[] = [root, title]): ReadWorkloadAnalysis {
   return { schema_version: READ_WORKLOAD_ANALYSIS_VERSION, workload_digest: d("workloads"), workload_name: "titles",
     status: "ready", allowed: [], forbidden: [], authority_atoms: targets.map(target => ({ id: canonicalJsonDigest(target), ...target })),
