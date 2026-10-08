@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
-import { relative, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import ts from 'typescript';
 
 export const legitimateUses = new Set([
@@ -32,9 +32,8 @@ function kindOf(node) {
     ts.SyntaxKind.GreaterThanEqualsToken].includes(node.operatorToken.kind) &&
     (textLiteral(node.left) || textLiteral(node.right))) return 'literal_comparison';
   if (ts.isArrayLiteralExpression(node) && node.elements.some(textLiteral)) return 'literal_vocabulary';
-  if (ts.isObjectLiteralExpression(node) && node.properties.some(p => p.name && ts.isStringLiteralLike(p.name))) return 'literal_dictionary';
-  if (ts.isIfStatement(node) || ts.isConditionalExpression(node) || ts.isSwitchStatement(node) ||
-      ts.isWhileStatement(node) || ts.isDoStatement(node)) return 'decision_binding';
+  if (ts.isObjectLiteralExpression(node) && node.properties.some(p => p.name &&
+      (ts.isIdentifier(p.name) || ts.isStringLiteralLike(p.name)))) return 'literal_dictionary';
   if (ts.isCaseClause(node) && textLiteral(node.expression)) return 'literal_case';
   return undefined;
 }
@@ -43,39 +42,95 @@ function kindOf(node) {
 // English meaning or prove semantic correctness. A candidate is not a violation
 // until unmatched by an exact, independently reviewed legitimate-use entry.
 export function scanSource(file, text) {
-  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true,
-    /\.[cm]?jsx?$/.test(file) ? ts.ScriptKind.JS : ts.ScriptKind.TS);
-  if (source.parseDiagnostics.length) throw new Error(`Cannot scan malformed product source: ${file}`);
-  const candidates = [];
-  const duplicates = new Map();
-  const ownerHashes = new WeakMap();
+  return scanSources(new Map([[file, text]]));
+}
+
+/** Resolve actual local symbols/import aliases to bind lexical predicates to
+ * their consumers. Ordinary branches are not independently language candidates.
+ * Consumer closure adds a reviewed declaration only when it depends on one. */
+export function scanSources(texts) {
+  const sources = new Map();
+  const names = new Map();
+  for (const [file, text] of texts) {
+    const absolute = resolve('/', file);
+    const source = ts.createSourceFile(absolute, text, ts.ScriptTarget.Latest, true,
+      /\.[cm]?jsx?$/.test(file) ? ts.ScriptKind.JS : ts.ScriptKind.TS);
+    if (source.parseDiagnostics.length) throw new Error(`Cannot scan malformed product source: ${file}`);
+    sources.set(absolute, source); names.set(absolute, file);
+  }
+  const options = { noLib: true, allowJs: true, target: ts.ScriptTarget.Latest,
+    module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler };
+  const resolveModule = (specifier, containing) => {
+    const base = specifier.startsWith('.') ? resolve(dirname(containing), specifier)
+      : /^@synapsor(?:-runner)?\//.test(specifier)
+        ? resolve('/packages', specifier.split('/')[1], 'src/index') : undefined;
+    if (!base) return undefined;
+    const stem = base.replace(/\.[cm]?js$/, '');
+    const found = [base, stem + '.ts', stem + '.mts', stem + '.js', stem + '.mjs', resolve(base, 'index.ts')]
+      .find(path => sources.has(path));
+    return found ? { resolvedFileName: found, extension: /\.[cm]?js$/.test(found) ? ts.Extension.Js : ts.Extension.Ts } : undefined;
+  };
+  const host = {
+    getSourceFile: name => sources.get(name), getDefaultLibFileName: () => '',
+    writeFile: () => {}, getCurrentDirectory: () => '/', getDirectories: () => [],
+    fileExists: name => sources.has(name), readFile: name => sources.get(name)?.text,
+    getCanonicalFileName: name => name, useCaseSensitiveFileNames: () => true,
+    getNewLine: () => '\n', resolveModuleNames: (modules, containing) => modules.map(name => resolveModule(name, containing)),
+  };
+  const checker = ts.createProgram([...sources.keys()], options, host).getTypeChecker();
+  const outer = node => {
+    let current = node;
+    while (current.parent && !ts.isSourceFile(current.parent)) current = current.parent;
+    return ts.isSourceFile(current) ? undefined : current;
+  };
   const printed = new WeakMap();
   const render = node => {
-    if (!printed.has(node)) printed.set(node, print(node, source));
+    if (!printed.has(node)) printed.set(node, print(node, node.getSourceFile()));
     return printed.get(node);
   };
-  function visit(node, owner) {
-    // Bind the full outer function/declaration, not merely a reusable regex.
-    // Changing what an existing predicate controls invalidates its review.
-    if (!owner && !ts.isSourceFile(node) && (ts.isStatement(node) || ts.isVariableDeclaration(node))) owner = node;
-    const kind = kindOf(node);
-    if (kind) {
-      const expression = render(node);
-      const boundOwner = owner ?? node;
-      if (!ownerHashes.has(boundOwner)) ownerHashes.set(boundOwner, sha(render(boundOwner)));
-      const ownerDigest = ownerHashes.get(boundOwner);
-      const base = JSON.stringify([file, kind, ownerDigest, expression]);
-      const occurrence = duplicates.get(base) ?? 0;
-      duplicates.set(base, occurrence + 1);
-      const position = source.getLineAndCharacterOfPosition(node.getStart(source));
-      candidates.push({ fingerprint: sha(`${base}:${occurrence}`), file,
-        line: position.line + 1, column: position.character + 1, kind,
-        owner_digest: ownerDigest, expression_digest: sha(expression),
-        excerpt: expression.slice(0, 200), occurrence });
+  const ownerHashes = new WeakMap();
+  const candidates = [], duplicates = new Map(), lexicalOwners = new Set(), consumers = new Map();
+  const add = (node, kind) => {
+    const source = node.getSourceFile(), file = names.get(source.fileName), owner = outer(node) ?? node;
+    const expression = render(node);
+    if (!ownerHashes.has(owner)) ownerHashes.set(owner, sha(render(owner)));
+    const ownerDigest = ownerHashes.get(owner);
+    const base = JSON.stringify([file, kind, ownerDigest, expression]);
+    const occurrence = duplicates.get(base) ?? 0;
+    duplicates.set(base, occurrence + 1);
+    const position = source.getLineAndCharacterOfPosition(node.getStart(source));
+    candidates.push({ fingerprint: sha(`${base}:${occurrence}`), file,
+      line: position.line + 1, column: position.character + 1, kind,
+      owner_digest: ownerDigest, expression_digest: sha(expression), excerpt: expression.slice(0, 200), occurrence });
+  };
+  for (const source of sources.values()) {
+    function visit(node) {
+      const owner = outer(node), kind = kindOf(node);
+      if (kind) { add(node, kind); lexicalOwners.add(owner); }
+      if (owner && ts.isIdentifier(node)) {
+        let symbol = checker.getSymbolAtLocation(node);
+        if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+        for (const declaration of symbol?.declarations ?? []) {
+          if (!names.has(declaration.getSourceFile().fileName)) continue;
+          const target = outer(declaration);
+          if (target && target !== owner) {
+            if (!consumers.has(target)) consumers.set(target, new Set());
+            consumers.get(target).add(owner);
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
     }
-    ts.forEachChild(node, child => visit(child, owner));
+    visit(source);
   }
-  visit(source, undefined);
+  const queue = [...lexicalOwners].filter(Boolean), reached = new Set(queue), dependent = new Set();
+  for (let index = 0; index < queue.length; index++) {
+    for (const consumer of consumers.get(queue[index]) ?? []) {
+      dependent.add(consumer);
+      if (!reached.has(consumer)) { reached.add(consumer); queue.push(consumer); }
+    }
+  }
+  for (const owner of dependent) add(owner, 'predicate_consumer');
   return candidates;
 }
 
@@ -120,7 +175,7 @@ export async function scanRepository(root) {
     const src = resolve(root, 'packages', entry.name, 'src');
     try { await walk(src); } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
-  const candidates = [];
-  for (const path of files.sort()) candidates.push(...scanSource(relative(root, path).replaceAll('\\', '/'), await readFile(path, 'utf8')));
-  return { files: files.length, candidates };
+  const texts = new Map();
+  for (const path of files.sort()) texts.set(relative(root, path).replaceAll('\\', '/'), await readFile(path, 'utf8'));
+  return { files: files.length, candidates: scanSources(texts) };
 }

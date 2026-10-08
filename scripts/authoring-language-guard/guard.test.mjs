@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { evaluate, scanSource } from './scan.mjs';
+import { evaluate, scanSource, scanSources } from './scan.mjs';
 const file = 'apps/runner/src/owner.ts';
 const scan = text => scanSource(file, text);
 const allow = candidates => ({ version: 1, entries: candidates.map(candidate => ({
@@ -47,4 +47,24 @@ test('no review, broad category, duplicate entries and malformed source fail clo
   const grant = allow(candidates); grant.entries.push(grant.entries[0]);
   assert.ok(evaluate(candidates, grant).errors.some(error => error.kind === 'duplicate_allowance'));
   assert.throws(() => scan('export function broken('), /malformed/);
+});
+
+test('identifier-key vocabulary lookup requires review', () => {
+  const code = 'const answers = { yes: true, no: false }; export const consent = answer => answers[answer];';
+  assert.ok(evaluate(scan(code), empty).errors.some(error => error.kind === 'unreviewed_candidate'));
+});
+test('caller effect change invalidates predicate review, including alias and cross-module consumers', () => {
+  const old = 'export function isPending(v) { return v === "pending"; } export function present(v) { display(isPending(v)); }';
+  assert.ok(evaluate(scan(old.replace('display(isPending(v))', 'grant(isPending(v))')), allow(scan(old))).errors.length);
+  const make = effect => new Map([
+    [file, 'export function isPending(v) { return v === "pending"; }'],
+    ['apps/runner/src/use.ts', `import {isPending as check} from "./owner.js"; const alias = check; export function use(v) { ${effect}(alias(v)); }`],
+  ]);
+  const before = scanSources(make('display'));
+  const grants = allow(before); grants.entries.forEach((entry, i) => entry.file = before[i].file);
+  assert.equal(evaluate(before, grants).errors.length, 0);
+  assert.ok(evaluate(scanSources(make('grant')), grants).errors.some(error => error.kind === 'unreviewed_candidate'));
+});
+test('ordinary numeric branch alone is not a language candidate', () => {
+  assert.equal(scan('export function bounded(n:number) { if (n > 10) return 10; return n; }').length, 0);
 });

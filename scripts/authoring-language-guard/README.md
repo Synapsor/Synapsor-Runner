@@ -15,7 +15,7 @@ An allowance names one exact source fingerprint, canonical annotation, category,
 reason, independent reviewer and evidence. The fingerprint includes the path,
 printed outer declaration, expression and occurrence. Moving a predicate,
 changing its receiver or changing the operation it controls invalidates review.
-Formatting/comments alone do not. There are no file globs, accepted English
+A TypeScript symbol-consumer closure also binds callers, aliases and local module imports; changing display into authority use requires another review. Ordinary numeric branches alone are not language candidates. Formatting/comments alone do not. There are no file globs, accepted English
 baselines, count ceilings or automatic allowlist regeneration. Removing an
 expression leaves a stale allowance that must be removed explicitly.
 
@@ -27,7 +27,7 @@ script. Code review remains necessary for changes to the scanner and allowlist.
 Static syntax analysis cannot prove the absence of arbitrary obfuscated or
 external language interpretation.
 
-The first allowlist is intentionally empty pending the independent audit.
+The first allowlist is intentionally empty pending the independent audit and exact-allowance review.
 Therefore the repository check currently fails closed. This is **not** a green
 B64 gate or a claim that every syntactic candidate is English logic. The audit
 must produce exact legitimate entries; retirement lanes must close all real

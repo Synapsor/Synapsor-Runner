@@ -111,7 +111,7 @@
     "verify:safe-action-preview": "./scripts/verify-safe-action-preview.sh",
     "verify:safe-action-team": "corepack pnpm build:runner-package && node scripts/verify-safe-action-team-ci.mjs",
     "verify:published-alpha": "./scripts/verify-published-alpha.sh",
-    "check:authoring-language": "node --test scripts/authoring-language-guard/guard.test.mjs && node scripts/check-authoring-language.mjs"
+    "check:authoring-language": "node --test scripts/authoring-language-guard/*.test.mjs && node scripts/check-authoring-language.mjs"
   },
   "devDependencies": {
     "@anthropic-ai/mcpb": "2.1.2",
