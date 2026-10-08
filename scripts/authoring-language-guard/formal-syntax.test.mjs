@@ -41,3 +41,15 @@ test('class heritage retains runtime decisions even though TypeScript also class
   assert.ok(evaluate(scan('export class Example extends (/permit/.test(answer) ? Approved : Refused) {}'), empty)
     .errors.some(error => error.kind === 'unreviewed_candidate'));
 });
+
+test('removed allowances with stored syntax metadata remain labelled as stale review records', () => {
+  const candidate = scan('export const pending = record => record.status === "pending";')[0];
+  const entry = { ...candidate, annotation_id: 'STALE-FORMAL-CONTROL', category: 'exact_identifier_or_code',
+    reason: 'Independent fixture only.', review: { reviewer: 'fixture', evidence: 'fixture-only', verdict: 'accepted' } };
+  expectOnlyStale(evaluate([], { version: 1, entries: [entry] }).errors);
+});
+function expectOnlyStale(errors) {
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].kind, 'stale_allowance');
+  assert.equal(errors[0].syntax_kind, 'literal_comparison');
+}
