@@ -1,0 +1,29 @@
+{
+  "head": "693204ad",
+  "integrated": [
+    {
+      "owner": "9125de75",
+      "main": "1132b711",
+      "scope": "Six typed omission/preservation counterparts",
+      "independent": "R2 SOURCE ACCEPT 85dfbc3f; original counters and positive authority/source-write guards retained",
+      "owner_tests": "6 PASS; no Main rerun claimed"
+    },
+    {
+      "owner": "3c944be9",
+      "main": "0e18414c",
+      "scope": "Two actual typed Source/catalog currentness controls",
+      "independent": "R2 SOURCE ACCEPT 85dfbc3f; original errors/calls preserved",
+      "owner_tests": "2 PASS; no Main rerun claimed"
+    },
+    {
+      "owner": "ea387b96",
+      "main": "693204ad",
+      "scope": "Reuse existing bounded description guidance in typed initial and followup prompt",
+      "independent": "R2 scoped ACCEPT 565241d663376bd0c469f453e2a082a7504fe441494c8a4f6547441a8645b28b",
+      "results": "Original short1PASS/long2 fixture failures; separate corrected long2PASS/1filtered. Do not report latest3-case green."
+    }
+  ],
+  "merge": "Product/tests auto-merged; only lane handoff conflict resolved retaining currentness handoff during guidance import",
+  "next": "Main affected integrated controls after reviewer slot release; provenance16 and Actionv2 independent work continues",
+  "limits": "No full/installed/public Action/freeze acceptance"
+}
