@@ -68,6 +68,7 @@ export function createBusinessStatementHost(input: {
   decision?: BusinessStatementDecisionAdapter;
 }) {
   const access = input.access;
+  const questionKind = input.decision?.kind ?? 'attributed_meaning';
   let savedHandoff: AuthoringOwnerHandoff;
   const latestQuestion = () => access.readQuestions().filter(q => q.handoff_id === savedHandoff.id)
     .sort((a, b) => a.revision - b.revision).at(-1);
@@ -124,6 +125,7 @@ export function createBusinessStatementHost(input: {
       || savedHandoff.context_digest !== current)
       throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The question's Source, permissions or job changed. Its answer was not accepted; inspect the saved context before continuing.");
     const confirming = question && access.readQuestions().find(q => q.id === question.id);
+    if (confirming && confirming.kind !== questionKind) throw new PolicySourceChangedError();
     if (question && (!confirming || confirming.digest !== question.digest || confirming.handoff_id !== savedHandoff.id
       || confirming.raw_answer?.text !== answer || confirming.proposal?.disposition !== "proposed" || confirming.disposition))
       throw new PolicySourceChangedError();
@@ -186,6 +188,7 @@ export function createBusinessStatementHost(input: {
       await saveQuestion(presentOperatorQuestion(created, h.question));
       q = latestQuestion()!;
     }
+    if (q.kind !== questionKind) throw new PolicySourceChangedError();
     if (q.disposition || q.terminal_failure) {
       // A cancelled prompt may have no words yet. Answering it again still
       // retains the old question and the existing receipt allowance.

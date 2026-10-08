@@ -10,4 +10,6 @@ B60 receipt interaction ownership (candidate 4 development; independent acceptan
 | Adopt only durable result | Exact current Source receipt requirement review | Receipt host typed result consumed by caller | All callers | Existing Source/Resume acknowledged ports | no_target / pending / saved(reused/confirmed/recovered) / blocked |
 | Present full bounded Source | Exact excerpt/range binding up to16000 characters | receiptRequirementMaterial | Shared question model/view | Native <=2000 material entries, unchanged envelope limits | Lossless labelled sections, no invented Source references |
 
+The existing generic coverage-failure record retains its current typed resolution for route dispatch; it does not own receipt meaning or applicability. Native question kind is checked before reopen and again under adoption, independently of whether a domain adapter is present.
+
 The large session only wires current records, shared presentation and protected writers. It no longer selects receipt targets/configuration/predecessors or owns a pending flag. The shared business host does not own receipt mapping/storage or a separate receipt lifecycle. Owner meaning, configured storage, technical guarantees and observed completion remain distinct. The original studio case has not acquired capabilities; the finite declared studio receipt fixture is explicitly supplemental.

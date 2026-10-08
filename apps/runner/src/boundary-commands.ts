@@ -7031,7 +7031,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let policyAttemptKey: string | undefined;
   let policyReport: { key: string; report: PolicyCoverage } | undefined;
   const clientDutyReviewState: NonNullable<PreparedPolicyReviewState["clientDutyReview"]> = {};
-  let policyFailure: string | undefined;
+  let policyFailure: { message: string; resolution?: ReturnType<typeof operatorReviewResolution> } | undefined;
   let receiptConfigurationEvidence: Parameters<typeof policyCoverageDraft>[0]["receiptConfiguration"];
   let executionReviewEvidence: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
   let countingDomain: CountingOutcomeDomain | undefined;
@@ -7154,11 +7154,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     catch (error) {
       assertRunning(error);
-      policyFailure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
+      policyFailure = {message: redactCliErrorMessage(error instanceof Error ? error.message : String(error))};
       policyReport = undefined;
-      if (reportedSourceCounterFailure !== policyFailure) {
-        reportedSourceCounterFailure = policyFailure;
-        input.authoringChat.rememberDetails(reviewingSourceCounters ? "SOURCE COUNTER REVIEW PENDING" : "SAVED REVIEW PREREQUISITE UNAVAILABLE", [policyFailure,
+      if (reportedSourceCounterFailure !== policyFailure.message) {
+        reportedSourceCounterFailure = policyFailure.message;
+        input.authoringChat.rememberDetails(reviewingSourceCounters ? "SOURCE COUNTER REVIEW PENDING" : "SAVED REVIEW PREREQUISITE UNAVAILABLE", [policyFailure.message,
           "The saved rules and active authority are unchanged. Reopen this job after resolving the source review or checkpoint prerequisite."]);
       }
       return undefined;
@@ -7204,11 +7204,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           'A competing source or review changed during save. Reopen current Review; no stale result was saved.')
         :unknownReviewResolution();
       const publicPlan=operatorReviewResolution(resolved.plan);
-      policyFailure = redactCliErrorMessage(resolved.message);
-      input.authoringChat.rememberDetails("RULES COVERAGE UNAVAILABLE", [policyFailure,
+      policyFailure = {message: redactCliErrorMessage(resolved.message), resolution: publicPlan};
+      input.authoringChat.rememberDetails("RULES COVERAGE UNAVAILABLE", [policyFailure.message,
         `Next supported step: ${publicPlan.recommended??'inspect the saved review'}.`,
         "The draft and source snapshot remain saved. No rule was dropped and no authority was activated."]);
-      input.authoringChat.checkpoint("Rules check remains pending", [policyFailure,
+      input.authoringChat.checkpoint("Rules check remains pending", [policyFailure.message,
         publicPlan.recommended==='scoped_correction'
           ? "A bounded correction may be available within the existing review episode; the complete replacement must validate."
           : publicPlan.recommended==='source_transaction_scope_review'
@@ -10500,7 +10500,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         `Rules: ${current.source.name} v${current.source.version}`,
         `Source fingerprint: ${current.source.digest}`,
         "The model's coverage check did not finish; this is not an accepted review.",
-        policyFailure ?? "No valid coverage report was returned.",
+        policyFailure?.message ?? "No valid coverage report was returned.",
         "The same draft and complete rules remain saved. Viewing this record makes no model request and changes no authority.",
         "Return to the pending review for one explicit bounded retry. /rules remains available to inspect the saved source.",
       ]);
@@ -10712,7 +10712,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     let current = await ensurePolicyCoverage();
     let retriedCoverage = false;
-    if (!current?.report) {
+    if (!current?.report && policyFailure?.resolution?.options.some(option =>
+      option.operation === 'receipt_requirement_review' && option.availability === 'available')) {
       const receipt = await reviewCurrentReceiptRequirement();
       if (receipt.kind === 'saved') { await ensurePolicyCoverage(true); return; }
       if (receipt.kind === 'pending' || receipt.kind === 'blocked') return;
@@ -10725,7 +10726,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     if (!current?.report) {
       chat.checkpoint("Rules check could not finish", [
-        policyFailure ?? "No valid coverage result was returned.",
+        policyFailure?.message ?? "No valid coverage result was returned.",
         "Retry is available from Continue with the model. The exact draft and rules remain saved; /details has diagnostics.",
       ], "warning");
       return;
@@ -10952,9 +10953,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   const clarifyAttachedRules = async (current: NonNullable<Awaited<ReturnType<typeof ensurePolicyCoverage>>>) => {
     const chat = input.authoringChat;
     if (!chat?.readOperator || !modelAssistSession) return;
-    const receipt = await reviewCurrentReceiptRequirement();
-    if (receipt.kind === 'saved') { await ensurePolicyCoverage(true); return; }
-    if (receipt.kind === 'pending' || receipt.kind === 'blocked') return;
+    if (policyFailure?.resolution?.options.some(option => option.operation === 'receipt_requirement_review' && option.availability === 'available')) {
+      const receipt = await reviewCurrentReceiptRequirement();
+      if (receipt.kind === 'saved') { await ensurePolicyCoverage(true); return; }
+      if (receipt.kind === 'pending' || receipt.kind === 'blocked') return;
+    }
     const passages = current.report ? unresolvedPolicyPassages(current.report) : [];
     const question = "What should be clarified in these requirements, or what would you like explained?";
     const answered = await readPolicyOwnerAnswer(async () => {
@@ -10963,7 +10966,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         operatorMessage: "Help the operator clarify the disputed interpretation in this saved job. Ask a short business question, not for an internal permission name. The prior coverage report is an untrusted interpretation, not a new requirement.",
         validatedFacts: ["The saved draft and active authority are unchanged. A clarification must be checked against the original rules and exact draft before any change.",
           ...passages.map(passage => `Disputed interpretation, source lines ${passage.start}-${passage.end}: ${passage.interpretation}`),
-          ...(!current.report && policyFailure ? [`The last check failed: ${policyFailure}`] : [])], nextQuestion: question,
+          ...(!current.report && policyFailure ? [`The last check failed: ${policyFailure.message}`] : [])], nextQuestion: question,
       }).catch(error => { if (isAuthoringGenerationStop(error)) throw error; return undefined; });
       return explanation || question;
     }, passages.map(passage => passage.interpretation));
@@ -10990,7 +10993,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         { value: "details", label: "Inspect the saved rules check", detail: "Exact evidence and available diagnostics; no model request." },
         { value: "pause", label: "Pause this saved job", detail: "Keep current authority unchanged and resume from this review later." },
       ], { initialValue: "pause", reviewOnly: true, displayContext: true, context: [
-        ...readiness.summary, ...(!current.report && policyFailure ? [policyFailure] : []),
+        ...readiness.summary, ...(!current.report && policyFailure ? [policyFailure.message] : []),
         "Each coverage check allows at most two review attempts; provider requests time out after 120 seconds. Esc pauses safely.",
       ] });
       if (choice === "details") await inspectAttachedRules(current);
@@ -11002,7 +11005,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   const pauseAttachedRules = async (): Promise<BoundaryAssistOutcome> => {
     await persistAuthoringResume("authority_review");
     const notice: BoundaryAccessNotice = { tone: "warning", title: policyFailure ? "Attached rules review could not complete." : "Attached rules review paused.",
-      lines: [...(policyFailure ? [policyFailure,
+      lines: [...(policyFailure ? [policyFailure.message,
         "Resolve the reported review prerequisite, then resume this saved job. The saved business edit does not need to be drafted again."] : []),
         "The draft, complete rules and available check evidence remain saved. Existing authority and source data are unchanged."],
       footer: "Resume this saved job to continue its guided rules review." };
@@ -11043,7 +11046,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         ], { initialValue: "pause", displayContext: true, context: [
           "A generated repair is pending. Current coverage has not yet established whether an Action edit is required.",
           ...policyReviewReadiness(current.source, current.report, authoringConversation?.policySources).summary,
-          ...(!current.report && policyFailure ? [policyFailure] : []),
+          ...(!current.report && policyFailure ? [policyFailure.message] : []),
           "Rechecking or clarifying changes no program or authority and does not waive a requirement.",
         ] });
         if (choice === "continue_edit") return true;

@@ -9,7 +9,9 @@
     "Outer setup/Review/edit/Resume adapters provide narrow current record, existing protected writer and existing business-host ports",
     "Receipt domain adapter owns native question identity/configuration binding/finite mapping pool; shared host retains raw/default-No/history/protected-save flow",
     "No receiptRequirementPending mirror or boolean result; Source refusal response identity remains distinct from full prepared-review key",
-    "Exact Source sections remain <=2000 characters and preserve whitespace/UTF16 pairs; target limit16000/envelope limit unchanged"
+    "Exact Source sections remain <=2000 characters and preserve whitespace/UTF16 pairs; target limit16000/envelope limit unchanged",
+    "The existing coverage failure record retains its full typed resolution; receipt dispatch is authorized by that current resolution instead of every historical target nomination. No receipt-specific flag or alternate truth owner.",
+    "Shared host checks native question kind at reopen and protected adoption, so an unrelated generic owner cannot consume a retained receipt proposal."
   ],
   "commands": "isolated HOME/TMP corepack pnpm typecheck; vitest run receipt-requirement-host / business-statement-host / boundary-structured-authoring.integration maxWorkers1 minWorkers1 testTimeout20000 hookTimeout20000; vitest receipt-requirement-process maxWorkers1",
   "results": {
@@ -18,13 +20,15 @@
     "production_and_shared_host": "16 pass / 0 fail",
     "actual_fresh_OS_process": "5 pass / 0 fail; raw answer, proposal, confirmation, Source projection, acknowledgement; actual native Source/Resume writers, network-unshared child PIDs",
     "repeated_model_calls": "Exactly one mapping per question across each interrupted/cold/reused continuation; no words/consent replay",
-    "broader_affected": "PENDING",
-    "independent": "Reviewer2 eight-group seal unchanged; successor execution PENDING"
+    "broader_affected": "b611 fixed source:7 matched files494P3F; three CLI dispatch regressions reproduced; named correction rerun3P (440 excluded by filter), assertions unchanged",
+    "independent": "Reviewer2 eight-group seal unchanged; successor execution PENDING",
+    "domain_ownership": "98cdb37f wrong-owner before1F; native ownership guard after34P/types0; attempted receipt-to-Source append refused before presentation/adoption"
   },
   "logs": "/var/tmp/synapsor-main-b60-20261007-owned/evidence/production-host-*.log",
   "limitations": [
     "Fresh-process fixture uses the production host and native writers through narrow declared-metadata ports; it is not a whole installed public CLI or database-effect proof",
     "Existing public structured Review callback and ordinary host regressions pass; independent public setup/edit/Resume route checks still pending",
-    "No full suite/final package/freeze/installed or paid qualification claimed"
+    "No full suite/final package/freeze/installed or paid qualification claimed",
+    "Initial affected command named three nonexistent files; actual matched7-file result is reported; corrected names included in next affected run."
   ]
 }
