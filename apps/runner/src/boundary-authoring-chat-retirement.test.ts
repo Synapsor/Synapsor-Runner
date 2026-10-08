@@ -118,7 +118,7 @@ describe("B64 CP08 current exact record before direct decision", () => {
     const digest = canonicalJsonDigest("current owner binding");
     const binding = { question_id: randomUUID(), question_revision: 1, question_digest: digest,
       context_digest: digest, scope_digest: digest, snapshot_digest: digest };
-    const view = { kind: "readback" as const, binding, lines: literal, defaultValue: false };
+    const view = { kind: "readback" as const, binding, lines: literal, defaultValue: false as const };
     const before = structuredClone(view);
     try {
       expect(await presentReadScopeInteraction({ view, session: chat.session }))
@@ -130,7 +130,7 @@ describe("B64 CP08 current exact record before direct decision", () => {
       for (const line of literal) expect(displayed).toContain(line);
       const diffStart = writes.length;
       await chat.readOperator!();
-      await writeFile(join(tmpdir(), "cp08-owned-transcript.json"), JSON.stringify({ writes, binding, literal }, null, 2));
+      await writeFile(join(tmpdir(), `cp08-owned-transcript-${randomUUID()}.json`), JSON.stringify({ writes, binding, literal }, null, 2));
       const diff = writes.slice(diffStart).join("\n");
       for (const line of literal) expect(diff).toContain(line);
       expect(writes.join("\n")).toMatch(/latest reviewed record/i);
