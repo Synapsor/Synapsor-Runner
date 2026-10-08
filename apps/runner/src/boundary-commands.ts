@@ -6859,7 +6859,17 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       );
     }
     resumedReadWorkload = restored;
-    if (availableResume?.stage === "authority_review" || restored.review) {
+    if (resumeRead.scope_question_id && !restored.review) {
+      // An analyzed scope can be saved before its grouped decision. Its Resume
+      // stage is not evidence that the disabled authority was installed.
+      const decision = await readScopeReview.review(resumeRead.scope_question_id);
+      if (decision.state !== "confirmed") return boundaryAssistResult(boundaryAssistBackNotice(
+        decision.state === "replace_requested"
+          ? "The Read scope remains declined. A replacement must complete ordinary mapping and review before it can be saved."
+          : "The complete analyzed Read scope remains pending; no disabled authority or activation was inferred."));
+      reusingExactRead = false;
+      resumingDisabledRead = false;
+    } else if (availableResume?.stage === "authority_review" || restored.review) {
       reusingExactRead = true;
       resumingDisabledRead = false;
     } else {
