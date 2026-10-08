@@ -12,4 +12,4 @@ Version integrated65PASS/3files at81ad, R2f77projection+3d6fixture scopedaccepte
 B65 DEV-only approved designation; T0Oct8 16:56:15Z/endOct12sameUTC. G2one publiceffect+matchingreceipts PASS, raceNOT_REACHED(ref reuse); G2Bpreseal80ab8e43 notrun. [Plan](docs/development/b65/CURRENT-PLAN.md).
 [Compact DEV record](docs/development/candidate4-integration/DEV-RECORD.json); logs /var/tmp/synapsor-b64-main-owned/evidence/; before failures retained; R2preseals Action/audits8ports.
 Tester CLOSED backup21c3b3dc; Luna35total, liabilities15.27063125 inclhold1.2693125, remaining19.72936875. No paid/uncertain operation open.
-Commit/private-push each checkpoint; never origin/rootconfig/secrets; one editor per hotspot. No automatic usage monitoring or pause.
+Owner resource rule:4heavy jobs; B65native1dedicatedslot, other3shared; max8workers/run,MemAvailable>=8GiB,disk>=8GiB,isolatedHOME/TMP/DB. Oneeditor; privatepush; paidCLOSED; nousagepause.

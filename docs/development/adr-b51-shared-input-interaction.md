@@ -665,3 +665,5 @@ that exact successor before the original Resume CAS. Ordinary/Version saves
 retain their existing freshness contract; neither mutable latest-state
 adoption nor a rewritten producer-completion identity is permitted. Independent
 native/public composition and interrupted-save controls remain required.
+
+Owner parallelism amendment (2026-10-08): four heavy jobs globally, at most eight workers per run, one dedicated B65 native slot. Other three slots support the existing Main/Read/Action/reviewer work; no new feature lane. Require isolated HOME/TMP/DBs, at least8GiB available memory and retain the existing8GiB free-disk floor. This supersedes earlier two-heavy/eight-total-worker limits; one editor per hotspot, paid closure, immutable pins and independent acceptance remain unchanged.
