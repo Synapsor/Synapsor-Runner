@@ -1,0 +1,117 @@
+{
+  "status": "B59_B61_SCOPED_ACCEPTED_AND_COMPOSED_B60_PENDING",
+  "base": "04497a793e6345f6d8e75a291e78b5a19a1b99e2",
+  "runtime_head": "2ae33a766b2d10959337d5b84635c32f32fb6ac4",
+  "accepted": {
+    "B59": {
+      "runtime": "de3c908c844a46065721e1cc0dfe9a91db7bb28f",
+      "owner_packet": "e4ada99f",
+      "independent_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-independent1649-v1/DEV-RECORD.json",
+      "sha256": "1264ab2a2d1832b7978227c7d2d9d0d262501698a770d85afe1ba707dfa7dddd",
+      "scope": "mapper/typed native checkpoint/native structural precheck; old sixteen/typed six/final supplemental three separately pinned; not whole CLI/CAS"
+    },
+    "B61": {
+      "runtime": "dd35675f4453a6e752d678638b13dc6e2d98ec42",
+      "packet": "27adecb991e3d18c7d151b1a2f239145afca8f68",
+      "independent_record": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b61-27adecb9-native-recovery-independent-review.json",
+      "sha256": "2849ed84b6f5983ec3b228fd86d8eeddc54a5a425836cb6ab93de58ea25e596d",
+      "reviewed_product_bytes_equal": {
+        "packages/postgres/src/index.ts": true,
+        "packages/proposal-store/src/sqlite-writeback-methods.ts": true,
+        "packages/proposal-store/src/source-completion-receipt.ts": true,
+        "packages/protocol/src/source-completion.ts": true,
+        "packages/worker-core/src/source-completion-binding.ts": true,
+        "apps/runner/src/writeback-setup.ts": true,
+        "apps/runner/src/writeback-execution.ts": true,
+        "apps/runner/src/writeback-domain.ts": true,
+        "packages/mcp-server/src/semantic-request-lifecycle.ts": true
+      },
+      "scope": "Actual selected Source_db producer/SELECT-only full proof/original native store adoption: anchored INSERT, ordinary UPDATE and separately labeled supplemental Luna atomic case. Original-lease refusal/quarantine, native precommit rollback of all control snapshots, postcommit/pre-resultACK repeat, two cold OS reconcilers, current receipt/queue/ordinary lifecycle/one accounting transition and zero additional Source effect. Native acknowledged-COMMIT cleanup and optional-column compatibility retain conservative outcomes.",
+      "limitations": [
+        "Actual Luna receipt mode is runner_ledger with no atomic Source proof and remains unknown. Supplemental Source_db case cannot change that.",
+        "Cold native inspection/adoption fixtures use declared newly signed authorities and execution-admission metadata; they are not whole installed/public CLI activation or actual paid-job admission.",
+        "Two-process CAS witness uses native local SQLite control store; PostgreSQL shared control-store physical recovery is not observed. Shared bridge/source persistence reviewed statically earlier.",
+        "Wrong scope, ambient native destination, absent proof outcomes and top-level altered digest/version typed controls are observed. Exhaustive malformed/conflicting whole-evidence bodies and APPLY-only/current-identity refusal are not live Source-mutation/whole CLI controls; retain original finite coverage limits.",
+        "Runtime product attribution follows immutable command heads and exact byte equivalence, not a frozen installed artifact. DEV-RECORD root source_sha256 is historical impact metadata, not current runtime source hashes; this report records current exact hashes."
+      ]
+    }
+  },
+  "composition_checks": {
+    "commands": [
+      {
+        "name": "types",
+        "argv": [
+          "bwrap",
+          "--unshare-net",
+          "--bind",
+          "/",
+          "/",
+          "--dev",
+          "/dev",
+          "--proc",
+          "/proc",
+          "--chdir",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c",
+          "node",
+          "node_modules/typescript/bin/tsc",
+          "-b",
+          "--pretty",
+          "false"
+        ],
+        "exit": 0,
+        "seconds": 60.007,
+        "pid": 3883870
+      },
+      {
+        "name": "focused",
+        "argv": [
+          "bwrap",
+          "--unshare-net",
+          "--bind",
+          "/",
+          "/",
+          "--dev",
+          "/dev",
+          "--proc",
+          "/proc",
+          "--chdir",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c",
+          "node",
+          "node_modules/vitest/vitest.mjs",
+          "run",
+          "--maxWorkers=2",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "apps/runner/src/boundary-job-model.test.ts",
+          "apps/runner/src/boundary-requested-read-scope.test.ts",
+          "apps/runner/src/read-requested-scope.test.ts",
+          "apps/runner/src/read-workload-model.test.ts",
+          "apps/runner/src/worker-policy-insert-lock.test.ts",
+          "apps/runner/src/source-completion-receipt.test.ts",
+          "packages/postgres/src/connection-lifetime.test.ts",
+          "packages/postgres/src/source-completion-binding.test.ts",
+          "packages/postgres/src/index.test.ts",
+          "packages/proposal-store/src/index.test.ts"
+        ],
+        "exit": 0,
+        "seconds": 26.004,
+        "pid": 3885007
+      }
+    ],
+    "source_fixed": true,
+    "focus": "10files440P0F0S/24.50s",
+    "types": "0/60.011s",
+    "network": "OS unshared",
+    "isolation": "owned0700 HOME/TMP outside home; parent decoy plus TMP Git boundary",
+    "log_root": "/var/tmp/synapsor-main-candidate4-compose-20261008-owned/evidence"
+  },
+  "remaining": [
+    "B60 actual production host independent behavior and ownership acceptance then serial integration",
+    "ONE final settled exact-pin full/type/liveDB/offline/package/size",
+    "independent installed acceptance and composed scripted Luna/studio checks",
+    "conditional candidate4 freeze then existing paid admission"
+  ],
+  "paid": "CLOSED",
+  "frozen_candidate_changed": false
+}
