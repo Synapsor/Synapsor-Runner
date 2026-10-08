@@ -1,0 +1,51 @@
+{
+  "status": "INDEPENDENT_REVIEW_PENDING",
+  "base": "1965893c",
+  "test_first_pin": "468fbd66",
+  "files": [
+    "authoring-typed-parameter-native-adapter.ts",
+    "authoring-typed-parameter-native-adapter.test.ts"
+  ],
+  "types": 0,
+  "first_characterization": {
+    "pass": 4,
+    "fail": 0,
+    "evidence": "/var/tmp/synapsor-b64-action-clarification-owned/out/native-adapter-first.json"
+  },
+  "affected": {
+    "files": 4,
+    "pass": 24,
+    "fail": 0,
+    "skip": 0,
+    "workers": 1,
+    "evidence": "/var/tmp/synapsor-b64-action-clarification-owned/out/native-adapter-group.json"
+  },
+  "commands": [
+    "tsc -b --pretty false",
+    "vitest native-adapter/native/source/interaction tests maxWorkers1 minWorkers1 timeout20000 under bwrap unshare-net isolated HOME/TMP decoyparent"
+  ],
+  "contract": [
+    "Existing question only: no create/replace API or new store",
+    "Per operation detached coherent native projection; exact selected question; no cached snapshot across human wait",
+    "Actual saved authority reader plus actual loaded native producer checkpoints and existing full compiler",
+    "Existing host reparses event and recompiles; protected native mutate once, same permit reused; Main port owns CAS/memory",
+    "Exact native questions digest ACK and valid changed Resume revision required before returning field/group ACK",
+    "Wrong post-save ACK refuses without rolling back actual durable history or implying permission to retry"
+  ],
+  "proof": [
+    "Real authority files\u2192source reconstruction\u2192existing typed question\u2192native Resume CAS\u2192field1to2\u2192cold adapter read\u2192separate grouped confirmation",
+    "Actual competing field3 native save causes stale expected event refusal, no writes",
+    "Native save failure returns no ACK and ephemeral candidate disappears on new load",
+    "Bad ACK leaves actually saved unconfirmed candidate/history intact; no source authority files change"
+  ],
+  "limits": [
+    "Native load/currentness/mutate/save are narrow host ports; production boundary wiring stays Main",
+    "Existing-question adapter does not mint new question/operation or establish missing applicability",
+    "Direct adapter positive uses actual saved authority origin; compiled origin already separately source-file proved, combined public route not yet proved",
+    "No end-to-end public CLI or activation claim"
+  ],
+  "open": [
+    "R2 independent adapter review",
+    "Main actual protected boundary adapter wiring and public field path"
+  ]
+}
