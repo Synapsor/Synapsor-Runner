@@ -142,12 +142,12 @@ describe("B64 protocol pin in native Resume", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
-  it("refuses an unknown native envelope before public metadata or menus", async () => {
+  it.each(["future", "null", "array", "string"] as const)("refuses a %s native envelope before public metadata or menus", async shape => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-b64-future-envelope-"));
     try {
       const relative = await writeBoundaryAuthoringResumeState(root, structured(), { expectedRevisionDigest: null });
       const file = path.resolve(root, relative);
-      const bytes = JSON.stringify(seal({ ...structured(), schema_version: "synapsor.boundary-authoring-resume.v99" }));
+      const bytes = JSON.stringify(shape === "future" ? seal({ ...structured(), schema_version: "synapsor.boundary-authoring-resume.v99" }) : shape === "null" ? null : shape === "array" ? [] : "unsupported");
       await fs.writeFile(file, bytes);
       const files = await fs.readdir(path.join(root, ".synapsor"));
       await expect(boundaryReviewCommand(["--project-root", root, "--access", "--job-first"],

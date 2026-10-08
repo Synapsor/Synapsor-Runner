@@ -26,7 +26,8 @@ export const OLDER_AUTHORING_SETUP_MESSAGE = "This setup was saved by an older v
 /** Recognize only the envelope tag. Never inspect old transcript/meaning or
  * migrate its records into the current protocol. Historical files stay intact. */
 export function assertCurrentAuthoringEnvelope(value: unknown): void {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("AUTHORING_PROTOCOL_INVALID: This saved setup envelope is unsupported. Preserve it; no interpretation was selected.");
   const envelope = value as { schema_version?: unknown; authoring_protocol?: unknown };
   const pin = envelope.authoring_protocol;
   const olderStructured = envelope.schema_version === STRUCTURED_AUTHORING_RESUME_VERSION
