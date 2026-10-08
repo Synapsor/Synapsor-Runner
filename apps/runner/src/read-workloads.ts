@@ -121,6 +121,16 @@ export async function readReadWorkloadAnalysis(input: {
   analysisId: string;
   generatedBoundary: ExplorationBoundaryDraft;
 }): Promise<ReadWorkloadView> {
+  const record = await readStoredReadWorkloadAnalysis(input);
+  return workloadView(record, explorationBoundaryCandidateDigest(input.generatedBoundary),
+    await readOptionalReview(workloadRoot(path.resolve(input.projectRoot)), record.analysis_id, record.analysis_digest));
+}
+
+/** Resolve the immutable record before comparing its payload with authoring
+ * meaning. The envelope digest also binds Source and generated Boundary. */
+export async function readStoredReadWorkloadAnalysis(input: {
+  projectRoot: string; analysisId: string;
+}): Promise<StoredReadWorkloadAnalysis> {
   const analysisId = safeAnalysisId(input.analysisId);
   const root = workloadRoot(path.resolve(input.projectRoot));
   let value: unknown;
@@ -136,11 +146,7 @@ export async function readReadWorkloadAnalysis(input: {
   if (record.analysis_id !== analysisId) {
     throw new Error("READ_WORKLOAD_RECORD_TAMPERED: filename does not match immutable workload content.");
   }
-  return workloadView(
-    record,
-    explorationBoundaryCandidateDigest(input.generatedBoundary),
-    await readOptionalReview(root, analysisId, record.analysis_digest),
-  );
+  return record;
 }
 
 export async function recordReadWorkloadReview(input: {

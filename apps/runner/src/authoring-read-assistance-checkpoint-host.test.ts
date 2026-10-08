@@ -9,7 +9,7 @@ import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, explorationBoundaryCandidateDiges
 import { createReadAssistanceCheckpointHost, type ReadAssistanceCheckpointAccess } from "./authoring-read-assistance-checkpoint-host.js";
 import { generateModelReadWorkload, type ModelReadWorkloadInput } from "./read-workload-model.js";
 import type { ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
-import type { BoundaryAuthoringResumeRead } from "./boundary-authoring-resume.js";
+import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, type BoundaryAuthoringResumeRead } from "./boundary-authoring-resume.js";
 import type { AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import type { OperatorQuestion } from "./authoring-operator-question.js";
 import { withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
@@ -265,6 +265,23 @@ describe("B64 full scope review handoff", () => {
       expect(h.state().read?.scope_question_id).toBe(q.id);
       expect(h.state().recovery?.operations.at(-1)?.read_checkpoint?.material_digest).toBe(canonicalJsonDigest(q.read_scope!.record));
       expect(h.saves.at(-1)?.state.questions.at(-1)?.digest).toBe(q.digest);
+      // Native CAS resolves the immutable envelope; its digest is deliberately
+      // different from the scope's payload hash. Both identities stay exact.
+      const nativeBinding = { boundary_name: "owned_assistance", generation_lock_fingerprint: canonicalJsonDigest("lock"),
+        schema_fingerprint: canonicalJsonDigest("schema"), role_posture_fingerprint: canonicalJsonDigest("reader") };
+      const state = buildBoundaryAuthoringResumeState({ binding: nativeBinding, stage: "read_mapping", jobIntent: original,
+        provider: "openai", model: "owned-local-fixture", authoringProtocol: { version: "synapsor.structured-authoring.v1" },
+        generationRecovery: h.state().recovery, operatorQuestions: h.state().questions, ownerHandoffs: h.state().handoffs,
+        read: h.state().read });
+      expect(state.read!.analysis_digest).not.toBe(q.read_scope!.record.analysis_digest);
+      await writeBoundaryAuthoringResumeState(h.root, state, { expectedRevisionDigest: null });
+      expect(await readBoundaryAuthoringResumeState(h.root, nativeBinding)).toEqual({ status: "ready", value: state });
+      const wrong = buildBoundaryAuthoringResumeState({ binding: nativeBinding, stage: "read_mapping", jobIntent: original,
+        provider: "openai", model: "owned-local-fixture", previous: state,
+        read: { ...state.read!, analysis_digest: canonicalJsonDigest("another valid envelope") } });
+      await expect(writeBoundaryAuthoringResumeState(h.root, wrong, { expectedRevisionDigest: state.revision_digest }))
+        .rejects.toThrow("stored Read analysis does not match");
+      expect(await readBoundaryAuthoringResumeState(h.root, nativeBinding)).toEqual({ status: "ready", value: state });
     } finally { await h.cleanup(); }
   });
 });

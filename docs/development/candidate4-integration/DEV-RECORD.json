@@ -283,8 +283,8 @@
       "change": "same live checkpoint parser includes pending_action_addition.retained_action.checkpoint; historical dispositions untouched"
     },
     "last_usage_check": {
-      "at": "2026-10-08T07:19:10.541089+00:00",
-      "used_percent": 11
+      "used_percent": 29,
+      "pause_threshold_used_percent": 95
     },
     "native_scope_host_wip": {
       "read_dependencies": "f04830b2/6e641fee/c5b9fe17",
@@ -299,6 +299,14 @@
       "whole_scope": "actualfinalcompletedsequence persisted as native review question beside savedanalysis via scope_question_id; stillproposed/unconfirmed, no raw testimony or activation",
       "currentness": "actualSource/reference inventory re-resolved, bareconfirmed projection removed; native lineage alone yieldsconfirmed, exactanalysisbinding checked; noRead requiresnoinventedanalysis",
       "limits": "public CLI/freshOSreview/refusal/consent notestablished; hostproduction nativeport + actualnative producer separately covered; originallegacyhost3failures preserved."
+    },
+    "scope_analysis_binding_fix": {
+      "base": "498200a9",
+      "cause": "Independent R2 combined producer/host/nativeCAS exposes payload digest compared to immutable envelope digest; eleven later controls blocked at native save. Before evidence preserved by R2 pin012003a5.",
+      "change": "Resolve existing immutable workload record on native Resume load/save; validate envelope pointer and separate payload hash. No new persistent record/digest.",
+      "tests": "Actual producer+host+nativeCAS 1PASS/8filtered; affected Resume/workload78PASS; types0.",
+      "logs": "/var/tmp/synapsor-b64-main-owned/evidence/scope-envelope-{after,affected,types}.log",
+      "review": "R2 unchanged controls pending; no public/OS acceptance claimed"
     }
   }
 }

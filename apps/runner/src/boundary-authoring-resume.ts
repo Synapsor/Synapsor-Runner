@@ -1,3 +1,4 @@
+import { readStoredReadWorkloadAnalysis } from "./read-workloads.js";
 import { STRUCTURED_AUTHORING_RESUME_VERSION, parseStructuredAuthoringProtocol, assertAuthoringProtocolUnchanged, type StructuredAuthoringProtocol } from "./authoring-protocol.js";
 import { assertAuthoringReadDecision, assertAuthoringReadCheckpoint, assertAuthoringTransportAdvance, assertAuthoringQuestionHandoff, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION, isAuthoringProgramResume } from "./authoring-program-capacity.js";
@@ -480,6 +481,7 @@ export async function writeBoundaryAuthoringResumeState(
       if (frozen.generation_recovery) assertAuthoringTransportAdvance(previous.generation_recovery, frozen.generation_recovery);
     }
     if (previous) assertBoundaryActionEditDispositionsAdvance(previous.action_edit_dispositions ?? [], frozen.action_edit_dispositions ?? []);
+    await assertReadScopeAnalysisRecord(held.projectRoot, frozen);
     const filePath = resumePath(held.projectRoot);
     await writeAtomic(filePath, `${JSON.stringify(frozen, null, 2)}\n`);
     const saved = await readBoundaryAuthoringResumeState(held.projectRoot, frozen.binding);
@@ -555,6 +557,7 @@ export async function readBoundaryAuthoringResumeState(
   try {
     parsed = JSON.parse(source);
     assertBoundaryAuthoringResumeState(parsed);
+    await assertReadScopeAnalysisRecord(projectRoot, parsed);
   } catch (error) {
     return {
       status: "invalid",
@@ -573,6 +576,20 @@ export async function readBoundaryAuthoringResumeState(
   return differences.length
     ? { status: "stale", reason: differences.join("; "), value: parsed }
     : { status: "ready", value: parsed };
+}
+
+/** Payload meaning and stored-envelope identity are distinct contracts. Resolve
+ * the existing immutable analysis on every native load/save; copying another
+ * valid pointer (or changing a payload and rehashing its envelope) cannot bind
+ * it to this scope question. No extra meaning record or digest is persisted. */
+async function assertReadScopeAnalysisRecord(projectRoot: string, state: BoundaryAuthoringResumeState): Promise<void> {
+  const read = state.read;
+  if (!read?.scope_question_id) return;
+  const question = state.operator_questions?.find(q => q.id === read.scope_question_id);
+  const stored = await readStoredReadWorkloadAnalysis({ projectRoot, analysisId: read.analysis_id });
+  if (stored.analysis_digest !== read.analysis_digest
+    || canonicalJsonDigest(stored.analysis) !== question?.read_scope?.record.analysis_digest)
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The stored Read analysis does not match its exact native scope review.");
 }
 
 export async function clearBoundaryAuthoringResumeState(projectRootInput: string): Promise<boolean> {
@@ -738,7 +755,7 @@ export function assertBoundaryAuthoringResumeState(
   if (scopedRead?.scope_question_id) {
     const q = (value.operator_questions as OperatorQuestion[] | undefined)?.find(q => q.id === scopedRead.scope_question_id);
     if (!value.authoring_protocol || !q || q.kind !== "read_scope" || q.read_scope?.mode !== "review"
-      || q.read_scope.record.analysis_digest !== scopedRead.analysis_digest)
+      || !q.read_scope.record.analysis_digest)
       throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The Read analysis has no exact native scope review.");
   }
   assertReadAssistanceHandoff(value);
