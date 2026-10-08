@@ -2,7 +2,7 @@ import { operatorBusinessContext, operatorClarificationGate } from "./authoring-
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringTransportCheckpoint, configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, validateAuthoringTransportState, type AuthoringTransportState, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
+import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringTransportCheckpoint, authoringReadCheckpoint, configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, validateAuthoringTransportState, type AuthoringTransportState, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import { describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
@@ -23,6 +23,8 @@ import { ReadWorkloadDraftError } from "./read-workload-diagnostics.js";
 import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
 import { READ_SCOPE_PROTOCOL, resolveReadScopeProposal, assessReadScopeDraft, type ReadScopeBinding, type ReadScopeProposal, type ReadScopeReference } from "./read-structured-scope.js";
 import { analyzeReadWorkloadSet, READ_WORKLOAD_SET_VERSION } from "./read-workload-assist.js";
+import { createReadScopeQuestion, proposeReadScopeReview, confirmReadScopeReview } from "./authoring-read-scope-question.js";
+import { readScopeConsumption } from "./authoring-read-scope-binding.js";
 
 describe("B64 structured Read producer adapter", () => {
   const original = "Show order status. Use public.orders.status for the order status; no other fields.";
@@ -69,6 +71,54 @@ describe("B64 structured Read producer adapter", () => {
     expect(accepted).toHaveLength(1);
     expect(accepted[0]!.completion).toMatchObject({ operation_id: state.operations[0]!.id,
       request_digest: state.operations[0]!.request_digest, response_digest: canonicalJsonDigest(response(args()).body) });
+  });
+  it.each(["omit", "replace", "unconfirmed"] as const)("uses native scope lineage when a later producer tries to %s its interpretation", async mode => {
+    let state: AuthoringTransportState = { version: 1, operations: [] };
+    let saved: OperatorQuestion | undefined;
+    const first = setup(async () => response(args()));
+    const host = { available: () => true, read: () => state,
+      current: async () => canonicalJsonDigest("fixed-native-scope-context"),
+      write: async (next: AuthoringTransportState) => { state = structuredClone(next); } };
+    const initial = await withAuthoringGenerationRecovery(async () => {
+      configureAuthoringGenerationRecovery(host);
+      return generateModelReadWorkload({ ...first.input,
+        onCheckpoint: async (_checkpoint, _boundary, accepted, completion) => {
+          if (!accepted) return;
+          if (!completion || !accepted.read_scope) throw new Error("Expected actual native Read completion");
+          const q = createReadScopeQuestion({ id: randomUUID(), revision: 1, scope_digest: canonicalJsonDigest("this-job"),
+            context_digest: completion.context_digest, read_scope: { mode: "review", record: accepted.read_scope, completion } });
+          state = authoringReadCheckpoint(state, completion, readScopeConsumption(q.read_scope!));
+          const proposal = proposeReadScopeReview(q, first.context.binding, accepted.analysis, first.context);
+          saved = mode === "unconfirmed" ? proposal : confirmReadScopeReview(proposal, first.context.binding,
+            accepted.analysis, proposal.digest, first.context);
+        } });
+    });
+    if (!saved) throw new Error("Expected native scope question");
+    const send = vi.fn(async () => {
+      if (mode === "replace") {
+        const changed = args(); changed.allowed[0]!.plan.select = ["amount"];
+        changed.read_scope.requirements[0]!.targets[1]!.field = "amount";
+        return response(changed);
+      }
+      const { read_scope: _omitted, ...withoutScope } = args();
+      return response(withoutScope);
+    });
+    const next = setup(send), fixedGeneration = structuredClone(state);
+    const run = () => withAuthoringGenerationRecovery(async () => {
+      configureAuthoringGenerationRecovery(host);
+      return generateModelReadWorkload({ ...next.input, structuredScope: { protocol: READ_SCOPE_PROTOCOL,
+        current: () => ({ ...next.context, native: { questions: [saved!], handoffs: [], generation: fixedGeneration,
+          question_id: saved!.id, analysis: initial.analysis } }) } });
+    });
+    if (mode === "unconfirmed") {
+      await expect(run()).rejects.toThrow("READ_SCOPE_NATIVE_PENDING"); expect(send).not.toHaveBeenCalled();
+    } else if (mode === "replace") {
+      await expect(run()).rejects.toThrow("READ_WORKLOAD_DRAFT_FAILED"); expect(send).toHaveBeenCalledTimes(2);
+    } else {
+      const continued = await run(); expect(send).toHaveBeenCalledOnce();
+      expect(continued.read_scope?.proposal).toEqual(initial.read_scope!.proposal);
+      expect(continued.analysis.status).toBe("ready");
+    }
   });
   it("uses the actual typed tool, returns unconfirmed scope, and never asks a lexical root question", async () => {
     const requests: unknown[] = [];
