@@ -42,11 +42,12 @@ export type ActionParameterProjection = Readonly<{
   canonical_changes: readonly ActionParameterChange[];
   preserved_components: readonly string[];
 }>;
-const componentLabels: Record<keyof ActionRuleModelDraftV1, string> = {
+const componentLabels: Record<keyof ActionRuleModelDraftV1 | "hard_limit", string> = {
   schema_version: "Draft format", name: "Action identity", outcome: "Business outcome", discovery: "Agent-facing discovery",
   inputs: "Request values and constraints", verification: "Private verification and scope", effect: "Allowed effects and execution",
   require: "Eligibility requirements and exclusions", derive: "Calculated business values", approval: "Approval conditions, reviewers and limits",
   ttl_seconds: "Request expiry", review: "Retained original review wording",
+  hard_limit: "Business invariant and post-change limit",
 };
 const comparatorLabels: Record<Compare["operator"], string> = {
   eq: "Exactly equal to", neq: "Different from", lt: "Less than", lte: "At most (includes the threshold)",
