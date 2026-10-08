@@ -1193,10 +1193,10 @@
   "remaining_checkpoint": {
     "count_unit": "Canonical decision annotations, not raw grep line count; branch implementation counts distinct from Main acceptance",
     "ask": {
-      "pin": "0032979d",
-      "typed": 3,
+      "pin": "f4b8a62f",
+      "typed": 0,
       "delete": 0,
-      "source": "Original49 accepted/integrated; three reclassified runtime Read/Ask error-routing sites reopened by audit.",
+      "source": "Original49 closed/integrated; reclassifiedI00415/I00416/I03593 independentlyR1ACCEPT4b92c536:24PASS/types0 thenexactMainintegration. No broader public/releaseclaim.",
       "audit_reclassified_ids": [
         "I00415",
         "I00416",

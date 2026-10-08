@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "verdict": "ACCEPT_SCOPED",
+  "reviewer": "R1 /root/early_full_triage",
+  "owner_pin": "f4b8a62f9bc1f749459765a4ed5b79d953a3caa8",
+  "exact_tested_review_pin": "417bb162",
+  "before_product": "d292eeb7",
+  "preseal": "a52aff58 before implementation inspection",
+  "unchanged_tests_pin": "c64c2ee6",
+  "scope": [
+    "I00415",
+    "I00416",
+    "I03593"
+  ],
+  "results": {
+    "before_independent": "3 PASS / 8 FAIL",
+    "after_independent": "11 PASS / 0 FAIL",
+    "after_owner_same_group": "13 PASS / 0 FAIL",
+    "combined": "24 PASS / 0 FAIL / 0 SKIP",
+    "types": "tsc -b --pretty false: exit 0",
+    "elapsed_seconds": 31.82
+  },
+  "commands": [
+    "vitest run apps/runner/src/ask-reclassified-independent.test.ts --maxWorkers=1 --minWorkers=1 --testTimeout=20000 --hookTimeout=20000",
+    "vitest run apps/runner/src/ask-reclassified-independent.test.ts apps/runner/src/ask-reclassified-errors.test.ts --maxWorkers=1 --minWorkers=1 --testTimeout=20000 --hookTimeout=20000",
+    "tsc -b --pretty false"
+  ],
+  "environment": "Reviewer worktree, isolated owned0700 HOME/TMP, USER/LOGNAME unset, >=20GiB MemAvailable/>=64GiB disk at launch. Mock driver/Client results, native Scoped Explore/SDK gateway; no provider/DB effects.",
+  "judgment": [
+    "Exact driver code selects fixed diagnostic independently of contradictory or non-English prose. Wrong-case/numeric/nested-only code remains unknown; query remains refused.",
+    "Original English SDK validation sentence alone cannot manufacture InvalidParams; plain Error with matching numeric code also fails the actual McpError brand requirement.",
+    "Actual InvalidParams selects local invalid-arguments response. Other native RPC codes remain generic.",
+    "Unknown refusal/exception text is withheld. Successful ordinary text and typed EXPLORE_FIELD_FORBIDDEN refusal remain intact.",
+    "Source/field/permission/currentness validation and model-result projection remain outside this change; no new authority or inferred completion.",
+    "The exact vendor-sentence predicate is absent; redactedDatabaseError has only actual driver-code membership, no message inspection."
+  ],
+  "limits": [
+    "This accepts only the three reclassified sites and the two exact product files. Earlier Ask49 scoped verdict is not transferred.",
+    "No full-suite, paid provider, live source DB, installed/public CLI lifecycle or new eligibility claim.",
+    "InMemory client/protocol and query executor fault injection are explicit test boundaries, not real provider transport evidence."
+  ],
+  "logs": {
+    "before": {
+      "path": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/ask-diagnostic-before.log",
+      "sha256": "1c429e1c5e7e9fcc9d641036ca3bba0ce08f8148022dd0c5cab4cc5da92f0a45"
+    },
+    "after": {
+      "path": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/ask-diagnostic-after.log",
+      "sha256": "950b5469e63798c4f6df00eb32a48ea2630d8636559e9c3386943a3d7458847d"
+    },
+    "types": {
+      "path": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/ask-diagnostic-types.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  }
+}
