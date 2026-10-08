@@ -1,7 +1,7 @@
 1. CONTROLLING Owner foundation completion: general authoring/evidence/receipt/consent ownership before demo date; paid CLOSED; candidate3 untouched.
 2. Existing scope closes2026-10-09T21:51:08Z, delivery2026-10-10T21:51:08Z; ONE conditional48h OFFLINE extension available, NOT activated; no candidate/money reset.
-3. Main integrates accepted B59/B60/B61 predecessor; accepted integration9b3f6d77; successor coherent-receipt1f4ad85c, B60 producta570/teste4/helper93e6 independently finite ACCEPT.
-4. B60 saved6P/studio3P/nativecoldOS5 scoped; root684P1oldharnessF→targeted1P; all original failures retained, not whole685PASS or installed proof.
+3. Main integrates accepted B59/B60/B61 predecessor; accepted integration9b3f6d77; successor coherent-receipt3dbb2267/tests39589180, B60 producta570/teste4/helper93e6 independently finite ACCEPT.
+4. B60 successor types0/focused41P/publicsaved6P/studio3P; actual coldOS5 scoped; independent publicrole/coldproducer proofs pending, no full/installed claim.
 5. Main owns production contract/receipt host/shared boundary; audit TRANSITIVE effects, coherent checked records, exact acknowledged Source/Resume saves; no line-count target.
 6. B59 owner b59_regression_fix: derived current Read evidence resolver across mapping/correction/Review/edit/Resume, native supportingrefs/statuses; no secondstore/lexical bypass.
 7. early_full_triage independently pre-seals Read sequence controls; liveDBprep41d09 held, no final fixtures; B59 first estimate4–6h plus qualification.

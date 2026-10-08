@@ -84,5 +84,39 @@
     "studio": "3P0F: original unchanged-Source edit, supplemental ordinary setup, supplemental Source2 edit",
     "tests": "ecbe89ea; supplemental-only counts independently adjudicated and exact records strengthened; original validated_reuse/provider-count controls unchanged",
     "types": 0
+  },
+  "foundation_successor": {
+    "base": "9b3f6d77",
+    "runtime": "3dbb2267",
+    "tests_and_map": "39589180",
+    "status": "INDEPENDENT_FOUNDATION_REVIEW_PENDING",
+    "commands_results": [
+      {
+        "profile": "compiled types + receipt host / business host / native fresh-process cuts",
+        "result": "types exit0;41PASS",
+        "record": "/var/tmp/synapsor-main-candidate4-final-20261008-owned/evidence/RECEIPT-CONTEXT-AFTER-RESULT.json"
+      },
+      {
+        "profile": "saved Review/Resume/Replace/CAS routes plus original studio edit",
+        "result": "7PASS;466 name-filtered, not product skips",
+        "record": "/var/tmp/synapsor-main-candidate4-final-20261008-owned/evidence/RECEIPT-PUBLIC-COHERENCE-RESULT.json"
+      },
+      {
+        "profile": "supplemental studio setup/edit unchanged declared policies",
+        "result": "2PASS;22 name-filtered",
+        "record": "/var/tmp/synapsor-main-candidate4-final-20261008-owned/evidence/RECEIPT-STUDIO-COHERENCE-RESULT.json"
+      }
+    ],
+    "before": {
+      "async_source_replacement": "6836c9c4 1FAIL then1f4 fix; first after missing-import6FAIL preserved",
+      "async_context_drift": "b0678304 1FAIL; duplicated-test938b 2FAIL preserved"
+    },
+    "open": [
+      "Independent public reader/Action drift verdict",
+      "Actual public cold coverage-to-Resume acknowledgement cuts",
+      "Current Read resolver production wiring and independent sequence acceptance",
+      "Duplicate consent format proposal408db06f awaiting explicit Owner decision and installed compatibility proof"
+    ],
+    "limits": "No final suite/freeze/installed acceptance claimed; paid CLOSED; candidate3 untouched."
   }
 }
