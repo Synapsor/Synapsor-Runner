@@ -32,8 +32,7 @@ function kindOf(node) {
     ts.SyntaxKind.GreaterThanEqualsToken].includes(node.operatorToken.kind) &&
     (textLiteral(node.left) || textLiteral(node.right))) return 'literal_comparison';
   if (ts.isArrayLiteralExpression(node) && node.elements.some(textLiteral)) return 'literal_vocabulary';
-  if (ts.isObjectLiteralExpression(node) && node.properties.some(p => p.name &&
-      (ts.isIdentifier(p.name) || ts.isStringLiteralLike(p.name)))) return 'literal_dictionary';
+  if (ts.isElementAccessExpression(node)) return 'indexed_lookup';
   if (ts.isCaseClause(node) && textLiteral(node.expression)) return 'literal_case';
   return undefined;
 }
@@ -89,7 +88,7 @@ export function scanSources(texts) {
     return printed.get(node);
   };
   const ownerHashes = new WeakMap();
-  const candidates = [], duplicates = new Map(), lexicalOwners = new Set(), consumers = new Map();
+  const candidates = [], duplicates = new Map(), lexicalOwners = new Set(), consumers = new Map(), lookupOwners = new Set();
   const add = (node, kind) => {
     const source = node.getSourceFile(), file = names.get(source.fileName), owner = outer(node) ?? node;
     const expression = render(node);
@@ -105,7 +104,23 @@ export function scanSources(texts) {
   };
   for (const source of sources.values()) {
     function visit(node) {
-      const owner = outer(node), kind = kindOf(node);
+      const owner = outer(node);
+      let kind = kindOf(node);
+      if (kind === 'indexed_lookup') {
+        // Numeric array positions are not word vocabularies. A free-text or
+        // unknown lookup is reviewed with its actual dictionary declaration.
+        const indexType = checker.getTypeAtLocation(node.argumentExpression);
+        if (indexType.flags & ts.TypeFlags.NumberLike) kind = undefined;
+        else {
+          let target = checker.getSymbolAtLocation(node.expression);
+          if (target && target.flags & ts.SymbolFlags.Alias) target = checker.getAliasedSymbol(target);
+          for (const declaration of target?.declarations ?? []) {
+            if (!names.has(declaration.getSourceFile().fileName)) continue;
+            const dictionary = outer(declaration);
+            if (dictionary) lookupOwners.add(dictionary);
+          }
+        }
+      }
       if (kind) { add(node, kind); lexicalOwners.add(owner); }
       if (owner && ts.isIdentifier(node)) {
         let symbol = checker.getSymbolAtLocation(node);
@@ -123,6 +138,7 @@ export function scanSources(texts) {
     }
     visit(source);
   }
+  for (const owner of lookupOwners) { add(owner, 'lookup_vocabulary'); lexicalOwners.add(owner); }
   const queue = [...lexicalOwners].filter(Boolean), reached = new Set(queue), dependent = new Set();
   for (let index = 0; index < queue.length; index++) {
     for (const consumer of consumers.get(queue[index]) ?? []) {

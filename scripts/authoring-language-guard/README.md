@@ -5,7 +5,7 @@ release gate invoke the strict check. The Node controls execute independently
 of a built Runner or provider; no Source connection is used.
 
 The scanner deliberately does **not** decide English meaning. It inventories
-regexes, text normalization/search, literal vocabularies/comparisons and their
+regexes, text normalization/search, literal vocabularies/comparisons, nonnumeric dictionary lookups and their
 controlling code across Runner and shared packages. These are review candidates,
 not a count of English decisions. The canonical B64 inventory remains the
 250 typed + 66 deletion tasks, plus explicit reclassifications from the
@@ -15,7 +15,7 @@ An allowance names one exact source fingerprint, canonical annotation, category,
 reason, independent reviewer and evidence. The fingerprint includes the path,
 printed outer declaration, expression and occurrence. Moving a predicate,
 changing its receiver or changing the operation it controls invalidates review.
-A TypeScript symbol-consumer closure also binds callers, aliases and local module imports; changing display into authority use requires another review. Ordinary numeric branches alone are not language candidates. Formatting/comments alone do not. There are no file globs, accepted English
+A TypeScript symbol-consumer closure also binds callers, aliases and local module imports; changing display into authority use requires another review. Ordinary numeric branches and plain data objects alone are not language candidates; a nonnumeric lookup binds the actual dictionary declaration as well as its consumer. Formatting/comments alone do not. There are no file globs, accepted English
 baselines, count ceilings or automatic allowlist regeneration. Removing an
 expression leaves a stale allowance that must be removed explicitly.
 

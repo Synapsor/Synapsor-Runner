@@ -2,17 +2,17 @@
   "status": "IN_REVIEW_NOT_EXIT_ACCEPTED",
   "owner_exit": "All canonical250typed+66delete plus independent reclassifications must close; no deferral",
   "guard": "scripts/check-authoring-language.mjs; CI+main test+release gate",
-  "controls": "14 owner controlsPASS; independent original13PASS2FAIL preserved at3ed4f497; unchanged4 independent controls copied for successor verification",
+  "controls": "19PASS0FAIL including original4 independent assertions unchanged; original13PASS2FAIL preserved at3ed4f497",
   "runtime_note": "Initial repository scanner stopped cleanly due redundant printing; cached declaration rendering then completed. No product tests or Source operation involved.",
   "independent_audit": "R1 all141 completed a6f16baa:101legitimate/25typedreclassifications/15retired; exact allowance acceptance separate",
   "allowlist": "empty, no historical decision grandfathered; current repository scan fails closed",
-  "counts_warning": "56815 conservative AST candidates across571files are NOT decision-site counts; allowlist empty/CI red until exact legitimate review. No blanket baseline accepted.",
-  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/language-guard-consumers-scan.json",
+  "counts_warning": "40224 conservative syntax/dependency candidates across571files, NOT decision-site counts. Exact legitimate allowances pending; currentrepositorycheck remainsred.",
+  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/language-guard-lookup-scan.json",
   "open": [
     "Independent guard review",
     "Complete141legitimate audit",
     "Populate only exact reviewed legitimate allowances",
     "Close canonical and reclassified decisions"
   ],
-  "guard_repair": "Unquoted dictionary keys captured; TypeScript symbol-consumer closure binds declaration/local imports/aliases and downstream controlling operations; standalone numeric branches no longer blanket candidates"
+  "guard_repair": "Actual typed symbol consumer graph binds helpers/import aliases; dictionary definition is a candidate when used by nonnumeric indexing; ordinary output objects/numeric branches alone excluded. No automatic English/formal exemption."
 }

@@ -68,3 +68,9 @@ test('caller effect change invalidates predicate review, including alias and cro
 test('ordinary numeric branch alone is not a language candidate', () => {
   assert.equal(scan('export function bounded(n:number) { if (n > 10) return 10; return n; }').length, 0);
 });
+
+test('plain structured output is not a keyword decision; actual lookup binds key changes', () => {
+  assert.equal(scan('export const metadata = { title: "Current status", count: 2, enabled: true };').length, 0);
+  const before = 'const answers = { yes: true, no: false }; export const consent = answer => answers[answer];';
+  assert.ok(evaluate(scan(before.replace('yes: true', 'permit: true')), allow(scan(before))).errors.length);
+});
