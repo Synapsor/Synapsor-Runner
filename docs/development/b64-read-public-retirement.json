@@ -1,0 +1,24 @@
+{
+  "base": "38eb51dc",
+  "status": "PUBLIC_REPLACE_COMPONENT_PASS_INDEPENDENT_REVIEW_PENDING",
+  "fixture_origin": "2d906e04:apps/runner/src/b64-public-replace-independent.test.ts",
+  "change": "Prepared test responses, operator facts and original assertions unchanged; nine retired language owner exports instrumented to throw and assert zero calls.",
+  "result": {
+    "pass": 5,
+    "fail": 0,
+    "routes": [
+      "public Replace -> exact raw -> one additional model mapping -> separate default-No explicit Yes -> disabled save -> cold zero replay",
+      "cancel stays pending/no extra model call",
+      "competing saved amendment wins CAS",
+      "cancel -> ordinary Resume -> exact raw + separate review",
+      "blank -> ordinary Resume -> successor raw while retaining original blank/history"
+    ]
+  },
+  "evidence": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/public-after1.json",
+  "capture": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/children",
+  "isolation": "owned0700 HOME/TMP, bwrap --unshare-net, one worker, no DB or paid calls",
+  "remaining": [
+    "actual public Read revision typed fixture/instrumentation",
+    "remaining migration ledger rows, no whole-family claim"
+  ]
+}
