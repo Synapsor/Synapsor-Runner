@@ -39,7 +39,7 @@
   },
   "heavy_slots": {
     "1": "Action finite before/affected tests (Ask released)",
-    "2": "R1/Main finite checks, returned at checkpoint",
+    "2": "Main Ask group complete; finite slot released",
     "3": "R2 Privacy missing-origin independent regression",
     "4": "Chat CP08 typed record before/fix"
   },
@@ -1000,16 +1000,16 @@
   "remaining_checkpoint": {
     "count_unit": "Canonical decision annotations, not raw grep line count; branch implementation counts distinct from Main acceptance",
     "ask": {
-      "pin": "f7a0f353",
-      "typed": 3,
+      "pin": "0032979d",
+      "typed": 0,
       "delete": 0,
-      "source": "New Owner decision replaces Englishquestionintent with typedExplorePlan/catalogvalidation/Runnerreadback; GA01-03 implementationactive, zero productioncallers notyet"
+      "source": "Mainintegratedall49canonicalspans afterR1scopedACCEPT4beb1842;70PASS/types0; retiredengine0productiondefinitions/callers; historicaltestsremainforcontractporting"
     },
     "privacy_visibility": {
-      "pin": "121ee9fb",
-      "typed": 34,
+      "pin": "a733ccec",
+      "typed": 23,
       "delete": 0,
-      "source": "Owner123PASS, R2 unchanged4PASS after2PASS2FAIL; native save/format stillopen"
+      "source": "ScopedR2sourceaccepted; auto15/vocab6/index2 remain; subsequentemptyreduce5b56pendingseed128PASS sourcefix, nativeportsinreview"
     },
     "chat_presentation": {
       "pin": "444573cf",

@@ -2,7 +2,7 @@
   "owner_contract": "Model submits typed ExplorePlan; Runner validates reviewed catalog/boundary and renders readback, no English acceptance or synthesized plan",
   "before_pin": "64cef4d5",
   "before": "2FAIL in actual terminal picker and Workbench native route",
-  "after": "3PASS606filtered, types exit0; executable Workbench check pending final result",
+  "after": "3PASS606filtered, types exit0; executable Workbench1PASS",
   "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/ask-presentation-after.json",
   "changes": [
     "Remove obsolete local English-comparison toggle from CLI and Workbench; keep formal reviewed authority text",
@@ -19,6 +19,9 @@
       "reason": "Replaced by actual T-ignored/Q-close test with correct reviewed-validation display; model-output control assertions retained"
     }
   ],
-  "independent": "R1 review requested with98350 engine; not yet accepted",
-  "removed_boundary_lines": 50
+  "independent": "R1 scopedACCEPT4beb1842 actualUI4PASS/types0",
+  "removed_boundary_lines": 50,
+  "engine_integration": "Exact98350f91 integrated0032979d; all8files byte-identical; current33dcc0d3 composed70PASS0FAIL0SKIP/types0",
+  "production_callers": "ZERO localPlanRequirements/localPlanMatchesRequirements/answerableQuestionResources/exactRequirements/localPlanRequirementsForDirectCall across apps/runner/src+packages excluding tests",
+  "integration_evidence": "/var/tmp/synapsor-b64-main-owned/evidence/ask-integrated.json"
 }
