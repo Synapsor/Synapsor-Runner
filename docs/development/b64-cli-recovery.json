@@ -12,7 +12,13 @@
     "f1d24456": "R2 SCOPED ACCEPT: same immutable24 controls before6PASS18FAIL -> after24PASS0FAIL; types0 at both. Includes unchanged documented JSON assertion and2 unmocked actual CLI subprocesses. WholeCLI limits retained.",
     "report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-f1-cli-recovery-binding-after-independent-v1.json",
     "sha256": "48a2723439b66c8ad53b3787caac763f5dd0b5437648646e9c8630259aaef2a6",
-    "7f9009f5": "Role successor independent8-control review pending; recovery:[] additionally challenged."
+    "7f9009f5": {
+      "verdict": "R2 SCOPED ACCEPT",
+      "counts": "Same15 actual independent controls beforef1 6PASS9FAIL -> after7f15PASS0FAIL; original unsafeCLI assertion unchanged; types0 at both; actual empty recovery array separately covered.",
+      "report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-7f-cli-role-recovery-after-independent-v1.json",
+      "sha256": "29edd86fc17d836386441c03b3630fdd461d75475daaa47c3b57053f4edee2e4",
+      "limits": "Scoped operation/caller recovery; other five shared guard callers remain unknown. Main broad175P2F retained, no full suite green claim."
+    }
   },
   "typed_projection": "Chat7b71fdbc adopted unchanged as79da8986",
   "after": {
@@ -43,5 +49,5 @@
     },
     "limits": "Separate selected results; no claim that the entire 177-test group was rerun green. R2 independent review pending."
   },
-  "status": "DEV_IMPLEMENTED_INDEPENDENT_REVIEW_PENDING"
+  "status": "SCOPED DEV ACCEPTED; broader B64 qualification outstanding"
 }
