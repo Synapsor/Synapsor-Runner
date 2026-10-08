@@ -21,7 +21,7 @@ import {
 import { generateModelReadWorkload, readWorkloadCatalog, type ModelReadWorkloadInput } from "./read-workload-model.js";
 import { ReadWorkloadDraftError } from "./read-workload-diagnostics.js";
 import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
-import { READ_SCOPE_PROTOCOL, type ReadScopeBinding, type ReadScopeProposal } from "./read-structured-scope.js";
+import { READ_SCOPE_PROTOCOL, type ReadScopeBinding, type ReadScopeProposal, type ReadScopeReference } from "./read-structured-scope.js";
 
 describe("B64 structured Read producer adapter", () => {
   const original = "Show order status. Use public.orders.status for the order status; no other fields.";
@@ -85,6 +85,51 @@ describe("B64 structured Read producer adapter", () => {
     change = () => { configured.context.binding.operation_digest = canonicalJsonDigest("changed-baseline"); };
     await expect(generateModelReadWorkload(configured.input)).rejects.toMatchObject({ code: "ASK_AUTHORITY_CHANGED" });
     expect(send).toHaveBeenCalledOnce();
+  });
+  it("saves an unresolved typed question and reopens it without replay or a legacy question", async () => {
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const send = vi.fn(async () => {
+      const value = args(); value.read_scope.requirements[0]!.disposition = "unresolved";
+      value.allowed = [];
+      value.read_scope.requirements[0]!.unresolved = "Which order status should customers see?";
+      return response(value);
+    });
+    const initial = setup(send);
+    await expect(generateModelReadWorkload({ ...initial.input, onCheckpoint: async value => { checkpoint = value; } }))
+      .rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
+    expect(checkpoint?.stage).toBe("waiting");
+    expect(checkpoint?.pending_question?.kind).toBe("scope");
+    expect(checkpoint?.state.correction_used).toBe(false);
+    const noSend = vi.fn();
+    await expect(generateModelReadWorkload({ ...setup(noSend).input, resumeCheckpoint: checkpoint,
+      onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
+    expect(send).toHaveBeenCalledOnce(); expect(noSend).not.toHaveBeenCalled();
+  });
+  it("resumes a captured native answer after its durable decision without reasking or confirming its meaning", async () => {
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const reference = { question_id: "question-native", revision: 1, answer_id: "answer-native" };
+    const answer: ReadScopeReference = { kind: "answer", id: "captured-answer", digest: canonicalJsonDigest("Current fulfillment status."),
+      question_id: reference.question_id, answer_id: reference.answer_id, question_revision: 1, text: "Current fulfillment status." };
+    const first = setup(vi.fn(async () => {
+      const value = args(); value.read_scope.requirements[0]!.disposition = "unresolved";
+      value.read_scope.requirements[0]!.unresolved = "Which status?"; return response(value);
+    }));
+    const capture = vi.fn(async () => reference);
+    await expect(generateModelReadWorkload({ ...first.input,
+      structuredScope: { ...first.input.structuredScope, answer: capture, resolveAnswer: () => answer },
+      onCheckpoint: async value => { checkpoint = value; if (value?.stage === "decided") throw new Error("CAPTURE_SAVED_RESTART"); },
+    })).rejects.toThrow("CAPTURE_SAVED_RESTART");
+    expect(checkpoint?.stage).toBe("decided"); expect(capture).toHaveBeenCalledOnce();
+    const bodies: unknown[] = [], second = setup(vi.fn(async request => {
+      bodies.push(request.body); const value = args(); value.read_scope.requirements[0]!.references.push(answer.id); return response(value);
+    }));
+    const dontAsk = vi.fn();
+    const result = await generateModelReadWorkload({ ...second.input, resumeCheckpoint: checkpoint,
+      structuredScope: { ...second.input.structuredScope, answer: dontAsk, resolveAnswer: () => answer }, onCheckpoint: async () => {},
+    });
+    expect(dontAsk).not.toHaveBeenCalled(); expect(second.input.dependencies.requestJson).toHaveBeenCalledOnce();
+    expect(JSON.stringify(bodies)).toContain(answer.text);
+    expect(result.analysis.status).toBe("ready"); expect(result.read_scope).not.toHaveProperty("confirmation");
   });
 });
 
@@ -189,6 +234,7 @@ describe("durable Read assistance producer checkpoint", () => {
     await expect(generateModelReadWorkload({ ...setup(async () => response({ clarification_request: request })), onCheckpoint: async value => { checkpoint = value; }, clarificationHandler: async () => undefined })).rejects.toThrow("AUTHORING_PAUSED");
     const { digest: _digest, schema_version: _schema, ...core } = checkpoint!;
     if(core.stage!=="waiting")throw new Error("Expected the actual waiting target checkpoint");
+    if(core.pending_question.kind!=="clarification")throw new Error("Expected the original field clarification checkpoint");
     core.pending_question.request.field = "never_inspected_field";
     const changed = readWorkloadAssistanceCheckpoint(core), noSend = vi.fn(), handler = vi.fn();
     await expect(generateModelReadWorkload({ ...setup(noSend), resumeCheckpoint: changed, clarificationHandler: handler })).rejects.toThrow("exact model-visible field");

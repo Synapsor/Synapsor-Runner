@@ -5,8 +5,11 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import type { ModelReadClarificationRequest, ModelReadClarificationDecision, ModelReadValueRequest, ModelReadValueContextDecision } from "./read-authoring-contract-types.js";
 import { safeReadWorkloadDiagnostic, type ReadWorkloadDiagnostic } from "./read-workload-diagnostics.js";
+import { parseReadScopeRecord, type ReadScopeRecord } from "./read-structured-scope.js";
 
 type Digest = `sha256:${string}`;
+export type ReadScopeAnswerReference = { question_id: string; revision: number; answer_id: string };
+export type ReadScopeAssistanceRequest = { scope: ReadScopeRecord; requirement_digest: string; question: string };
 /** Host-only review of one received response. Indices identify immutable
  * response events, not merely repeated answer text. Neither shape is a model tool. */
 export type ReadClarificationReplacement = {
@@ -24,6 +27,8 @@ export type ReadWorkloadAssistanceQuestion = {
   | { kind: "clarification"; request: ModelReadClarificationRequest; decision?: ModelReadClarificationDecision; replacement?: ReadClarificationReplacement }
   | { kind: "value"; request: ModelReadValueRequest; decision?: ModelReadValueContextDecision }
   | { kind: "relationship"; request: ModelReadClarificationRequest; decision?: { state: "relationship_reviewed" } }
+  | { kind: "scope"; request: ReadScopeAssistanceRequest;
+      decision?: { state: "answered"; answer_reference: ReadScopeAnswerReference } }
 );
 
 /** State of the real bounded producer at an assistance boundary. It carries no
@@ -42,6 +47,8 @@ export type ReadWorkloadAssistanceCheckpoint = {
     correction_used: boolean; relationship_reviews: number; relationship_review_limit: 0 | 3;
     clarified_targets: Array<ModelReadClarificationRequest & { answer: string }>;
     clarification_answers: string[];
+    /** Native captured-answer identities, not interpreted meanings or grants. */
+    scope_answers?: Array<{ request: ReadScopeAssistanceRequest; answer_reference: ReadScopeAnswerReference }>;
     /** The original response list is append-only. Only these operator-reviewed
      * edges select a later current interpretation; history is never removed. */
     reviewed_replacements?: ReadReviewedClarificationReplacement[];
@@ -96,6 +103,7 @@ export function readWorkloadAssistanceCheckpoint(input: ReadWorkloadAssistanceCh
  * not provider consumption, Source acceptance or permission to query values. */
 export function readWorkloadAssistanceDecisionAnswer(question: ReadWorkloadAssistanceQuestion): string {
   assertAssistanceQuestion(question, "decided");
+  if (question.kind === "scope") throw new Error("READ_SCOPE_NATIVE_ANSWER_REQUIRED: Resolve the captured native answer reference; no operator words may be synthesized from a checkpoint.");
   if (question.kind === "clarification") {
     return question.decision!.state === "answered"
       ? question.decision!.answer : "Declined the exact Read clarification.";
@@ -110,8 +118,8 @@ export function readWorkloadAssistanceDecisionAnswer(question: ReadWorkloadAssis
 function assertAssistanceQuestion(value: unknown, stage: "waiting" | "decided"): void {
   const fail = () => new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: Preserve the pending Read assistance state; it is malformed or changed.");
   if (!record(value) || !exact(value, ["kind", "request", "question", "completion", "decision", "replacement"])
-    || !["clarification", "value", "relationship"].includes(value.kind as string)
-    || !request(value.request, value.kind === "value") || !text(value.question, 500)
+    || !["clarification", "value", "relationship", "scope"].includes(value.kind as string)
+    || !(value.kind === "scope" ? validScopeRequest(value.request) : request(value.request, value.kind === "value")) || !text(value.question, 500)
     || value.question !== (value.request as Record<string, unknown>).question
     || (stage === "waiting" ? value.decision !== undefined : !record(value.decision))) throw fail();
   if (value.replacement !== undefined) {
@@ -136,9 +144,23 @@ function assertAssistanceQuestion(value: unknown, stage: "waiting" | "decided"):
     const d = value.decision as Record<string, unknown>;
     if (value.kind === "clarification" ? !exact(d, ["state", "answer"]) || !["answered", "declined"].includes(d.state as string)
       || (d.state === "answered" ? !text(d.answer, 1_000) : d.answer !== undefined)
+      : value.kind === "scope" ? !exact(d, ["state", "answer_reference"]) || d.state !== "answered" || !validScopeAnswerReference(d.answer_reference)
       : value.kind === "value" ? !(provided(d) || exact(d, ["state"]) && d.state === "without_values")
         : !exact(d, ["state"]) || d.state !== "relationship_reviewed") throw fail();
   }
+}
+
+function validScopeAnswerReference(value: unknown): value is ReadScopeAnswerReference {
+  return record(value) && exact(value, ["question_id", "revision", "answer_id"])
+    && text(value.question_id, 256) && text(value.answer_id, 256) && count(value.revision, Number.MAX_SAFE_INTEGER) && (value.revision as number) > 0;
+}
+function validScopeRequest(value: unknown): value is ReadScopeAssistanceRequest {
+  if (!record(value) || !exact(value, ["scope", "requirement_digest", "question"]) || !digest(value.requirement_digest) || !text(value.question, 500)) return false;
+  try {
+    const scope = parseReadScopeRecord(value.scope);
+    const bound = scope.requirement_bindings.find(binding => binding.digest === value.requirement_digest);
+    return !!bound && scope.proposal.requirements.some(requirement => requirement.id === bound.id && requirement.disposition === "unresolved");
+  } catch { return false; }
 }
 
 /** Storage shape only. The producer also re-parses every retained target and
@@ -159,7 +181,7 @@ export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkl
   if (value.stage !== "dispatching") assertAssistanceQuestion(q, value.stage as "waiting" | "decided");
   const flags = ["correction_used", "clarification_from_invalid_naming", "clarification_resolved", "mechanical_clarification_resolved",
     "value_request_resolved", "repeated_assistance_request", "naming_evidence_correction_used"];
-  if (!exact(s, ["call_count", "attempt", "phase", "relationship_reviews", "relationship_review_limit", "clarified_targets", "clarification_answers", "unresolved_answers", "reviewed_replacements",
+  if (!exact(s, ["call_count", "attempt", "phase", "relationship_reviews", "relationship_review_limit", "clarified_targets", "clarification_answers", "scope_answers", "unresolved_answers", "reviewed_replacements",
     ...flags, "wording", "resolved_mechanical_request", "naming_correction_workload", "approved_value_context", "diagnostics", "usage"])
     || !count(s.call_count, 11) || !count(s.attempt, 16) || !["initial", "correction", "follow-up"].includes(s.phase as string)
     || ![0, 3].includes(s.relationship_review_limit as number) || !count(s.relationship_reviews, s.relationship_review_limit as number)
@@ -177,6 +199,13 @@ export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkl
   if (s.unresolved_answers !== undefined) {
     const attempts = normalizeReadMeaningAttempts(s.unresolved_answers);
     if (attempts.length + s.clarified_targets.length > 4) throw fail();
+  }
+  if (s.scope_answers !== undefined) {
+    if (!Array.isArray(s.scope_answers) || s.scope_answers.length + s.clarified_targets.length + ((s.unresolved_answers as unknown[] | undefined)?.length ?? 0) > 4
+      || s.scope_answers.some(answer => !record(answer) || !exact(answer, ["request", "answer_reference"])
+        || !validScopeRequest(answer.request) || !validScopeAnswerReference(answer.answer_reference))) throw fail();
+    const identities = s.scope_answers.map(answer => canonicalJsonDigest(answer.answer_reference));
+    if (new Set(identities).size !== identities.length) throw fail();
   }
   if (s.reviewed_replacements !== undefined) {
     if (!Array.isArray(s.reviewed_replacements) || s.reviewed_replacements.length > 3) throw fail();

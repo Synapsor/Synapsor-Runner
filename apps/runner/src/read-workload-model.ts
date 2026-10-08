@@ -7,8 +7,10 @@ import type { ReadScopeReasonBinding, ModelReadValueRequest, ModelReadClarificat
 export type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 import { isAuthoringGenerationStop, assertAuthoringGenerationAdmission, authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
   withAuthoringProducerCorrection } from "./authoring-generation-recovery.js";
+import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { readWorkloadAssistanceCheckpoint, parseReadWorkloadAssistanceCheckpoint, ReadWorkloadAssistancePausedError,
-  type ReadWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceQuestion, type ReadReviewedClarificationReplacement } from "./read-workload-assistance-checkpoint.js";
+  type ReadWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceQuestion, type ReadReviewedClarificationReplacement,
+  type ReadScopeAssistanceRequest, type ReadScopeAnswerReference } from "./read-workload-assistance-checkpoint.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { parseOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
@@ -116,6 +118,8 @@ export type ModelReadWorkloadInput = {
     current: () => { binding: ReadScopeBinding; references: readonly ReadScopeReference[]; catalog: ReadScopeCatalog;
       /** Main obtains this only from the exact native confirmed-question resolver. */
       confirmed?: ReadScopeRecord };
+    answer?: (request: ReadScopeAssistanceRequest, completion: AuthoringQuestionCompletion | undefined) => Promise<ReadScopeAnswerReference | undefined>;
+    resolveAnswer?: (reference: ReadScopeAnswerReference, request: ReadScopeAssistanceRequest) => ReadScopeReference | undefined;
   };
   /** Local operator review, never a model decision. The proposed response is
    * checkpointed before this default-No review and is not yet current meaning. */
@@ -200,6 +204,16 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   let workload: ReadWorkloadSet | undefined;
   let analysis: ReadWorkloadAnalysis | undefined;
   let structuredReadScope: ReadScopeRecord | undefined;
+  let structuredScopeRequest: ReadScopeAssistanceRequest | undefined;
+  const scopeAnswers: NonNullable<ReadWorkloadAssistanceCheckpoint["state"]["scope_answers"]> = [];
+  const scopeAnswerInventory = (): ReadScopeReference[] => scopeAnswers.map(answer => {
+    const found = input.structuredScope?.resolveAnswer?.(answer.answer_reference, answer.request);
+    if (!found || found.kind !== "answer" || found.question_id !== answer.answer_reference.question_id
+      || found.question_revision !== answer.answer_reference.revision || found.answer_id !== answer.answer_reference.answer_id)
+      throw new Error("READ_SCOPE_ANSWER_STALE: The exact native captured answer is unavailable or no longer current.");
+    return found;
+  });
+  const scopeReferences = () => [...(structuredScopeInput?.references ?? []), ...scopeAnswerInventory()];
   let analysisClock: number | undefined;
   let valueRequest: ModelReadValueRequest | undefined;
   let clarificationRequest: ModelReadClarificationRequest | undefined;
@@ -216,7 +230,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   const activeNamingSources = () => activeMeaningStatements().map(statement => statement.text);
   const meaningBinding = () => canonicalJsonDigest({ meaning: expectedMeaningContext, boundary: expectedBoundaryDigest, catalog: catalog.digest });
   const meaningConflicts = new Map<string, ReadMeaningEvidence[]>();
-  const readAnswerCount = () => clarifiedTargets.length + unresolvedAnswers.length;
+  const readAnswerCount = () => clarifiedTargets.length + unresolvedAnswers.length + scopeAnswers.length;
   const currentEvidence = () => createCurrentReadEvidence({ catalog, statements: activeMeaningStatements(), answers: activeClarifiedTargets(),
     requested_use_digest: requestedUseDigest, context_digest: meaningBinding(), records: input.currentEvidenceRecords?.() });
   const currentMeaning = (target: { resource: string; field?: string }) => {
@@ -321,11 +335,30 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       workload = undefined;
       analysis = undefined;
       structuredReadScope = undefined;
+      structuredScopeRequest = undefined;
       lastSubmission = structuredClone(args);
       if (input.structuredScope && Object.keys(args).some(key => !["allowed", "forbidden", "read_scope"].includes(key))) {
         workloadValidationBlockers = ["READ_SCOPE_PROTOCOL_INVALID: This job requires the structured scope tool. Legacy meaning or clarification fields cannot select a fallback protocol."];
         return { ok: false, error_code: "READ_SCOPE_PROTOCOL_INVALID", value: { blockers: workloadValidationBlockers,
           authority_granted: false, source_query_executed: false, source_database_changed: false } };
+      }
+      if (structuredScopeInput && args.read_scope !== undefined) {
+        try {
+          const scope = resolveReadScopeProposal(args.read_scope, { expectedBinding: structuredScopeInput.binding,
+            references: scopeReferences(), catalog: structuredScopeInput.catalog });
+          const missing = scope.proposal.requirements.find(requirement => requirement.disposition === "unresolved");
+          if (missing) {
+            if (readAnswerCount() >= MAX_READ_CLARIFICATIONS) throw new Error("READ_SCOPE_ASSISTANCE_LIMIT: The existing four-question allowance is exhausted; preserve the unresolved scope.");
+            structuredScopeRequest = { scope, requirement_digest: scope.requirement_bindings.find(item => item.id === missing.id)!.digest,
+              question: "Please clarify the missing detail for this Read requirement." };
+            return { ok: true, value: { status: "scope_clarification_required", unresolved: missing.unresolved,
+              authority_granted: false, source_query_executed: false, source_database_changed: false } };
+          }
+        } catch (error) {
+          workloadValidationBlockers = [error instanceof Error ? error.message : String(error)];
+          return { ok: false, error_code: "READ_SCOPE_INVALID", value: { blockers: workloadValidationBlockers,
+            authority_granted: false, source_query_executed: false, source_database_changed: false } };
+        }
       }
       clarificationFromInvalidNaming = false;
       if (namingCorrectionWorkload && !isRecord(args.clarification_request) && !isRecord(args.value_request)
@@ -606,7 +639,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         // same finite checker. Neither labels nor English clauses select scope.
         try {
           const record = resolveReadScopeProposal(args.read_scope ?? structuredScopeInput.confirmed?.proposal, { expectedBinding: structuredScopeInput.binding,
-            references: structuredScopeInput.references, catalog: structuredScopeInput.catalog, analysis: candidateAnalysis });
+            references: scopeReferences(), catalog: structuredScopeInput.catalog, analysis: candidateAnalysis });
           if (structuredScopeInput.confirmed) {
             const delta = readScopeDelta(structuredScopeInput.confirmed, record);
             if (delta.removed.length || delta.added.length) {
@@ -808,7 +841,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     `Allowed questions: ${JSON.stringify(allowedQuestions)}`,
     `Forbidden questions: ${JSON.stringify(forbiddenQuestions)}`,
     `Original operator request: ${JSON.stringify(originalNamingSources)}`,
-    `Host scope reference inventory: ${JSON.stringify(structuredScopeInput.references)}`,
+    `Host scope reference inventory: ${JSON.stringify(scopeReferences())}`,
     ...(structuredScopeInput.confirmed ? [
       `Current native confirmed scope: ${JSON.stringify(structuredScopeInput.confirmed.proposal)}`,
       "This scope remains binding if you omit read_scope. A changed requirement/exclusion needs a separately reviewed delta; a model response cannot replace it.",
@@ -920,7 +953,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   };
   const inputDigest = () => canonicalJsonDigest({ name, allowedQuestions, forbiddenQuestions, originalNamingSources, namingSources,
     principal_roots: input.principalScopedRootResources ?? null, provider: configuration.provider, model: configuration.model,
-    endpoint: configuration.endpoint.href, base_question: baseQuestion(), provider_system_prompt: providerSystemPrompt,
+    endpoint: configuration.endpoint.href, base_question: input.structuredScope ? { protocol: READ_SCOPE_PROTOCOL, input: structuredScopeInput } : baseQuestion(), provider_system_prompt: providerSystemPrompt,
     relationship_review_limit: relationshipReviewLimit });
   const clarificationLine = (request: ModelReadClarificationRequest, answer: string) =>
     `Reviewed business clarification for ${request.resource}${request.field ? `.${request.field}` : ""}: question ${JSON.stringify(request.question)}, operator answer ${JSON.stringify(answer)}. This is naming context, not database values or authority.`;
@@ -938,6 +971,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   const controllerState = (): ReadWorkloadAssistanceCheckpoint["state"] => ({
         call_count: callCount, attempt, phase, correction_used: correctionUsed, ...(wording.snapshot() ? { wording: wording.snapshot() } : {}), relationship_reviews: relationshipReviews,
         relationship_review_limit: relationshipReviewLimit, clarified_targets: clarifiedTargets, clarification_answers: clarificationAnswers,
+        ...(scopeAnswers.length ? { scope_answers: scopeAnswers } : {}),
         ...(unresolvedAnswers.length ? { unresolved_answers: unresolvedAnswers } : {}),
         ...(reviewedReplacements.length ? { reviewed_replacements: reviewedReplacements } : {}),
         clarification_from_invalid_naming: clarificationFromInvalidNaming, clarification_resolved: clarificationResolved,
@@ -975,6 +1009,9 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       return parsed;
     };
     const s = saved.state, q = saved.pending_question;
+    if (s.scope_answers?.length && !input.structuredScope) throw new Error("READ_SCOPE_PROTOCOL_REQUIRED: A structured checkpoint cannot enter legacy mapping.");
+    scopeAnswers.push(...(s.scope_answers ?? []));
+    scopeAnswerInventory();
     wording = operatorClarificationGate({ stage: "read", context: businessContext(), ...(s.wording ? { resumeState: s.wording } : {}) });
     previousQuestion = saved.stage === "dispatching" ? saved.previous_question : { stage: saved.stage, pending_question: structuredClone(saved.pending_question) };
     const retired = new Set<number>(), replaced = new Set<number>();
@@ -1021,7 +1058,11 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       || canonicalJsonDigest(s.clarification_answers) !== canonicalJsonDigest(s.clarified_targets.map(r => clarificationLine(r, r.answer))))
       throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: Retained targets and their answers disagree.");
     if (q) {
-    if (q.kind === "value") {
+    if (q.kind === "scope") {
+      if (!input.structuredScope || canonicalJsonDigest(q.request.scope.binding) !== canonicalJsonDigest(structuredScopeInput!.binding))
+        throw new Error("READ_SCOPE_QUESTION_STALE: The pending typed scope does not match the pinned job context.");
+      structuredScopeRequest = q.request;
+    } else if (q.kind === "value") {
       const parsed = parseReadValueRequest(q.request as unknown as Record<string, unknown>, catalog);
       if (canonicalJsonDigest(parsed) !== canonicalJsonDigest(q.request)) throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: The retained value request is not canonical.");
       if (q.decision && canonicalJsonDigest(validateReadValueContextDecision(q.decision, q.request)) !== canonicalJsonDigest(q.decision))
@@ -1037,7 +1078,10 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     }
     if (saved.stage === "dispatching" && saved.previous_question) {
       const previous = saved.previous_question.pending_question;
-      if (previous.kind === "value") {
+      if (previous.kind === "scope") {
+        if (!input.structuredScope || canonicalJsonDigest(previous.request.scope.binding) !== canonicalJsonDigest(structuredScopeInput!.binding))
+          throw new Error("READ_SCOPE_QUESTION_STALE: The retained typed scope no longer matches this job.");
+      } else if (previous.kind === "value") {
         const request = parseReadValueRequest(previous.request as unknown as Record<string, unknown>, catalog);
         if (canonicalJsonDigest(request) !== canonicalJsonDigest(previous.request)
           || previous.decision && canonicalJsonDigest(validateReadValueContextDecision(previous.decision, request)) !== canonicalJsonDigest(previous.decision))
@@ -1103,7 +1147,29 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     pendingAssistance = undefined;
   };
   const resolveRequestedAssistance = async () => {
-    while (!workload && (mechanicalClarificationRequest || clarificationRequest || valueRequest)) {
+    while (!workload && (structuredScopeRequest || mechanicalClarificationRequest || clarificationRequest || valueRequest)) {
+      if (structuredScopeRequest) {
+        const request = structuredScopeRequest;
+        const retained = pendingAssistance?.kind === "scope" && pendingAssistance.request.scope.digest === request.scope.digest
+          && pendingAssistance.request.requirement_digest === request.requirement_digest ? pendingAssistance : undefined;
+        if (!retained) await saveAssistance({ kind: "scope", request, question: request.question, ...(completion ? { completion } : {}) }, "waiting");
+        if (input.signal?.aborted) throw new ReadWorkloadAssistancePausedError();
+        const reference = retained?.decision?.answer_reference ?? await input.structuredScope?.answer?.(request, completion);
+        if (!reference) throw new ReadWorkloadAssistancePausedError("The typed scope requirement is still pending; no answer, mapping or confirmation was inferred.");
+        const actual = input.structuredScope?.resolveAnswer?.(reference, request);
+        if (!actual || actual.kind !== "answer" || actual.question_id !== reference.question_id
+          || actual.question_revision !== reference.revision || actual.answer_id !== reference.answer_id)
+          throw new Error("READ_SCOPE_ANSWER_STALE: The captured answer does not match the current native question.");
+        if (!retained?.decision) await saveAssistance({ kind: "scope", request, question: request.question,
+          ...(completion ? { completion } : {}), decision: { state: "answered", answer_reference: reference } }, "decided");
+        if (readAnswerCount() >= MAX_READ_CLARIFICATIONS || scopeAnswers.some(answer => canonicalJsonDigest(answer.answer_reference) === canonicalJsonDigest(reference)))
+          throw new Error("READ_SCOPE_ASSISTANCE_LIMIT: The captured answer is repeated or the existing assistance allowance is exhausted.");
+        scopeAnswers.push({ request, answer_reference: reference });
+        structuredScopeRequest = undefined;
+        await remap(["Interpret the captured answer reference in the host inventory. It is raw operator testimony, not confirmed scope.",
+          "Retain earlier requirements and exclusions. If the answer leaves missing detail, return that requirement unresolved; do not guess.", baseQuestion()].join("\n"));
+        continue;
+      }
       if (mechanicalClarificationRequest) {
         const request = mechanicalClarificationRequest;
         mechanicalClarificationRequest = undefined;
@@ -1567,7 +1633,7 @@ function readWorkloadToolDefinition(resourceIds: string[], structuredScope = fal
     input_schema: structuredScope ? {
       type: "object", additionalProperties: false, required: ["allowed", "forbidden", ...(retainedScope ? [] : ["read_scope"])],
       properties: {
-        allowed: { type: "array", minItems: 1, maxItems: 40, items: entrySchema },
+        allowed: { type: "array", minItems: 0, maxItems: 40, items: entrySchema },
         forbidden: { type: "array", minItems: 0, maxItems: 40, items: entrySchema },
         read_scope: readScopeProposalSchema,
       },
