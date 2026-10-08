@@ -86,7 +86,7 @@ export function projectReadScopeHostContext(input: ReadScopeHostContextInput) {
     fail("The exact reference inventory exceeds its bound or contains colliding identities.");
   const binding = { ...input.binding, request_digest: canonicalJsonDigest(input.request.text),
     source_digest: sourceDigest, catalog_digest: input.catalog.digest };
-  const context = { binding, references, catalog: { resources: input.catalog.resources, relationships: input.catalog.relationships },
+  const context = { binding, references, catalog: { resources: input.catalog.resources, relationships: input.catalog.relationships, ...(input.catalog.subject_scopes ? { subject_scopes: input.catalog.subject_scopes } : {}) },
     ...(input.native ? { native: { ...records, ...input.native } } : {}) };
   return structuredClone(context);
 }
