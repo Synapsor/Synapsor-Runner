@@ -84,7 +84,11 @@ describe("original requested Read scope versus routing summary", () => {
     const response = { allowed: ["studio.accounts", "studio.payments"].map((resource, index) => ({ id: `extra_${index}`,
       description: `Read ${resource} status`, plan: { kind: "rows", resource, select: ["status"] } })), forbidden: [] };
     const requestJson = vi.fn(async (wire: { body: unknown }) => {
-      expect(JSON.stringify(wire.body)).toContain(JSON.stringify(request).slice(1, -1));
+      const strings = (value: unknown): string[] => typeof value === "string" ? [value]
+        : Array.isArray(value) ? value.flatMap(strings) : value && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
+      const prefix = "Original operator naming context: ";
+      const line = strings(wire.body).flatMap(value => value.split("\n")).find(value => value.startsWith(prefix));
+      expect(JSON.parse(line!.slice(prefix.length))).toEqual([request]);
       return { status: 200, body: { output: [{ type: "function_call", call_id: "unrequested",
         name: "runner__submit_read_workloads", arguments: JSON.stringify(response) }] } };
     });
@@ -123,6 +127,9 @@ describe("original requested Read scope versus routing summary", () => {
     })).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
     expect(first).toHaveBeenCalledOnce();
     expect(checkpoint?.stage).toBe("waiting");
+    expect(checkpoint?.stage === "waiting" && checkpoint.pending_question.request).toMatchObject({
+      reason_binding: { kind: "requested_read_scope", digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u) },
+    });
     const retained = structuredClone(checkpoint);
     const noSend = vi.fn(), noAnswer = vi.fn();
     await expect(generateModelReadWorkload({ ...base, operatorNamingContext: "Read payments.", resumeCheckpoint: checkpoint,
