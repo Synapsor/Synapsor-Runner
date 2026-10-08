@@ -8,7 +8,7 @@ function fixture() {
   const io: AnalyticsShellIo = { read: async () => "an exact answer", choose,
     write: value => { writes.push(value); }, columns: () => 100, onInterrupt: () => () => {}, close: () => {} };
   const chat = createBoundaryAuthoringChat({ io, color: false });
-  const guide = vi.fn(async () => "Optional explanation.");
+  const guide = vi.fn(async (_input: import("./boundary-authoring-chat.js").BoundaryAuthoringPermissionGuideInput) => "Optional explanation.");
   chat.setPermissionGuide!(guide);
   return { chat, guide, writes, choose };
 }
@@ -64,6 +64,38 @@ describe("B64 chat presentation never derives provenance or omissions from prose
     await f.chat.actionPrompter.message("Exact operator record", ["Model rationale: literal business label"]);
     expect(f.writes.join("\n")).not.toContain("model>");
     expect(f.writes.join("\n")).toContain("Model rationale: literal business label");
+    f.chat.close();
+  });
+});
+
+
+describe("B64 Action consent uses the caller's typed context and exact default", () => {
+  it("does not infer permission from an ACTIVATE title or a back value", async () => {
+    const f = fixture();
+    await f.chat.actionPrompter.choose("ACTIVATE is a business label", [
+      { value: "no", label: "Chosen business state" }, { value: "back", label: "Another state" },
+    ], [], "no");
+    expect(f.guide).not.toHaveBeenCalled();
+    expect(f.choose.mock.calls[0]?.[0]).toMatchObject({ title: "ACTIVATE is a business label", initialValue: "no" });
+    f.chat.close();
+  });
+  it("routes non-English typed consent and retains the exact caller default", async () => {
+    const f = fixture();
+    await f.chat.actionPrompter.choose("Continuer?", [
+      { value: "yes", label: "Oui" }, { value: "no", label: "Pas maintenant" },
+    ], ["Exact supplied context"], "no", { decisionKind: "disclosure" });
+    expect(f.guide).toHaveBeenCalledOnce();
+    expect(f.guide.mock.calls[0]?.[0]).toMatchObject({ decisionKind: "disclosure" });
+    expect(f.choose.mock.calls[0]?.[0].initialValue).toBe("no");
+    f.chat.close();
+  });
+  it.each([undefined, "missing", "disabled"])("leaves typed permission unresolved for default %s", async initialValue => {
+    const f = fixture();
+    expect(await f.chat.actionPrompter.choose("Continuer?", [
+      { value: "yes", label: "Oui" }, { value: "disabled", label: "Unavailable", disabled: true },
+    ], [], initialValue, { decisionKind: "activation" })).toBeUndefined();
+    expect(f.choose).not.toHaveBeenCalled();
+    expect(f.guide).not.toHaveBeenCalled();
     f.chat.close();
   });
 });
