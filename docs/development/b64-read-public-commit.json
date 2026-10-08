@@ -1,0 +1,13 @@
+{
+  "base": "1fde222b",
+  "scope": "Actual protected disabled Read revision save cannot fabricate a job workload or grouped confirmation. Main owns public hooks; Read owner owns typed native/checkpoint adapters.",
+  "before": {
+    "command": "offline vitest read-revision-commit-ownership.test.ts --maxWorkers=1 --minWorkers=1",
+    "result": "0PASS1FAIL0SKIP",
+    "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/read-revision-commit-before.json",
+    "finding": "Actual guarded disabled commit returns a review created by recordExactReadAuthorityAsReusableWorkload despite receiving no workload, model completion or grouped decision."
+  },
+  "independent_contract": "R1 source adjudication: old boundary-structured-authoring.integration recovered.workload.review expectation is invalid for this helper; change only to absence of fabricated workload/review, preserving exact commit identity, concurrent save refusal, Action unchanged and no activation checks. Other existing-capability adapter callers not blanket adjudicated.",
+  "next": "After R1 accepts native repair2ae7f22e, integrate d924/795+repair; wire actual preview and prepareReadRevisionAnalysis, protected disabled commit, exact recorded analysis or pending native mapping, same Resume CAS successor and separate default-No scope confirmation. No representative settings workload or automatic review.",
+  "status": "FAILING_BEFORE_RETAINED; public repair in progress; no PASS/acceptance claim"
+}
