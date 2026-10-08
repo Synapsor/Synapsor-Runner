@@ -1,4 +1,5 @@
-import { findReadMeaningEvidence, isExplicitReadMeaningStatement, explicitReadTaskTargets, ReadMeaningConflictError, isUnknownReadMeaning, type ReadMeaningAttempt, type ReadMeaningEvidence, type ReadMeaningStatement } from "./read-meaning-evidence.js";
+import { exactOnlyReadResourceIds, resolveRequestedReadScope } from "./read-requested-scope.js";
+import { findReadMeaningEvidence, readResourceDefinitionPhrases, isExplicitReadMeaningStatement, explicitReadTaskTargets, ReadMeaningConflictError, isUnknownReadMeaning, type ReadMeaningAttempt, type ReadMeaningEvidence, type ReadMeaningStatement } from "./read-meaning-evidence.js";
 import type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 export type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 import { isAuthoringGenerationStop, assertAuthoringGenerationAdmission, authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
@@ -227,6 +228,33 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     }
     return [...found.values()];
   };
+  const currentRequestedScope = () => resolveRequestedReadScope({ original: originalNamingSources.join("\n"), resources: catalog.resources,
+    definitions: catalog.resources.flatMap(resource => {
+      const evidence = currentMeaning({ resource: resource.id });
+      if (!evidence) return [];
+      let phrases = readResourceDefinitionPhrases(evidence, catalog);
+      // Answering which view serves this task need not redefine its name. Keep
+      // the current attributed definition for association; the native answered
+      // scope question below separately selects the resource. An explicit new
+      // definition still takes precedence through currentMeaning.
+      if (!phrases.length && evidence.reference.kind === "answered_clarification") {
+        const definition = findReadMeaningEvidence({ target: { resource: resource.id }, catalog,
+          statements: activeMeaningStatements(), answers: [], requested_use_digest: requestedUseDigest, context_digest: meaningBinding() });
+        if (definition) phrases = readResourceDefinitionPhrases(definition, catalog);
+      }
+      return [{ resource: resource.id, phrases }];
+    }), statements: activeMeaningStatements().map(statement => statement.text) });
+  const requestedScopeQuestions = (scope = currentRequestedScope()) => {
+    const questions = scope.ambiguous.map(alternatives => ({ alternatives,
+      reason: `The requested record name matches more than one inspected resource: ${alternatives.join(", ")}. Confirm the intended business records before accepting this mapping.`,
+      question: "Which records should this task show? More than one available set of records matches the name in your request. Describe the intended information so the mapping can be reviewed." }));
+    if (scope.unresolved) questions.push({ alternatives: catalog.resources.map(resource => resource.id),
+      reason: "The retained request has no exact association with the current attributed resource definitions. Preserve the request and establish the intended business mapping before accepting it.",
+      question: "What information should this view provide for your task? The current definitions do not yet establish how these records match your request." });
+    return questions;
+  };
+  const isCurrentScopeQuestion = (request: ModelReadClarificationRequest) => request.field === undefined
+    && requestedScopeQuestions().some(item => item.reason === request.reason && item.alternatives.includes(request.resource));
   let suppliedMeanings: OperatorReadMeaning[] = [];
   const clarificationAnswers: string[] = [];
   const clarificationKey = (request: ModelReadClarificationRequest) =>
@@ -463,6 +491,53 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           },
         };
       }
+      // The complete operator request is retained independently of the bounded
+      // routing question. Check real allowed plans, including reviewed related
+      // paths; forbidden examples cannot satisfy a requested public workload.
+      const requestedResources = currentRequestedScope();
+      const requiredResources = requestedResources.required;
+      const allowedResources = new Set(workloadNamingEntries({ allowed: args.allowed }, catalog)
+        .flatMap(entry => isRecord(entry) && isRecord(entry.plan) && typeof entry.plan.resource === "string" ? [entry.plan.resource] : []));
+      const excludedResources = requestedResources.excluded.filter(resource => allowedResources.has(resource));
+      if (excludedResources.length) {
+        workloadValidationBlockers = [`READ_WORKLOAD_EXCLUDED_RESOURCE: Current operator/Source instructions exclude ${excludedResources.join(", ")}. Do not add that access or treat a routing summary as permission.`];
+        return { ok: false, error_code: "READ_WORKLOAD_EXCLUDED_RESOURCE", value: { blockers: workloadValidationBlockers,
+          authority_granted: false, source_query_executed: false, source_database_changed: false } };
+      }
+      const scopeQuestions = requestedScopeQuestions(requestedResources);
+      for (const { alternatives, reason, question } of scopeQuestions) {
+        const answered = activeClarifiedTargets().filter(answer => !answer.field && answer.reason === reason
+          && alternatives.includes(answer.resource) && !isUnknownReadMeaning(answer.answer));
+        const proposed = alternatives.filter(resource => allowedResources.has(resource));
+        if (!answered.length) {
+          if (proposed.length === 1 && readAnswerCount() < MAX_READ_CLARIFICATIONS && !clarificationRequest && !valueRequest) {
+            clarificationRequest = businessRequest({ resource: proposed[0]!, reason, question });
+            return { ok: true, value: { status: "clarification_required_before_mapping", resource: proposed[0],
+              authority_granted: false, source_query_executed: false, source_database_changed: false } };
+          }
+          workloadValidationBlockers = ["READ_WORKLOAD_SCOPE_AMBIGUOUS: The request does not select one inspected resource. Ask about the intended business records rather than guessing or accepting multiple sources."];
+          return { ok: false, error_code: "READ_WORKLOAD_SCOPE_AMBIGUOUS", value: { blockers: workloadValidationBlockers,
+            authority_granted: false, source_query_executed: false, source_database_changed: false } };
+        }
+        if (!proposed.length || proposed.some(resource => !answered.some(answer => answer.resource === resource))) {
+          workloadValidationBlockers = ["READ_WORKLOAD_SCOPE_MAPPING_CHANGED: The mapping does not match the retained resource-specific business answer. Keep that answer and submit the matching mapping or ask a new exact question."];
+          return { ok: false, error_code: "READ_WORKLOAD_SCOPE_MAPPING_CHANGED", value: { blockers: workloadValidationBlockers,
+            authority_granted: false, source_query_executed: false, source_database_changed: false } };
+        }
+      }
+      const missingResources = requiredResources.filter(resource => !allowedResources.has(resource));
+      if (missingResources.length) {
+        workloadValidationBlockers = [`READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED: The retained operator request includes ${missingResources.join(", ")}; submit complete allowed workloads or retain the missing business access pending. A routing summary cannot withdraw it.`];
+        return { ok: false, error_code: "READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED", value: { blockers: workloadValidationBlockers,
+          authority_granted: false, source_query_executed: false, source_database_changed: false } };
+      }
+      const exactScope = exactOnlyReadResourceIds(originalNamingSources.join("\n"), catalog.resources.map(resource => resource.id));
+      const outsideScope = exactScope && [...allowedResources].filter(resource => !exactScope.includes(resource));
+      if (outsideScope?.length) {
+        workloadValidationBlockers = [`READ_WORKLOAD_UNREQUESTED_RESOURCE: The operator requested only ${exactScope!.join(", ")}; ${outsideScope.join(", ")} is outside that exact request. Routing prose cannot expand it.`];
+        return { ok: false, error_code: "READ_WORKLOAD_UNREQUESTED_RESOURCE", value: { blockers: workloadValidationBlockers,
+          authority_granted: false, source_query_executed: false, source_database_changed: false } };
+      }
       const requestedTargets = explicitReadTaskTargets(originalNamingSources.join("\n"), catalog);
       const actualDependencies = workloadNamingEntries(args, catalog).flatMap(entry => isRecord(entry) && isRecord(entry.plan)
         ? workloadPlanFields(entry.plan).map(field => JSON.stringify({ resource: (entry.plan as Record<string, unknown>).resource, field })) : []);
@@ -607,7 +682,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     async close() {},
   };
   const baseQuestion = () => [
-    "Map every representative question to one exact Synapsor Explore plan using only ids and operations in the structural catalog.",
+    "Map the complete retained operator request to exact Synapsor Explore plans using only ids and operations in the structural catalog. Representative questions are routing summaries, not authority to omit requested reads or add unrelated access.",
     `Workload name: ${name}`,
     `Allowed questions: ${JSON.stringify(allowedQuestions)}`,
     `Forbidden questions: ${JSON.stringify(forbiddenQuestions)}`,
@@ -952,7 +1027,11 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         const previousIndex = clarifiedTargets.findIndex((prior, index) => !retiredIndices().has(index) && clarificationKey(prior) === clarificationKey(request));
         const previous = previousIndex < 0 ? undefined : clarifiedTargets[previousIndex];
         const reviewFollowup = previous !== undefined && input.clarificationReplacementHandler !== undefined;
-        const knownMeaning = request.category !== "relationship_support" ? currentMeaning(request) : undefined;
+        // Knowing what a resource means does not decide whether it satisfies
+        // this request. Only an exact recomputed scope question bypasses the
+        // redundant naming shortcut; its normal raw/review/CAS path remains.
+        const knownMeaning = request.category !== "relationship_support" && !isCurrentScopeQuestion(request)
+          ? currentMeaning(request) : undefined;
         // A malformed claim is still refused. Only current host evidence, not
         // the model's quote, selects this finite representation correction.
         if (!reviewFollowup && !namingEvidenceCorrectionUsed && knownMeaning) {

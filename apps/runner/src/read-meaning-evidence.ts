@@ -60,6 +60,32 @@ function explicitReadStatements(clause: string, target: ReadMeaningTarget, catal
 export function isExplicitReadMeaningStatement(clause: string, target: ReadMeaningTarget, catalog: ReadMeaningCatalog): boolean {
   return explicitReadStatements(clause, target, catalog).length > 0;
 }
+/** Keep Source text/provenance intact; recognize only existing sentence
+ * boundaries or a following exact qualified catalog identity. */
+function readMeaningClauses(text: string, catalog: ReadMeaningCatalog): string[] {
+  const qualifiedIds = new Set(catalog.resources.flatMap(resource => [resource.id,
+    ...resource.fields.map(field => `${resource.id}.${field.id}`)]));
+  const clauses: string[] = [];
+  let start = 0;
+  for (const boundary of text.matchAll(/;|(?<=[.!?])\s+/gu)) {
+    const next = boundary.index! + boundary[0].length;
+    const tail = text.slice(next);
+    const token = /^[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/u.exec(tail)?.[0];
+    if (boundary[0] !== ";" && !/^[A-Z]/u.test(tail) && (!token || !qualifiedIds.has(token))) continue;
+    clauses.push(text.slice(start, boundary.index));
+    start = next;
+  }
+  clauses.push(text.slice(start));
+  return clauses;
+}
+/** Exact definition phrases from already host-resolved current evidence. These
+ * are attributable naming aliases, not inferred synonyms or access decisions. */
+export function readResourceDefinitionPhrases(evidence: ReadMeaningEvidence, catalog: ReadMeaningCatalog): string[] {
+  if (evidence.field !== undefined) return [];
+  return readMeaningClauses(evidence.reference.text, catalog)
+    .flatMap(clause => explicitReadStatements(clause, { resource: evidence.resource }, catalog))
+    .filter(claim => claim.kind === "definition").map(claim => claim.meaning);
+}
 export class ReadMeaningConflictError extends Error {
   constructor(readonly evidence: ReadMeaningEvidence[]) {
     super("READ_WORKLOAD_MEANING_CONFLICT: Current explicit statements differ; no reviewed precedence was established. Keep them visible and ask for a new attributed interpretation.");
@@ -125,7 +151,7 @@ export function findReadMeaningEvidence(input: {
   ];
   for (const statement of statements) {
     for (const [index, line] of statement.text.split(/\r?\n/u).entries()) {
-      const claims = line.split(/;|(?<=[.!?])\s+(?=[A-Z])/u).flatMap(clause => explicitReadStatements(clause, input.target, input.catalog));
+      const claims = readMeaningClauses(line, input.catalog).flatMap(clause => explicitReadStatements(clause, input.target, input.catalog));
       for (const claim of claims) candidates.push({ ...claim, evidence: { ...input.target, origin: "HOST-RESOLVED",
         context_digest: input.context_digest, requested_use_digest: input.requested_use_digest, reference: { kind: statement.origin,
           source_id: statement.source_id, source_digest: statement.source_digest,

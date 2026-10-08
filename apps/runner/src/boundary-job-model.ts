@@ -1,3 +1,4 @@
+import { requestedReadResourceIds } from "./read-requested-scope.js";
 import { isAuthoringGenerationStop, beginAuthoringProducerInvocation, authoringInterruptedProducerCorrections,
   reserveAuthoringProducerCorrection, withAuthoringProducerCorrection, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -589,17 +590,10 @@ function parseJobPlan(
         );
       }
     }
-    if (effectiveReadIntent) {
-      // A typed Read routing intent can be a noun phrase. It need not repeat
-      // the verb used to distinguish Read from Action in the original job.
-      const covered = new Set(requestedReadResourceIds(effectiveReadIntent, explicitlyRequestedReadResources, true));
-      const missing = explicitlyRequestedReadResources.filter((resource) => !covered.has(resource));
-      if (missing.length) {
-        throw new Error(
-          `read_intent omitted explicitly requested reviewed reads: ${missing.join(", ")}. Preserve every requested read area or ask one clarification.`,
-        );
-      }
-    }
+    // read_intent is bounded routing presentation, not the requested scope.
+    // Actual workloads must cover the retained original request at the mapper;
+    // comparing a paraphrase here cannot establish a semantic omission.
+
   }
   const actionIntent = value.action_intent === undefined
     ? undefined
@@ -755,100 +749,6 @@ function asksForActionPolicyDetail(question: string): boolean {
 function normalizeAvailableResourceIds(values: string[]): string[] {
   return [...new Set(values.map((value) => boundedText(value, "available resource id", 300)))].sort();
 }
-
-function requestedReadResourceIds(jobIntent: string, availableResourceIds: string[], readOnlyText = false): string[] {
-  if (!availableResourceIds.length) return [];
-  const readText = readOnlyText ? jobIntent : readOrientedJobText(jobIntent);
-  if (!readText) return [];
-  const words = normalizedSemanticWords(readText);
-  const resourceWords = availableResourceIds.map((id) => ({
-    id,
-    words: normalizedSemanticWords(id.split(".").at(-1) ?? id),
-  }));
-  return resourceWords.flatMap(({ id, words: candidateWords }) => {
-    if (!candidateWords.length) return [];
-    const fullNameMatched = containsWordSequence(words, candidateWords);
-    // A single coincidentally unique word is not an explicit table request:
-    // "services" does not establish service_lines, nor "change" plan offers.
-    // Ambiguous business concepts belong to the metadata-aware mapper.
-    const meaningfulWords = candidateWords.filter((token) => !RESOURCE_MENTION_STOP_WORDS.has(token));
-    return fullNameMatched || meaningfulWords.length > 0 && containsWordSequence(words, meaningfulWords) ? [id] : [];
-  });
-}
-
-function readOrientedJobText(jobIntent: string): string {
-  const fragments = jobIntent
-    .split(/(?<=[.!?;])\s+/u)
-    .flatMap((sentence) => {
-      // "Keep the same Read Boundary" names preserved authority, not a
-      // request to expose the private verification facts later in the clause.
-      // Continue scanning: a subsequent "and show ..." is still a read request.
-      const readMatch = [...sentence.matchAll(/\b(?:read|view|inspect|explore|analy[sz]e|understand|answer|report|show|list|summari[sz]e|explain)\b/giu)]
-        .find(match => !isPreservedReadBoundaryMention(sentence, match.index)
-          && !/\b(?:do\s+not|don't|never)\s+$/iu.test(sentence.slice(0, match.index)));
-      if (!readMatch) return [];
-      const afterRead = sentence.slice(readMatch.index);
-      const actionConnector = /\b(?:and|then)\s+(?:(?:let|allow)\s+(?:the\s+)?(?:agent|model|user|customer|them|it)\s+)?(?:propos(?:e|ing)|update|insert|delete|write|apply|approve|change)\b/iu.exec(afterRead);
-      return [actionConnector ? afterRead.slice(0, actionConnector.index) : afterRead];
-    });
-  return fragments.join(" ");
-}
-
-function isPreservedReadBoundaryMention(sentence: string, index: number): boolean {
-  if (!/^read\s+(?:boundary|mapping|revision)\b/iu.test(sentence.slice(index))) return false;
-  // An explicit exception/addition contradicts preservation; retain the
-  // ordinary missing-resource guard rather than assuming unchanged access.
-  if (/\b(?:but|except|and)\s+(?:also\s+)?(?:add|include|expose|extend|expand)\b/iu.test(sentence.slice(index))) return false;
-  return /\b(?:keep|reuse|retain|preserve|leave)\s+(?:(?:the|our|this|same|existing|current|unchanged|saved|reviewed)\s+|saved\s+job\s+and\s+)*$/iu
-    .test(sentence.slice(0, index));
-}
-
-function normalizedSemanticWords(value: string): string[] {
-  return value
-    .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
-    .toLocaleLowerCase("en-US")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .split(/\s+/u)
-    .filter(Boolean)
-    .map(singularSemanticWord);
-}
-
-function singularSemanticWord(value: string): string {
-  if (!/^[a-z]+$/u.test(value) || value.length < 4) return value;
-  if (value.endsWith("ies") && value.length > 4) return `${value.slice(0, -3)}y`;
-  if (/(?:ches|shes|sses|xes|zes)$/u.test(value)) return value.slice(0, -2);
-  if (value.endsWith("s") && !/(?:ss|us|is)$/u.test(value)) return value.slice(0, -1);
-  return value;
-}
-
-function containsWordSequence(haystack: string[], needle: string[]): boolean {
-  if (!needle.length || needle.length > haystack.length) return false;
-  for (let index = 0; index <= haystack.length - needle.length; index += 1) {
-    if (needle.every((word, offset) => haystack[index + offset] === word)) return true;
-  }
-  return false;
-}
-
-const RESOURCE_MENTION_STOP_WORDS = new Set([
-  "application",
-  "current",
-  "daily",
-  "data",
-  "detail",
-  "entry",
-  "event",
-  "history",
-  "information",
-  "item",
-  "main",
-  "public",
-  "recent",
-  "record",
-  "row",
-  "system",
-  "table",
-]);
 
 function normalizeCurrentState(input: BoundaryJobCurrentState): BoundaryJobCurrentState {
   const resourceIds = [...new Set(input.read.resource_ids.map((resource) =>
