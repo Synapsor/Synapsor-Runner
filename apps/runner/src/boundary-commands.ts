@@ -1,3 +1,5 @@
+import { readMeaningPromptHandoff } from "./authoring-read-prompt-binding.js";
+import { selectUnplannedActionIntents } from "./authoring-action-entry.js";
 import { reviewRequiredPrincipalScopes } from "./authoring-principal-scope-host.js";
 import { enterSavedAuthoringSetup, savedSetupEntryNotice } from "./authoring-saved-setup-entry.js";
 import { createNativeReadScope } from "./authoring-read-scope-native.js";
@@ -6256,11 +6258,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     ? jobPlan.action_mode === "create" || jobPlan.action_mode === "revise"
       ? jobPlan.action_intents ?? [boundedDownstreamActionIntent(jobPlan.action_intent!, jobIntent.trim())]
       : []
-    : input.jobFirst
-      ? input.authoringChat && mode === "model"
-        ? jobAppearsToChangeState(jobIntent.trim()) ? [jobIntent.trim()] : []
-        : await promptJobFirstActionIntents(input.session, jobIntent.trim())
-      : await promptDelegationActionIntents(input.session);
+    : await selectUnplannedActionIntents({ jobFirst: Boolean(input.jobFirst),
+      modelChat: Boolean(input.authoringChat && mode === "model"), session: input.session, jobIntent: jobIntent.trim() });
   if (!promptedActionIntents) return boundaryAssistResult(boundaryAssistBackNotice("Delegation setup closed."));
   let actionIntents: string[] = promptedActionIntents;
   let ruleDerivedAction = actionIntents.length > 0
@@ -7123,8 +7122,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     // contract and are never copied into general Source history.
     const readAssistanceSession: BoundaryReviewInteractiveSession = input.authoringChat?.readOperator
       ? { ...input.session, promptText: async (question, options) => {
-          const handoff = ownerHandoffs.at(-1);
-          if (handoff?.state !== "waiting" || !["read_clarification", "read_value_context"].includes(handoff.consumer)) {
+          const handoff = readMeaningPromptHandoff({ handoffs: ownerHandoffs, questions: operatorQuestions, generation: generationRecovery });
+          if (!handoff) {
             throw checkpointSaveFailure("The Read assistance owner question");
           }
           const assertAnswerCurrent = async () => {
@@ -11239,61 +11238,6 @@ export function formatCurrentBoundaryAuthoritySummary(
     "Runner reused the exact local revisions; the model did not recreate or broaden them.",
     "Existing approval and apply posture: unchanged | source database changed: no",
   ];
-}
-
-async function promptDelegationActionIntents(
-  session: BoundaryReviewInteractiveSession,
-): Promise<string[] | undefined> {
-  const intents: string[] = [];
-  while (intents.length < AUTHORING_PROGRAM_CAPACITY.totalActions) {
-    const answer = await session.promptText(
-      intents.length === 0
-        ? "What may the agent propose? Leave blank for a read-only job."
-        : `Another proposal action ${intents.length + 1} (blank when done)`,
-    );
-    if (answer === undefined) return undefined;
-    const normalized = answer.trim().replace(/\s+/g, " ");
-    if (!normalized) return intents;
-    if (textCharacterCount(normalized) > MAX_BOUNDARY_ACTION_INTENT_CHARACTERS) {
-      throw new Error(
-        `Proposal action intents must be at most ${MAX_BOUNDARY_ACTION_INTENT_CHARACTERS} characters each.`,
-      );
-    }
-    intents.push(normalized);
-  }
-  session.present?.("Complete selected program", [
-    `All ${intents.length} selected Action intents are retained. This authoring path supports at most ${AUTHORING_PROGRAM_CAPACITY.totalActions} selected Actions.`,
-    "Drafting and review use bounded work units; the complete program still needs validation and separate publication.",
-  ]);
-  return intents;
-}
-
-function jobAppearsToChangeState(jobIntent: string): boolean {
-  return /\b(?:propose|create|open|schedule|assign|update|change|close|cancel|approve|issue|send|record|mark|waive|refund|credit|delete|remove)\b/iu
-    .test(jobIntent);
-}
-
-async function promptJobFirstActionIntents(
-  session: BoundaryReviewInteractiveSession,
-  jobIntent: string,
-): Promise<string[] | undefined> {
-  const appearsToChangeState = jobAppearsToChangeState(jobIntent);
-  const prepareActions = await session.confirm(
-    "Should this job include an Action Boundary for structured proposals?",
-    {
-      defaultValue: appearsToChangeState,
-      context: [
-        "READ AND ACTION BOUNDARIES",
-        "Read Boundary: what the agent may inspect through Explore.",
-        "Action Boundary: what structured change it may propose. Approval and apply remain separate.",
-        appearsToChangeState
-          ? "Runner noticed change-oriented language, so Action Boundary drafting is selected by default."
-          : "Choose No for a read-only job. You can add Action Boundaries later with Y.",
-      ],
-    },
-  );
-  if (prepareActions === undefined) return undefined;
-  return prepareActions ? [jobIntent] : [];
 }
 
 async function prepareJobMappingCatalog(input: {

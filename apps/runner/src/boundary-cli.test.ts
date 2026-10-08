@@ -4792,7 +4792,7 @@ describe("boundary operator-plane CLI", () => {
       },
       confirm: async (prompt, options) => {
         if (prompt.includes("Should this job include an Action Boundary")) {
-          expect(options?.defaultValue).toBe(true);
+          expect(options?.defaultValue).toBe(false);
           return true;
         }
         if (prompt.includes("disabled dependency for its Action Boundary")) {

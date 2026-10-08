@@ -432,24 +432,30 @@
       "not_integrated_in_main": true
     },
     "current_resume_checkpoint": {
-      "status": "ACTIVE; Owner removed usage pause; paid CLOSED",
-      "integration": "61d4841b",
-      "clock": "T0 2026-10-08T06:32:23Z; end 2026-10-13T06:32:23Z unchanged",
-      "read": "Reviewed canonical/projector/helper/RLS integrated3d276c08; R1 projector7P/RLS5P; native subjects604dc679 and c7aaa085 held-permit forwarding independently public8P; a6a59a62 typed principal dispatch/extraction independently4P scoped ACCEPT8935cc43. No English jobRequestsPrincipalIsolation remains; boundary19695 after Action hook.",
-      "entry": "d4633d8e current native record validation before metadata/UI; original R2 PC03 two public variants2P, exact bytes preserved; primitive55010P. Historical failures retained.",
-      "action": "da7e6061 scoped R2 ACCEPT actual six wording failures fixed; fullbaseline8P. Original support7F retained separately, corrected support7P+cold1P. Main hooks82ca0687 and fixture48fb91d7 integrated; changed-field declarations + full baseline diff, no English revision-focus.",
-      "commands": [
-        "isolated bwrap no-network vitest action-rule-model/action-rule-checkpoint-prerequisite/action-work-unit-source-assessment/authoring-read-native-subject-context/authoring-protocol-resume --maxWorkers=2 --minWorkers=1 --testTimeout=20000",
-        "isolated tsc -b --pretty false"
-      ],
-      "results": "Integrated affected5files340PASS/1 intentional live-provider skip; types14 known Read.v1/required-subject fixture migration errors (Action type fix integrated subsequently). No whole-suite/type0/freeze claim.",
-      "logs": "/var/tmp/synapsor-b64-main-owned/evidence/action-dispatch-integrated.log; principal-extraction-types2.log; native-subject-context2.log; current-native-entry-before/after2.log",
-      "open": [
-        "Read Replace native/raw host22P; actual budgeted producer/public continuation pending owner/R1",
-        "Typed Action subject and attributed constraint design pending R2 exact agreement; active Source/approval/execution English guards and focused-only classifiers NOT claimed migrated",
-        "212 fixture inventory classification and typed ports; helper ordinary planning fixture cases active",
-        "Final composed/native/public tests and settled full gates not started"
-      ]
+      "base": "d6e201eb",
+      "status": "active; no usage pause; paid CLOSED",
+      "main": "Owned old-entry/typed Read projection and principal host; boundary 19619 vs 20204. Read Replace public review ongoing.",
+      "read_replace": {
+        "integrated_owner": "9b435e30",
+        "independent_producer": "8 PASS scoped d1709ef2",
+        "public_before": [
+          "1fa: native projection missing, raw NOT REACHED",
+          "927: original positive PASS; three Replace controls saved native question but prompt consumer rejected"
+        ],
+        "current_fix": "Exact parsed replacement_answer/read_revision_instruction/declined-review prompt binding; no blanket consumer admission",
+        "local": "7 PASS owned adapters (6 Action entry +1 native prompt binding)",
+        "next": "R1 unchanged public Replace/cancel/stale + real CAS wait"
+      },
+      "action_entry": {
+        "before": "2 failed /1 passed; existing verb heuristic selected true",
+        "after": "6 component PASS; English reader and both callers deleted; missing typed plan refuses, manual default No",
+        "independent": "R2 source semantic adjudication on d6; only default4795 assertion changed, explicit Yes/other17 assertions unchanged",
+        "public": "NOT QUALIFIED: actual manual cards flow refuses missing native typed Read context; complete flow expectations retained; diagnostic probe only, not fixed-pin gate"
+      },
+      "fixtures": "Read owner ports5type sites+7checkpoint-host rows;8relationship revision ports independently sourceaccepted9b0a;10mapping assistance gaps actualtypedreachability reproduced, positives open",
+      "action": "R2 design9b63 ACCEPT; owner implementing subject codec/host with same open logical turn and genuine batch ACK; English constraints remain open",
+      "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/",
+      "limits": "2 heavy /8workers; 8GiB floor; private backup only; T0/window unchanged"
     }
   }
 }
