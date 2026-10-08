@@ -1,0 +1,18 @@
+B64 COMPLETE STATIC ENGLISH-DECISION INVENTORY
+
+Source:2857e2e4c0ffab23591e96f76887d523038c5031. Product retirement is OPEN; this is classification, not behavioral acceptance.
+
+454 unique annotated source spans:247 replace_with_typed;66 delete;141 legitimate.
+Authoring/shared spans:219 typed;66 delete;129 legitimate. Separate Ask:22 typed;7 legitimate. Separate runtime catalog:2 typed. Separate code/audit:4 typed;5 legitimate.
+These are source spans including string comparisons, metadata-name heuristics and display-prose bindings, NOT counts of regex lines. Some distinct spans belong to one function; do not compare to the historical122-line estimate.
+
+Coverage:563 tracked TypeScript files plus2 production JavaScript files. 25,453 raw AST candidates deduplicate to25,269 exact locations; all classified, zero unclassified. 59 TypeScript files have no selected AST candidate. Owning-function/caller review supplements regex/string methods/equality/switch/dictionaries and manually found nonliteral prose comparisons.
+INVENTORY.json is the canonical decision list: source file/range, decision, reachability/call chain, disposition, and provenance. COVERAGE.json maps every inspected AST location to its reason/annotation; exact syntax, formal SQL/DSL, redaction and formatting remain explicit retained categories. JOIN-REVIEW.json has zero missing/conflicting deletion-versus-typed candidates. Earlier UNCLASSIFIED-CANDIDATES.json is preserved historical join input, now fully covered.
+
+Named owner gaps are covered: authoring-obligation-review; read-meaning-evidence; boundary-job-model Action routing; read-workload-model question classifiers; model-authoring-narration; and model-ask separately. Additional live gaps include generated review-status/evidence text, Source coverage error-prose classification, permission-purpose classification, name-derived scope/privacy/RLS roles, unknown-answer and question-identity classifiers.
+
+Disposition rule: all reachable structured-authoring semantic decisions must be typed or deleted within B64. Unreachable pre-B64 English source is deletion work, not a permitted legacy path. Exact typed resource IDs and factual mechanical validation remain. Ask/code-first/runtime audit classifications are separate; no new feature campaign or blanket NLP framework. Preserve omission/privacy/authority/currentness/cancellation/budget proofs through replacements.
+
+Existing owners continue: Read owns evidence/scope/metadata and Read call chains; Action owns constraints/receipt/counting/coverage; Main owns thin public bindings and shared/presentation ownership; independent reviewers preseal variants. One editor per hotspot; existing source/test isolation and resource envelope unchanged.
+
+Read literal-guard integration6ebfe9b7: Main24 focusedPASS/types0 after independent acceptance. It does not retire any of the baseline English sites. Frozen candidate3/history/paid records unchanged; paidCLOSED. Storage:Owner says keep everything; revisit only below roughly30GB free,8GiB floor unchanged.
