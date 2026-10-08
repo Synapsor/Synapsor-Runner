@@ -27,6 +27,22 @@ describe("stateless egress presentation", () => {
     }
   });
 
+  it("binds the metadata disclosure kind and exact payload record even without a chat object", async () => {
+    const view: MetadataEgressView = { providerLabel: "Display-only label", destination: "reviewed destination",
+      privateRead: { mappingLines: ["Complete declared mapping"], fingerprint: "exact mapping fingerprint" } };
+    const confirm = vi.fn(async (_prompt: string, options?: Parameters<import("./boundary-cli-picker.js").BoundaryReviewInteractiveSession["confirm"]>[1]) => {
+      expect(options?.decisionKind).toBe("disclosure");
+      expect(options?.defaultValue).toBe(false);
+      expect(options?.exactDetails?.lines).toEqual(expect.arrayContaining([
+        `Provider: ${view.providerLabel}`, `Destination: ${view.destination}`,
+        ...view.privateRead!.mappingLines, `Private Read metadata fingerprint: ${view.privateRead!.fingerprint}`,
+      ]));
+      return false;
+    });
+    expect(await presentMetadataEgress({ view, session: { confirm } })).toBe(false);
+    expect(confirm).toHaveBeenCalledOnce();
+  });
+
   it("renders all host-supplied lines locally without altering their whitespace or identity", async () => {
     const view: PolicyAttachmentView = { name: "Synthetic rules.txt", version: 2, bytes: 37, lines: 3,
       digest: "synthetic-snapshot-digest", textLines: ["First rule.", "  Exact second rule.  ", ""] };
