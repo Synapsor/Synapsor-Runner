@@ -11,7 +11,7 @@ import type { policyCoverageDraft } from './authoring-policy-evidence.js';
 import type { authoringReceiptConfiguration } from './authoring-receipt-configuration.js';
 import type { BusinessStatementDecisionAdapter } from './authoring-business-statement-host.js';
 import { coverageResponseContext } from './authoring-coverage-feedback.js';
-import { receiptBusinessStatementAdapter } from './authoring-receipt-decision-adapter.js';
+import { receiptBusinessStatementAdapter, receiptRequirementMaterial } from './authoring-receipt-decision-adapter.js';
 
 type Draft = ReturnType<typeof policyCoverageDraft>;
 type Digest = `sha256:${string}`;
