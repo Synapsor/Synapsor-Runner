@@ -1252,7 +1252,7 @@ describe("boundary review terminal picker", () => {
     await expect(selected).resolves.toEqual({ action: "privacy_all" });
   });
 
-  it("shows and toggles the selected boundary's local Ask plan check with T", async () => {
+  it("shows reviewed Explore validation without an English comparison toggle", async () => {
     const { input, output } = fakeTerminal();
     const session = createBoundaryReviewInteractiveSession(input, output);
     const resource = summary("public.orders", 0);
@@ -1279,16 +1279,14 @@ describe("boundary review terminal picker", () => {
       { initialView: "access", startAtBoundaryList: true },
     );
     const rendered = stripAnsi(output.read()?.toString() ?? "");
-    expect(rendered).toContain("Local Ask plan check for reviewed_staging: BOUNDARY ONLY");
-    expect(rendered).toContain("Reviewed Explore validation still applies");
-    expect(rendered).toContain("T Ask plan check");
+    expect(rendered).toContain("Local Ask: reviewed Explore validation");
+    expect(rendered).toContain("The model proposes the plan; Runner checks reviewed authority.");
+    expect(rendered).not.toContain("T Ask plan check");
     expect(rendered).toContain("Model output [SEMANTIC] - exact hashes stay operator-only");
     expect(rendered).toContain("O Model output [SEMANTIC: hashes operator-only]");
     await send(input, "t");
-    await expect(selected).resolves.toEqual({
-      action: "intent_check",
-      boundary_name: "reviewed_staging",
-    });
+    await send(input, "q");
+    await expect(selected).resolves.toBeUndefined();
   });
 
   it("opens the global model-output preference with O and shows its current state", async () => {

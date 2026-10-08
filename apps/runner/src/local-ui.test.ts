@@ -4450,6 +4450,13 @@ export default defineCapability({
       await expect(fs.access(path.join(tempDir, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
 
+      const storedBalanced = await postJson(
+        `http://${server.host}:${server.port}/api/boundary/ask-intent-check`, headers,
+        { name: originalName, mode: "balanced" },
+      );
+      expect(storedBalanced).toMatchObject({ question_to_plan_checked: false,
+        authority_changed: false, source_database_changed: false });
+
       const created = await postJson(
         `http://${server.host}:${server.port}/api/boundary/library/create`,
         headers,
