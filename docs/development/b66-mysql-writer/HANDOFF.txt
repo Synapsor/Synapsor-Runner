@@ -1,14 +1,14 @@
-B66 implementation packet; independent acceptance pending.
+B66 corrected implementation packet; independent acceptance pending.
 Worktree: /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b66-mysql-writer
 Branch: codex/b66-mysql-writer-20261008; private backup only.
-Base: 38eb51dc67e0d7054414840995c6288dcf52625a; failing-before: 3639788f646ec3bee93cc1abd630170c746c8ed6.
-Product pin: e980b85450f1354a0d3af3de6a5c18dcd5c2979c; docs checkpoint follows this pin.
-Native MySQL 8.4.11 failure reproduced before product patch; original logs retained.
-Exact column grants preserved; reviewed lock key admitted; wide/extra-column/extra-table authority refused.
-MySQL generator and actual recovery screen emit narrow grants; unbound business UPDATE refuses.
-Existing exact selected receipt contract is the only allowed empty-column table UPDATE; no RLS or effect relaxation.
-Checks: native MySQL+PG 2/2; focused 73/73; final UI/generator 40/40; full typecheck and diff check pass.
-Files: index.ts + 2 inspector tests; writer-provisioning.ts/test; verified-action-review.ts/test; native writer test; DEV evidence.
-Worker-policy.ts and boundary-commands.ts unchanged; no provider calls or Tester resource changes.
-Owned /var/tmp/synapsor-b66-owned-20261008 data/raw evidence retained; containers stopped; slot 4 returned.
-Next: R2 independent review, Main composition, then B65 Tester public route and 30/40 race; no self-approval.
+Base 38eb51dc; initial native failing-before 3639788f; original narrow writer product e980b854.
+Latest product pin: 4122108160e2d2189650f2d0629a29068ebde1db; source repair only in index.ts.
+R1 pattern baseline preserved at 615fc23b/fixture2e537946; pre-existing same failures on 38eb.
+Own followup failing-before 5b1a1ffe: 18 PASS/6 FAIL; unchanged R1 fixture retained.
+Pattern DB scopes and unknown SHOW GRANTS rows now unverified; exact table/column grants unchanged.
+Correction affected checks 56/56; full typecheck and diff check pass. R1 rerun/R2 native witness pending.
+Prior e980 proof: native MySQL+PG 2/2; focused73/73; final UI/generator40/40; not transferred as correction-native proof.
+Generated exact lock grants and receipt exception unchanged; no worker-policy/RLS/boundary-commands changes.
+Owned data/evidence retained; no new native server or broad regression run; no paid/provider calls.
+R2 owns returned slot4 native checks; no own heavy process remains.
+Next: independent R1/R2 acceptance, Main composition, B65 Tester public route and 30/40 race.

@@ -1,0 +1,12 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b66-mysql-writer
+
+ ✓ packages/schema-inspector/src/mysql-column-privileges.test.ts (21 tests) 11ms
+ ✓ packages/schema-inspector/src/mysql-grant-effective-scope-independent.test.ts (3 tests) 4ms
+ ✓ packages/schema-inspector/src/index.test.ts (32 tests) 28ms
+
+ Test Files  3 passed (3)
+      Tests  56 passed (56)
+   Start at  13:30:08
+   Duration  939ms (transform 183ms, setup 0ms, collect 435ms, tests 43ms, environment 1ms, prepare 136ms)
+

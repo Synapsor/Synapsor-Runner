@@ -1,6 +1,6 @@
 {
   "base": "38eb51dc67e0d7054414840995c6288dcf52625a",
-  "head": "e980b85450f1354a0d3af3de6a5c18dcd5c2979c",
+  "head": "4122108160e2d2189650f2d0629a29068ebde1db",
   "failing_before": "3639788f646ec3bee93cc1abd630170c746c8ed6",
   "branch": "codex/b66-mysql-writer-20261008",
   "commands": {
@@ -41,9 +41,9 @@
   "resources": "Dedicated slot 4, max 1 worker; available RAM 18-19 GiB and disk 73-74 GiB before runs. Native containers stopped after finite checks; storage retained.",
   "verdict": "IMPLEMENTER CHECKS PASS; PENDING INDEPENDENT R2. No public execution, MySQL 30/40 race, or business invariant acceptance claimed.",
   "openitems": [
-    "R2 independent presealed review at stable product pin",
-    "Main integration including any boundary-commands hook adoption",
-    "B65 Tester public MySQL setup and 30/40 race on reviewed composition; no Tester resources modified"
+    "R1 unchanged independent fixture rerun and source approval of 41221081",
+    "R2 native wildcard witness and presealed matrix on stable corrected composition",
+    "Main integration followed by B65 Tester public MySQL route and 30/40 race"
   ],
   "manifest": {
     "native-before.txt": "b53533ca7aed2adada3dc8a0f8293ee288021461bf2fc0b5f415836b24c3055c",
@@ -55,6 +55,26 @@
     "unbound-before.txt": "3fe485a2a4e26316fe04d567497ffcdc7f3c4541ebc4cbb86e58986aca9c485b",
     "ui-generator-after.txt": "5fb4df1565410ad59bbc45839247e55c13fac3f6ff73a78a6a0b881e5aa42524",
     "ui-generator-final.txt": "4fc94149e8944b5d3f35aa48acd8c28de18031c4a2437e82eede66df26a3ee41",
-    "typecheck-final-v3.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    "typecheck-final-v3.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "pattern-unknown-before.txt": "c5a2c0c272e394a997996d86f6c62d7bf343ea518702ae21bdde1a31cd3aa621",
+    "pattern-unknown-after.txt": "cfb8c9a1567767ec048181665163a025d65a00a5b30eb0cdf2e5745dd8ed9b2b",
+    "pattern-typecheck.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "original_product": "e980b85450f1354a0d3af3de6a5c18dcd5c2979c",
+  "effective_scope_followup": {
+    "independent_before": "R1 615fc23b at fixture 2e537946: e980 1 PASS/2 FAIL; baseline 38eb same 2 FAIL/1 filtered. Pre-existing effective-authority omission; no regression attribution.",
+    "own_before": "5b1a1ffe: 18 PASS/6 FAIL (2 R1 patterns, 4 unknown rows). Product unchanged at bd156 for this run.",
+    "product_pin": "4122108160e2d2189650f2d0629a29068ebde1db",
+    "change": "Unrecognized SHOW GRANTS rows mark posture unverified. Database-wide names containing %, _ or backslash mark posture unverified because partial_revokes semantics are not an inspected input. Exact table grants retain literal identifiers. No additional grant authority or context-guessing API.",
+    "affected_files": [
+      "packages/schema-inspector/src/index.ts",
+      "packages/schema-inspector/src/mysql-column-privileges.test.ts",
+      "packages/schema-inspector/src/mysql-grant-effective-scope-independent.test.ts (R1 exact immutable fixture copy)"
+    ],
+    "command": "HOME=<owned> TMPDIR=<owned> NODE_OPTIONS=--require=<owned>/preserve.cjs node node_modules/vitest/vitest.mjs run packages/schema-inspector/src/index.test.ts packages/schema-inspector/src/mysql-grant-effective-scope-independent.test.ts packages/schema-inspector/src/mysql-column-privileges.test.ts --maxWorkers=1 --minWorkers=1",
+    "results": "56 PASS/0 FAIL/0 SKIP; full tsc -b exit 0; git diff --check exit 0",
+    "native_status": "R2 owns wildcard witness and independent native matrix. Prior implementer native2 at e980 retained; not rerun or transferred as correction-native proof.",
+    "verdict": "IMPLEMENTER AFFECTED CHECKS PASS; PENDING R1 RERUN AND R2 NATIVE REVIEW",
+    "limitation": "Database-wide grants on names with pattern characters conservatively refuse even if an administrator configured literal semantics. Dedicated exact-table generated grants are unaffected."
   }
 }
