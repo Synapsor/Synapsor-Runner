@@ -34,7 +34,7 @@ export function resolveRequestedReadScope(input: {
   exactRequests?: readonly ExactReadRequestBinding[];
 }): RequestedReadAssociations & { excluded: string[]; conflicts: string[]; unresolved: boolean } {
   const ids = input.resources.map(resource => resource.id);
-  const fragments = readOrientedJobFragments(input.original);
+  const fragments = readOrientedJobFragments(input.original, true);
   const establishedRoots = new Set<string>();
   let conflictingRequests = false;
   const unmatched = fragments.filter(fragment => {
@@ -45,7 +45,7 @@ export function resolveRequestedReadScope(input: {
     alternatives[0]!.forEach(id => establishedRoots.add(id));
     return false;
   });
-  const text = unmatched.join("; ");
+  const text = unmatched.map(unquotedRequest).join("; ");
   const base = requestedReadResourceAssociations(input.original, ids);
   const words = requestWords(text);
   const definitionsByPhrase = new Map<string, string[]>();
@@ -86,7 +86,8 @@ export function resolveRequestedReadScope(input: {
   // An established clause cannot erase a separate unsupported positive clause.
   // This remains bounded syntax evidence, not general English entailment.
   const unresolved = conflictingRequests || unmatched.some(fragment => {
-    const references = qualifiedReferences(fragment), localWords = requestWords(fragment);
+    const masked = unquotedRequest(fragment);
+    const references = qualifiedReferences(masked), localWords = requestWords(masked);
     return references.some(token => !ids.some(id => token === id || token.startsWith(`${id}.`)))
       || references.length === 0 && candidateGroups(localWords, input.resources, new Set()).length === 0
         && !input.definitions.some(definition => ids.includes(definition.resource)
@@ -159,25 +160,41 @@ function readOrientedJobText(jobIntent: string): string {
   return readOrientedJobFragments(jobIntent).join(" ");
 }
 
-function readOrientedJobFragments(jobIntent: string): string[] {
-  const fragments = requestClauses(jobIntent).filter(clause => !negativeTarget(clause)).join("; ")
-    // Keep nominal Read authority and its explicit exception in the same
-    // clause: splitting "saved job and Read Boundary" loses preservation,
-    // while splitting "Read Boundary but include ..." loses the addition.
-    .split(/(?<=[.!?;])\s+|(?:,\s*|\s+)(?:and|but)\s+(?=(?:(?:do\s+not|don['’]t|never|not)\s+)?(?:read(?!\s+(?:boundary|mapping|revision)\b)|view|inspect|show|list)\b)/iu)
-    .flatMap((sentence) => {
-      // "Keep the same Read Boundary" names preserved authority, not a
-      // request to expose the private verification facts later in the clause.
-      // Continue scanning: a subsequent "and show ..." is still a read request.
+/** Detect instructions on an offset-preserving masked view, then optionally
+ * retain their exact original clauses for native reviewed-request comparison.
+ * Quoted business literals are data; quoted historical Read verbs stay inert. */
+function readOrientedJobFragments(jobIntent: string, retainQuotedText = false): string[] {
+  const masked = unquotedRequest(jobIntent);
+  const fragments: string[] = [];
+  const clauses = splitTextRanges(masked, /[;\n]|(?<=[.!?])\s+|(?:,\s*|\s+)(?:and|but)\s+(?=(?:do\s+not|don['’]t|never|not)\b)/giu);
+  for (const [clauseStart, clauseEnd] of clauses) {
+    const clause = masked.slice(clauseStart, clauseEnd);
+    if (negativeTarget(clause)) continue;
+    for (const [start, end] of splitTextRanges(clause, /(?<=[.!?;])\s+|(?:,\s*|\s+)(?:and|but)\s+(?=(?:(?:do\s+not|don['’]t|never|not)\s+)?(?:read(?!\s+(?:boundary|mapping|revision)\b)|view|inspect|show|list)\b)/giu)) {
+      const sentence = clause.slice(start, end);
       const readMatch = [...sentence.matchAll(/\b(?:read|view|inspect|explore|analy[sz]e|understand|answer|report|show|list|summari[sz]e|explain)\b/giu)]
         .find(match => !isPreservedReadBoundaryMention(sentence, match.index)
           && !/\b(?:do\s+not|don['’]t|never)\s+$/iu.test(sentence.slice(0, match.index)));
-      if (!readMatch) return [];
+      if (!readMatch) continue;
       const afterRead = sentence.slice(readMatch.index);
       const actionConnector = /\b(?:and|then)\s+(?:(?:let|allow)\s+(?:the\s+)?(?:agent|model|user|customer|them|it)\s+)?(?:propos(?:e|ing)|update|insert|delete|write|apply|approve|change)\b/iu.exec(afterRead);
-      return [actionConnector ? afterRead.slice(0, actionConnector.index) : afterRead];
-    });
+      const offset = clauseStart + start + readMatch.index!;
+      const length = actionConnector ? actionConnector.index : afterRead.length;
+      fragments.push((retainQuotedText ? jobIntent : masked).slice(offset, offset + length));
+    }
+  }
   return fragments;
+}
+
+function splitTextRanges(text: string, separator: RegExp): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  let start = 0;
+  for (const match of text.matchAll(separator)) {
+    ranges.push([start, match.index!]);
+    start = match.index! + match[0].length;
+  }
+  ranges.push([start, text.length]);
+  return ranges;
 }
 
 function unquotedRequest(text: string): string {
@@ -192,8 +209,8 @@ function unquotedRequest(text: string): string {
     const content = chars.slice(index + 1, close === -1 ? chars.length : close).join("");
     // Quoted literal identities in a current Read instruction retain identity;
     // historical quoted instructions remain opaque, not executable requests.
-    result += close !== -1 && /^[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+$/u.test(content.trim())
-      ? ` ${content.trim()} ` : content.replace(/[^\n]/gu, " ");
+    result += " " + (close !== -1 && /^[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+$/u.test(content.trim())
+      ? content : " ".repeat(content.length)) + (close === -1 ? "" : " ");
     index = close === -1 ? chars.length : close;
   }
   return result;
@@ -262,5 +279,5 @@ const RESOURCE_MENTION_STOP_WORDS = new Set([
 /** A native reviewed request is reusable only as the same complete Read clause;
  * do not infer synonyms, truncate a new constraint, or use a model summary. */
 function exactRequestText(text: string): string {
-  return text.trim().replace(/\s+/gu, " ").replace(/[.;]+$/u, "");
+  return text.trim().replace(/[.;]+$/u, "");
 }
