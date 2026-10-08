@@ -1,0 +1,22 @@
+{
+  "source": "41221081",
+  "integration": "518b9c21",
+  "independent": "R1 67af2bb5 scoped SOURCE/PARSER ACCEPT 24PASS0FAIL0SKIP",
+  "review": "Exact column privileges stay separate from relation privileges; unchanged semantic writer assessor admits reviewed lock key/effect columns, rejects excess. Generated locked MySQL account and administrator screen emit exact grants. PostgreSQL column inspector unchanged; native comparison reported separately. Formal SHOW GRANTS SQL syntax parsing is not natural-language business interpretation.",
+  "commands": [
+    "offline vitest index.test/mysql-column-privileges/mysql-grant-effective-scope-independent/writer-provisioning/verified-action-execution-review/worker-policy-insert-lock --maxWorkers=1 --minWorkers=1",
+    "offline tsc -b --pretty false",
+    "git diff --check"
+  ],
+  "results": {
+    "regressions": "100PASS0FAIL0SKIP",
+    "types": "exit0",
+    "product_identity": "three changed production files byte-identical to reviewed ddf0e8d5",
+    "native": "Tester successor controls/public races pending; no inherited MySQL public acceptance"
+  },
+  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/b66-integrated.json",
+  "open": [
+    "Tester fixed-pin independent MySQL controls and both public30/40 race orders",
+    "Database-wide patterned schema grants conservatively unverified without verified server setting; exact-table grants supported"
+  ]
+}
