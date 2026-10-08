@@ -291,7 +291,6 @@ import {
 } from "./action-rule-draft.js";
 import {
   generateModelActionRuleDraft,
-  modelActionRuleRevisionFocus,
   type ModelActionRuleDraftResult,
   type ModelActionRuleDraftInput,
 } from "./action-rule-model.js";
@@ -7772,14 +7771,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         while (!semanticActionModelResult) {
           let failure: BoundaryModelDraftFailure | undefined;
           try {
-            const revisionFocus = modelActionRuleRevisionFocus(
-              semanticIntent,
-              semanticActionRevisionBaseline,
-            );
             semanticActionModelResult = await runWithProgress(
-              revisionFocus === "approval"
-                ? "Updating only the reviewed approval policy with the selected model"
-                : `Preparing action ${semanticIndex + 1} of ${actionIntents.length}`,
+              `Reviewing action ${semanticIndex + 1} of ${actionIntents.length}`,
               () => (input.modelActionRuleGenerator ?? generateModelActionRuleDraft)({
                 session: ruleSession,
                 intent: jointApprovalRepair ? "Revise only approval.shared_limits to preserve the original job's joint automatic-approval allowances across its actions. Keep every other component and policy setting unchanged." : semanticIntent,
