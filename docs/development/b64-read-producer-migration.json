@@ -5,12 +5,6 @@
 "results": {"pass": 51, "fail": 267, "skip": 0},
 "evidence": "/var/tmp/synapsor-b64-read-owned/evidence/typed-migration-manifest.json",
 "open_rows": [
-  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning carries an already selected client as a bounded setup preference (claude-code)", "state": "NOT_REACHED", "migration": "declare_typed_protocol_and_explicit_scope", "failure": "missing_protocol_refusal"},
-  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning carries an already selected client as a bounded setup preference (cursor)", "state": "NOT_REACHED", "migration": "declare_typed_protocol_and_explicit_scope", "failure": "missing_protocol_refusal"},
-  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning carries an already selected client as a bounded setup preference (vscode)", "state": "NOT_REACHED", "migration": "declare_typed_protocol_and_explicit_scope", "failure": "missing_protocol_refusal"},
-  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning carries an already selected client as a bounded setup preference (later)", "state": "NOT_REACHED", "migration": "declare_typed_protocol_and_explicit_scope", "failure": "missing_protocol_refusal"},
-  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning carries an already selected client as a bounded setup preference (undefined)", "state": "NOT_REACHED", "migration": "declare_typed_protocol_and_explicit_scope", "failure": "missing_protocol_refusal"},
-  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning rejects custom paths or configuration objects in the client preference", "state": "NOT_REACHED", "migration": "declare_typed_protocol_and_explicit_scope", "failure": "missing_protocol_refusal"},
   {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning does not invent explicit resource requests from individual words in a mixed business job", "state": "NOT_REACHED", "migration": "declare_typed_protocol_and_explicit_scope", "failure": "missing_protocol_refusal"},
   {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning preserves precise schema failure and the approved source through exactly one correction", "state": "NOT_REACHED", "migration": "declare_typed_protocol_and_explicit_scope", "failure": "missing_protocol_refusal"},
   {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning preserves precise missing_intent failure and the approved source through exactly one correction", "state": "NOT_REACHED", "migration": "declare_typed_protocol_and_explicit_scope", "failure": "missing_protocol_refusal"},
@@ -273,9 +267,15 @@
   {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning keeps create text bounded without truncating its content", "state": "DEV_PASS", "evidence": "planning-bounds-twelve-typed-port.log"},
   {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning revises an exact incomplete candidate without remapping or claiming review readiness", "state": "DEV_PASS", "evidence": "planning-bounds-twelve-typed-port.log"},
   {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning keeps correction guidance consistent with an eligible incomplete Read revision", "state": "DEV_PASS_REVIEW_PENDING", "before_evidence": "planning-bounds-twelve-typed-port.log", "evidence": "planning-mode-guidance-after.log"},
-  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning repairs an incomplete resumed mapping using an available mode, not an impossible reviewed revision", "state": "DEV_PASS_REVIEW_PENDING", "before_evidence": "planning-bounds-twelve-typed-port.log", "evidence": "planning-mode-guidance-after.log"}
+  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning repairs an incomplete resumed mapping using an available mode, not an impossible reviewed revision", "state": "DEV_PASS_REVIEW_PENDING", "before_evidence": "planning-bounds-twelve-typed-port.log", "evidence": "planning-mode-guidance-after.log"},
+  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning carries an already selected client as a bounded setup preference (claude-code)", "state": "DEV_PASS", "evidence": "planning-client-six-typed-port.log"},
+  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning carries an already selected client as a bounded setup preference (cursor)", "state": "DEV_PASS", "evidence": "planning-client-six-typed-port.log"},
+  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning carries an already selected client as a bounded setup preference (vscode)", "state": "DEV_PASS", "evidence": "planning-client-six-typed-port.log"},
+  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning carries an already selected client as a bounded setup preference (later)", "state": "DEV_PASS", "evidence": "planning-client-six-typed-port.log"},
+  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning carries an already selected client as a bounded setup preference (undefined)", "state": "DEV_PASS", "evidence": "planning-client-six-typed-port.log"},
+  {"file": "boundary-job-model.test.ts", "case": "model Boundary job planning rejects custom paths or configuration objects in the client preference", "state": "DEV_PASS", "evidence": "planning-client-six-typed-port.log"}
 ],
-"current_migration_counts": {"closed_after_baseline": 49, "remaining_open": 218},
+"current_migration_counts": {"closed_after_baseline": 55, "remaining_open": 212},
 "additional_fixture_groups": [
   {
     "file": "boundary-authoring-resume.test.ts",
