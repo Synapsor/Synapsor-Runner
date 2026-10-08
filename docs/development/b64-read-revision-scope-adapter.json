@@ -1,0 +1,45 @@
+{
+  "status": "DEV_COMPONENT_PASS_PUBLIC_WIRING_PENDING",
+  "base": "768c3a76",
+  "owners": {
+    "Read": "pure preview/actual workload adapter",
+    "Main": "boundary/native question/protected save/Resume CAS"
+  },
+  "contract": {
+    "preview": "Validate actual current structural review, actual prepared lock + unchanged inspected Source/schema/role, and retain only unchanged surviving acknowledged subject configurations. Pure projection is not permission.",
+    "analysis": "Load exact native selected analysis. Recompile original workload only after exact owning digest match, else use only saved plans whose exact canonical shape digest matches normalized plan digest. Never placeholder literals.",
+    "pending": "no_saved_workload / exact_plan_unavailable / retained_workload_blocked retains consumed revision for ordinary mapping. No store, completion, confirmation or replay invented.",
+    "store": "After protected actual commit, check exact candidate and selection; store actual compiler analysis only. No review marker/native q mutation/Resume save/activation."
+  },
+  "integration_sequence": [
+    "Main loads exact selected analysis and current structural review under existing currentness/CAS.",
+    "Prepare ordinary mutation, pass actual preview.candidate + preview.build.lock to central preview projector; prepare actual retained analysis.",
+    "Return exact preview scope/analysis to producer and existing consumed-completion checkpoint.",
+    "Guarded disabled commit; store actual analyzed workload and native question pointer through existing protected owners. Native question must bind current postcommit context without inventing completion.",
+    "Show separate exact grouped review/default-No; acknowledged Yes only then permits reuse. If pending_mapping, retain actual result/consumption and route ordinary mapping without replay."
+  ],
+  "commands": [
+    "vitest run authoring-read-revision-scope.test.ts authoring-read-scope-context.test.ts --maxWorkers=1 --minWorkers=1",
+    "vitest run authoring-read-revision-scope.test.ts --testNamePattern=\"advertises unchanged subject\" --maxWorkers=1 --minWorkers=1",
+    "tsc -b --pretty false"
+  ],
+  "evidence_root": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence",
+  "results": {
+    "revision-adapter1.json": "7 PASS",
+    "revision-adapter-restriction.json": "1 PASS",
+    "revision-preview1.json": "14 PASS / 5 FAIL: overstrict whole generation-lock equality; real label mutation changes contract lock",
+    "revision-preview-diagnostic.json": "0 PASS / 1 FAIL: exact generation_lock mismatch preserved",
+    "revision-preview2.json": "19 PASS / 0 FAIL (8 adapter,6 preview,5 existing context)",
+    "revision-preview-lock-controls.json": "4 PASS / 0 FAIL,14 filtered",
+    "revision-final-types.log": "PASS exit 0"
+  },
+  "fixture_corrections": [
+    "Current-review negative targets actual principal_scope acknowledgment, not arbitrary first decision. Original failing trace retained.",
+    "read-public-retirement it.each callback wrapper is type-only; public revision responder/assertions unchanged."
+  ],
+  "open": [
+    "Public revision actual before remains READ_SCOPE_PROTOCOL_REQUIRED at 768c3a76; Main wiring pending.",
+    "Protected native q postcommit binding and pending-mapping Resume route remain Main proofs.",
+    "Independent reviewer verdict required; no whole retirement/212 fixture closure claim."
+  ]
+}

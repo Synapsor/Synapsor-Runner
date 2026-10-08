@@ -175,7 +175,7 @@ async function runVariant(mode:Mode, continueAfterCancel=false, firstBlank=false
   const capture=process.env.B51_READ_PROCESS_CAPTURE_DIR;if(capture){await fs.mkdir(capture,{recursive:true});await fs.writeFile(path.join(capture,`PUBLIC-READ-${mode}${continueAfterCancel?"-resumed":""}${firstBlank?"-blank":""}.json`),JSON.stringify({root,job:selectedJob,source:selectedSource,mode,transcript,menus,requests,failures,reads,decisions,sourceConsent,planning,mapping,revisionCalls,revisionStarted,revisionGiven,rawPrompts,correction,beforeCold,afterCold,finalResume:await resume(),stdout:stdout.mock.calls.map(x=>String(x[0])).join(''),limits:'Actual public command+B48 IO; supplied synthetic schema metadata. No DB query, model provider egress, activation or public PASS unless complete assertions pass.'},null,2));}
  }
 }
-it.each<Mode>(['replace','replace_cancel','replace_stale'])('public B64 %s retains exact scope without retired English calls',runVariant,30000);
+it.each<Mode>(['replace','replace_cancel','replace_stale'])('public B64 %s retains exact scope without retired English calls',mode=>runVariant(mode),30000);
 
 it('independent public cancelled correction resumes to a real answer and separate review',()=>runVariant('replace_cancel',true),30000);
 
