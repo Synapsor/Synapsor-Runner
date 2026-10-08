@@ -143,6 +143,77 @@ describe("local test runtime identity", () => {
   });
 });
 
+describe("owned directory permission remedy", () => {
+  async function privateRoot() {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-permission-remedy-"));
+    roots.push(root);
+    return root;
+  }
+
+  it("offers the exact owned directory as one literal shell argument without changing permissions", async () => {
+    const parent = await privateRoot();
+    const root = path.join(parent, "project's $(printf INJECTED); quoted \" name");
+    const directory = path.join(root, ".synapsor");
+    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+    await fs.chmod(directory, 0o770); // Disposable test fixture, never execute the suggested command.
+    const error = await loadLocalTestRuntimeIdentity({ projectRoot: root }).catch(value => value as Error);
+    expect(error).toBeInstanceOf(Error);
+    const message = (error as Error).message;
+    expect(message).toContain("LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID");
+    const command = message.match(/Run (chmod 700 -- [\s\S]+), then retry/)?.[1];
+    expect(command).toBeDefined();
+    // Parse the exact emitted argument with the real POSIX shell, replacing chmod
+    // with a harmless argument printer. No permission remedy is executed.
+    const printed = await promisify(execFile)("/bin/sh", ["-c",
+      `set -- ${command!.slice("chmod ".length)}; printf '%s\\0' "$@"`]);
+    expect(printed.stdout.split("\0")).toEqual(["700", "--", directory, ""]);
+    expect((await fs.lstat(directory)).mode & 0o777).toBe(0o770);
+    expect(await fs.readdir(directory)).toEqual([]);
+  });
+
+  it.each(["unknown", "different"] as const)("does not suggest changing a directory with %s current ownership", async kind => {
+    const root = await privateRoot();
+    const directory = path.join(root, ".synapsor");
+    await fs.mkdir(directory, { mode: 0o700 });
+    await fs.chmod(directory, 0o770);
+    const actualUid = (await fs.lstat(directory)).uid;
+    vi.spyOn(process as { getuid: () => number | undefined }, "getuid").mockReturnValue(kind === "unknown" ? undefined : actualUid + 1);
+    const error = await loadLocalTestRuntimeIdentity({ projectRoot: root }).catch(value => value as Error);
+    expect((error as Error).message).toContain("directory must not be writable");
+    expect((error as Error).message).not.toContain("chmod");
+    expect((await fs.lstat(directory)).mode & 0o777).toBe(0o770);
+  });
+
+  it("retains the ownership refusal for a private directory owned by someone else", async () => {
+    const root = await privateRoot();
+    const directory = path.join(root, ".synapsor");
+    await fs.mkdir(directory, { mode: 0o700 });
+    vi.spyOn(process as { getuid: () => number | undefined }, "getuid").mockReturnValue((await fs.lstat(directory)).uid + 1);
+    const error = await loadLocalTestRuntimeIdentity({ projectRoot: root }).catch(value => value as Error);
+    expect((error as Error).message).toContain("directory must be owned by the current user");
+    expect((error as Error).message).not.toContain("chmod");
+    expect((await fs.lstat(directory)).mode & 0o777).toBe(0o700);
+  });
+
+  it("does not prescribe a directory remedy for unsafe private files or a symlink directory", async () => {
+    const root = await privateRoot();
+    const directory = path.join(root, ".synapsor");
+    await fs.mkdir(directory, { mode: 0o700 });
+    const file = path.join(root, DEFAULT_LOCAL_TEST_RUNTIME_IDENTITY_PATH);
+    await fs.writeFile(file, "{}", { mode: 0o600 });
+    await fs.chmod(file, 0o644);
+    const error = await loadLocalTestRuntimeIdentity({ projectRoot: root }).catch(value => value as Error);
+    expect((error as Error).message).toContain("identity file must be a regular owner-only file");
+    expect((error as Error).message).not.toContain("chmod");
+    const linkedRoot = await privateRoot();
+    await fs.symlink(directory, path.join(linkedRoot, ".synapsor"));
+    const linked = await loadLocalTestRuntimeIdentity({ projectRoot: linkedRoot }).catch(value => value as Error);
+    expect((linked as Error).message).toContain("LOCAL_TEST_RUNTIME_PATH_INVALID");
+    expect((linked as Error).message).not.toContain("chmod");
+    expect((await fs.lstat(file)).mode & 0o777).toBe(0o644);
+  });
+});
+
 const namedBindings = [{ role: "tenant" as const, environment: "FIXTURE_TENANT" }, { role: "principal" as const, environment: "FIXTURE_PERSON" }];
 async function named(root: string, profileName: string, person: string, now?: string) {
   return saveLocalTestRuntimeIdentity({ projectRoot: root, profileName, bindings: namedBindings,

@@ -18,6 +18,8 @@ import { inspectMcpToolBoundary, mcpServeHttp, mcpServeStreamableHttp } from "./
 import { createOptionalOwnerPolicyRuntime } from "./owner-policy-runtime.js";
 import { ownerPolicyChat } from "./owner-policy-chat.js";
 import { tryAsk } from "./try-ask.js";
+import { computeAskAuthority } from "./ask-authority.js";
+import { loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 
 const roots: string[] = [];
 const stores: ProposalStore[] = [];
@@ -498,5 +500,71 @@ describe("governed owner-policy runtime sidecar", () => {
     expect(close).toHaveBeenCalledOnce();
     expect(writes.join("\n")).toContain("Agent settings - source Read authority is disabled");
     expect(writes.join("\n")).not.toContain("Scoped Explore active");
+  }, 20_000);
+
+  it("uses native owner-only binding without a default Source profile or Source catalog", async () => {
+    const f = await fixture();
+    const configPath = path.join(f.root, "synapsor.runner.json");
+    await saveOwnerManagementConfig(f, "synapsor.runner.json");
+    const gateway = await createWorkbenchAskMcpGateway({ projectRoot: f.root, configPath,
+      storePath: f.controlPath, env: f.env, mode: "authoring" });
+    try {
+      expect(gateway.ownerSettingsOnly).toBe(true);
+      expect(gateway.ownerManagementBinding).toMatch(/^sha256:[a-f0-9]{64}$/u);
+      await expect(computeAskAuthority({ projectRoot: f.root, configPath, profile: "unknown", mode: "authoring",
+        tools: await gateway.listTools(), ownerManagementBinding: gateway.ownerManagementBinding }))
+        .resolves.not.toHaveProperty("active_boundary_set_digest");
+      await expect(gateway.callTool("app.explore_data", { policy_view: "agent_rules", section: "summary" }))
+        .resolves.toMatchObject({ ok: true, value: { active: null, draft: null } });
+      await expect(gateway.callTool("app.explore_data", {
+        plan: { kind: "rows", resource: "source.requests", select: ["id"] },
+      })).resolves.toMatchObject({ ok: false });
+    } finally { await gateway.close(); }
+    const requestJson = vi.fn(), catalog = vi.fn(async () => { throw new Error("No Source catalog belongs to owner settings"); });
+    const writes: string[] = [], close = vi.fn(), consent = vi.fn(async () => true);
+    await expect(tryAsk(["--project-root", f.root, "--config", configPath, "--store", f.controlPath,
+      "--provider", "openai", "--model", "gpt-owner-settings-test"], {
+      env: { ...f.env, OPENAI_API_KEY: "sk-owner-settings-no-request" }, gatewayFactory: createWorkbenchAskMcpGateway,
+      confirmEgress: consent, providerDependencies: { requestJson }, boundaryCatalogLoader: catalog,
+      shellIo: { read: async () => "/exit", write: value => writes.push(value), columns: () => 100,
+        onInterrupt: () => () => undefined, close },
+    })).resolves.toBe(0);
+    expect(consent).toHaveBeenCalledOnce(); expect(requestJson).not.toHaveBeenCalled();
+    expect(catalog).not.toHaveBeenCalled(); expect(close).toHaveBeenCalledOnce();
+    expect(writes.join("\n")).toContain("Agent settings - source Read authority is disabled");
+    expect(writes.join("\n")).not.toContain("Scoped Explore active");
+  }, 20_000);
+
+  it("keeps governed Read strict without the exact authenticated owner-only surface", async () => {
+    const f = await fixture();
+    const configPath = path.join(f.root, "synapsor.runner.json");
+    await saveOwnerManagementConfig(f, "synapsor.runner.json");
+    // The declared parent-only migration is valid owner context, not a Read
+    // selection. Neither a source tool surface nor a missing binding repairs it.
+    await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({ code: "POLICY_READ_AUTHORITY_INVALID" });
+    const gateway = await createWorkbenchAskMcpGateway({ projectRoot: f.root, configPath,
+      storePath: f.controlPath, env: f.env, mode: "authoring" });
+    const nativeTools = await gateway.listTools(), binding = gateway.ownerManagementBinding;
+    await gateway.close();
+    await expect(computeAskAuthority({ projectRoot: f.root, configPath, profile: "staging", mode: "authoring",
+      tools: nativeTools })).rejects.toMatchObject({ code: "POLICY_READ_AUTHORITY_INVALID" });
+    const sourceTools = nativeTools.map(tool => ({ ...tool, metadata: undefined,
+      input_schema: { type: "object", properties: {}, additionalProperties: false } }));
+    await expect(computeAskAuthority({ projectRoot: f.root, configPath, profile: "staging", mode: "authoring",
+      tools: sourceTools, ownerManagementBinding: binding })).rejects.toMatchObject({ code: "POLICY_READ_AUTHORITY_INVALID" });
+    const broadened = structuredClone(nativeTools);
+    const explore = broadened.find(tool => tool.name === "app.explore_data")!;
+    explore.input_schema.properties = { ...(explore.input_schema.properties as Record<string, unknown>), plan: { type: "object" } };
+    await expect(computeAskAuthority({ projectRoot: f.root, configPath, profile: "staging", mode: "authoring",
+      tools: broadened, ownerManagementBinding: binding })).rejects.toMatchObject({ code: "POLICY_READ_AUTHORITY_INVALID" });
+    const requestJson = vi.fn(), consent = vi.fn(async () => true);
+    await expect(tryAsk(["Read source requests.", "--project-root", f.root, "--config", configPath,
+      "--store", f.controlPath, "--provider", "openai", "--model", "fixture"], {
+      env: { OPENAI_API_KEY: "sk-owner-settings-no-request" }, profileResolver: async () => "staging",
+      gatewayFactory: async () => ({ mode: "authoring", listTools: async () => sourceTools,
+        callTool: async () => { throw new Error("No Source query authorized"); }, close: async () => undefined }),
+      confirmEgress: consent, providerDependencies: { requestJson },
+    })).rejects.toMatchObject({ code: "POLICY_READ_AUTHORITY_INVALID" });
+    expect(consent).not.toHaveBeenCalled(); expect(requestJson).not.toHaveBeenCalled();
   }, 20_000);
 });

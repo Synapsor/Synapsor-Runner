@@ -167,7 +167,10 @@ async function runtimeDirectory(projectRoot: string, create: boolean, runtimePat
   }
   const currentUid = process.getuid?.();
   if (process.platform !== "win32" && (state.mode & 0o022) !== 0) {
-    throw new Error("LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local test runtime directory must not be writable by group or other users.");
+    const remedy = currentUid !== undefined && state.uid === currentUid
+      ? ` Next: Run chmod 700 -- ${"'" + directory.replaceAll("'", "'\"'\"'") + "'"}, then retry the same command. Runner has not changed the folder permissions.`
+      : "";
+    throw new Error("LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local test runtime directory must not be writable by group or other users." + remedy);
   }
   if (process.platform !== "win32" && currentUid !== undefined && state.uid !== currentUid) {
     throw new Error("LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local test runtime directory must be owned by the current user.");
