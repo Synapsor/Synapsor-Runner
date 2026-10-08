@@ -42,5 +42,17 @@
       "comparison": "/var/tmp/synapsor-b65-b66-review-20261008-owned/g5-reverse-owned/evidence/deciding-comparison.json"
     }
   ],
-  "limitation": "Original pre-change aggregate rule remains eligible after winner; refusal is changed dependency proof, not a post-change hard-limit check. B65 fresh30+25 gap remains open."
+  "limitation": "Original pre-change aggregate rule remains eligible after winner; refusal is changed dependency proof, not a post-change hard-limit check. B65 fresh30+25 gap remains open.",
+  "independent_final": {
+    "commit": "7ddce77a73bc117000afccd73c9e70a2d3d8d2e7",
+    "report": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b65-b66-review/docs/development/b65-b66-review/NATIVE-REPORT.txt",
+    "coverage": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b65-b66-review/docs/development/b65-b66-review/R2-COVERAGE.json",
+    "private_backup_verified": true,
+    "source_identity": "Tester apps/packages empty diff vs41221081",
+    "resources": "Both MySQL containers stopped and retained; no worker/lease/barrier; slot4 released",
+    "grant_scope": "Parent table-wide and extra column/table grants refused. Existing reviewed credit-target table-wide UPDATE contract remains admitted, unchanged; no extra business effect applied.",
+    "preserved": "Initiale980 wildcardadmission; original database-wide exact-codeFAIL with actualunverifiedrefusal; supplemental server-setting cleanup failure; earlyUI/defaultNo and readerrole failures retained",
+    "race_modes": "Forward partial_revokes1 during preserved supplemental cleanupfailure; reversefresh0; exacttable effectivegrants identical",
+    "not_claimed": "See R2-COVERAGE partial/NOTRUN rows; no independent nativePG-on-B66 transfer, MySQLINSERT/roleassignment/exoticquoted native/durablecompletion recovery notrun"
+  }
 }
