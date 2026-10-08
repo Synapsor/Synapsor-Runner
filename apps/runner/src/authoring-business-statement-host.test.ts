@@ -5,7 +5,16 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { afterEach, expect, it, vi } from "vitest";
-import * as readEnglishEvidence from "./read-meaning-evidence.js";
+import * as retiredEvidenceModule from "./read-meaning-evidence.js";
+// Test-only tripwires keep the retired exports observable after their production
+// deletion. Any accidentally restored caller fails through the real handler.
+vi.mock("./read-meaning-evidence.js", async importOriginal => ({
+  ...await importOriginal<typeof import("./read-meaning-evidence.js")>(),
+  ...Object.fromEntries(["isUnknownReadMeaning", "findReadMeaningEvidence", "isExplicitReadMeaningStatement", "readDefinitionPhrases"]
+    .map(name => [name, vi.fn(() => { throw new Error(`RETIRED_ENGLISH_OWNER_CALLED:${name}`); })])),
+}));
+const readEnglishEvidence = retiredEvidenceModule as unknown as Record<
+  "isUnknownReadMeaning" | "findReadMeaningEvidence" | "isExplicitReadMeaningStatement" | "readDefinitionPhrases", (...args: unknown[]) => never>;
 import { createOperatorQuestion, leaveOperatorQuestionPending } from "./authoring-operator-question.js";
 import { createBusinessStatementHost, type BusinessStatementRecordUpdate, type BusinessStatementDecisionAdapter } from "./authoring-business-statement-host.js";
 import type { BusinessStatementInteraction, BusinessStatementResponse } from "./authoring-business-statement-interaction.js";

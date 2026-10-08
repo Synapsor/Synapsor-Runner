@@ -1,5 +1,14 @@
 import { afterEach, expect, it, vi } from "vitest";
-import * as english from "./read-meaning-evidence.js";
+import * as retiredEvidenceModule from "./read-meaning-evidence.js";
+// Test-only tripwires keep the retired exports observable after their production
+// deletion. Any accidentally restored caller fails through the real handler.
+vi.mock("./read-meaning-evidence.js", async importOriginal => ({
+  ...await importOriginal<typeof import("./read-meaning-evidence.js")>(),
+  ...Object.fromEntries(["isUnknownReadMeaning", "findReadMeaningEvidence", "isExplicitReadMeaningStatement", "readDefinitionPhrases"]
+    .map(name => [name, vi.fn(() => { throw new Error(`RETIRED_ENGLISH_OWNER_CALLED:${name}`); })])),
+}));
+const english = retiredEvidenceModule as unknown as Record<
+  "isUnknownReadMeaning" | "findReadMeaningEvidence" | "isExplicitReadMeaningStatement" | "readDefinitionPhrases", (...args: unknown[]) => never>;
 import { typedReadAssistanceFixture } from "./test-fixtures/typed-read-assistance.js";
 import { READ_SCOPE_PROTOCOL, type ReadScopeProposal } from "./read-structured-scope.js";
 import type { ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";

@@ -1,0 +1,65 @@
+{
+  "base": "f1a74e84",
+  "status": "PRODUCT_RETIREMENT_PENDING_INDEPENDENT_REVIEW",
+  "dependency": {
+    "path": "apps/runner/src/read-boundary-revision-model.ts",
+    "exact_committed_source": "fc8f545a",
+    "reason": "Privacy owner removed retired evidence imports and closure; adopted unchanged, not independently accepted here",
+    "local_commit": "ed957273"
+  },
+  "rows": [
+    {
+      "file": "read-meaning-evidence.test.ts",
+      "retired": "English imperative/negation/definition/transition/clause recognition and lexical alias expectations",
+      "preserved": [
+        "read-structured-scope.test.ts: exact unknown/homonymous identities; root does not grant fields; foreign relationship; exclusions and missing inclusions; forged/stale Source; valid lines not semantic proof",
+        "read-meaning-audit-codec.test.ts: exact raw/audit roundtrip and extra authority/bad digest/missing Source version rejection",
+        "read-scope-host-context.test.ts: exact Source text, physical lines, bounds and raw identity"
+      ],
+      "original_blob": "22bf1dd26f1a2d6d3a234706f227ec8784a03f12"
+    },
+    {
+      "file": "read-meaning-lab-regressions.test.ts",
+      "retired": "Host English codebook/imperative/definition parsing, lexical c1/c2/c3 meaning, synonym and generated-label guessing",
+      "preserved": [
+        "read-structured-scope.test.ts: exact catalog targets/field isolation/ambiguous leaves/exclusions/unresolved/default unconfirmed",
+        "read-english-retirement-characterization.test.ts: actual declared raw through typed mapping, correction and disk Resume without any retired owner call",
+        "authoring-read-scope-question.test.ts: exact actual analysis, current references, explicit confirmation and replacement never restoring old Yes"
+      ],
+      "original_blob": "8c34b9318752858790fe9cda48d854bbe00123d3"
+    },
+    {
+      "file": "read-current-evidence.test.ts",
+      "retired": "Old confirmed_read_meaning index English interpretation and no-protocol producer/revision calls; removed obsolete revision currentEvidenceRecords port",
+      "preserved": [
+        "authoring-read-scope-question.test.ts: real native lineage/analysis/reference currentness, durable exact explicit review, cancelled replacement no old Yes",
+        "read-scope-replacement-producer.test.ts: actual producer/cold/cancel history and cumulative counters",
+        "read-english-retirement-characterization.test.ts: actual raw pending/cold continuation/omission-independent typed reference inventory",
+        "read-scope-host-context.test.ts: copied/missing answer ID and Source snapshot mismatch refusal"
+      ],
+      "open": [
+        "Actual public revision and public Replace zero-retired-owner instrumentation still required; component tests do not close those routes",
+        "Historical metadata-label retention is owned by exact typed scope/currentness binding, not English statement matching; no claim of arbitrary prose-edit semantic equivalence"
+      ],
+      "original_blob": "aa2fe7a313619f26a26cd4282a362b609d063274"
+    }
+  ],
+  "non_claims": [
+    "No every-Source-line semantic completeness claim",
+    "No raw answer or exact quote grants authority",
+    "No overall Read/public retirement acceptance; native typed proof requirements remain"
+  ],
+  "results": {
+    "focused_native_and_finite": {
+      "passed": 70,
+      "failed": 0,
+      "evidence": "/var/tmp/synapsor-b64-read-retirement-owned/evidence/evidence-chain-after.json"
+    },
+    "types": {
+      "exit": 1,
+      "remaining": "boundary-commands.ts:9236 supplies removed revision currentEvidenceRecords; Main3366b2c0 removes this obsolete caller",
+      "evidence": "/var/tmp/synapsor-b64-read-retirement-owned/evidence/evidence-chain-types.log"
+    },
+    "independent_verdict": "PENDING; R1 not active during implementation"
+  }
+}
