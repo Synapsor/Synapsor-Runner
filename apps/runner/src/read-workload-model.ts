@@ -1,6 +1,6 @@
 import { createCurrentReadEvidence, currentReadEvidenceStatements, currentStructuredReadEvidence, currentReadScopeContextDigest,
   type CurrentReadEvidenceRecords, type CurrentStructuredReadEvidence } from "./read-current-evidence.js";
-import { READ_SCOPE_PROTOCOL, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
+import { READ_SCOPE_PROTOCOL, READ_SUBJECT_SCOPE_GUIDANCE, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
   type ReadScopeBinding, type ReadScopeCatalog, type ReadScopeReference, type ReadScopeRecord } from "./read-structured-scope.js";
 import { isExplicitReadMeaningStatement, isUnknownReadMeaning, type ReadMeaningAttempt, type ReadMeaningEvidence } from "./read-meaning-evidence.js";
 import type { ReadScopeReasonBinding, ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
@@ -742,6 +742,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     `Forbidden questions: ${JSON.stringify(forbiddenQuestions)}`,
     `Original operator request: ${JSON.stringify(originalNamingSources)}`,
     `Host scope reference inventory: ${JSON.stringify(scopeReferences())}`,
+    READ_SUBJECT_SCOPE_GUIDANCE,
+    `Host reviewed subject scope inventory: ${JSON.stringify(structuredScopeInput.catalog.subject_scopes ?? [])}`,
     ...(confirmedScope ? [
       `Current native confirmed scope: ${JSON.stringify(confirmedScope.proposal)}`,
       "This scope remains binding if you omit read_scope. A changed requirement/exclusion needs a separately reviewed delta; a model response cannot replace it.",

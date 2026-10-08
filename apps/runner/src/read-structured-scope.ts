@@ -23,6 +23,8 @@ const subjectBindingSchema = z.object({ root_resource: name, reference: name, so
   review_digest: digest, configuration_digest: digest, kind: z.enum(["principal", "tenant", "global"]) }).strict();
 /** Supplied only by the protected acknowledged structural-review owner. */
 export type ReadSubjectBinding = z.infer<typeof subjectBindingSchema>;
+export const READ_SUBJECT_SCOPE_GUIDANCE = "Every included root requires an explicit subject: trusted_principal requests signed-in-person isolation; reviewed_resource references the exact supplied current structural scope; unresolved retains a missing decision. The host inventory is established structural fact, not policy applicability or business permission. Its kind principal means a reviewed person predicate, tenant means organization scope without a person predicate, and global means reviewed whole-organization/shared-reference scope. Do not substitute tenant/global for requested principal scope, invent a reference, or supply identity values. Missing inventory remains pending for ordinary structural review; final scope confirmation and activation are separate.";
+
 type ReadSubjectResource = ExplorationBoundaryDraft["pack"]["resources"][number];
 export function readSubjectConfigurationDigest(resource: ReadSubjectResource, boundary: Pick<ExplorationBoundaryDraft, "source" | "trusted_context" | "organization_scope">) {
   return canonicalJsonDigest({ source: boundary.source, trusted_context: boundary.trusted_context, organization_scope: boundary.organization_scope ?? null, root_resource: resource.id, tenant_key: resource.tenant_key ?? null,

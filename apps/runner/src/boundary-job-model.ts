@@ -1,5 +1,5 @@
 import type { ExactReadRequestBinding } from "./boundary-job-read-requests.js";
-import { READ_SCOPE_PROTOCOL, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
+import { READ_SCOPE_PROTOCOL, READ_SUBJECT_SCOPE_GUIDANCE, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
   type ReadScopeBinding, type ReadScopeReference, type ReadScopeCatalog, type ReadScopeRecord } from "./read-structured-scope.js";
 import type { ReadWorkloadAnalysis } from "./read-workload-assist.js";
 import { currentStructuredReadEvidence, currentReadScopeContextDigest, type CurrentStructuredReadEvidence } from "./read-current-evidence.js";
@@ -242,6 +242,7 @@ export async function planModelBoundaryJob(input: {
       `Pinned Read protocol: ${READ_SCOPE_PROTOCOL}; every planned result needs an explicit read_scope interpretation.`,
       "Use applicability=no_read_requested with empty requirements only when proposing no Read work. That proposal still needs operator review against the original request. Never infer completion or consent.",
       "For read_requested preserve include/exclude/unresolved requirements and exact targets. References prove provenance only; catalog labels cannot confirm meaning. Read routing summaries are not scope.",
+      READ_SUBJECT_SCOPE_GUIDANCE,
       `Host Read context: ${JSON.stringify(structuredView)}`,
     ] : []),
     ...(input.workflow === "program" ? ["Operator selected the complete multi-Action program workflow. action_mode=create must include complete action_intents and aligned action_outcomes, never a broad single intent or first subset. Preserve exact requested identities from the source. Missing or ambiguous identities remain a clarification, not invented names.", ...(input.expectedActionOutcomes ? [`Previously reviewed exact inventory: ${JSON.stringify(input.expectedActionOutcomes)}`] : [])] : []),

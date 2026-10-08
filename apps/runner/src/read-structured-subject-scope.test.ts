@@ -106,3 +106,33 @@ describe("B64 typed subjects against actual compiled scope", () => {
     expect(accepts(extra)).toBe(false);
   });
 });
+
+import { generateModelReadWorkload, readWorkloadCatalog } from "./read-workload-model.js";
+it("transmits reviewed subject references to the actual model request before accepting their reuse", async () => {
+  const f = fixture(), catalog = readWorkloadCatalog(f.boundary);
+  let calls = 0;
+  const result = await generateModelReadWorkload({ name: "wire_subject", allowedQuestions: [f.references[0]!.text],
+    provider: "openai", model: "scripted", apiKey: "inert-unit-key", generatedBoundary: f.boundary, egressAcknowledged: true, deferNarration: true,
+    structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => ({ binding: f.expectedBinding, references: f.references, catalog: {
+      resources: catalog.resources, relationships: [], subject_scopes: f.catalog.subject_scopes,
+    } }) }, dependencies: { requestJson: async request => {
+      calls++;
+      const body = request.body as { input: Array<{ content: string }> };
+      const lines = body.input.flatMap(item => item.content.split("\n"));
+      const exact = (prefix: string) => { const line = lines.find(line => line.startsWith(prefix)); if (!line) throw new Error(`Missing transmitted ${prefix}`); return JSON.parse(line.slice(prefix.length)); };
+      const subjects = exact("Host reviewed subject scope inventory: ");
+      const refs = exact("Host scope reference inventory: ");
+      const structural = exact("Structural catalog: ");
+      const subject = subjects[0], original = refs.find((ref: { kind: string }) => ref.kind === "request");
+      const resource = structural.resources.find((item: { id: string }) => item.id === subject.root_resource);
+      const field = resource.fields.find((item: { operations: { return: boolean } }) => item.operations.return);
+      return { status: 200, body: { output: [{ type: "function_call", call_id: "actual_subject_wire", name: "runner__submit_read_workloads",
+        arguments: JSON.stringify({ allowed: [{ id: "names", description: original.text, plan: { kind: "rows", resource: resource.id, select: [field.id] } }], forbidden: [],
+          read_scope: { protocol: READ_SCOPE_PROTOCOL, original_request: original.id, applicability: "read_requested", requirements: [{
+            id: "names", intended_use: original.text, references: [original.id], disposition: "include", subjects: [{ root_resource: resource.id,
+              mode: "reviewed_resource", scope_reference: subject.reference }], targets: [{ root_resource: resource.id, resource: resource.id, operation: "resource" },
+              { root_resource: resource.id, resource: resource.id, operation: "return", field: field.id }] }] } }) }] } };
+    } } });
+  expect(calls).toBe(1); expect(result.read_scope?.proposal.requirements[0]?.subjects[0]).toMatchObject({ mode: "reviewed_resource", scope_reference: f.subject.reference });
+  expect(result.authority_granted).toBe(false);
+});

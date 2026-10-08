@@ -20,7 +20,7 @@ import { redactCliErrorMessage } from "./cli-logging.js";
 import { exploreBoundaryVocabularyGaps } from "./explore-vocabulary.js";
 import { createCurrentReadEvidence, currentReadEvidenceStatements, currentStructuredReadEvidence, currentReadScopeContextDigest,
   type CurrentStructuredReadEvidence, type CurrentReadEvidenceRecords } from "./read-current-evidence.js";
-import { READ_SCOPE_PROTOCOL, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
+import { READ_SCOPE_PROTOCOL, READ_SUBJECT_SCOPE_GUIDANCE, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
   type ReadScopeBinding, type ReadScopeReference, type ReadScopeCatalog, type ReadScopeRecord } from "./read-structured-scope.js";
 import type { ReadWorkloadAnalysis } from "./read-workload-assist.js";
 import {
@@ -355,6 +355,7 @@ export async function generateModelReadBoundaryRevision(input: {
     ...(structured ? [
       `Pinned Read protocol: ${READ_SCOPE_PROTOCOL}; return read_scope with exact includes, exclusions, intended uses and unresolved mappings alongside the revision.`,
       "References locate evidence; they do not establish meaning or operator consent. A settings preview is not an analyzed workload. Missing mapping remains pending for ordinary Read mapping and review.",
+      READ_SUBJECT_SCOPE_GUIDANCE,
       `Host scope inventory: ${JSON.stringify({ binding: structured.binding, references: structured.references, catalog: structured.catalog })}`,
       ...(nativeScope ? [`Existing native scope (${nativeScope.status}): ${JSON.stringify(nativeScope.record.proposal)}. Preserve unrelated requirements; explicitly show requested deltas for operator review.`] : []),
     ] : []),
