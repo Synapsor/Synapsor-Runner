@@ -1,4 +1,4 @@
-import { requestedReadResourceIds } from "./read-requested-scope.js";
+import { resolveRequestedReadScope } from "./read-requested-scope.js";
 import { isAuthoringGenerationStop, beginAuthoringProducerInvocation, authoringInterruptedProducerCorrections,
   reserveAuthoringProducerCorrection, withAuthoringProducerCorrection, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -164,7 +164,8 @@ export async function planModelBoundaryJob(input: {
     : boundedText(input.clarificationAnswer, "Boundary job clarification", 3_000);
   const state = normalizeCurrentState(input.currentState);
   const availableResourceIds = normalizeAvailableResourceIds(input.availableResourceIds ?? []);
-  const explicitlyRequestedReadResources = requestedReadResourceIds(jobIntent, availableResourceIds);
+  const requestedReadScope = resolveRequestedReadScope({ original: jobIntent,
+    resources: availableResourceIds.map(id => ({ id })), definitions: [], statements: [] });
   const exactRevisionRoute = input.workflow ? undefined : exactSoleSemanticActionRevisionRoute(jobIntent, state);
   if (exactRevisionRoute) {
     rememberModelAuthoringTurn(input.session.conversation, jobIntent, exactRevisionRoute.summary);
@@ -198,7 +199,7 @@ export async function planModelBoundaryJob(input: {
         return refusal("Runner accepts one job split and one bounded correction only.");
       }
       try {
-        resolution = parseJobPlan(args, state, explicitlyRequestedReadResources, jobIntent, input.workflow, input.expectedActionOutcomes);
+        resolution = parseJobPlan(args, state, requestedReadScope, jobIntent, input.workflow, input.expectedActionOutcomes);
         return {
           ok: true,
           value: {
@@ -492,7 +493,7 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState, workflow?: "progr
 function parseJobPlan(
   value: Record<string, unknown>,
   state: BoundaryJobCurrentState,
-  explicitlyRequestedReadResources: string[],
+  requestedReadScope: ReturnType<typeof resolveRequestedReadScope>,
   jobIntent: string,
   workflow?: "program",
   expectedActionOutcomes?: readonly string[],
@@ -573,6 +574,7 @@ function parseJobPlan(
   const effectiveReadIntent = readMode === "create" || readMode === "revise"
     ? readIntent
     : undefined;
+  const explicitlyRequestedReadResources = requestedReadScope.required;
   if (explicitlyRequestedReadResources.length) {
     if (readMode === "none") {
       throw new Error(
@@ -594,6 +596,11 @@ function parseJobPlan(
     // Actual workloads must cover the retained original request at the mapper;
     // comparing a paraphrase here cannot establish a semantic omission.
 
+  }
+  if ((readMode === "none" || readMode === "reuse" || readMode === "resume")
+    && (requestedReadScope.unresolved || requestedReadScope.candidates.length || requestedReadScope.conflicts.length)) {
+    throw new Error(`READ_SCOPE_ASSOCIATION_UNRESOLVED: read_mode=${readMode} cannot establish coverage from names or empty extraction. `
+      + "Preserve the full operator request and ask one ordinary planning clarification about the intended business records; do not select a resource merely by its name.");
   }
   const actionIntent = value.action_intent === undefined
     ? undefined
