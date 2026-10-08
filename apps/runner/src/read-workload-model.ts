@@ -56,6 +56,10 @@ function isReadProviderFailure(error: unknown): error is AskError {
     || error.code === "ASK_REQUIRED_TOOL_NOT_CALLED" || error.code === "ASK_TOOL_ARGUMENTS_INVALID");
 }
 
+/** Fresh protected host projection; may re-read native structural review. */
+export type ModelReadScopeContext = { binding: ReadScopeBinding; references: readonly ReadScopeReference[]; catalog: ReadScopeCatalog;
+  native?: Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id" | "analysis"> };
+
 export type ModelReadWorkloadResult = {
   workload: ReadWorkloadSet;
   analysis: ReadWorkloadAnalysis;
@@ -115,9 +119,7 @@ export type ModelReadWorkloadInput = {
    * TypeScript ingress only so old callers fail closed before provider access. */
   structuredScope?: {
     protocol: typeof READ_SCOPE_PROTOCOL;
-    current: () => { binding: ReadScopeBinding; references: readonly ReadScopeReference[]; catalog: ReadScopeCatalog;
-      /** Actual native records; a bare confirmed=true or model-owned record is not accepted. */
-      native?: Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id" | "analysis"> };
+    current: () => ModelReadScopeContext | Promise<ModelReadScopeContext>;
     answer?: (request: ReadScopeAssistanceRequest, completion: AuthoringQuestionCompletion | undefined) => Promise<ReadScopeAnswerReference | undefined>;
     resolveAnswer?: (reference: ReadScopeAnswerReference, request: ReadScopeAssistanceRequest) => ReadScopeReference | undefined;
   };
@@ -177,7 +179,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     return serialized;
   };
   serializeCatalog();
-  const structuredScopeInput = input.structuredScope ? structuredClone(input.structuredScope.current()) : undefined;
+  const structuredScopeInput = input.structuredScope ? structuredClone(await input.structuredScope.current()) : undefined;
   if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL)
     throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED: Preserve the native job; no legacy protocol fallback is available.");
   const structuredScopeDigest = currentReadScopeContextDigest(structuredScopeInput);
@@ -795,7 +797,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     assertAuthoringGenerationAdmission();
     attempt += 1; lastDispatchQuestion = question;
     try {
-      assertAssistanceContext();
+      await assertAssistanceContext();
       await saveDispatch(question);
       const providerTurn = () => runAskProviderTurn({
         configuration,
@@ -819,11 +821,11 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         skipRunnerQuestionContext: true,
         requiredInitialToolName: SUBMIT_READ_WORKLOAD_TOOL,
         completeAfterRequiredTool: true,
-        authorityGuard: () => {
+        authorityGuard: async () => {
           const current = explorationBoundaryCandidateDigest(mappingBoundary);
           const currentCatalog = readWorkloadCatalog(mappingBoundary, input.principalScopedRootResources).digest;
           return current === expectedBoundaryDigest && currentCatalog === catalog.digest
-            && (!input.structuredScope || currentReadScopeContextDigest(input.structuredScope.current()) === structuredScopeDigest)
+            && (!input.structuredScope || currentReadScopeContextDigest(await input.structuredScope.current()) === structuredScopeDigest)
             ? authorityDigest : canonicalJsonDigest({ stale: current, catalog: currentCatalog });
         },
       });
@@ -864,10 +866,10 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   let completion: ReturnType<typeof completedAuthoringQuestionSequence>;
   let pendingAssistance: ReadWorkloadAssistanceQuestion | undefined;
   let previousQuestion: Extract<ReadWorkloadAssistanceCheckpoint,{stage:"dispatching"}>["previous_question"];
-  const assertAssistanceContext = () => {
+  const assertAssistanceContext = async () => {
     if (meaningContext() !== expectedMeaningContext || explorationBoundaryCandidateDigest(mappingBoundary) !== expectedBoundaryDigest
       || readWorkloadCatalog(mappingBoundary, input.principalScopedRootResources).digest !== catalog.digest
-      || input.structuredScope && currentReadScopeContextDigest(input.structuredScope.current()) !== structuredScopeDigest)
+      || input.structuredScope && currentReadScopeContextDigest(await input.structuredScope.current()) !== structuredScopeDigest)
       throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The Read metadata changed while assistance was pending. Preserve the question and revalidate; no new mapping was sent.");
   };
   const controllerState = (): ReadWorkloadAssistanceCheckpoint["state"] => ({
@@ -886,7 +888,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       });
   const saveDispatch = async (question: string) => {
     if (!input.onCheckpoint) return;
-    assertAssistanceContext();
+    await assertAssistanceContext();
     await input.onCheckpoint(readWorkloadAssistanceCheckpoint({ input_digest: inputDigest(), boundary_digest: expectedBoundaryDigest,
       catalog_digest: catalog.digest, tool_digest: authorityDigest, stage: "dispatching", dispatch_question: question,
       ...(previousQuestion ? { previous_question: structuredClone(previousQuestion) } : {}), state: controllerState() }), structuredClone(mappingBoundary));
@@ -894,7 +896,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   const saveAssistance = async (question: ReadWorkloadAssistanceQuestion, stage: "waiting" | "decided") => {
     pendingAssistance = structuredClone(question); previousQuestion = { stage, pending_question: structuredClone(question) };
     if (!input.onCheckpoint) return;
-    assertAssistanceContext();
+    await assertAssistanceContext();
     await input.onCheckpoint(readWorkloadAssistanceCheckpoint({ input_digest: inputDigest(), boundary_digest: expectedBoundaryDigest,
       catalog_digest: catalog.digest, tool_digest: authorityDigest, stage, pending_question: question, state: controllerState() }), structuredClone(mappingBoundary));
   };
@@ -1183,7 +1185,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
             ...(completion ? { completion } : {}), replacement }, "waiting");
           if (await input.clarificationReplacementHandler!({ previous: previous!, request, answer: decision.answer }) !== true)
             throw new ReadWorkloadAssistancePausedError("The proposed answer is saved for local review. The earlier interpretation remains current; Resume to review this exact proposal without another model request.");
-          assertAssistanceContext();
+          await assertAssistanceContext();
           replacement = { ...replacement, confirmed: true };
         }
         if (!retained?.decision) await saveAssistance({ kind: "clarification", request, question: request.question,
@@ -1331,7 +1333,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   // Main can commit the actual accepted disabled artifact and clear its wait in
   // the same CAS. A blocked mapping or narration failure never clears it.
   if (analysis.status === "ready" && input.onCheckpoint) {
-    assertAssistanceContext();
+    await assertAssistanceContext();
     await input.onCheckpoint(undefined, structuredClone(mappingBoundary), result, completion);
   }
   return result;

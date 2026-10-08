@@ -108,14 +108,14 @@ describe("B64 typed subjects against actual compiled scope", () => {
 });
 
 import { generateModelReadWorkload, readWorkloadCatalog } from "./read-workload-model.js";
-it("transmits reviewed subject references to the actual model request before accepting their reuse", async () => {
+it.each([false, true])("transmits reviewed subject references to the actual model request before accepting their reuse (async current: %s)", async asyncCurrent => {
   const f = fixture(), catalog = readWorkloadCatalog(f.boundary);
   let calls = 0;
   const result = await generateModelReadWorkload({ name: "wire_subject", allowedQuestions: [f.references[0]!.text],
     provider: "openai", model: "scripted", apiKey: "inert-unit-key", generatedBoundary: f.boundary, egressAcknowledged: true, deferNarration: true,
-    structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => ({ binding: f.expectedBinding, references: f.references, catalog: {
+    structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => { const current = { binding: f.expectedBinding, references: f.references, catalog: {
       resources: catalog.resources, relationships: [], subject_scopes: f.catalog.subject_scopes,
-    } }) }, dependencies: { requestJson: async request => {
+    } }; return asyncCurrent ? Promise.resolve(current) : current; } }, dependencies: { requestJson: async request => {
       calls++;
       const body = request.body as { input: Array<{ content: string }> };
       const lines = body.input.flatMap(item => item.content.split("\n"));
