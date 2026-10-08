@@ -12,3 +12,4 @@
 12. Typed assistance:10 original controls+2 actual committed relationship transitions PASS; native raw currentness/value retention class fixes before2F each; composedb18888PASS; four durable ports4PASS found/fixed exact decided-answer cold Resume ownership; independent review pending. Paid CLOSED.
 13. Three native transport ports3PASS: exact checkpointed pending adjudicated by R1; exhausted-answer sixth-call defect fixed to original5 calls; 47 affectedPASS; eighteen inventory rows component-PASS (MIG122 correction sequence1PASS), independent limit/TA variants pending.
 14. Remaining relationship seven typed ports now whole-file25PASS, no assertion/count changes; test-only independent review/Main integration next.
+15. Full workload808=62P/88F:76 missing pins,6 unresolved-fixture subjects (fixed6P),6 legacy provenance wrappers; preserve full failure report, no overall PASS.

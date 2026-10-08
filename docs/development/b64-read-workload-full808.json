@@ -1,0 +1,17 @@
+{
+  "pin": "808f7e33",
+  "full_file_result": {
+    "pass": 62,
+    "fail": 88,
+    "skip": 0
+  },
+  "evidence": "/var/tmp/synapsor-b64-read-owned/evidence/read-workload-full808-extracted.json",
+  "failure_classification": {
+    "direct_missing_protocol": 76,
+    "typed_unresolved_fixture_subjects": 6,
+    "legacy_provenance_assertions_mask_ingress_refusal": 6
+  },
+  "fixture_fix": "Two older typed fixtures retained include-subjects after setting disposition unresolved; strict v2 correctly refused. Set explicitly empty subjects for unresolved requirements, preserving all six CAS/currentness/no-call assertions.",
+  "focused_after": "typed-unresolved-subject-six-after.log:6PASS144filtered",
+  "remaining": "Last full file remains recorded62/88, not overwritten as overall PASS. Six assertion-wrapped legacy provenance rows need typed successors; 76 other missing-pin rows remain. No new product issue inferred from fixture ingress failures."
+}
