@@ -62,6 +62,8 @@ export function resolveNativeReadScope(input: { questions: readonly OperatorQues
     q = next;
   }
   const record = q.read_scope!.record;
+  const replacement_pending = questions.some(answer => answer.read_scope?.mode === "replacement_answer"
+    && answer.read_scope.review_question_id === q.id);
   const current = assessReadScopeRecordCurrentness({ record, expectedBinding: input.expectedBinding });
   let provenanceCurrent = true;
   try { assertReadScopeProvenance(record, input); } catch { provenanceCurrent = false; }
@@ -77,7 +79,7 @@ export function resolveNativeReadScope(input: { questions: readonly OperatorQues
     : assessReadScopeDraft(record, input.analysis).status === "pending" ? "pending" : "ready";
   const status: "proposed" | "confirmed" | "stale" | "pending" = !provenanceCurrent || !currentAnswers || analysisState === "stale" ? "stale"
     : analysisState === "pending" ? "pending"
-    : q.disposition || q.read_scope!.mode !== "review" ? "pending"
+    : replacement_pending || q.disposition || q.read_scope!.mode !== "review" ? "pending"
     : current.status === "proposed" && q.confirmation ? "confirmed" : current.status;
-  return { ...current, status, question: q };
+  return { ...current, status, question: q, replacement_pending };
 }

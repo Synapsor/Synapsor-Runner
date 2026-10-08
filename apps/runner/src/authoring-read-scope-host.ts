@@ -70,8 +70,8 @@ export function createReadScopeHost(input: { access: ReadScopeHostAccess;
     let current = await load(questionId);
     const result = (state: "confirmed" | "pending" | "replace_requested") => ({ state, question_id: current.q.id, question_digest: current.q.digest });
     if (current.resolved.status === "confirmed") return result("confirmed");
-    let canReview = true;
-    try { proposeReadScopeReview(reopenOperatorQuestion(current.q), current.snapshot.expectedBinding,
+    let canReview = !current.resolved.replacement_pending;
+    try { if (canReview) proposeReadScopeReview(reopenOperatorQuestion(current.q), current.snapshot.expectedBinding,
       current.snapshot.analysis, current.snapshot); } catch (error) {
       if (!(error instanceof Error) || !error.message.startsWith("READ_SCOPE_REVIEW_STALE:")) throw error;
       canReview = false;

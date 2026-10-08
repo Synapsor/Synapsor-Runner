@@ -17,6 +17,7 @@ type View = AuthoringQuestionInteraction<ReadMeaningInteractionBinding>;
 export type ReadMeaningInteraction =
   | (Extract<View, { kind: "question" }> & { request: ModelReadClarificationRequest; previous?: PreviousReadMeaning; scope_request?: never })
   | (Extract<View, { kind: "question" }> & { scope_request: ReadScopeAssistanceRequest; request?: never; previous?: never })
+  | (Extract<View, { kind: "question" }> & { replacement_review_id: string; request?: never; previous?: never; scope_request?: never })
   | (Extract<View, { kind: "readback" }> & { purpose: "meaning" | "decline" | "replacement" })
   | (Omit<Extract<View, { kind: "pending" }>, "canAnswer"> & { canReplace: boolean });
 export type ReadMeaningInteractionResponse =

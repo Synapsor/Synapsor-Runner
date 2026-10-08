@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { answerOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
+import { createOwnerHandoff, answerOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import { authoringQuestionAnswerCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, leaveOperatorQuestionPending,
   operatorQuestionReadback, presentOperatorQuestion, proposeOperatorAnswer, reopenOperatorQuestion,
@@ -280,5 +280,86 @@ export function createReadMeaningHost(input: {
     return { kind: "answer", id: `answer:${q.id}:${q.revision}:${q.raw_answer.id}`, digest: canonicalJsonDigest(q.raw_answer),
       question_id: q.id, question_revision: q.revision, answer_id: q.raw_answer.id, text: q.raw_answer.text };
   };
-  return { clarify, confirmReplacement, answerScope, resolveScopeAnswer };
+  const replacementState = (reviewId: string) => {
+    const questions = parseOperatorQuestions(access.readQuestions(), access.readHandoffs(), access.readRecovery());
+    const review = questions.find(q => q.id === reviewId);
+    if (!review || review.read_scope?.mode !== "review" || !review.disposition || review.confirmation
+      || questions.some(q => q.read_scope?.predecessor_id === reviewId))
+      throw access.checkpointFailure("The exact declined Read scope");
+    const raw = [...questions].reverse().find(q => q.read_scope?.mode === "replacement_answer" && q.read_scope.review_question_id === reviewId);
+    const handoff = raw && access.readHandoffs().find(h => h.id === raw.handoff_id);
+    return { review, raw, handoff, digest: canonicalJsonDigest({ review, raw: raw ?? null, handoff: handoff ?? null }) };
+  };
+  const assertReplacementCurrent = async (reviewId: string, permit?: ProjectAuthorityMutationPermit) => {
+    await access.assertFresh(permit); const state = replacementState(reviewId);
+    if (state.review.context_digest !== await access.contextDigest(permit) || state.review.scope_digest !== access.scopeDigest())
+      throw new PolicySourceChangedError();
+    return state;
+  };
+  const replacementBinding = (reviewId: string) => {
+    const { review, raw, handoff } = replacementState(reviewId);
+    if (!raw || !handoff) throw access.checkpointFailure("The recorded replacement question");
+    return { question_id: raw.id, question_revision: raw.revision, question_digest: raw.digest,
+      handoff_digest: handoff.digest, assistance_digest: review.digest,
+      context_digest: raw.context_digest, scope_digest: raw.scope_digest };
+  };
+  const answerScopeReplacement = async (reviewId: string): Promise<ReadScopeAnswerReference | undefined> => {
+    let state = await assertReplacementCurrent(reviewId);
+    if (!state.raw) {
+      await access.mutate(async permit => {
+        const current = await assertReplacementCurrent(reviewId, permit);
+        if (current.digest !== state.digest) throw new PolicySourceChangedError();
+        const handoff = createOwnerHandoff({ consumer: "read_revision_instruction", question: "What should change in this Read scope?",
+          scope_digest: current.review.scope_digest, context_digest: current.review.context_digest });
+        const raw = presentOperatorQuestion(createReadScopeQuestion({ id: randomUUID(), revision: 1, handoff_id: handoff.id,
+          scope_digest: handoff.scope_digest, context_digest: handoff.context_digest,
+          read_scope: { mode: "replacement_answer", review_question_id: reviewId,
+            record: current.review.read_scope!.record, completion: current.review.read_scope!.completion } }), handoff.question);
+        access.install({ questions: [...access.readQuestions(), raw], handoffs: [...access.readHandoffs(), handoff] });
+        await access.save(permit, "The operator-requested Read replacement question");
+      });
+      state = await assertReplacementCurrent(reviewId);
+    }
+    const { raw: saved, handoff } = state;
+    if (!saved || !handoff) throw access.checkpointFailure("The recorded replacement question");
+    if (handoff.state === "answered") {
+      if (!saved.raw_answer?.text.trim() || saved.disposition) throw access.checkpointFailure("The captured replacement answer");
+      return { question_id: saved.id, revision: saved.revision, answer_id: saved.raw_answer.id };
+    }
+    const controls = { assertCurrent: async () => { await assertReplacementCurrent(reviewId); }, binding: () => replacementBinding(reviewId) };
+    const response = await exchange({ kind: "question", binding: controls.binding(), replacement_review_id: reviewId,
+      text: handoff.question, material: ["Your exact correction is raw testimony. The revised mapping will require separate explicit review."],
+      preserveWhitespace: true, recordPolicyAnswer: false }, controls);
+    const raw = response.kind === "answer" ? response.raw : null;
+    return access.mutate(async permit => {
+      const current = await assertReplacementCurrent(reviewId, permit);
+      if (current.digest !== state.digest || current.handoff?.state !== "waiting" || !current.raw) throw new PolicySourceChangedError();
+      let question = reopenOperatorQuestion(current.raw);
+      if (question.raw_answer) {
+        // Earlier blank testimony stays in its own immutable answer revision.
+        question = presentOperatorQuestion(createReadScopeQuestion({ id: randomUUID(), revision: question.revision + 1,
+          handoff_id: handoff.id, context_digest: question.context_digest, scope_digest: question.scope_digest,
+          read_scope: { ...question.read_scope!, predecessor_id: question.id } }), handoff.question);
+      }
+      question = raw === null ? leaveOperatorQuestionPending(question, "cancelled")
+        : captureOperatorAnswer(question, raw);
+      if (raw !== null && (!raw.trim() || raw.length > 1000)) question = leaveOperatorQuestionPending(question, "unknown");
+      const accepted = raw !== null && !!raw.trim() && raw.length <= 1000;
+      access.install({ questions: question.id === current.raw.id ? access.readQuestions().map(q => q.id === question.id ? question : q)
+        : [...access.readQuestions(), question],
+        ...(accepted ? { handoffs: access.readHandoffs().map(h => h.id === handoff.id ? answerOwnerHandoff(h, raw!, question.context_digest) : h) } : {}) });
+      await access.save(permit, "The unconfirmed operator Read correction");
+      if (raw !== null && raw.length > 1000) input.answerTooLarge();
+      return accepted ? { question_id: question.id, revision: question.revision, answer_id: question.raw_answer!.id } : undefined;
+    });
+  };
+  const resolveScopeReplacementAnswer = (reference: ReadScopeAnswerReference, reviewId: string): ReadScopeReference | undefined => {
+    const { raw, handoff } = replacementState(reviewId);
+    if (!raw || raw.disposition || raw.confirmation || raw.id !== reference.question_id || raw.revision !== reference.revision
+      || raw.raw_answer?.id !== reference.answer_id || !raw.raw_answer.text.trim() || handoff?.state !== "answered"
+      || handoff.answer !== raw.raw_answer.text) return undefined;
+    return { kind: "answer", id: `answer:${raw.id}:${raw.revision}:${raw.raw_answer.id}`, digest: canonicalJsonDigest(raw.raw_answer),
+      question_id: raw.id, question_revision: raw.revision, answer_id: raw.raw_answer.id, text: raw.raw_answer.text };
+  };
+  return { clarify, confirmReplacement, answerScope, resolveScopeAnswer, answerScopeReplacement, resolveScopeReplacementAnswer };
 }

@@ -75,7 +75,7 @@ export function projectReadScopeHostContext(input: ReadScopeHostContextInput) {
   for (const id of selected) {
     const q = questions.find(q => q.id === id);
     if (!q) return fail("The acknowledged question is absent.");
-    if (q.read_scope?.mode !== "missing_answer" || !q.raw_answer?.text.trim() || q.disposition
+    if (!["missing_answer", "replacement_answer"].includes(q.read_scope?.mode ?? "") || !q.raw_answer?.text.trim() || q.disposition
       || questions.some(next => next.read_scope?.predecessor_id === q.id)) fail("The acknowledged answer is absent, replaced or disposed.");
     if (q.raw_answer!.text.length > 4000) fail("The acknowledged answer exceeds the reference limit; it was not shortened.");
     references.push({ kind: "answer", id: `answer:${q.id}:${q.revision}:${q.raw_answer!.id}`,
