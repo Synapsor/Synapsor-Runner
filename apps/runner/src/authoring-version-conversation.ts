@@ -2,7 +2,6 @@ import type { ActionModelSuggestionSession } from "./action-tui.js";
 import type { AskAuthoringEpisodeBudget } from "./model-ask.js";
 import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { AskError } from "./model-provider-transport.js";
-import { isUnknownReadMeaning } from "./read-meaning-evidence.js";
 import { runOperatorQuestionModel, consumedOperatorQuestionFailure } from "./authoring-operator-question-model.js";
 import { presentOperatorClarification, type OperatorBusinessContext } from "./authoring-operator-presentation.js";
 import { parseOperatorQuestion, presentOperatorQuestion, proposeOperatorAnswer, confirmOperatorAnswer,
@@ -122,7 +121,7 @@ export async function runVersionConversation(input: {
       throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The exact owner answer was not durably acknowledged. Preserve its original words before interpretation.", 409);
     q = saved;
   }
-  if (!q.raw_answer!.text.trim() || isUnknownReadMeaning(q.raw_answer!.text))
+  if (!q.raw_answer!.text.trim())
     return pending(await save(leaveOperatorQuestionPending(q, "unknown"), q));
   if (!q.proposal) {
     const result = await model(q, "answer-map");

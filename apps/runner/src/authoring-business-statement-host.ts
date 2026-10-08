@@ -6,7 +6,6 @@ import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, l
   operatorQuestionReadback, presentOperatorQuestion, proposeOperatorAnswer, reopenOperatorQuestion,
   type OperatorQuestion } from "./authoring-operator-question.js";
 import { PolicySourceChangedError } from "./authoring-policy-source.js";
-import { isUnknownReadMeaning } from "./read-meaning-evidence.js";
 import { validateReadPrerequisiteBusinessAnswer } from "./read-prerequisite-model.js";
 import { rememberModelAuthoringClarification, rememberModelAuthoringTurn } from "./model-authoring-conversation.js";
 import { AskError, type AskHistoryTurn } from "./model-ask.js";
@@ -226,7 +225,7 @@ export function createBusinessStatementHost(input: {
       q = latestQuestion()!;
     }
     const raw = q.raw_answer!.text;
-    if (!raw.trim() || isUnknownReadMeaning(raw) || input.handoff && raw.length > (input.handoff.consumer === "read_revision_prerequisite" ? 8_000 : 1_000)) {
+    if (!raw.trim() || input.handoff && raw.length > (input.handoff.consumer === "read_revision_prerequisite" ? 8_000 : 1_000)) {
       await saveQuestion(leaveOperatorQuestionPending(q, "unknown"), q.digest); return undefined;
     }
     if (input.handoff?.consumer === "read_revision_prerequisite") validateReadPrerequisiteBusinessAnswer(raw);
