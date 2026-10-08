@@ -395,6 +395,41 @@
       "independent": "R2 original before8PASS8FAIL; unchanged after16PASS, missing/exact/pending/delta with actual native consumed scope; no scope/allowance/consent mutation.",
       "integration": "29PASS/56unselected in planning-mode-guidance-integration.log; original provider counts/assertions retained.",
       "fixtures": "First producer inventory51P267F remains;212 original rows still open at960a4831. Subjects v2 adds explicit new fixture work, no blanket acceptance."
+    },
+    "usage_pause": {
+      "at": "2026-10-08T09:53:32Z",
+      "used_percent": 95,
+      "status": "PAUSED_AWAIT_OWNER_RESUME",
+      "main_product": "55010d2c",
+      "read_owner": "16a7425f",
+      "helper": "e9ad098b",
+      "reviewer1": "84e4fc80",
+      "reviewer2": "10d37538",
+      "tester_safe_backup": "21c3b3dc",
+      "window_unchanged": true,
+      "paid": "CLOSED",
+      "next": "See15line CURRENT_STATE; no new work until resumed"
+    },
+    "future_envelope_refusal": {
+      "before": "R2fe0 unknown v99 envelope entered public UI/metadata. Exact chat menu2/factory1/late0; nonchat menu1/factory0/late1(unattributed combined spy); both filechanged. Do not claim provider0.",
+      "product": "ec35a00d; Main90P/types0.",
+      "independent": "ScopedACCEPT report52cae451; original two after tests retain code-prefix2FAIL despite allzero hooks/exactfiles. Separate exactunsupported diagnostic variant2PASS; unchanged safety assertions. Prior old/current/pending native and actual previous-version freshOS controls retained. MixedRead.v2PC03 OPEN.",
+      "followup": "55010d2c malformed null/array/string before3FAIL+future1PASS; afterprotocol13+Resume75=88PASS. Independent primitive variant not yetrun."
+    },
+    "principal_scope_component": {
+      "owner": "0814e4d4/e8b40b11; projector003ef279+16a7425f; actualwire2900a01a",
+      "canonical": "R1independent9PcomponentACCEPT, no global type/native/public claim",
+      "projector": "Actual7P after5P2F; removed invented mandatory database_role ack when typed domain emits none. Real schema/role fingerprints remain bound. Ordinary --confirm --output reviewed NOTACTIVE; original --confirm activationfixture retained/notcounted.",
+      "wire": "Actual transmitted subject references,14P/one request, no oracle supplied hiddenref",
+      "open": [
+        "independent native projector/currentness",
+        "helper native17 rerun againstfix",
+        "RLS native decision remains resource_other, no inventory/fallback",
+        "Main structural subject inventory/typed dispatch and principal English deletion",
+        "fresh positive public onboarding",
+        "existing212producer rows plus v2 fixture migrations"
+      ],
+      "not_integrated_in_main": true
     }
   }
 }
