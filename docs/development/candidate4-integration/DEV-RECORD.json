@@ -337,11 +337,13 @@
       "public_old_refusal": "9516a3eb",
       "independent": "Reviewer2 original4 public controls PASS (v1/v2 chat/no-chat), prior7P4F preserved; exact refusal/zero model/menu/library mutation",
       "removed_tests": "docs/development/b64-read-scope-parser-removal.md",
-      "migration": "docs/development/b64-read-producer-migration.json; first51P267F preserved; finite fixture ports maintain assertions",
-      "composition": "57PASS6files/types0 on9717d3ed; /var/tmp/synapsor-b64-main-owned/evidence/no-english-native-composition*",
-      "public_wip": "504f5bbd: real planning/mapping context, actual noRead native completion/group review, mapping raw-answer/checkpoint/group ports; types0, independent public rerun pending",
+      "migration": "230 original producer rows remain at bf985b71; five separate native Resume rows now pass unchanged. First51P267F remains historical; no full gate PASS.",
+      "composition": "0c58c2ea: Resume75+typedScope24=99PASS, types0. Static apps/packages TS search has no reader/import/caller/negativeTarget symbols.",
+      "public_wip": "90eb1dd0 independently passes initial actual public scope/native-pointer/cold retention; PR05 saved declined group replacement OPEN.",
       "context_component": "ccd4e815:5PASS/types0; first4P1F fixture active snapshot omission preserved",
-      "open": "public initial flow and cold continuation; edit/reuse typed scope adapter; remaining fixture migration; typed Action native fileCAS/public; consent ownership"
+      "open": "public initial flow and cold continuation; edit/reuse typed scope adapter; remaining fixture migration; typed Action native fileCAS/public; consent ownership",
+      "retained_shape": "7524bf59 integrates384dba1a; R2 original before1P4F unchanged after5P; actual legacy value checkpoint shapes refused before handler/provider/record changes. Exact scoped guard only.",
+      "logs": "/var/tmp/synapsor-b64-main-owned/evidence/no-legacy-read-integration{,-types}.log"
     },
     "native_typed_field_source": {
       "product": "18064013 (owner bffae0f3)",
@@ -350,21 +352,24 @@
     },
     "action_clarification_review": {
       "owner_pin": "bec32639",
-      "reviewer": "R2 original44 before15P29F; unchanged after15P29F due newly-required exact model-visible context/wholeAction target; preserved",
-      "pending": "independent actual-input-derived typed-binding controls; no field-specific authority/store, no integration yet"
+      "reviewer": "R2 bound52+6+1actualOS PASS, original44 before/after15P29F preserved as incompatible old envelopes. Independent contract amendment supports exact model-visible context/target.",
+      "pending": "independent actual-input-derived typed-binding controls; no field-specific authority/store, no integration yet",
+      "integrated": "a51518d9",
+      "composition": "202PASS/1existingoptinSkip; cold child first failed missing built driver, types0 build then unchanged cold1PASS. Original log preserved.",
+      "open": "new typed field native adapter9b50f8fa independent review pending; Main public wiring pending"
     },
     "public_read_local_review": {
       "before": "R1 actual504f5bbd planning1/mapping1 -> groupedYes -> READ_SCOPE_REVIEW_CHANGED; unintended narration advanced Resume. Preserved84831378. Main local presenter1FAIL before.",
       "fix": "Typed grouped Read review/pending menu use existing business_review + localOnly transport contract; defaultNo and snapshot guard unchanged.",
-      "after": "45PASS3files; independent public rerun pending",
+      "after": "45PASS; R1 actual CLI initial/groupedYes/disabledsave PASS with planning1/mapping1 and no extra narration.",
       "logs": "/var/tmp/synapsor-b64-main-owned/evidence/read-scope-local-view-*"
     },
     "read_scope_pointer_retention": {
       "before": "R1 supplemental d16e6e39/ed7d977f: exact disabled-save scope pointer absent despite retained confirmed native q; original scope/public1PASS retained",
       "fix": "Central native analysis binding retains scope_question_id/history only for identical analysis_id AND analysis_digest at4 existing store/reuse sites. Different identity inherits no review.",
-      "after": "83PASS5FAIL in3files; all5 existing native revision fixtures lack typed pin after reader deletion, delegated unchanged-assertion migration; focused4 binding +9group tests pass; types0",
+      "after": "R1 original+supplement2PASS/types0; cold fixture menu collision corrected independently and false successful policy reply replaced honest model-visible needs_decision:2PASS/zero cold calls/diagnostics. Original traces retained.",
       "logs": "/var/tmp/synapsor-b64-main-owned/evidence/read-scope-pointer-*",
-      "pending": "R1 actual public supplemental rerun; cold policyReview diagnostic-only remains separateOPEN"
+      "pending": "Public PR03/04/06/07/08 PASS; PR05 replacement fails before shared group entry. Full policy qualification and replacement continuation remain OPEN. Five missing-pin Resume rows now ported unchanged and full75PASS."
     }
   }
 }
