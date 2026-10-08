@@ -145,3 +145,15 @@ describe("unsupported positive clauses retain unresolved evidence", () => {
     expect(scope.unresolved).toBe(true);
   });
 });
+
+
+it("preserves exact reviewed business literals and their interior whitespace", () => {
+  const description = 'Read records marked "awaiting  response".';
+  const resources = [{ id: "service.q8" }];
+  const request = (original: string) => resolveRequestedReadScope({ original, resources, definitions: [], statements: [],
+    exactRequests: [{ description, resource_ids: ["service.q8"] }] });
+  expect(request(description)).toMatchObject({ required: ["service.q8"], unresolved: false, candidates: [] });
+  expect(request('Read records marked "awaiting response".')).toMatchObject({ required: [], unresolved: true });
+  expect(request('Read records marked "ready".')).toMatchObject({ required: [], unresolved: true });
+  expect(request('Previously the owner said: "Read records marked \'awaiting  response\'."')).toMatchObject({ required: [] });
+});
