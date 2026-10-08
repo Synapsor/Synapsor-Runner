@@ -211,6 +211,25 @@ describe("B64 structured Read producer adapter", () => {
       onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
     expect(send).toHaveBeenCalledOnce(); expect(noSend).not.toHaveBeenCalled();
   });
+  it("refuses a legacy pending-question shape inside a rehashed typed checkpoint before handlers or egress", async () => {
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const send = vi.fn(async () => {
+      const value = args(); value.allowed = []; value.read_scope.requirements[0]!.disposition = "unresolved";
+      value.read_scope.requirements[0]!.unresolved = "Which order status should customers see?";
+      return response(value);
+    });
+    await expect(generateModelReadWorkload({ ...setup(send).input, onCheckpoint: async value => { checkpoint = value; } }))
+      .rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
+    if (!checkpoint || checkpoint.stage !== "waiting") throw new Error("Expected actual typed waiting checkpoint");
+    const { digest: _digest, schema_version: _schema, ...body } = checkpoint;
+    const request = { resource: "public.orders", field: "status", reason: "Legacy meaning path", question: "Which order status should customers see?" };
+    const legacy = readWorkloadAssistanceCheckpoint({ ...body, pending_question: { kind: "clarification", request, question: request.question } });
+    const noSend = vi.fn(), handler = vi.fn(async () => undefined);
+    await expect(generateModelReadWorkload({ ...setup(noSend).input, resumeCheckpoint: legacy,
+      clarificationHandler: handler, onCheckpoint: async () => {} })).rejects.toThrow("READ_SCOPE_CHECKPOINT_UNSUPPORTED");
+    expect(noSend).not.toHaveBeenCalled(); expect(handler).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledOnce();
+  });
   it("uses the existing compiler's exact related-resource atoms without merging root and target identities", () => {
     const configured = setup(vi.fn()), boundary = configured.input.generatedBoundary;
     const root = boundary.pack.resources[0]!;

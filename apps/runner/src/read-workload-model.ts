@@ -898,6 +898,18 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   };
   if (input.resumeCheckpoint) {
     const saved = parseReadWorkloadAssistanceCheckpoint(input.resumeCheckpoint);
+    // The pin is an ingress contract, not permission to reinterpret an older
+    // question/history shape under the new tool. Keep that history for inspection.
+    const retainedQuestion = saved.stage === "dispatching" ? saved.previous_question?.pending_question : saved.pending_question;
+    if (retainedQuestion && retainedQuestion.kind !== "scope"
+      || saved.state.clarified_targets.length || saved.state.clarification_answers.length
+      || saved.state.unresolved_answers?.length || saved.state.reviewed_replacements?.length
+      || saved.state.resolved_mechanical_request || saved.state.approved_value_context
+      || saved.state.naming_correction_workload || saved.state.relationship_reviews
+      || saved.state.clarification_from_invalid_naming || saved.state.clarification_resolved
+      || saved.state.mechanical_clarification_resolved || saved.state.value_request_resolved
+      || saved.state.naming_evidence_correction_used)
+      throw new Error("READ_SCOPE_CHECKPOINT_UNSUPPORTED: The retained assistance shape belongs to a retired protocol. Preserve its history; no legacy handler or replay was started.");
     if (saved.input_digest !== inputDigest() || saved.boundary_digest !== expectedBoundaryDigest || saved.catalog_digest !== catalog.digest
       || saved.tool_digest !== authorityDigest || saved.state.relationship_review_limit !== relationshipReviewLimit)
       throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The original mapping input, boundary, catalog or provider changed. Preserve the pending question and revalidate; no replacement was sent.");
