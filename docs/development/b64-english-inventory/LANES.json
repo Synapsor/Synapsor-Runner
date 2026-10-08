@@ -1003,21 +1003,21 @@
       "pin": "f7a0f353",
       "typed": 3,
       "delete": 0,
-      "source": "Owner per-site reconciliation; GA04 independently accepted and integrated3996cb8e; remaining GA01-03 decision pending"
+      "source": "New Owner decision replaces Englishquestionintent with typedExplorePlan/catalogvalidation/Runnerreadback; GA01-03 implementationactive, zero productioncallers notyet"
     },
     "privacy_visibility": {
-      "pin": "c558bc34",
+      "pin": "121ee9fb",
       "typed": 34,
       "delete": 0,
-      "source": "Owner source counts; independent missing-origin field-type review finding OPEN"
+      "source": "Owner123PASS, R2 unchanged4PASS after2PASS2FAIL; native save/format stillopen"
     },
     "chat_presentation": {
       "pin": "444573cf",
       "branch_typed": 0,
       "branch_delete": 0,
-      "main_pending_typed": 28,
-      "main_pending_delete": 1,
-      "source": "332PASS/types0; independent source and real callers pending"
+      "main_pending_typed": 0,
+      "main_pending_delete": 0,
+      "source": "Allsourceintegratedd73;340P5F before+affected5PASS standardprofile/types0; CP08owner267 independentpending; CP0618dindependentpending"
     },
     "action": {
       "pin": "89ee9868",

@@ -13,5 +13,15 @@
     "CP06 actual shared Chat independent after",
     "Action/Main narration provenance callers",
     "Privacy typed protocol/native persistence"
-  ]
+  ],
+  "affected_after": {
+    "result": "5PASS0FAIL128filtered",
+    "profile": "maxWorkers1/testTimeout20000/hookTimeout20000 unchanged repo profile",
+    "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/chat-integrated-affected.json"
+  },
+  "remaining_source_counts": {
+    "typed": 0,
+    "delete": 0,
+    "note": "All29typed/1delete source integrated; caller/provenance/independent fixes remain open, not all public acceptance"
+  }
 }
