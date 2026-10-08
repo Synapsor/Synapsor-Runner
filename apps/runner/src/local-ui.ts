@@ -9764,7 +9764,7 @@ function isLocalHost(host: string): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1";
 }
 
-function isInactiveExplorationBoundary(error: unknown): boolean {
+export function isInactiveExplorationBoundary(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const fsError = error as NodeJS.ErrnoException;
   return error.message === "Exploration boundary is not active."
