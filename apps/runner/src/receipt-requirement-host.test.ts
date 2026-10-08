@@ -82,6 +82,7 @@ async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceTe
     projectRoot:root,modelSession,businessContext:{references:[]},attemptKey,
     readSources:()=>sources,readQuestions:()=>state.questions!,readHandoff:()=>state.handoffs!.at(-1),
     scopeDigest:()=>scope,storeDigest:()=>store,currentDraft:prepared as never,refreshEvidence:async()=>{events.push('Evidence refresh');await options.onRefresh?.();},
+    assertEvidenceCurrent:async()=>{},
     readConfiguration:async()=>draft.runner_evidence.runtime_contract.receipt_configuration as never,
     questionContext:async()=>{if(canonicalJsonDigest(await loadPolicySources(root,sources.id))!==canonicalJsonDigest(sources))throw new PolicySourceChangedError();return options.currentContext ? canonicalJsonDigest(options.currentContext()) : context();},
     mutate:operation=>withProjectAuthorityMutation(root,operation),

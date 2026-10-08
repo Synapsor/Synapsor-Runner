@@ -4888,6 +4888,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     currentDraft: () => ReturnType<typeof policyCoverageDraft>;
     modelSession: ActionModelSuggestionSession; attemptKey?: string;
     receiptSources: string[]; refreshEvidence(): Promise<void>;
+    assertEvidenceCurrent(): Promise<void>;
     assertReviewCurrent?(permit?: ProjectAuthorityMutationPermit): Promise<void>;
   }): Promise<ReceiptRequirementResult> => {
     const businessContext = operatorBusinessContext(review.context.candidate.pack.resources);
@@ -4897,6 +4898,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       readHandoff: () => ownerHandoffs.at(-1), scopeDigest: ownerQuestionScope,
       storeDigest: () => scopedDisclosureStoreDigest(undefined, review.context.bundle.mutation_bindings.authoring),
       currentDraft: review.currentDraft, refreshEvidence: review.refreshEvidence,
+      assertEvidenceCurrent: review.assertEvidenceCurrent,
       readConfiguration: () => authoringReceiptConfiguration(input.projectRoot, review.receiptSources, process.env),
       assertReviewCurrent: review.assertReviewCurrent,
       questionContext: (permit, sources) => ownerQuestionContext(permit, 'policy_clarification', receiptRequirementQuestionContext(sources), sources),
@@ -7249,6 +7251,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         modelSession: modelAssistSession!, attemptKey: policyAttemptKey,
         receiptSources: proposed.authority.rules.map(rule => rule.rule.source),
         refreshEvidence: () => refreshPolicyCoverageEvidence(proposed),
+        assertEvidenceCurrent: () => assertPolicyReviewSourceCurrent(policySourceInspection, input.schemaInspector),
         assertReviewCurrent: async permit => {
           if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, {permit});
           await reloadReadReviewForModelRevision(input.projectRoot, context, currentAuthority);
@@ -10651,11 +10654,15 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       automaticPrivacyAttempt = checked?.key;
     }
   };
-  const reviewCurrentReceiptRequirement = () => reviewReceiptRequirement({
-    context, currentDraft: currentPolicyCoverageDraft, modelSession: modelAssistSession!, attemptKey: policyAttemptKey,
-    receiptSources: semanticActionAuthorityDraft?.authority.rules.map(r => r.rule.source) ?? [],
-    refreshEvidence: refreshPolicyCoverageEvidence,
-  });
+  const reviewCurrentReceiptRequirement = () => {
+    const reviewedReader = policySourceInspection;
+    return reviewReceiptRequirement({
+      context, currentDraft: currentPolicyCoverageDraft, modelSession: modelAssistSession!, attemptKey: policyAttemptKey,
+      receiptSources: semanticActionAuthorityDraft?.authority.rules.map(r => r.rule.source) ?? [],
+      refreshEvidence: refreshPolicyCoverageEvidence,
+      assertEvidenceCurrent: () => assertPolicyReviewSourceCurrent(reviewedReader, input.schemaInspector),
+    });
+  };
   const readPolicyOwnerAnswer = async (prepareQuestion: () => Promise<string>, facts: string[]) => {
     const chat = input.authoringChat;
     if (!chat?.readOperator || !modelAssistSession) return undefined;

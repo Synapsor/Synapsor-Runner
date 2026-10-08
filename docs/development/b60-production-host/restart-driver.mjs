@@ -93,7 +93,7 @@ let prompts = 0, decisions = 0;
 const host = createReceiptRequirementHost({projectRoot: root, modelSession: session, businessContext: {references: []}, attemptKey,
   readSources: () => sources, readQuestions: () => state.questions, readHandoff: () => state.handoffs.at(-1),
   scopeDigest: () => scope, storeDigest: () => store, currentDraft: prepared,
-  refreshEvidence: async () => {}, readConfiguration: async () => draft.runner_evidence.runtime_contract.receipt_configuration,
+  refreshEvidence: async () => {}, assertEvidenceCurrent: async () => {}, readConfiguration: async () => draft.runner_evidence.runtime_contract.receipt_configuration,
   assertReviewCurrent: assertCurrent, questionContext: async permit => { await assertCurrent(permit); return context(); },
   mutate: operation => withProjectAuthorityMutation(root, operation),
   acknowledgeResume: async permit => {

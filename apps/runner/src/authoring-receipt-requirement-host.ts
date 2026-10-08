@@ -41,6 +41,7 @@ export function createReceiptRequirementHost(input: {
   scopeDigest(): Digest; storeDigest(): string | undefined;
   currentDraft(): Draft;
   refreshEvidence(): Promise<void>;
+  assertEvidenceCurrent(): Promise<void>;
   readConfiguration(): Promise<Awaited<ReturnType<typeof authoringReceiptConfiguration>>>;
   assertReviewCurrent?(permit?: ProjectAuthorityMutationPermit): Promise<void>;
   questionContext(permit: ProjectAuthorityMutationPermit | undefined, sources: PolicySourceSession): Promise<Digest>;
@@ -66,6 +67,11 @@ export function createReceiptRequirementHost(input: {
       ?? receiptRequirementReviewTarget(source, sources.coverage_episodes ?? [], input.attemptKey,
         coverageResponseContext(source.digest, input.currentDraft(), sources.operator_messages ?? []));
     if (!target || retained && (retained.source_session !== sources.id || retained.source_digest !== source.digest)) return { kind: 'no_target' };
+    // Invocation currentness is distinct from durable meaning applicability.
+    // Unrelated edits before entry may retain meaning; drift across this
+    // invocation's asynchronous reads or interaction may not be adopted.
+    await input.assertEvidenceCurrent();
+    const checkedContext = await input.questionContext(undefined, sources);
     await input.refreshEvidence();
     const draft = input.currentDraft(), configuration = draft.runner_evidence.runtime_contract.receipt_configuration;
     const modes = configuration?.modes ?? [], selected = modes[0];
@@ -82,7 +88,8 @@ export function createReceiptRequirementHost(input: {
       && q.receipt_selection?.dependencies_digest === dependencies && q.scope_digest === input.scopeDigest()).at(-1);
     const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
       await input.assertReviewCurrent?.(permit);
-      await input.questionContext(permit, sources);
+      if (await input.questionContext(permit, sources) !== checkedContext) throw new PolicySourceChangedError();
+      await input.assertEvidenceCurrent();
       if (canonicalJsonDigest(await input.readConfiguration()) !== canonicalJsonDigest(configuration)
         || receiptRequirementDependencies(input.currentDraft()) !== dependencies) throw new PolicySourceChangedError();
     };
