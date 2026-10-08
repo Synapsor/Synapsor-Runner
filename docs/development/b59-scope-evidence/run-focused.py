@@ -1,0 +1,15 @@
+from pathlib import Path
+import os,sys,json,subprocess,time,shutil,signal,hashlib
+os.umask(0o077)
+P=Path(__file__).resolve().parent;W=Path('/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy');stage=sys.argv[1];O=P/stage;O.mkdir();R=Path('/var/tmp')/('synapsor-b59-1647-'+stage);R.mkdir(mode=0o700);D=R/'decoy-parent';D.mkdir();(D/'synapsor.runner.json').write_bytes(Path('/var/tmp/synapsor-candidate4-practice-full1645-owned/decoy-parent/synapsor.runner.json').read_bytes());T=D/'test-root';T.mkdir();(T/'.git').mkdir();(T/'tmp').mkdir();(R/'home').mkdir()
+assert shutil.disk_usage(R).free>=8*1024**3
+head=subprocess.check_output(['git','rev-parse','HEAD'],cwd=W,text=True).strip();before=subprocess.check_output(['git','status','--porcelain'],cwd=W,text=True)
+args=['/usr/bin/node',str(W/'node_modules/typescript/bin/tsc'),'-b','--pretty','false']if stage.startswith('types')else ['/usr/bin/node',str(W/'node_modules/vitest/vitest.mjs'),'run','apps/runner/src/read-requested-scope.test.ts','apps/runner/src/boundary-requested-read-scope.test.ts','--maxWorkers=1','--minWorkers=1','--testTimeout=20000','--hookTimeout=20000','--reporter=json','--outputFile='+str(O/'vitest.json'),*(['-t','bounded request evidence syntax|native bounded requested-scope evidence|metadata label suppress']if stage=='baseline'else [])]
+a=['bwrap','--die-with-parent','--unshare-net','--bind','/','/','--chdir',str(W),'--',*args];env={'PATH':str(W/'node_modules/.bin')+':/usr/bin:/bin','HOME':str(R/'home'),'TMPDIR':str(T/'tmp'),'TMP':str(T/'tmp'),'TEMP':str(T/'tmp'),'CI':'1','NO_COLOR':'1'}
+start=time.monotonic();stop=None
+with open(O/'stdout','wb')as out,open(O/'stderr','wb')as err:
+ p=subprocess.Popen(a,env=env,cwd=W,stdout=out,stderr=err,start_new_session=True);(O/'OWNER.json').write_text(json.dumps({'pid':p.pid,'pgid':p.pid,'argv':a,'head':head})+'\n');print('START',stage,p.pid,flush=True)
+ while p.poll()is None:
+  if shutil.disk_usage(R).free<8*1024**3:stop='FREE_DISK_FLOOR';os.killpg(p.pid,signal.SIGINT)
+  time.sleep(.2)
+result={'stage':stage,'exit':p.returncode,'seconds':time.monotonic()-start,'head_before':head,'head_after':subprocess.check_output(['git','rev-parse','HEAD'],cwd=W,text=True).strip(),'status_before':before,'status_after':subprocess.check_output(['git','status','--porcelain'],cwd=W,text=True),'owned_outer_closed':True,'stop':stop,'root':str(R),'native_argv':args,'decoy_sha256':hashlib.sha256((D/'synapsor.runner.json').read_bytes()).hexdigest()};(O/'RESULT.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result));print((O/'stderr').read_text()[-2500:]);sys.exit(p.returncode)

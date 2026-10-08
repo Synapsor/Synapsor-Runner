@@ -1,0 +1,32 @@
+{
+  "status": "CHARACTERIZATION_CLOSED_RUNTIME_UNCHANGED",
+  "base": "04497a793e6345f6d8e75a291e78b5a19a1b99e2",
+  "test_pin": "15a7c098e5e1f045928ffb9490298d4fefdd641a",
+  "baseline": {
+    "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/baseline/RESULT.json",
+    "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/baseline/vitest.json",
+    "passed": 2,
+    "failed": 6,
+    "filtered": 47
+  },
+  "scope": "Transient request evidence and native workload consumer only. No database/provider/activation. Historical label assertion passes before correction; not credited as desired semantics.",
+  "owners": {
+    "read-requested-scope.ts": "Explicit request references/current attributed definitions versus candidate associations and unresolved/conflict evidence",
+    "read-workload-model.ts": "Consume evidence with native bounded clarification and existing validation",
+    "read-meaning-evidence.ts": "Existing current Source evidence only; no expansion presently planned",
+    "boundary-job-model.ts": "Existing exact requirements lower-bound caller; inspect compatibility",
+    "boundary-commands.ts": "Main only; no edits",
+    "authoring-policy-evidence.ts": "Main only; no edits"
+  },
+  "open": [
+    "Independent public preseal before runtime edits",
+    "Replace names-as-requirement inference with transient candidate evidence without dropping omissions",
+    "Main-owned typed question/context binding; no reason-prose identity"
+  ],
+  "worker": {
+    "maxWorkers": 1,
+    "native_session_closed": true,
+    "network": "unshare-net",
+    "floor_GiB": 8
+  }
+}
