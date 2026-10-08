@@ -1,3 +1,4 @@
+import { typedReadAssistanceFixture } from "./test-fixtures/typed-read-assistance.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -315,7 +316,7 @@ function withDeclaredRoot(input: ModelReadWorkloadInput, definition: string): Mo
 
 // Explicit public test facts, selected by the scenario before any draft is sent.
 // These targets never come from the submitted plan or compiler output.
-function declaredWorkloadScope(request: string, mode: "status_rows" | "average_by_status" | "count_by_status" | "root_only", boundary = generatedBoundary()) {
+function declaredWorkloadScope(request: string, mode: "status_rows" | "average_by_status" | "count_by_status" | "root_only" | "active_orders_eq" | "active_orders_in", boundary = generatedBoundary()) {
   const catalog = readWorkloadCatalog(boundary);
   const context = projectReadScopeHostContext({ request: { id: "job", text: request },
     catalog: { digest: catalog.digest, resources: catalog.resources, relationships: [], subject_scopes: reviewedTestSubjects },
@@ -323,12 +324,27 @@ function declaredWorkloadScope(request: string, mode: "status_rows" | "average_b
   const root = { root_resource: "public.orders", resource: "public.orders" };
   const targets: ReadScopeProposal["requirements"][number]["targets"] = [{ ...root, operation: "resource" }];
   if (mode === "status_rows") targets.push({ ...root, operation: "return", field: "status" });
+  if (mode === "active_orders_eq" || mode === "active_orders_in") targets.push(
+    { ...root, operation: "return", field: "id" }, { ...root, operation: "return", field: "status" },
+    { ...root, operation: "filter", field: "status", qualifier: mode === "active_orders_eq" ? "eq" : "in" });
   if (mode === "count_by_status") targets.push({ ...root, operation: "group", field: "status" });
   if (mode === "average_by_status") targets.push({ ...root, operation: "group", field: "status" }, { ...root, operation: "aggregate", field: "amount", qualifier: "avg" });
   const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
     id: "declared-task", intended_use: request, disposition: "include", references: ["job"], subjects: [{ root_resource: "public.orders", mode: "trusted_principal" }], targets,
   }] };
   return { proposal, structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context } };
+}
+
+function proposalWithVisibleAnswers(request: { body: unknown }, proposal: ReadScopeProposal): ReadScopeProposal {
+  const strings: string[] = [];
+  const visit = (value: unknown) => { if (typeof value === "string") strings.push(value);
+    else if (value && typeof value === "object") Object.values(value).forEach(visit); };
+  visit(request.body);
+  const line = strings.flatMap(text => text.split("\n")).find(line => line.startsWith("Host scope reference inventory: "));
+  if (!line) throw new Error("Actual request lacks its host reference inventory");
+  const refs = JSON.parse(line.slice("Host scope reference inventory: ".length)) as Array<{id:string;kind:string}>;
+  return { ...proposal, requirements: proposal.requirements.map(requirement => ({ ...requirement,
+    references: [...requirement.references, ...refs.filter(ref => ref.kind === "answer").map(ref => ref.id)] })) };
 }
 
 function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malformed" | "arguments" | "blocked", read_scope?: ReadScopeProposal) {
@@ -463,16 +479,24 @@ describe("durable Read assistance producer checkpoint", () => {
   });
 
   it("retains approved values and the one-value-request limit when a later business question pauses", async () => {
+    let raw: string | null = null;
+    const h = await typedReadAssistanceFixture("List my orders", async () => raw, "owned-local-fixture");
+    const typed = declaredWorkloadScope("List my orders", "status_rows", h.boundary);
+    const missing = { ...typed.proposal, requirements: [{ ...typed.proposal.requirements[0]!,
+      disposition: "unresolved", subjects: [], targets: [], unresolved: request.question }] };
+    try {
     const boundary = generatedBoundaryWithoutStatusEnum(); let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
-    const first = vi.fn().mockResolvedValueOnce(response({ value_request: { ...request, question: "Use the separately approved exact vocabulary?" } })).mockResolvedValueOnce(response({ clarification_request: request }));
-    await expect(generateModelReadWorkload({ ...setup(first), generatedBoundary: boundary, onCheckpoint: async value => { checkpoint = value; },
+    const first = vi.fn().mockResolvedValueOnce(response({ value_request: { ...request, question: "Use the separately approved exact vocabulary?" } })).mockResolvedValueOnce(response({ allowed: [], forbidden: [], read_scope: missing }));
+    await expect(h.run({ ...setup(first), generatedBoundary: boundary, onCheckpoint: async value => { checkpoint = value; },
       valueRequestHandler: async () => ({ state: "provided", resource: request.resource, field: request.field, values: ["queued"], egressAcknowledged: true }),
       clarificationHandler: async () => undefined })).rejects.toThrow("AUTHORING_PAUSED");
     expect(checkpoint?.state.value_request_resolved).toBe(true); expect(checkpoint?.state.approved_value_context?.values).toEqual(["queued"]);
+    raw = "The fulfillment stage";
     const values = vi.fn(), next = vi.fn(async () => response({ value_request: request }));
-    await expect(generateModelReadWorkload({ ...setup(next), generatedBoundary: boundary, resumeCheckpoint: checkpoint, onCheckpoint: async value => { checkpoint = value; },
+    await expect(h.run({ ...setup(next), generatedBoundary: boundary, resumeCheckpoint: checkpoint, onCheckpoint: async value => { checkpoint = value; },
       clarificationHandler: async () => ({ state: "answered", answer: "The fulfillment stage" }), valueRequestHandler: values })).rejects.toThrow("READ_WORKLOAD_DRAFT_FAILED");
     expect(values).not.toHaveBeenCalled(); expect(next).toHaveBeenCalledOnce();
+    } finally { await h.cleanup(); }
   });
 
   it("retains four business answers and stops a fifth request across pauses without re-asking accepted targets", async () => {
@@ -2376,6 +2400,7 @@ describe("model-assisted Read workload mapping", () => {
   });
 
   it("allows one naming clarification followed by one separately approved value request", async () => {
+    const typed = declaredWorkloadScope("List active orders", "active_orders_eq", generatedBoundaryWithoutStatusEnum());
     let attempt = 0;
     const requests: string[] = [];
     const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
@@ -2383,12 +2408,10 @@ describe("model-assisted Read workload mapping", () => {
       attempt += 1;
       const input = attempt === 1
         ? {
-            clarification_request: {
-              resource: "public.orders",
-              field: "status",
-              reason: "Need the business meaning before choosing a status code.",
-              question: "What business state does status represent?",
-            },
+            allowed: [], forbidden: [], read_scope: { ...typed.proposal, requirements: [{
+                ...typed.proposal.requirements[0]!, disposition: "unresolved", subjects: [], targets: [],
+                unresolved: "What business state does status represent?",
+              }] },
           }
         : attempt === 2
           ? {
@@ -2400,6 +2423,7 @@ describe("model-assisted Read workload mapping", () => {
               },
             }
           : {
+              read_scope: proposalWithVisibleAnswers(request, typed.proposal),
               allowed: [{
                 id: "active_orders",
                 description: "List active orders",
@@ -2436,7 +2460,9 @@ describe("model-assisted Read workload mapping", () => {
       egressAcknowledged: true as const,
     }));
 
-    const result = await generateModelReadWorkload(withDeclaredRoot({
+    const h = await typedReadAssistanceFixture("List active orders", async () => (await clarificationHandler()).answer);
+    try {
+    const result = await h.run(withDeclaredRoot({
       name: "two_step_read_help",
       allowedQuestions: ["List active orders"],
       provider: "openai",
@@ -2457,9 +2483,11 @@ describe("model-assisted Read workload mapping", () => {
     expect(result.analysis.status).toBe("ready");
     expect(result.source_query_executed).toBe(false);
     expect(result.source_database_changed).toBe(false);
+    } finally { await h.cleanup(); }
   });
 
   it("preserves approved values when one naming clarification follows the value request", async () => {
+    const typed = declaredWorkloadScope("List active orders", "active_orders_eq", generatedBoundaryWithoutStatusEnum());
     let attempt = 0;
     const requests: string[] = [];
     const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
@@ -2476,14 +2504,13 @@ describe("model-assisted Read workload mapping", () => {
           }
         : attempt === 2
           ? {
-              clarification_request: {
-                resource: "public.orders",
-                field: "status",
-                reason: "Need the field's business meaning before using the approved code.",
-                question: "What business state does status represent?",
-              },
+              allowed: [], forbidden: [], read_scope: { ...typed.proposal, requirements: [{
+                ...typed.proposal.requirements[0]!, disposition: "unresolved", subjects: [], targets: [],
+                unresolved: "What business state does status represent?",
+              }] },
             }
           : {
+              read_scope: proposalWithVisibleAnswers(request, typed.proposal),
               allowed: [{
                 id: "active_orders",
                 description: "List active orders",
@@ -2509,7 +2536,9 @@ describe("model-assisted Read workload mapping", () => {
       };
     });
 
-    const result = await generateModelReadWorkload(withDeclaredRoot({
+    const h = await typedReadAssistanceFixture("List active orders", async () => "status is the order lifecycle state.");
+    try {
+    const result = await h.run(withDeclaredRoot({
       name: "value_then_name_help",
       allowedQuestions: ["List active orders"],
       provider: "openai",
@@ -2537,9 +2566,11 @@ describe("model-assisted Read workload mapping", () => {
     expect(requests[2]).toContain("plan.where");
     expect(result.analysis.status).toBe("ready");
     expect(result.source_query_executed).toBe(false);
+    } finally { await h.cleanup(); }
   });
 
   it("sends only separately approved exact values after a model value request", async () => {
+    const typed = declaredWorkloadScope("List active orders", "active_orders_in", generatedBoundary());
     let attempt = 0;
     const requests: string[] = [];
     const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
@@ -2555,6 +2586,7 @@ describe("model-assisted Read workload mapping", () => {
             },
           }
         : {
+            read_scope: typed.proposal,
             allowed: [{
               id: "active_orders",
               description: "List orders in active status",
@@ -2588,7 +2620,7 @@ describe("model-assisted Read workload mapping", () => {
     }));
 
     const result = await generateModelReadWorkload(withDeclaredRoot({
-      name: "value_assisted_reads",
+      name: "value_assisted_reads", structuredScope: typed.structuredScope,
       allowedQuestions: ["List active orders"],
       provider: "openai",
       model: "gpt-5.6-luna",
@@ -2614,6 +2646,7 @@ describe("model-assisted Read workload mapping", () => {
   });
 
   it("corrects a non-grammar filters key without requesting approved values again", async () => {
+    const typed = declaredWorkloadScope("List active orders", "active_orders_eq", generatedBoundaryWithoutStatusEnum());
     let attempt = 0;
     const requests: string[] = [];
     const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
@@ -2629,6 +2662,7 @@ describe("model-assisted Read workload mapping", () => {
             },
           }
         : {
+            read_scope: typed.proposal,
             allowed: [{
               id: "active_orders",
               description: "List active orders",
@@ -2657,7 +2691,7 @@ describe("model-assisted Read workload mapping", () => {
     });
 
     const result = await generateModelReadWorkload(withDeclaredRoot({
-      name: "correct_value_filter_grammar",
+      name: "correct_value_filter_grammar", structuredScope: typed.structuredScope,
       allowedQuestions: ["List active orders"],
       provider: "openai",
       model: "gpt-5.6-luna",
@@ -2683,6 +2717,7 @@ describe("model-assisted Read workload mapping", () => {
   });
 
   it("refuses a value request for a field outside the exact model-visible catalog", async () => {
+    const typed = declaredWorkloadScope("List active orders", "root_only", generatedBoundary());
     const valueRequestHandler = vi.fn();
     const requestJson = vi.fn(async () => ({
       status: 200,
@@ -2704,7 +2739,7 @@ describe("model-assisted Read workload mapping", () => {
     }));
 
     await expect(generateModelReadWorkload({
-      name: "refused_values",
+      name: "refused_values", structuredScope: typed.structuredScope,
       allowedQuestions: ["Show hidden notes"],
       provider: "openai",
       model: "gpt-5.6-luna",
@@ -2719,6 +2754,7 @@ describe("model-assisted Read workload mapping", () => {
   });
 
   it("requires an interactive decision before any requested Read value context can leave", async () => {
+    const typed = declaredWorkloadScope("List active orders", "root_only", generatedBoundary());
     const requestJson = vi.fn(async () => ({
       status: 200,
       body: {
@@ -2739,7 +2775,7 @@ describe("model-assisted Read workload mapping", () => {
     }));
 
     await expect(generateModelReadWorkload({
-      name: "noninteractive_values",
+      name: "noninteractive_values", structuredScope: typed.structuredScope,
       allowedQuestions: ["List active orders"],
       provider: "openai",
       model: "gpt-5.6-luna",

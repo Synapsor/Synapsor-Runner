@@ -9,4 +9,4 @@
 9. Main must wire public Resume/group routes and same held permit; public and interrupted replacement dispatch remain NOT RUN here.
 10. RP01–07 producer scope accepted; Main public/CAS wait proofs and no-Read planning continuation remain separate.
 11. Five remaining v2 subject sites ported via actual reviewed inventory:44P,130filtered; revision relationship8P fixture-only; two mapping assistance repros cover10 open adapter rows.
-12. Checkpoint7 now9P; prompt reentry cancelled/blank before2F→17P shared fix, R1 public after pending. Assistance proposal16522034/preseal4fc approved contract only; implementation next after public repair.
+12. Typed assistance:10 original controls+2 actual committed relationship transitions PASS; native raw currentness/value retention class fixes before2F each; TA01–08 review/composed regression next. Paid CLOSED.

@@ -188,7 +188,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   const inheritedScopeAnswers = inheritedHistory ? parseReadWorkloadAssistanceCheckpoint(inheritedHistory).state : undefined;
   const ownedAnswerIds = new Set([...(inheritedScopeAnswers?.scope_answers ?? []), ...(inheritedScopeAnswers?.scope_replacements ?? [])]
     .map(answer => answer.answer_reference.question_id));
-  const structuredScopeInput = input.structuredScope ? structuredClone(await input.structuredScope.current()) : undefined;
+  let structuredScopeInput = input.structuredScope ? structuredClone(await input.structuredScope.current()) : undefined;
   if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL)
     throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED: Preserve the native job; no legacy protocol fallback is available.");
   const nativeScope = structuredScopeInput?.native ? currentStructuredReadEvidence({ ...structuredScopeInput.native,
@@ -202,7 +202,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     if (question.read_scope?.mode === "replacement_answer" && question.read_scope.review_question_id === replacementOwner.question.id)
       ownedAnswerIds.add(question.id);
   }
-  const structuredScopeDigest = currentReadScopeContextDigest(structuredScopeInput, ownedAnswerIds);
+  let structuredScopeDigest = currentReadScopeContextDigest(structuredScopeInput, ownedAnswerIds);
   const confirmedScope = nativeScope?.status === "confirmed" ? nativeScope.record : undefined;
   if (nativeScope && nativeScope.status !== "confirmed" && !replacementOwner)
     throw new Error("READ_SCOPE_NATIVE_PENDING: The exact native scope is stale, replaced or not confirmed. Review its current question before remapping.");
@@ -312,6 +312,11 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   let mechanicalClarificationResolved = false;
   let relationshipReviews = 0;
   let valueRequestResolved = false;
+  const valueContextContinuation = () => approvedValueContext ? [
+    `The separately reviewed value-context step is already complete. The operator approved these exact values for ${approvedValueContext.resource}.${approvedValueContext.field}: ${JSON.stringify(approvedValueContext.values)}. Do not request values again.`,
+    `Use plan.where on that exact field with only those values: ${JSON.stringify({ where: [{ field: approvedValueContext.field, op: approvedValueContext.values.length === 1 ? "eq" : "in", value: approvedValueContext.values.length === 1 ? approvedValueContext.values[0] : approvedValueContext.values }] })}. Never use a filters key.`,
+  ] : valueRequestResolved ? ["The separately reviewed value-context step is already complete. Do not request values again."]
+    : ["If exact observed values are still indispensable, use one value_request now; do not guess them."];
   let repeatedAssistanceRequest = false;
   let namingEvidenceCorrectionUsed = authoringInterruptedProducerCorrections().naming_evidence_correction_used;
   let lastSubmission: Record<string, unknown> | undefined;
@@ -911,11 +916,12 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     if (isReadProviderFailure(error) && diagnostics.length) throw new ReadWorkloadDraftError(diagnostics);
     throw error;
   };
-  const scopeProducerBinding = canonicalJsonDigest({ protocol: READ_SCOPE_PROTOCOL, name, allowedQuestions, forbiddenQuestions,
+  const producerBinding = () => canonicalJsonDigest({ protocol: READ_SCOPE_PROTOCOL, name, allowedQuestions, forbiddenQuestions,
     originalNamingSources, principal_roots: input.principalScopedRootResources ?? null,
     provider: configuration.provider, model: configuration.model, endpoint: configuration.endpoint.href,
     boundary_digest: expectedBoundaryDigest, catalog_digest: catalog.digest, tool_digest: authorityDigest,
     defer_narration: input.deferNarration ?? false, relationship_review_limit: relationshipReviewLimit });
+  let scopeProducerBinding = producerBinding();
   const inputDigest = () => canonicalJsonDigest({ name, allowedQuestions, forbiddenQuestions, originalNamingSources, namingSources,
     principal_roots: input.principalScopedRootResources ?? null, provider: configuration.provider, model: configuration.model,
     endpoint: configuration.endpoint.href, base_question: input.structuredScope ? { protocol: READ_SCOPE_PROTOCOL, context_digest: structuredScopeDigest } : baseQuestion(), provider_system_prompt: providerSystemPrompt,
@@ -1149,6 +1155,9 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         if (!actual || actual.kind !== "answer" || actual.question_id !== reference.question_id
           || actual.question_revision !== reference.revision || actual.answer_id !== reference.answer_id)
           throw new Error("READ_SCOPE_ANSWER_STALE: The captured answer does not match the current native question.");
+        // Only this exact native answer was just acknowledged by the owner.
+        // Exclude its bookkeeping delta, not other questions or Source changes.
+        ownedAnswerIds.add(reference.question_id);
         if (!retained?.decision) await saveAssistance({ kind: "scope", request, question: request.question,
           ...(completion ? { completion } : {}), decision: { state: "answered", answer_reference: reference } }, "decided");
         if (readAnswerCount() >= MAX_READ_CLARIFICATIONS || scopeAnswers.some(answer => canonicalJsonDigest(answer.answer_reference) === canonicalJsonDigest(reference)))
@@ -1156,7 +1165,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         scopeAnswers.push({ request, answer_reference: reference });
         structuredScopeRequest = undefined;
         await remap(["Interpret the captured answer reference in the host inventory. It is raw operator testimony, not confirmed scope.",
-          "Retain earlier requirements and exclusions. If the answer leaves missing detail, return that requirement unresolved; do not guess.", baseQuestion()].join("\n"));
+          "Retain earlier requirements and exclusions. If the answer leaves missing detail, return that requirement unresolved; do not guess.",
+          ...valueContextContinuation(), baseQuestion()].join("\n"));
         continue;
       }
       if (mechanicalClarificationRequest) {
@@ -1179,9 +1189,33 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
             if (!prepared) throw new Error("READ_RELATIONSHIP_REVIEW_PENDING: No exact path was saved. Keep the Read mapping pending without omitting the requested information.");
             if (prepared.reviewed_relationship.resource !== requestedResource) throw new Error("READ_RELATIONSHIP_REVIEW_MISMATCH: The exact reviewed path belongs to another requested root.");
             if (explorationBoundaryCandidateDigest(mappingBoundary) !== expectedBoundaryDigest) throw new Error("READ_RELATIONSHIP_CANDIDATE_STALE: The Read mapping changed during relationship review.");
-            mappingBoundary = validateReadWorkloadRelationshipPreparation(prepared, mappingBoundary);
+            const nextBoundary = validateReadWorkloadRelationshipPreparation(prepared, mappingBoundary);
+            const nextCatalog = readWorkloadCatalog(nextBoundary, input.principalScopedRootResources);
+            const nextScope = structuredClone(await input.structuredScope!.current());
+            const fields = (resources: ModelReadScopeContext["catalog"]["resources"]) => resources.map(resource => ({
+              id: resource.id, fields: resource.fields.map(field => ({ id: field.id })),
+            }));
+            const relationships = nextCatalog.resources.flatMap(resource => resource.relationships.map(relationship => ({
+              id: relationship.id, from: resource.id, to: relationship.target_resource,
+            })));
+            // Only the exact host-acknowledged path changes this invocation.
+            // Source, question/answer lineage and subject acknowledgements do not
+            // become current merely because a newer catalog is available.
+            const withoutCatalogTransition = { ...nextScope, binding: { ...nextScope.binding,
+              catalog_digest: structuredScopeInput!.binding.catalog_digest,
+              operation_digest: structuredScopeInput!.binding.operation_digest }, catalog: structuredScopeInput!.catalog };
+            if (nextScope.binding.catalog_digest !== nextCatalog.digest
+              || canonicalJsonDigest(fields(nextScope.catalog.resources)) !== canonicalJsonDigest(fields(nextCatalog.resources))
+              || canonicalJsonDigest(nextScope.catalog.relationships) !== canonicalJsonDigest(relationships)
+              || canonicalJsonDigest(nextScope.catalog.subject_scopes ?? []) !== canonicalJsonDigest(structuredScopeInput!.catalog.subject_scopes ?? [])
+              || currentReadScopeContextDigest(withoutCatalogTransition, ownedAnswerIds) !== structuredScopeDigest)
+              throw new Error("READ_RELATIONSHIP_SCOPE_CHANGED: The current inventory is not the exact acknowledged path transition; preserve the pending review.");
+            mappingBoundary = nextBoundary;
             expectedBoundaryDigest = explorationBoundaryCandidateDigest(mappingBoundary);
-            catalog = readWorkloadCatalog(mappingBoundary, input.principalScopedRootResources);
+            catalog = nextCatalog;
+            structuredScopeInput = nextScope;
+            structuredScopeDigest = currentReadScopeContextDigest(nextScope, ownedAnswerIds);
+            scopeProducerBinding = producerBinding();
             serializeCatalog();
             await saveAssistance({ kind: "relationship", request, question: request.question, ...(completion ? { completion } : {}), decision: { state: "relationship_reviewed" } }, "decided");
           }
@@ -1288,14 +1322,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         await remap([
           `The operator answered the exact metadata clarification for ${request.resource}${request.field ? `.${request.field}` : ""}: ${JSON.stringify(decision.answer)}.`,
           "Use that answer only as a naming explanation for this bounded mapping. It is not database data or authority.",
-          ...(approvedValueContext
-            ? [
-                `The separately reviewed value-context step is already complete. The operator approved these exact values for ${approvedValueContext.resource}.${approvedValueContext.field}: ${JSON.stringify(approvedValueContext.values)}. Do not request values again.`,
-                `Use plan.where on that exact field with only those values: ${JSON.stringify({ where: [{ field: approvedValueContext.field, op: approvedValueContext.values.length === 1 ? "eq" : "in", value: approvedValueContext.values.length === 1 ? approvedValueContext.values[0] : approvedValueContext.values }] })}. Never use a filters key.`,
-              ]
-            : valueRequestResolved
-              ? ["The separately reviewed value-context step is already complete. Do not request values again."]
-              : ["If exact observed values are still indispensable, use one value_request now; do not guess them."]),
+          ...valueContextContinuation(),
           baseQuestion(),
         ].join("\n"));
         continue;

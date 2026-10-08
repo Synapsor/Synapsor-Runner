@@ -1,7 +1,17 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach } from "vitest";
+import { writeAutoBoundaryArtifacts } from "./auto-boundary.js";
+import { boundaryReviewCommand, loadBoundaryReviewContext } from "./boundary-commands.js";
+import { prepareExactBoundaryCandidateMutation, commitExactBoundaryCandidateMutation } from "./boundary-review-mutation.js";
+import { projectReadSubjectContext } from "./authoring-read-subject-context.js";
+import { projectReadScopeHostContext } from "./read-current-evidence.js";
+import { READ_SCOPE_PROTOCOL } from "./read-structured-scope.js";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import { buildAutoBoundary, emptyReviewOverrides, reviewExplorationBoundaryCandidate, type ExplorationBoundaryDraft } from "./auto-boundary.js";
+import { buildAutoBoundary, emptyReviewOverrides, reviewExplorationBoundaryCandidate, explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { applyManagedBoundaryReviewDecision } from "./boundary-review-domain.js";
 import { generateModelReadWorkload, readWorkloadCatalog } from "./read-workload-model.js";
 import { prepareReadWorkloadRelationship, validateReadWorkloadRelationshipPreparation } from "./read-relationship-preparation.js";
@@ -50,9 +60,43 @@ function fixture(renamed = false) {
         reason: "Keep identity keys private; only business references are requested.", decided_at: inspection.inspected_at });
     }
   }
-  const build = () => buildAutoBoundary({ inspection, overrides, sourceEnv: "DATABASE_URL", inspectedSchema: schema,
-    project: { root: "/synthetic/read-relationship-preparation", package_manager: "pnpm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] } });
+  const build = (projectRoot = "/synthetic/read-relationship-preparation") => buildAutoBoundary({ inspection, overrides, sourceEnv: "DATABASE_URL", inspectedSchema: schema,
+    project: { root: projectRoot, package_manager: "pnpm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] } });
   return { build, inspection, tenant, principal, root: `${schema}.${root.name}`, targets: tables.slice(1).map(t => `${schema}.${t.name}`) };
+}
+
+const nativeRoots: string[] = [];
+afterEach(async () => { for (const root of nativeRoots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
+async function nativeRelationshipContext(f: ReturnType<typeof fixture>) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "typed-relationship-transition-")); nativeRoots.push(root);
+  await fs.mkdir(path.join(root, ".git"));
+  const build = f.build(root), generated = build.exploration_boundary, pending = withoutLinks(generated);
+  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  let context = await loadBoundaryReviewContext(root);
+  const commit = async (candidate: ExplorationBoundaryDraft) => {
+    const preview = await prepareExactBoundaryCandidateMutation(root, { candidate,
+      expected_generated_boundary_digest: context.bundle.candidate_digest,
+      expected_candidate_digest: explorationBoundaryCandidateDigest(candidate), expected_bindings: context.bundle.mutation_bindings,
+      actor: "declared structural operator", reason: "Review the exact inspected path for the declared test job." }, async () => f.inspection);
+    await commitExactBoundaryCandidateMutation(root, preview); context = await loadBoundaryReviewContext(root); return context.candidate;
+  };
+  await commit(pending);
+  await boundaryReviewCommand(["--project-root", root, "--confirm", "--actor", "declared structural operator", "--output", path.join(root, "review.json")],
+    async () => f.inspection, { ...session(async () => undefined), confirm: async (_message, options) => {
+      if (!options?.context?.length) throw new Error("Actual structural review must display current settings"); return true;
+    } });
+  context = await loadBoundaryReviewContext(root);
+  const original = "Read the release and both selected business references.";
+  const current = () => {
+    const catalog = readWorkloadCatalog(context.candidate);
+    return projectReadScopeHostContext({ request: { id: "job", text: original },
+      catalog: { digest: catalog.digest, resources: catalog.resources,
+        relationships: catalog.resources.flatMap(resource => resource.relationships.map(link => ({ id: link.id, from: resource.id, to: link.target_resource }))),
+        subject_scopes: projectReadSubjectContext({ context, sourceDigest: canonicalJsonDigest(null) }).subject_scopes },
+      binding: { meaning_digest: canonicalJsonDigest(original), applicability_digest: canonicalJsonDigest("selected reference use"),
+        operation_digest: canonicalJsonDigest(context.candidate) } });
+  };
+  return { current, commit, generated: context.draft, pending: context.candidate, structuredScope: { protocol: READ_SCOPE_PROTOCOL, current } };
 }
 
 describe("Read relationship preparation orchestration", () => {
@@ -96,14 +140,13 @@ describe("Read relationship preparation orchestration", () => {
   });
 
   it.each([false, true])("reviews two exact paths and rebuilds the model catalog without private key exposure (renamed=%s)", async renamed => {
-    const f = fixture(renamed), generated = f.build().exploration_boundary;
-    const before = structuredClone(generated), pending = structuredClone(generated);
-    for (const resource of pending.pack.resources) resource.relationships = [];
-    const pendingBefore = structuredClone(pending);
+    const f = fixture(renamed), native = await nativeRelationshipContext(f);
+    const generated = native.generated, pending = native.pending;
+    const before = structuredClone(generated), pendingBefore = structuredClone(pending);
     const choices: string[] = [];
     const assertCurrent = vi.fn(async () => {});
-    const relationshipReviewHandler = vi.fn<NonNullable<Parameters<typeof generateModelReadWorkload>[0]["relationshipReviewHandler"]>>(async (request, boundary) =>
-      prepareReadWorkloadRelationship({ projectRoot: "/synthetic/read-relationship-preparation", boundary, generatedBoundary: generated,
+    const relationshipReviewHandler = vi.fn<NonNullable<Parameters<typeof generateModelReadWorkload>[0]["relationshipReviewHandler"]>>(async (request, boundary) => {
+      const prepared = await prepareReadWorkloadRelationship({ projectRoot: "/synthetic/read-relationship-preparation", boundary, generatedBoundary: generated,
         fromResource: request.resource, modelLabel: "test provider", assertCurrent,
         session: session(async (_title, options, details) => {
           expect(details?.initialValue).toBe("pending");
@@ -112,7 +155,11 @@ describe("Read relationship preparation orchestration", () => {
           const selected = options.find(option => option.value !== "pending")!;
           choices.push(selected.detail!);
           return selected.value;
-        }) }));
+        }) });
+      if (!prepared) return undefined;
+      const candidate = await native.commit(prepared.candidate);
+      return { ...prepared, candidate };
+    });
     let calls = 0;
     const requestJson = vi.fn<NonNullable<AskProviderDependencies["requestJson"]>>(async request => {
       const body = JSON.stringify(request.body);
@@ -126,14 +173,24 @@ describe("Read relationship preparation orchestration", () => {
       if (calls === 3) {
         expect(body).toContain(generated.pack.resources.find(r => r.id === f.root)!.relationships[1]!.id);
       }
-      return response(calls < 3 ? { clarification_request: { resource: f.root, category: "relationship_support",
+      return response(calls < 3 ? { relationship_review_request: { resource: f.root,
         reason: "The complete request still needs its selected related reference.", question: "Prepare the remaining exact business reference link." } }
-        : { allowed: [{ id: "references", description: "Read selected business references", plan: { kind: "rows", resource: f.root,
+        : { read_scope: { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
+          id: "references", intended_use: "Read the release and both selected business references.", references: ["job"], disposition: "include",
+          subjects: [{ root_resource: f.root, mode: "trusted_principal" }], targets: [
+            { root_resource: f.root, resource: f.root, operation: "resource" },
+            { root_resource: f.root, resource: f.root, operation: "return", field: "business_ref" },
+            ...generated.pack.resources.find(r => r.id === f.root)!.relationships.flatMap(link => [
+              { root_resource: f.root, resource: f.root, operation: "relationship", relationship: link.id, qualifier: link.target_resource },
+              { root_resource: f.root, resource: link.target_resource, operation: "return", field: "business_ref", relationship: link.id },
+            ]),
+          ],
+        }] }, allowed: [{ id: "references", description: "Read selected business references", plan: { kind: "rows", resource: f.root,
           select: ["business_ref"], related: generated.pack.resources.find(r => r.id === f.root)!.relationships.map(link => ({ relationship: link.id, select: ["business_ref"] })) } }], forbidden: [] });
     });
     const result = await generateModelReadWorkload({ name: "references", allowedQuestions: ["Read the release and both selected business references."],
       provider: "openai", model: "gpt-test", apiKey: "test-key", egressAcknowledged: true, deferNarration: true,
-      generatedBoundary: pending, dependencies: { requestJson }, relationshipReviewHandler });
+      generatedBoundary: pending, structuredScope: native.structuredScope, dependencies: { requestJson }, relationshipReviewHandler });
     expect(result.analysis.status).toBe("ready");
     expect(result.analysis.candidate!.pack.resources.find(r => r.id === f.root)!.relationships).toHaveLength(2);
     expect(relationshipReviewHandler).toHaveBeenCalledTimes(2);

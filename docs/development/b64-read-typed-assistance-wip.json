@@ -1,13 +1,32 @@
 {
   "base": "557e5fbb",
-  "status": "WIP not integration accepted",
+  "status": "Component implemented; independent review and composed regressions pending",
   "design": "16522034; independent preseal4fc9b61d",
-  "implemented": "Strict disjoint value_request/relationship_review_request provider branches, exact finite target dispatch to existing handlers. Typed retained assistance admitted only with producer binding and unchanged tool/input, retired meaning/English state still refused. No new store/record.",
-  "tests": "23 PASS,129 unrelated filtered; includes two actual ingress afters, three unchanged durable value/relationship checkpoint controls, existing structured scope controls. Log /var/tmp/synapsor-b64-read-owned/evidence/typed-assistance-ingress-after.log",
+  "implemented": "Strict disjoint value_request/relationship_review_request provider branches, exact finite target dispatch to existing handlers. Typed retained assistance admitted only with producer binding and unchanged tool/input, retired meaning/English state still refused. No new store/record. Exact acknowledged relationship candidate reload must retain Source/request/meaning/applicability, answer lineage and all subject acknowledgements. Only catalog/operation identity advances after sole-path validator succeeds.",
+  "tests": "10 original assistance controls PASS with unchanged substantive assertions/provider counts, plus2 real ordinary structural preparation/commit two-path cases (original+renamed), plus earlier23 scoped controls.",
   "remaining": [
-    "Exact acknowledged relationship catalog transition and native currentness",
-    "Ten original capability rows incl combined typed clarification/value flows, consent/egress and repetition",
-    "Independent TA01\u201308 verdict and actual public wiring proof"
+    "Independent TA01\u201308 verdict incl foreign Source/answer drift while own answer is captured",
+    "Public/native caller integration for assistance",
+    "Composed affected regressions on immutable checkpoint"
   ],
-  "before": "b4a5aa70 and typed-assistance-gaps-characterized.log preserved; two ingress repros cover ten open rows, not ten positive results."
+  "before": "b4a5aa70 and typed-assistance-gaps-characterized.log preserved; two ingress repros cover ten open rows, not ten positive results.",
+  "class_fixes": [
+    {
+      "before": "typed-assistance-combined-after1.log:2F",
+      "cause": "A genuine normal missing-scope answer appeared as unrelated context drift; only replacement answers were classified as owned.",
+      "fix": "Add only exact resolved native question ID to existing owned-answer set before saving decided checkpoint."
+    },
+    {
+      "before": "typed-assistance-combined-after2.log:2F",
+      "cause": "Typed follow-up omitted prior separately approved value context/available request guidance.",
+      "fix": "Reuse bounded existing valueContextContinuation guidance for both paths; preserve exact approved field/values and no-repeat rule."
+    }
+  ],
+  "native_fixture": "New typed-read-assistance fixture uses ordinary declared structure, actual producer completion, shared question/raw host and disk Resume CAS. Business facts are declared callbacks; response references come only from actual emitted inventory. Value handlers remain existing controlled component ports, not proof of live sampling consent.",
+  "logs": [
+    "/var/tmp/synapsor-b64-read-owned/evidence/typed-assistance-ten-existing-after.log",
+    "/var/tmp/synapsor-b64-read-owned/evidence/typed-relationship-transition-after3.log"
+  ],
+  "fixture_incidents": "Relationship added test API signature typo, then obsolete synthetic generated lock. Preserved first/after1/diagnostic/after2 logs; using actual cold native draft corrected setup. No fingerprints synthesized or product refusal relaxed.",
+  "types": "No owned-file errors; four pre-existing other fixture migrations remain on this branch, already fixed by Main/helper integration."
 }
