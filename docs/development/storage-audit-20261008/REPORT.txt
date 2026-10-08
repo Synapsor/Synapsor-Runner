@@ -1,3 +1,5 @@
+OWNER DECISION: KEEP EVERYTHING. No deletion now (~86 GB free); revisit cleanup only below roughly30 GB free. Existing8 GiB hard floor remains. Historical deletion candidates below are NOT authorized.
+
 READ-ONLY DISK REVIEW — 2026-10-08
 NO DELETION PERFORMED. All deletion candidates require Owner approval.
 
