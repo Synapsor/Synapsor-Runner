@@ -4,6 +4,7 @@ import type { InputInteraction, InputInteractionResponse } from "./authoring-inp
 import type { VersionInteraction, VersionInteractionResponse } from "./authoring-version-interaction.js";
 import type { AuthoringQuestionInteraction, AuthoringQuestionResponse } from "./authoring-question-interaction.js";
 import type { ReadMeaningInteraction, ReadMeaningInteractionResponse } from "./authoring-read-meaning-interaction.js";
+import type { ReadScopeInteraction, ReadScopeInteractionResponse } from "./authoring-read-scope-host.js";
 import type { BusinessStatementInteraction, BusinessStatementResponse } from "./authoring-business-statement-interaction.js";
 import { presentOperatorClarification, operatorBusinessReadback, type OperatorBusinessContext } from "./authoring-operator-presentation.js";
 
@@ -25,6 +26,23 @@ async function presentReadback<Binding>(input: {
     exactDetails: { title: input.detailsTitle, lines: [...input.view.lines] },
   });
   return { kind: "decision", binding: input.view.binding, accepted: accepted ?? null };
+}
+
+/** Render the existing grouped native scope question; all lineage, currentness
+ * and persistence remain in its protected host. */
+export async function presentReadScopeInteraction(input: { view: ReadScopeInteraction; session: Session;
+  businessContext?: OperatorBusinessContext }): Promise<ReadScopeInteractionResponse> {
+  const { view } = input;
+  if (view.kind === "readback") return presentReadback({ view, session: input.session,
+    businessContext: input.businessContext, question: "Confirm this complete Read scope and analyzed plan?",
+    detailsTitle: "EXACT CURRENT READ SCOPE" });
+  const choice = await input.session.chooseOption?.("READ SCOPE IS STILL PENDING", [
+    { value: "keep", label: "Keep this scope pending" },
+    ...(view.canReview ? [{ value: "review", label: "Review the same complete proposal" }] : []),
+    ...(view.canReplace ? [{ value: "replace", label: "Use the ordinary scope replacement route" }] : []),
+  ], { initialValue: "keep", reviewOnly: true, context: operatorBusinessReadback([...view.material], input.businessContext) });
+  return { kind: "pending", binding: view.binding,
+    choice: choice === "review" && view.canReview ? "review" : choice === "replace" && view.canReplace ? "replace" : "keep" };
 }
 
 /** Stateless Input view adapter. Its host retains all pre/post-wait checks,

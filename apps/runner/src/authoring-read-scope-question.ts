@@ -69,11 +69,14 @@ export function resolveNativeReadScope(input: { questions: readonly OperatorQues
     const captured = questions.find(item => item.id === ref.question_id)!;
     return !captured.disposition && !questions.some(item => item.read_scope?.predecessor_id === captured.id);
   })());
-  const analysisMatches = record.proposal.applicability === "no_read_requested"
-    ? record.analysis_digest === undefined && input.analysis === undefined
-    : input.analysis !== undefined && record.analysis_digest === canonicalJsonDigest(input.analysis)
-      && assessReadScopeDraft(record, input.analysis).status === "compatible";
-  const status: "proposed" | "confirmed" | "stale" | "pending" = !provenanceCurrent || !currentAnswers || !analysisMatches ? "stale"
+  const analysisState = record.proposal.applicability === "no_read_requested"
+    ? record.analysis_digest === undefined && input.analysis === undefined ? "ready" : "stale"
+    : record.analysis_digest === undefined ? "pending"
+    : input.analysis === undefined || record.analysis_digest !== canonicalJsonDigest(input.analysis) ? "stale"
+    : assessReadScopeDraft(record, input.analysis).status === "delta_required" ? "stale"
+    : assessReadScopeDraft(record, input.analysis).status === "pending" ? "pending" : "ready";
+  const status: "proposed" | "confirmed" | "stale" | "pending" = !provenanceCurrent || !currentAnswers || analysisState === "stale" ? "stale"
+    : analysisState === "pending" ? "pending"
     : q.disposition || q.read_scope!.mode !== "review" ? "pending"
     : current.status === "proposed" && q.confirmation ? "confirmed" : current.status;
   return { ...current, status, question: q };
