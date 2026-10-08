@@ -11,7 +11,7 @@ import type { policyCoverageDraft } from './authoring-policy-evidence.js';
 import type { authoringReceiptConfiguration } from './authoring-receipt-configuration.js';
 import type { BusinessStatementDecisionAdapter } from './authoring-business-statement-host.js';
 import { coverageResponseContext } from './authoring-coverage-feedback.js';
-import { receiptBusinessStatementAdapter, receiptRequirementMaterial } from './authoring-receipt-decision-adapter.js';
+import { receiptBusinessStatementAdapter } from './authoring-receipt-decision-adapter.js';
 
 type Draft = ReturnType<typeof policyCoverageDraft>;
 type Digest = `sha256:${string}`;
@@ -75,7 +75,6 @@ export function createReceiptRequirementHost(input: {
         'Current receipt storage is not established for this exact program. Inspect its supported execution setup; a business answer cannot select storage or establish its guarantees.',
         'The rule, draft and answer history remain saved.'] };
     }
-    if (!waiting && currentReceiptRequirement(source, target, draft, sources)) return { kind: 'saved', disposition: 'reused' };
     const dependencies = receiptRequirementDependencies(draft);
     const binding = receiptRequirementSourceBinding(source, sources.id, store, target.start, target.end);
     const predecessor = input.readQuestions().filter(q => q.kind === 'receipt_requirement'
@@ -87,6 +86,12 @@ export function createReceiptRequirementHost(input: {
       if (canonicalJsonDigest(await input.readConfiguration()) !== canonicalJsonDigest(configuration)
         || receiptRequirementDependencies(input.currentDraft()) !== dependencies) throw new PolicySourceChangedError();
     };
+    if (!waiting && currentReceiptRequirement(source, target, draft, sources)) {
+      // Refresh performs asynchronous native reads. Reuse is an applicability
+      // decision too: it must cross the same currentness boundary as an answer.
+      await assertCurrent();
+      return { kind: 'saved', disposition: 'reused' };
+    }
     const checkpoint = receiptRequirementCheckpoint({ projectRoot: input.projectRoot, sources, store,
       start: target.start, end: target.end, currentDraft: input.currentDraft, questions: input.readQuestions,
       assertCurrent, acknowledge: input.acknowledgeResume });
