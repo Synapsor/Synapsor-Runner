@@ -10,6 +10,7 @@ const safeBounds = (min: number, max: number) => Number.isSafeInteger(min) && Nu
  * on the raw operator event before writing. No prefix parsing, coercion, model,
  * locale guessing, floating-point arithmetic, or generated field schema. */
 export function decodeTypedFieldLiteral(field: TypedReviewField, raw: string): TypedLiteralResult {
+  if (typeof raw !== "string") return invalid("An exact literal must be text captured by the operator adapter.");
   if (raw.length > 512) return invalid("This literal is too long. Keep the text for Describe a correction, or enter one exact value.");
   if (field.kind === "choice") {
     if (!field.options.length || new Set(field.options.map(option => option.value)).size !== field.options.length)
@@ -26,7 +27,7 @@ export function decodeTypedFieldLiteral(field: TypedReviewField, raw: string): T
       return invalid(`Enter an integer from ${field.minimum} through ${field.maximum}. Your text has not been applied.`);
     return { ok: true, value: { kind: "integer", value } };
   }
-  if (field.currency.length !== 3 || !/^[A-Z]{3}$/u.test(field.currency) || !Number.isSafeInteger(field.scale) || field.scale < 0 || field.scale > 18
+  if (typeof field.currency !== "string" || field.currency.length !== 3 || !/^[A-Z]{3}$/u.test(field.currency) || !Number.isSafeInteger(field.scale) || field.scale < 0 || field.scale > 18
     || !safeBounds(field.minimum_minor, field.maximum_minor)) return invalid("The current money unit, precision or bounds are invalid. Reopen the current proposal.");
   const match = decimal.exec(raw);
   if (!match || match[0] !== raw || (match[3]?.length ?? 0) > field.scale)

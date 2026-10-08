@@ -4,7 +4,7 @@ import type { TypedReviewView } from "./authoring-typed-review.js";
 import { presentTypedAuthoringReview, confirmTypedAuthoringReview, typedReviewCardLines } from "./authoring-question-presenter.js";
 const view = (): TypedReviewView => ({ binding: { proposal_id: "dock-quorum", proposal_revision: 2, proposal_digest: digest("canonical proposal"), applicability_digest: digest("current scope"), operation_id: "bounded edit", view_digest: digest("entire card") }, decision_kind: "business_review", status: "unconfirmed", title: "Review dispatch rules", normalized_lines: ["At least two reviewers approve dispatch; retain current eligibility."], change_lines: ["Reviewer quorum: 1 → 2", "Preserve the private hold restriction."], unresolved: [], fields: [{ id: "quorum", target_digest: digest("exact quorum"), dependencies_digest: digest("rule dependencies"), label: "Reviewers", required: true, kind: "integer", minimum: 1, maximum: 5, current: { origin: "saved_confirmed", value: { kind: "integer", value: 1 } }, suggestion: { origin: "model_proposal", value: { kind: "integer", value: 2 } } }] });
 function ports(choices: (string | undefined)[], raws: (string | undefined)[] = []) {
-  return { session: { chooseOption: vi.fn(async () => choices.shift()), promptText: vi.fn(async (_prompt: string, _options?: unknown) => raws.shift()), confirm: vi.fn(async (_prompt: string, _options?: unknown) => false as boolean | undefined), rememberDetails: vi.fn(), present: vi.fn(), showReviewDetails: vi.fn(async () => {}) }, assertCurrent: vi.fn(async () => {}) };
+  return { session: { chooseOption: vi.fn(async () => choices.shift()), promptText: vi.fn(async (_prompt: string, _options?: unknown) => raws.shift()), confirm: vi.fn(async (_prompt: string, _options?: unknown) => false as boolean | undefined), rememberDetails: vi.fn(), present: vi.fn(), showReviewDetails: vi.fn(async (_title: string, _lines: string[]) => {}) }, assertCurrent: vi.fn(async () => {}) };
 }
 describe("shared typed business presenter", () => {
   it("Enter keeps exact suggestion with no raw answer or confirmation", async () => {
@@ -39,6 +39,15 @@ describe("shared typed business presenter", () => {
     expect(p.session.showReviewDetails).toHaveBeenCalledOnce(); expect(p.session.confirm).not.toHaveBeenCalled();
     expect(await confirmTypedAuthoringReview({ view: v, ...p })).toEqual({ kind: "decision", binding: v.binding, accepted: false });
     expect(p.session.confirm.mock.calls[0]?.[1]).toMatchObject({ defaultValue: false, decisionKind: "business_review", localOnly: true });
+  });
+  it("retains host-bound full component details separately from the primary grouped card", async () => {
+    const v = { ...view(), technical_lines: ["Before: exact protected operator record", "After: exact complete canonical delta"] };
+    const p = ports(["details", "pause"]);
+    await presentTypedAuthoringReview({ view: v, ...p });
+    expect(typedReviewCardLines(v).join("\n")).not.toContain("exact protected operator record");
+    expect(p.session.showReviewDetails.mock.calls[0]?.[1]).toContain("Before: exact protected operator record");
+    await confirmTypedAuthoringReview({ view: v, ...p });
+    expect(p.session.confirm.mock.calls[0]?.[1]).toMatchObject({ exactDetails: { lines: expect.arrayContaining(v.technical_lines) } });
   });
   it("checks currentness after a field wait and never returns stale events", async () => {
     const p = ports(["edit", "field:0"], ["2"]); p.session.promptText.mockImplementation(async () => { p.assertCurrent.mockRejectedValue(new Error("stale")); return "2"; });

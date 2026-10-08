@@ -415,8 +415,9 @@ export async function presentTypedAuthoringReview(input: {
     ...localTypedOptions, context: context.map(safeTerminalText), recordPolicyAnswer: false, preserveWhitespace: true,
   }));
   const lines = typedReviewCardLines(view);
+  const exactLines = [...lines, ...(view.technical_lines?.length ? ["EXACT TECHNICAL DETAILS", ...view.technical_lines.map(safeTerminalText)] : [])];
   await input.assertCurrent();
-  session.rememberDetails?.(safeTerminalText(view.title), lines);
+  session.rememberDetails?.(safeTerminalText(view.title), exactLines);
   for (;;) {
     const choice = await choose(view.title, [
       { value: "edit", label: "Edit a value" }, { value: "missing", label: "Resolve missing details" },
@@ -426,8 +427,8 @@ export async function presentTypedAuthoringReview(input: {
     ], lines);
     if (choice === undefined || choice === "pause") return pause();
     if (choice === "details") {
-      await wait(async () => { if (session.showReviewDetails) await session.showReviewDetails(safeTerminalText(view.title), lines);
-        else session.present?.(safeTerminalText(view.title), lines); });
+      await wait(async () => { if (session.showReviewDetails) await session.showReviewDetails(safeTerminalText(view.title), exactLines);
+        else session.present?.(safeTerminalText(view.title), exactLines); });
       continue;
     }
     if (choice === "review") {
@@ -519,8 +520,9 @@ export async function confirmTypedAuthoringReview(input: {
   if (view.decision_kind !== "business_review" || typedReviewIsUnresolved(view))
     throw new Error("TYPED_REVIEW_UNRESOLVED: Resolve current missing business decisions before confirmation.");
   const lines = typedReviewCardLines(view);
+  const exactLines = [...lines, ...(view.technical_lines?.length ? ["EXACT TECHNICAL DETAILS", ...view.technical_lines.map(safeTerminalText)] : [])];
   const accepted = await input.session.confirm("Confirm this exact complete business proposal?", {
-    ...localTypedOptions, defaultValue: false, context: lines, exactDetails: { title: safeTerminalText(view.title), lines },
+    ...localTypedOptions, defaultValue: false, context: lines, exactDetails: { title: safeTerminalText(view.title), lines: exactLines },
   });
   await input.assertCurrent();
   return { kind: "decision", binding: view.binding, accepted: accepted ?? null };

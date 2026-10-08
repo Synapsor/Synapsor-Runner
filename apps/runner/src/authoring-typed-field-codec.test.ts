@@ -6,6 +6,9 @@ const count: TypedReviewField = { ...id, kind: "integer", minimum: 1, maximum: 2
 const money: TypedReviewField = { ...id, kind: "money", currency: "USD", scale: 2, minimum_minor: -9007199254740991, maximum_minor: 9007199254740991 };
 describe("host field exact literal codec", () => {
   it.each(["", " ", " 2", "2 ", "2.0", "2e0", "02", "+2", "-0", "2 reviewers", "2, keep the rest", "0x2", "2\n"])("refuses non-integer literal %j", raw => expect(decodeTypedFieldLiteral(count, raw).ok).toBe(false));
+  it("does not coerce a forged non-text raw event", () => {
+    expect(decodeTypedFieldLiteral(count, 2 as unknown as string).ok).toBe(false);
+  });
   it("preserves a supported integer and rejects bounds", () => {
     expect(decodeTypedFieldLiteral(count, "2")).toEqual({ ok: true, value: { kind: "integer", value: 2 } });
     expect(decodeTypedFieldLiteral(count, "0").ok).toBe(false); expect(decodeTypedFieldLiteral(count, "9007199254740992").ok).toBe(false);

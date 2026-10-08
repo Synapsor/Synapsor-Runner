@@ -1,0 +1,28 @@
+{
+  "status": "PAUSED_UNACCEPTED_WIP",
+  "base": "3bb1154c (includes Main technical_lines contract3577335c)",
+  "product_files": [
+    "authoring-action-parameter-review.ts",
+    "authoring-question-presenter.ts exact details extension",
+    "authoring-typed-field-codec.ts nontext raw guard"
+  ],
+  "tests": {
+    "pass": 53,
+    "fail": 0,
+    "skip": 0,
+    "files": 3,
+    "workers": 1
+  },
+  "earlier": "parameter-v1 actual compiler23P0F; initial test-only boolean fixture type error fixed before running",
+  "types": "v3 exited0 before final narrow raw type guard/test; no rerun started after pause",
+  "evidence": "/var/tmp/synapsor-b64-parameter-v2-owned/out/vitest.json",
+  "command": "isolated bwrap --unshare-net; own0700 HOME/TMP+decoy; vitest authoring-action-parameter-review/authoring-typed-review-presenter/authoring-typed-field-codec maxWorkers1 testTimeout20000",
+  "results": "Actual compiler+existing Runner business renderer: warehouse/studio quorum1\u21922, integer threshold, USD exact-scale threshold299minor, comparator, stale identities, extra noneditable eligibility change, strict raw guard. Full canonical component diffs preserved separately in technical_lines.",
+  "reviewer": "Domain adapter not yet sent for independent verdict; presenter79ac separately accepted39independent checks reviewer4a5aa517",
+  "next": [
+    "Main independently review fixedtarget domain adapter API and baseline_origin provenance",
+    "Run exact WIP types once resumed; reviewer sealed domain variants",
+    "Main owns protected persistence/currentness/public+B48 lifecycle wiring; no component-only E2E claim"
+  ],
+  "scope": "No protected record/store edits, no provider/DB/paid; no boundary-commands changes; paid CLOSED"
+}
