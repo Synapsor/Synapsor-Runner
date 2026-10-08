@@ -1,9 +1,9 @@
 {
-  "status": "WIP_NOT_ACCEPTED",
-  "base": "74787a27 (Main fe0a22cb + Read0814/e8/003 projector)",
+  "status": "FOCUSED_PASS_INDEPENDENT_REVIEW_PENDING",
+  "base": "e56da3ae (Read owner16a7425f adopted; Mainfe0a22cb native protocol v2)",
   "scope": "Only disposable fixture setup and unchanged safety tests; no product edits",
   "structural_preparation": "9c760464 original1PASS also activated test boundary; NOT preactivation proof. Successor uses ordinary --confirm --output to export actual signoffs without activation, explicit ENOENT active-artifact assertion.",
-  "native_fixture": "Replaced fabricated global bindings/analysis/completion with actual structural context, real catalog/projected subjects, actual provider request responder and native completion/CAS; 17 cases currently refuse before provider because projector returns no subjects",
+  "native_fixture": "Real disabled structural review, projected subject inventory and compiler candidate; finite responder uses actual outgoing request JSON line after Runner date notice; genuine Ask completion/native Resume CAS. Three files18PASS, original count/default-No/history/currentness assertions retained.",
   "evidence_root": "/var/tmp/synapsor-b64-action-clarification-owned/out",
   "preserved_results": {
     "read-fixture-before.json": "2PASS15FAIL old incompatible fixture on Read.v2",
@@ -13,8 +13,12 @@
     "read-fixture-after1.json": "0PASS17FAIL actual structural projector yields no subjects",
     "read-fixture-types2.log": "14 existing Read.v1/missing subjects test migrations; zero new native fixture type diagnostics",
     "read-structural-disabled4.json": "0PASS1FAIL: test expected [] but actual no-active API refuses ENOENT",
-    "read-structural-disabled5.json": "1PASS preactivation structural export/signoffs + no active artifact"
+    "read-structural-disabled5.json": "1PASS preactivation structural export/signoffs + no active artifact",
+    "read-fixture-after16a.json": "1PASS17FAIL: fixture parser did not account for actual Runner UTC prefix",
+    "read-fixture-diagnostic.json": "diagnostic-only1FAIL7SKIP; actual body captured in native-actual-request.json; temporary capture removed",
+    "read-fixture-request-parser2.json": "18PASS0FAIL0SKIP after narrow actual-input JSON-line parser correction",
+    "read-fixture-types16a.log": "14 unrelated Read.v1/missing-subject diagnostics; zero owned fixture/test diagnostics"
   },
   "unchanged_assertions": "Default-No, pending, declined/replacement, counter=1, history, currentness and raw testimony assertions retained",
-  "next": "Read owner diagnoses real projector from9c helper; rerun same17 after smallest product fix, then independent review. No invented refs/readyanalysis."
+  "next": "Independent review of actual fixture and18focused controls; Main composition must resolve remaining Read fixture migrations then types/full qualification."
 }

@@ -64,7 +64,11 @@ export async function nativeFixture(noRead = false, withoutAnalysis = false) {
       } },
       dependencies: { requestJson: async actual => {
         const find=(value:unknown):typeof inventory & {request:string;original_request:string;declared_no_read:boolean}|undefined=>{
-          if(typeof value==="string") { try { const parsed=JSON.parse(value); if(parsed.request&&parsed.original_request&&parsed.catalog)return parsed; }catch{} }
+          if(typeof value==="string") {
+            // Runner prefixes its host-owned date notice. Parse only a complete
+            // JSON line actually transmitted, never reconstruct hidden inputs.
+            for(const line of value.split("\n"))try {const parsed=JSON.parse(line);if(parsed.request&&parsed.original_request&&parsed.catalog)return parsed;}catch{}
+          }
           if(value&&typeof value==="object")for(const child of Object.values(value)){const found=find(child);if(found)return found;}
           return undefined;
         };
