@@ -283,8 +283,9 @@
       "change": "same live checkpoint parser includes pending_action_addition.retained_action.checkpoint; historical dispositions untouched"
     },
     "last_usage_check": {
-      "used_percent": 44,
-      "pause_threshold_used_percent": 95
+      "used_percent": 62,
+      "threshold_used_percent": 95,
+      "paid": "CLOSED"
     },
     "native_scope_host_wip": {
       "read_dependencies": "f04830b2/6e641fee/c5b9fe17",
@@ -330,6 +331,27 @@
       "removed_test_inventory": "docs/development/b64-read-scope-parser-removal.md",
       "logs": "/var/tmp/synapsor-b64-main-owned/evidence/no-english-integration{,-types}.log; native-grouped-integration.log",
       "open": "Migrate old safety/providercount fixtures using declared typed inputs; publicscope context/wiring; native stable-relevant-evidence projection fix inReadlane."
+    },
+    "no_legacy_scope_checkpoint": {
+      "product": "8e5085bb",
+      "public_old_refusal": "9516a3eb",
+      "independent": "Reviewer2 original4 public controls PASS (v1/v2 chat/no-chat), prior7P4F preserved; exact refusal/zero model/menu/library mutation",
+      "removed_tests": "docs/development/b64-read-scope-parser-removal.md",
+      "migration": "docs/development/b64-read-producer-migration.json; first51P267F preserved; finite fixture ports maintain assertions",
+      "composition": "57PASS6files/types0 on9717d3ed; /var/tmp/synapsor-b64-main-owned/evidence/no-english-native-composition*",
+      "public_wip": "504f5bbd: real planning/mapping context, actual noRead native completion/group review, mapping raw-answer/checkpoint/group ports; types0, independent public rerun pending",
+      "context_component": "ccd4e815:5PASS/types0; first4P1F fixture active snapshot omission preserved",
+      "open": "public initial flow and cold continuation; edit/reuse typed scope adapter; remaining fixture migration; typed Action native fileCAS/public; consent ownership"
+    },
+    "native_typed_field_source": {
+      "product": "18064013 (owner bffae0f3)",
+      "reviewer": "R1 8PASS/types0 including actual current/revision/retained slots; own6b992fa3",
+      "boundary": "Source/file origin accepted; combined amendment human-wait/nativeCAS/public remains NOT PROVED"
+    },
+    "action_clarification_review": {
+      "owner_pin": "bec32639",
+      "reviewer": "R2 original44 before15P29F; unchanged after15P29F due newly-required exact model-visible context/wholeAction target; preserved",
+      "pending": "independent actual-input-derived typed-binding controls; no field-specific authority/store, no integration yet"
     }
   }
 }

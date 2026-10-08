@@ -1,15 +1,15 @@
-1. OWNER RESUMED B64 on new account. Continue existing slices without routine GO; paid CLOSED; frozen candidate3/jobs/holds/history untouched.
-2. B64 T0 UNCHANGED2026-10-08T06:32:23Z; windowend2026-10-13T06:32:23Z; final24h starts2026-10-12T06:32:23Z. Resume this window/work; no restart or repeated completed checks.
-3. Main ../synapsor-b51-workspaces/consents6c branch codex/b64-authoring-protocol-20261008; Read integration332P/types0 +2typed hostP. Product developing; no public B64 enablement/whole-migration acceptance.
-4. Contract/owners: [ADR](docs/development/adr-b51-shared-input-interaction.md); host field/event540edca1+exactdetails3577335c; Main Action/native stores/boundary, Read b59_regression_fix, presentation b60_public_routes, independent early_full_triage+Reviewer2.
-5. No legacy English path: reader/callers DELETED8e5085bb; oldsetuprefusal0e2ffc22 (134P/types0), R2 pending. Typed58P; broad selected63P10old-fixtureF retained; no full/public PASS.
-6. Shared renderer79ac1a3a integrated6e2eefe7: exact integer/money/choice/local-only B48 cards, Enter keep≠Yes;148affectedP/types0 +39independentP. Native domain/save/public lifecycle NOT DONE.
-7. Main Action2e6: strict current-tool server schemas, prose never asks in B64, checkpointv2 mode retained, legacy focused adapter refuses B64.307P/1SKIP(types0); skip live-provider env gate, paidCLOSED. Before3F1P preserved; successor4P.
-8. Main NEXT public typed scope/nativefield fileCAS wiring. Readowner stable evidence projection + typed safetyfixture migration; presentation actualsource resolver; R1 sourcevariants; R2 oldrefusal.
-9. Read ACTIVE b1227e22/68e43ac5 (integratedb9/e0): real consumed nativeq lineage/provenance; actual native confirmed omission/replacement producersPASS. Read revision finite preview vsactualanalysis next; no synthetic coverage.
-10. Presentation renderer/domain/history/codec independentlyACCEPT; interactionfe3 independently8P/types0 after2ACK mismatchfixes. Next native typedparameter Question + protected ports; keep Enter≠Yes and exactgroupACK.
-11. Independent Read/field active d5d2255e (Read14P/domain8P); R2 Action2e scoped ACCEPT (initial8P2F oracle mismatch preserved, amended supplemental2P). Retained checkpoint mode fixed/independent4P. Open oldinstalled invalid-as-new-job and consent contracts.
-12. Current logs /var/tmp/synapsor-b64-main-owned/evidence/: protocol-before/after, protocol-unsupported-before/after, action-protocol-before/after/affected/types. [DEV record](docs/development/candidate4-integration/DEV-RECORD.json) preserves results and superseded foundation failures.
-13. Luna35TOTAL; ledger15.27063125 inclunknownhold1.2693125; remaining19.72936875. Tester solepaidoperator; only existingfocusededit/finalrehearsal slots. EarlyDEV boundary acceptance required; final installed successor required.
-14. Overnight: usage every commit/testgroup/slice; ~95%used => no newwork, cleanstop/allownerprivatepush/≤15line handoffs/zero processes+locks/timestamped USAGE PAUSE thenstop. max2heavy/8workers, isolated0700HOME/TMP+decoy/free8GiB.
-15. Usage44%USED;95%pause. Main clean checkpoints privatepushed; paidCLOSED. Wholemigration/public/finalqualification NOTDONE; exactfailure logs and pendingownership in DEV record.
+1. ACTIVE B64; Owner resumed. Paid CLOSED; frozen candidate3, historical jobs/evidence/holds untouched.
+2. Clock unchanged: T0 2026-10-08T06:32:23Z; end 2026-10-13T06:32:23Z; final24h 2026-10-12T06:32:23Z. No restart or repeated completed checks.
+3. Main ../synapsor-b51-workspaces/consents6c, codex/b64-authoring-protocol-20261008 @504f5bbd WIP; checkpoints private-pushed. Contract: docs/development/adr-b51-shared-input-interaction.md.
+4. Reader/all callers deleted8e5085bb. Pre-B64 setup refusal9516a3eb: R2 original4 public controls PASS; no menu/model/library mutation; old7P4F preserved. No legacy fallback/migration.
+5. Main typed contextccd4e815 5P/types0; composed native57P/types0 on9717d3ed. Public Read WIP504f5bbd types0; R1 reruns original actual CLI positive. No public/full-migration PASS.
+6. Main NEXT fix actual public route failures, then cold/grouped Read continuity + revision/reuse adapters; finish typed Action native fileCAS/public wiring. No arbitrary latest-state adoption.
+7. Read owner b59_regression_fix: branch codex/b64-read-scope-20261008, latest f7785324; typed safety fixture ports, retained legacy checkpoint refusal. Initial51P267F preserved; 238 rows remain open at owner checkpoint.
+8. Presentation owner b60_public_routes: branch codex/b64-presentation-20261008 @bec32639 product/1965893c docs; strict wholeAction clarification.203P/types0/1existing opt-in skip; R2 verdict pending.
+9. R1 early_full_triage: codex/b64-public-read-independent-20261008 @9bf62249, real before stopped READ_SCOPE_PROTOCOL_REQUIRED. Native typed source8P/types0 accepted; cold public scope proof next.
+10. R2 thread01a114f6-d7b7-7103-951e-59bd5959837a: old refusal accepted; Action44 unchanged before/after15P29F preserved; actual-input-derived required binding controls in progress.
+11. Compact results/open boundaries: docs/development/candidate4-integration/DEV-RECORD.json; retired-test reasons docs/development/b64-read-scope-parser-removal.md; fixture rows docs/development/b64-read-producer-migration.json.
+12. Main logs /var/tmp/synapsor-b64-main-owned/evidence/. Scope/nativeQuestion/CAS component proofs do not establish public/edit/installed acceptance. Consent and Action classifier migration remain open.
+13. Tester thread01a117fd-4600-76a3-baf7-e404eb16d0d3 solepaidoperator CLOSED. Luna35TOTAL; liabilities15.27063125 inclhold1.2693125; remaining19.72936875. No new sample/funding.
+14. Usage every natural checkpoint; >=95%used: no newwork, finish/cleanstop, all lanes privatecommit+push, <=15linehandoffs, no ownedprocess/halfwrites/stalelocks; timestamp USAGE PAUSE thenstop. Latest62%used.
+15. Max2heavy/8workers, separate0700HOME/TMP/DB/ports+decoy/free8GiB. Continue existing slices without routine GO; pause only actual binding decisions or usage boundary.
