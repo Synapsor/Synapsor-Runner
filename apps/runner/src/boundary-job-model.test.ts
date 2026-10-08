@@ -156,6 +156,7 @@ describe("model Boundary job planning", () => {
   });
 
   it.each([500, 505])("diagnoses unavailable revise then a %i-character create correction without changing saved state", async length => {
+    const typed = declaredReadContext("Correct only Read privacy. Preserve both prepared actions and leave advising limits unanswered.", ["telecom.accounts", "telecom.billing_preferences"]);
     const state: BoundaryJobCurrentState = { ...reusableState,
       read: { ...reusableState.read, fully_reviewed: true, revision_eligible: false, exact_reusable_revision_count: 0, resumable_draft_count: 0 },
       actions: ["student.accept_offer", "student.restore_drop"].map(outcome => ({ capability: "app.request_change", kind: "rule_derived", outcome, authority: "disabled" })) };
@@ -167,12 +168,12 @@ describe("model Boundary job planning", () => {
       requestJson: async request => {
         requests.push(JSON.stringify(request.body));
         return { status: 200, body: { status: "completed", output: [{ type: "function_call", call_id: `attempt_${requests.length}`,
-          name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned",
+          name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_scope: typed.proposal,
             read_mode: requests.length === 1 ? "revise" : "create", read_intent: privateText.padEnd(length, "x"), action_mode: "reuse",
             summary: "Preserve both prepared actions and the unanswered advising limits." }) }] } };
       },
     } }, jobIntent: "Correct only Read privacy. Preserve both prepared actions and leave advising limits unanswered.",
-      currentState: state, egressAcknowledged: true, onDiagnostic: value => { diagnostic = value; } });
+      currentState: state, egressAcknowledged: true, structuredScope: typed.structuredScope, onDiagnostic: value => { diagnostic = value; } });
     if (length === 505) await expect(result).rejects.toThrow("read_mode=create read_intent is 505 characters; maximum is 500");
     else await expect(result).resolves.toMatchObject({ state: "planned", read_mode: "create", action_mode: "reuse", correction_used: true });
     expect(requests).toHaveLength(2);
@@ -185,6 +186,7 @@ describe("model Boundary job planning", () => {
   });
 
   it("keeps correction guidance consistent with an eligible incomplete Read revision", async () => {
+    const typed = declaredReadContext("Read telecom.accounts and telecom.billing_preferences.", ["telecom.accounts", "telecom.billing_preferences"]);
     const state = { ...reusableState, read: { ...reusableState.read, fully_reviewed: false, revision_eligible: true,
       exact_reusable_revision_count: 0, resumable_draft_count: 1, resumable_resource_ids: ["telecom.accounts"] } };
     const requests: string[] = [];
@@ -192,55 +194,59 @@ describe("model Boundary job planning", () => {
       requestJson: async request => {
         requests.push(JSON.stringify(request.body));
         return { status: 200, body: { output: [{ type: "function_call", call_id: `mode_${requests.length}`, name: "runner__plan_boundary_job",
-          arguments: JSON.stringify({ status: "planned", read_mode: requests.length === 1 ? "resume" : "revise",
+          arguments: JSON.stringify({ status: "planned", read_scope: typed.proposal, read_mode: requests.length === 1 ? "resume" : "revise",
             read_intent: "Read telecom.accounts and telecom.billing_preferences.", action_mode: "none", summary: "Correct the saved access." }) }] } };
       },
     } }, jobIntent: "Read telecom.accounts and telecom.billing_preferences.", availableResourceIds: ["telecom.accounts", "telecom.billing_preferences"],
-      currentState: state, egressAcknowledged: true });
+      currentState: state, egressAcknowledged: true, structuredScope: typed.structuredScope });
     expect(result).toMatchObject({ state: "planned", read_mode: "revise", correction_used: true });
     expect(requests[1]).toContain("Choose revise or create.");
     expect(requests[1]).not.toContain("revise is unavailable until");
   });
 
   it.each([566, 611, 631, 683, 2000])("retains a %i-character access revision without forcing it into a read-question limit", async (length) => {
+    const typed = declaredReadContext("Keep only the public fields from the original policy, preserving admission and all three behaviors.", ["telecom.accounts", "telecom.billing_preferences"]);
     const read_intent = "Keep the original student privacy policy and current admission check. ".padEnd(length, "x");
     const state = { ...reusableState, actions: [{ capability: "app.request_change", kind: "rule_derived" as const,
       outcome: "student.accept_offer", authority: "disabled" as const }] };
     const before = structuredClone(state);
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "privacy",
-      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "revise", read_intent,
+      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_scope: typed.proposal, read_mode: "revise", read_intent,
         action_mode: "reuse", summary: "Revise access; preserve both saved business rules and unfinished advising work." }) }] } }));
     const result = await planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "test-key", dependencies: { requestJson } },
-      jobIntent: "Keep only the public fields from the original policy, preserving admission and all three behaviors.", currentState: state, egressAcknowledged: true });
+      jobIntent: "Keep only the public fields from the original policy, preserving admission and all three behaviors.", currentState: state, egressAcknowledged: true, structuredScope: typed.structuredScope });
     expect(result).toMatchObject({ state: "planned", read_mode: "revise", read_intent, action_mode: "reuse", correction_used: false });
     expect(requestJson).toHaveBeenCalledOnce();
     expect(state).toEqual(before);
   });
 
   it.each([["revise", 2001, 2000], ["create", 501, 500]] as const)("keeps %s text bounded without truncating its content", async (read_mode, length, maximum) => {
+    const typed = declaredReadContext("Adjust customer access.", ["telecom.accounts", "telecom.billing_preferences"]);
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "long",
-      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode, read_intent: "x".repeat(length),
+      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_scope: typed.proposal, read_mode, read_intent: "x".repeat(length),
         action_mode: "none", summary: "Prepare access." }) }] } }));
     await expect(planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "test-key", dependencies: { requestJson } },
-      jobIntent: "Adjust customer access.", currentState: reusableState, egressAcknowledged: true })).rejects.toThrow(`maximum is ${maximum}`);
+      jobIntent: "Adjust customer access.", currentState: reusableState, egressAcknowledged: true, structuredScope: typed.structuredScope })).rejects.toThrow(`maximum is ${maximum}`);
     expect(requestJson).toHaveBeenCalledTimes(2);
   });
 
   it("revises an exact incomplete candidate without remapping or claiming review readiness", async () => {
+    const typed = declaredReadContext("Keep internal identifiers private. Preserve the billing rule.", ["telecom.accounts", "telecom.billing_preferences"]);
     const state: BoundaryJobCurrentState = { ...reusableState, read: { ...reusableState.read,
       fully_reviewed: false, revision_eligible: true, exact_reusable_revision_count: 0, resumable_draft_count: 1 },
       actions: [{ capability: "app.request_change", kind: "rule_derived", outcome: "billing.change", authority: "disabled" }] };
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "edit",
-      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "revise",
+      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_scope: typed.proposal, read_mode: "revise",
         read_intent: "Keep internal identifiers private without changing customer-facing references.", action_mode: "reuse",
         summary: "Change only saved access settings; retain the billing rule." }) }] } }));
     const result = await planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "test-key", dependencies: { requestJson } },
-      jobIntent: "Keep internal identifiers private. Preserve the billing rule.", currentState: state, egressAcknowledged: true });
+      jobIntent: "Keep internal identifiers private. Preserve the billing rule.", currentState: state, egressAcknowledged: true, structuredScope: typed.structuredScope });
     expect(result).toMatchObject({ state: "planned", read_mode: "revise", action_mode: "reuse", correction_used: false });
     expect(requestJson).toHaveBeenCalledOnce();
     expect(state.read.fully_reviewed).toBe(false);
   });
   it("repairs an incomplete resumed mapping using an available mode, not an impossible reviewed revision", async () => {
+    const typed = declaredReadContext("Read the customer's telecom.accounts and telecom.billing_preferences.", ["telecom.accounts", "telecom.billing_preferences"]);
     const requests: string[] = [];
     const state = { ...reusableState, read: { ...reusableState.read, fully_reviewed: false,
       exact_reusable_revision_count: 0, resumable_draft_count: 1, resumable_resource_ids: ["telecom.accounts"] } };
@@ -250,12 +256,12 @@ describe("model Boundary job planning", () => {
         requestJson: async (request) => {
           requests.push(JSON.stringify(request.body));
           return { status: 200, body: { output: [{ type: "function_call", call_id: `plan_${requests.length}`, name: "runner__plan_boundary_job",
-            arguments: JSON.stringify({ status: "planned", read_mode: requests.length === 1 ? "resume" : "create",
+            arguments: JSON.stringify({ status: "planned", read_scope: typed.proposal, read_mode: requests.length === 1 ? "resume" : "create",
               read_intent: "Read the customer's telecom.accounts and telecom.billing_preferences.", action_mode: "none", summary: "Prepare both requested customer read areas." }) }] } };
         },
       } },
       jobIntent: "Read the customer's telecom.accounts and telecom.billing_preferences.", availableResourceIds: ["telecom.accounts", "telecom.billing_preferences"],
-      currentState: state, egressAcknowledged: true,
+      currentState: state, egressAcknowledged: true, structuredScope: typed.structuredScope,
     });
     expect(result).toMatchObject({ state: "planned", read_mode: "create", correction_used: true });
     expect(requests).toHaveLength(2);
