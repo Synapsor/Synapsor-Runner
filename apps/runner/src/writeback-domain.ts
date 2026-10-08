@@ -284,6 +284,7 @@ export function toExecutionReceipt(job: WritebackJob, result: WritebackResult, d
       idempotency_key: job.idempotency_key,
       before_digest: result.before_digest,
       after_digest: result.after_digest,
+      new_version: result.result_version,
       tombstone_digest: result.tombstone_digest,
       ...(!dryRun && result.inverse ? { inverse: result.inverse } : {}),
       source_database_mutated: result.status === "applied" && !dryRun && affectedRows > 0,

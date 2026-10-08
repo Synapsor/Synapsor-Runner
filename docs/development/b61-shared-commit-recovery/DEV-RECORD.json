@@ -1,5 +1,5 @@
 {
-  "status": "COHERENT_RECOVERY_WIP_NATIVE_INDEPENDENT_PENDING",
+  "status": "RECOVERY_WIP_FIRST_NATIVE_POSITIVE_OBSERVED_INDEPENDENT_PENDING",
   "product_base": "ab91163d641fced8f97c7d80750183192d6e4389",
   "new_native_execution": "6_RUNTIME_FAILURES_6_COMMITTED_SOURCE_EFFECT_WITNESSES",
   "original_lost_ack_checkpoint_preserved": "eb608c27d50e6a9f7108fc57c85530650fe29aa6",
@@ -43,7 +43,7 @@
     "apps/runner/src/writeback-setup.ts": "2bb4b1315bc0e8dea76f825fd92773faca34a91f6c4eb1d48e874917f69d4aa4",
     "apps/runner/src/worker-runtime.ts": "c76101b50730f04defd531cac75d2894c946d4d56e7438d29d9b9d5468532453"
   },
-  "postgreSQL_source_equals_frozen_d9f": true,
+  "postgreSQL_source_equals_frozen_d9f": false,
   "build_before": {
     "exit": 0,
     "seconds": 6.26109504699707,
@@ -151,7 +151,7 @@
     "seconds_focus": 2.0476419925689697,
     "owned_live": 0
   },
-  "remaining": "Fresh physical cold/concurrent/missing/wrong binding/ambient drift/Source ACK/control ACK loss/rollback/legacy privilege and ordinary lifecycle/accounting controls plus independent judgment remain; actual runner_ledger lacks Source proof and stays UNKNOWN.",
+  "remaining": "Fresh anchored/ordinary Source_db and actual Luna runner_ledger; before-late-callback crash+leased refusal/quarantine; control adoption interruption; full-result/wrong-binding/legacy/permission/rollback controls; independent scoped acceptance. Actual historical Luna runner_ledger remains UNKNOWN.",
   "prospective": {
     "typed_envelope_binding_pin": "93b52520",
     "types_exit": 0,
@@ -181,12 +181,12 @@
         "build_exit": 0
       },
       "fix": "Positive binding requires explicit URL user and port; ordinary execution remains compatible",
-      "cold_wrong_destination_ambient_control": "NOT_RUN_REQUIRED_BEFORE_POSITIVE_RECOVERY_ACCEPTANCE",
+      "cold_wrong_destination_ambient_control": "ACTUAL_PGUSER_impact_admin_DESTINATION_OBSERVED_PROOF_UNKNOWN",
       "owned_live": 0
     },
     "producer_inspection_store": {
       "implemented": true,
-      "native_positive_recovery": "NOT_RUN",
+      "native_positive_recovery": "OBSERVED_RUNTIME720_FIXTURE2E17_NOT_INDEPENDENT_ACCEPTED",
       "independent_acceptance": "PENDING",
       "source_producer": "Optional full-bound atomic completion JSON in the same selected Source receipt transaction; native column UPDATE permission required",
       "legacy_source": "No silent ALTER or grants; absent/unwritable column supplies no evidence",
@@ -197,5 +197,68 @@
       "compatibility": "Package builds0; app types corrected to0; finite intent checks5P; original unsafe row-match unit observed refusal1F and converted to explicit Source-proven unit fixture, not physical proof"
     }
   },
-  "setup_only_correction": "run-local launcher first had newline syntax error before native launch; corrected narrow syntax only, not runtime outcome"
+  "setup_only_correction": "run-local launcher first had newline syntax error before native launch; corrected narrow syntax only, not runtime outcome",
+  "native_recovery_groups": {
+    "recovery-luna-v1": {
+      "result": "PRETARGET_FIXTURE_IDENTITY_OPTION_MISSING",
+      "source_apply": false,
+      "preserved": true
+    },
+    "recovery-luna-v2": {
+      "runtime": "7201d467",
+      "fixture": "2e17f1fc",
+      "exit": 0,
+      "seconds": 22.57147,
+      "owned": "/var/tmp/synapsor-b61-recovery-owned-recovery-luna-v2-159dde94",
+      "scope": "native signed approval/RECONCILE, physical PG two-target actual Luna structure; Source_db supplemental, not historical runner_ledger mode or whole CLI activation",
+      "actual_commit_ack_lost": true,
+      "source_effects": 2,
+      "cold_pids": [
+        3818051,
+        3818089,
+        3818187,
+        3818225,
+        3818300
+      ],
+      "cold_source_proven": true,
+      "ambient_native_role": "impact_admin",
+      "ambient_completion": "UNKNOWN",
+      "concurrency": "two Source connections within one process, original SQLite CAS",
+      "reconciliation_events": 1,
+      "original_unknown_receipt_retained": true,
+      "queue": "completed",
+      "ordinary_lifecycle": "applied",
+      "metrics": {
+        "proposals": 1,
+        "approvals": 1,
+        "applies": 1,
+        "conflicts": 0,
+        "failures": 0
+      },
+      "all_source_rows_receipts_equal_after_recovery": true,
+      "container": "synapsor-b61-recovery-01e5b8ac",
+      "owned_live": 0,
+      "independent_acceptance": "PENDING"
+    }
+  },
+  "adoption_correction": {
+    "cause": [
+      "leased original queue skipped completion and adoption committed anyway",
+      "v2 bookkeeping schema/producer omitted native result_version"
+    ],
+    "before": {
+      "native_unit_passed": 5,
+      "native_unit_failed": 2
+    },
+    "after": {
+      "native_unit_passed": 7,
+      "native_unit_failed": 0,
+      "package_build_exit": 0,
+      "app_types_exit": 0,
+      "app_types_seconds": 50.30820274353027
+    },
+    "queue_rule": "whole adoption refuses until original queue quarantined; exact same transaction queue CAS; proven repeat validates receipt and finishes only existing quarantined queue or observes exact completed queue",
+    "version_rule": "optional typed v2 new_version emitted prospectively; exact matching value required for Source completion; legacy acknowledged terminal records remain compatible",
+    "native_crash_and_remaining_families": "NOT_RUN"
+  }
 }

@@ -1708,7 +1708,7 @@ describe("proposal store", () => {
     } finally { first.close(); restored.close(); await fleet.close(); }
   });
 
-  it("records a signed Source-proven reconciliation while retaining unknown history", () => {
+  it.each(["queue", "version", "positive"])("records a signed Source-proven reconciliation while retaining unknown history (%s)", (control) => {
     const store = new ProposalStore();
     try {
       const change = operationChangeSet("single_row_update", "reconcile");
@@ -1740,13 +1740,6 @@ describe("proposal store", () => {
       if (claim.decision !== "proceed") throw new Error("expected new intent");
       store.markWritebackIntentApplying(claim.intent_id, "runner_a");
       store.requireWritebackReconciliation(claim.intent_id, "commit acknowledgement missing");
-      store.requireWorkerReconciliation({
-        proposalId: change.proposal_id,
-        workerId: "runner_a",
-        leaseId: workerLease.lease_id,
-        errorCode: "UNKNOWN_TRANSACTION_OUTCOME",
-      });
-
       const identity: OperatorIdentityProof = {
         provider: "signed_key",
         verified: true,
@@ -1794,6 +1787,7 @@ describe("proposal store", () => {
         rows_affected: 1,
         idempotency_key: job.idempotency_key,
         after_digest: "sha256:observed",
+        new_version: 8,
         source_database_mutated: true,
         safe_outcome_code: "RECONCILED_APPLIED",
         executed_at: "2026-07-13T02:00:00Z",
@@ -1805,6 +1799,25 @@ describe("proposal store", () => {
         safe_outcome_code: "OUTCOME_UNKNOWN", receipt_hash: "sha256:original_unknown" };
       store.recordExecutionReceipt(unknown);
       const originals = store.receipts(change.proposal_id);
+      const reconcile = (candidate: typeof receipt) => store.reconcileWritebackIntent({ intent_id: claim.intent_id,
+        receipt: candidate, source_completion: evidence, actor: "fleet_operator", reason: "Exact Source proof",
+        observation: {}, identity, require_verified_identity: true });
+      const before = () => ({ intent: store.getWritebackIntent(claim.intent_id), proposal: store.getProposal(change.proposal_id),
+        receipts: store.receipts(change.proposal_id), events: store.events(change.proposal_id), queue: store.getWorkerQueueItem(change.proposal_id), metrics: store.operationalMetrics() });
+      if (control === "queue") {
+        const unchanged = before();
+        expect(() => reconcile(receipt)).toThrowError(expect.objectContaining({ code: "SOURCE_COMPLETION_QUEUE_NOT_QUARANTINED" }));
+        expect(before()).toEqual(unchanged);
+      }
+      store.requireWorkerReconciliation({ proposalId: change.proposal_id, workerId: "runner_a", leaseId: workerLease.lease_id,
+        errorCode: "UNKNOWN_TRANSACTION_OUTCOME" });
+      if (control === "version") {
+        const unchanged = before();
+        expect(() => reconcile({ ...receipt, new_version: 9 })).toThrowError(expect.objectContaining({ code: "SOURCE_COMPLETION_RECEIPT_MISMATCH" }));
+        const missing = { ...receipt }; delete (missing as { new_version?: number }).new_version;
+        expect(() => reconcile(missing)).toThrowError(expect.objectContaining({ code: "SOURCE_COMPLETION_RECEIPT_MISMATCH" }));
+        expect(before()).toEqual(unchanged);
+      }
       const resolved = store.reconcileWritebackIntent({
         intent_id: claim.intent_id,
         receipt,

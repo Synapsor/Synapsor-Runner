@@ -83,6 +83,7 @@ export function receiptToWritebackResult(receipt: ExecutionReceiptV2 | Execution
     target_identity: receipt.target.identity,
     before_digest: receipt.before_digest,
     after_digest: receipt.after_digest,
+    result_version: receipt.new_version,
     tombstone_digest: receipt.tombstone_digest,
     inverse: receipt.inverse,
     result_hash: receipt.receipt_hash,

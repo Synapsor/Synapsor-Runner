@@ -13,6 +13,8 @@ export function assertSourceCompletionReceipt(intent: StoredWritebackIntent, rec
     || receipt.idempotency_key !== job.idempotency_key || receipt.runner_id !== result.runner_id || receipt.executed_at !== result.completed_at
     || receipt.target.source_id !== job.source_id || receipt.target.schema !== job.target.schema || receipt.target.table !== job.target.table
     || canonicalJsonDigest(receipt.target.identity) !== canonicalJsonDigest(result.target_identity)) return invalid();
+  if (receipt.schema_version === protocolVersions.executionReceiptV2 && result.protocol_version === "2.0"
+    && canonicalJsonDigest(receipt.new_version ?? null) !== canonicalJsonDigest(result.result_version ?? null)) return invalid();
   const receiptFields = receipt as unknown as Record<string, unknown>, resultFields = result as unknown as Record<string, unknown>;
   for (const field of ["before_digest", "after_digest", "tombstone_digest", "inverse", "semantic_verification", "atomic_effects"]) {
     if (canonicalJsonDigest(receiptFields[field] ?? null) !== canonicalJsonDigest(resultFields[field] ?? null)) return invalid();

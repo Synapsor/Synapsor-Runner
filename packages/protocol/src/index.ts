@@ -1173,6 +1173,7 @@ export const executionReceiptV2Schema = z.object({
   idempotency_key: z.string().min(1),
   before_digest: sha256.optional(),
   after_digest: sha256.optional(),
+  new_version: scalar.optional(),
   tombstone_digest: sha256.optional(),
   source_database_mutated: z.boolean(),
   safe_outcome_code: z.string().regex(/^[A-Z][A-Z0-9_]*$/),

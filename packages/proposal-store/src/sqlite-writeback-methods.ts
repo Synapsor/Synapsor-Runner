@@ -357,20 +357,43 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       if (completion) assertSourceCompletionReceipt(intent, receipt, completion.result);
       assertOperatorDecision(proposal, "reconcile", input.actor, input.identity, input.require_verified_identity === true);
       assertNoSecretMaterial(input.observation, "writeback_reconciliation_observation");
-      if (completion && intent.status === "applied") {
-        if (canonicalJsonDigest(intent.result) !== canonicalJsonDigest(completion.result)) throw new ProposalStoreError("WRITEBACK_INTENT_RECONCILIATION_CONFLICT", "existing completion differs from the Source proof");
-        const prior = this.events(intent.proposal_id).find(event => event.kind === "writeback_reconciled"
-          && event.payload.intent_id === intent.intent_id && event.payload.source_completion_digest === canonicalJsonDigest(completion));
-        if (prior) return intent;
-      }
       const reason = input.reason.trim().slice(0, 500);
       this.transaction(() => {
-        if (completion) {
-          const latest = this.requireWritebackIntent(intent.intent_id);
-          const prior = this.events(intent.proposal_id).find(event => event.kind === "writeback_reconciled"
+        const workerItem = this.workerQueueItem(intent.proposal_id);
+        const latest = this.requireWritebackIntent(intent.intent_id);
+        const duplicate = completion && latest.status === "applied" && canonicalJsonDigest(latest.result) === canonicalJsonDigest(completion.result)
+          && this.events(intent.proposal_id).some(event => event.kind === "writeback_reconciled"
             && event.payload.intent_id === intent.intent_id && event.payload.source_completion_digest === canonicalJsonDigest(completion));
-          if (latest.status === "applied" && canonicalJsonDigest(latest.result) === canonicalJsonDigest(completion.result) && prior) return;
+        if (completion && workerItem && workerItem.status !== "reconciliation_required"
+          && !(duplicate && workerItem.status === "completed" && workerItem.terminal_outcome === "applied")) {
+          throw new ProposalStoreError("SOURCE_COMPLETION_QUEUE_NOT_QUARANTINED", "the original worker queue must be quarantined before atomic completion adoption");
         }
+        const completeQuarantinedQueue = () => {
+          if (workerItem?.status === "reconciliation_required") {
+            const queueStatus: WorkerQueueStatus = receipt.status === "failed" ? "dead_letter" : "completed";
+            const terminalOutcome = receipt.status === "failed" ? "dead_letter" : receipt.status;
+            const completedQueue = this.db.prepare(`
+              UPDATE worker_queue
+              SET status = ?, lease_owner = NULL, lease_id = NULL,
+                  lease_expires_at = NULL, last_error_code = ?,
+                  terminal_outcome = ?, updated_at = ?
+              WHERE proposal_id = ? AND status = 'reconciliation_required'
+            `).run(
+              queueStatus,
+              receipt.status === "failed" ? "RECONCILED_FAILED" : null,
+              terminalOutcome,
+              receipt.executed_at,
+              intent.proposal_id,
+            );
+            if (Number(completedQueue.changes) !== 1) throw new ProposalStoreError("WRITEBACK_QUEUE_RECONCILIATION_CONFLICT", "the original worker queue changed during completion adoption");
+            this.appendEvent(intent.proposal_id, "writeback_worker_reconciled", input.actor, {
+              intent_id: intent.intent_id,
+              outcome: receipt.status,
+              queue_status: queueStatus,
+              source_database_changed: false,
+            });
+          }
+        };
         const projection = completion ? this.db.prepare(`SELECT * FROM writeback_receipts WHERE writeback_job_id = ? AND idempotency_key = ?`)
           .get(intent.writeback_job_id, intent.idempotency_key) : undefined;
         const originalReceipt = projection ? parseExecutionReceipt(JSON.parse(String(projection.receipt_json))) : undefined;
@@ -382,6 +405,13 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
             || !("receipt_authority" in originalReceipt) || originalReceipt.receipt_authority !== "source_db") {
             throw new ProposalStoreError("SOURCE_COMPLETION_TERMINAL_CONFLICT", "the current receipt projection differs from the original uncertain attempt");
           }
+        }
+        if (duplicate) {
+          if (!originalReceipt || originalReceipt.status !== "applied") {
+            throw new ProposalStoreError("SOURCE_COMPLETION_PROJECTION_CONFLICT", "the proven original completion has no matching applied receipt projection");
+          }
+          completeQuarantinedQueue();
+          return;
         }
         const updated = this.db.prepare(`
           UPDATE writeback_intents
@@ -409,30 +439,7 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
           if (Number(projected.changes) !== 1) throw new ProposalStoreError("SOURCE_COMPLETION_PROJECTION_CONFLICT", "the original receipt projection changed during reconciliation");
         }
         this.recordExecutionReceiptRows(receipt, proposal);
-        const workerItem = this.workerQueueItem(intent.proposal_id);
-        if (workerItem?.status === "reconciliation_required") {
-          const queueStatus: WorkerQueueStatus = receipt.status === "failed" ? "dead_letter" : "completed";
-          const terminalOutcome = receipt.status === "failed" ? "dead_letter" : receipt.status;
-          this.db.prepare(`
-            UPDATE worker_queue
-            SET status = ?, lease_owner = NULL, lease_id = NULL,
-                lease_expires_at = NULL, last_error_code = ?,
-                terminal_outcome = ?, updated_at = ?
-            WHERE proposal_id = ? AND status = 'reconciliation_required'
-          `).run(
-            queueStatus,
-            receipt.status === "failed" ? "RECONCILED_FAILED" : null,
-            terminalOutcome,
-            receipt.executed_at,
-            intent.proposal_id,
-          );
-          this.appendEvent(intent.proposal_id, "writeback_worker_reconciled", input.actor, {
-            intent_id: intent.intent_id,
-            outcome: receipt.status,
-            queue_status: queueStatus,
-            source_database_changed: false,
-          });
-        }
+        completeQuarantinedQueue();
       });
       return this.requireWritebackIntent(intent.intent_id);
     },
