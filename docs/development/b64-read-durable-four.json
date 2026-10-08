@@ -1,0 +1,34 @@
+{
+  "base": "0b035530",
+  "status": "4 component controls PASS; independent class variant pending",
+  "before": "/var/tmp/synapsor-b64-read-owned/evidence/typed-durable-four-before.log:4 missing-protocol failures",
+  "typed_before": "/var/tmp/synapsor-b64-read-owned/evidence/typed-durable-four-after.log:1PASS/3FAIL; actual cold decided-resume stale defect, plus two retired literal shape assertions",
+  "after": "/var/tmp/synapsor-b64-read-owned/evidence/typed-durable-four-after2.log:4PASS/146filtered",
+  "product_fix": "Only an exact decided pending scope answer resolved through the existing native owner joins ownedAnswerIds before context digest. History append remains after acknowledged decision; no source/task/model bypass.",
+  "cases": [
+    {
+      "case": "saves completed question before pause",
+      "preserved": "exact event sequence, one call, same pending requirement, no replay",
+      "typed_change": "unresolved proposal/raw native wait replaces retired clarification object; original missing text checked in typed requirement"
+    },
+    {
+      "case": "saves canonical answer separately",
+      "preserved": "real decided checkpoint, durable raw text, no reprompt, exactly one followup, ready/no authority",
+      "typed_change": "exact native answer reference replaces inline confirmed-looking answer object; prompt correctly says raw testimony"
+    },
+    {
+      "case": "reparses retained target",
+      "preserved": "rehashed nonexistent field rejected before handler/provider; arbitrary persisted material invalid",
+      "typed_change": "strict exact value_request target replaces retired clarification_request target; error wording now names resource and field"
+    },
+    {
+      "case": "used correction across resume",
+      "preserved": "two initial calls, attempt2/used correction survives, blocked result, one followup only",
+      "typed_change": "real native scope_answers reference+raw history replaces retired clarified_targets interpretation"
+    }
+  ],
+  "remaining": [
+    "independent foreign Source/answer drift control",
+    "composed regression after product change"
+  ]
+}

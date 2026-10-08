@@ -185,9 +185,22 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   };
   serializeCatalog();
   const inheritedHistory = input.resumeCheckpoint ?? input.postReviewReplacement?.read.assistance_history;
-  const inheritedScopeAnswers = inheritedHistory ? parseReadWorkloadAssistanceCheckpoint(inheritedHistory).state : undefined;
+  const inheritedCheckpoint = inheritedHistory ? parseReadWorkloadAssistanceCheckpoint(inheritedHistory) : undefined;
+  const inheritedScopeAnswers = inheritedCheckpoint?.state;
   const ownedAnswerIds = new Set([...(inheritedScopeAnswers?.scope_answers ?? []), ...(inheritedScopeAnswers?.scope_replacements ?? [])]
     .map(answer => answer.answer_reference.question_id));
+  // A crash after the decided save precedes appending this answer to history.
+  // Re-resolve its exact native owner before excluding that acknowledged delta.
+  const decidedScope = inheritedCheckpoint?.stage === "decided" && inheritedCheckpoint.pending_question.kind === "scope"
+    ? inheritedCheckpoint.pending_question : undefined;
+  if (decidedScope?.decision) {
+    const reference = decidedScope.decision.answer_reference;
+    const actual = input.structuredScope.resolveAnswer?.(reference, decidedScope.request);
+    if (!actual || actual.kind !== "answer" || actual.question_id !== reference.question_id
+      || actual.question_revision !== reference.revision || actual.answer_id !== reference.answer_id)
+      throw new Error("READ_SCOPE_ANSWER_STALE: The saved decision does not match the current native question.");
+    ownedAnswerIds.add(reference.question_id);
+  }
   let structuredScopeInput = input.structuredScope ? structuredClone(await input.structuredScope.current()) : undefined;
   if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL)
     throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED: Preserve the native job; no legacy protocol fallback is available.");
