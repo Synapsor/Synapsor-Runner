@@ -19,8 +19,10 @@ type Decision<Binding> = Extract<AuthoringQuestionResponse<Binding>, { kind: "de
 async function presentReadback<Binding>(input: {
   view: Readback<Binding>; session: Pick<Session, "confirm">; businessContext?: OperatorBusinessContext;
   question: string; detailsTitle: string;
+  localOnly?: true;
 }): Promise<Decision<Binding>> {
   const accepted = await input.session.confirm(input.question, {
+    ...(input.localOnly ? localTypedOptions : {}),
     context: operatorBusinessReadback([...input.view.lines], input.businessContext),
     defaultValue: false,
     exactDetails: { title: input.detailsTitle, lines: [...input.view.lines] },
@@ -34,13 +36,14 @@ export async function presentReadScopeInteraction(input: { view: ReadScopeIntera
   businessContext?: OperatorBusinessContext }): Promise<ReadScopeInteractionResponse> {
   const { view } = input;
   if (view.kind === "readback") return presentReadback({ view, session: input.session,
+    localOnly: true,
     businessContext: input.businessContext, question: "Confirm this complete Read scope and analyzed plan?",
     detailsTitle: "EXACT CURRENT READ SCOPE" });
   const choice = await input.session.chooseOption?.("READ SCOPE IS STILL PENDING", [
     { value: "keep", label: "Keep this scope pending" },
     ...(view.canReview ? [{ value: "review", label: "Review the same complete proposal" }] : []),
     ...(view.canReplace ? [{ value: "replace", label: "Use the ordinary scope replacement route" }] : []),
-  ], { initialValue: "keep", reviewOnly: true, context: operatorBusinessReadback([...view.material], input.businessContext) });
+  ], { ...localTypedOptions, initialValue: "keep", reviewOnly: true, context: operatorBusinessReadback([...view.material], input.businessContext) });
   return { kind: "pending", binding: view.binding,
     choice: choice === "review" && view.canReview ? "review" : choice === "replace" && view.canReplace ? "replace" : "keep" };
 }

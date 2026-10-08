@@ -106,7 +106,7 @@ describe("grouped Read scope protected review", () => {
       const response: ReadScopeInteractionResponse = await presentReadScopeInteraction({ view,
         session: { confirm, promptText: vi.fn(), chooseOption: vi.fn() } });
       expect(response).toEqual({ kind: "decision", binding: view.binding, accepted: true });
-      expect(confirm.mock.calls[0]?.[1]).toMatchObject({ defaultValue: false });
+      expect(confirm.mock.calls[0]?.[1]).toMatchObject({ defaultValue: false, decisionKind: "business_review", localOnly: true });
     } finally { await h.cleanup(); }
   });
 });
