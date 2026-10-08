@@ -6,13 +6,13 @@
   "runtime_note": "Initial repository scanner stopped cleanly due redundant printing; cached declaration rendering then completed. No product tests or Source operation involved.",
   "independent_audit": "R1 all141 completed a6f16baa:101legitimate/25typedreclassifications/15retired; exact allowance acceptance separate",
   "allowlist": "365 exact independent expression/owner fingerprints accepted69c08271; 100/101 legitimate IDs mapped; one declaration-only anchor; no wholeowner/file exemption.",
-  "counts_warning": "40224 conservative syntax/dependency candidates across571files, NOT decision-site counts. Exact legitimate allowances pending; currentrepositorycheck remainsred.",
-  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/language-guard-lookup-scan.json",
+  "counts_warning": "Latest d322 core scan on Main3d2e5f29:43591 syntax/dependency candidates across571 files;365 exact independently reviewed allowances;43226 unmatched. These are NOT English decision-site counts.",
+  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/language-guard-reviewed-current.json",
   "open": [
     "Practical candidate/allowance coverage, without blanket exemptions",
     "Close original316 and25 reclassified decision sites",
     "Main integration and composed regressions"
   ],
   "guard_repair": "Actual typed symbol consumer graph binds helpers/import aliases; dictionary definition is a candidate when used by nonnumeric indexing; ordinary output objects/numeric branches alone excluded. No automatic English/formal exemption.",
-  "remaining": "40224 candidate historical934 scan minus365 exactreviewed =39859 unreviewed syntax/dependency nodes, NOT English decision count. Latestd322 receiver extension not yet rescanned; no green repository CI claim."
+  "remaining": "Practical detector and exact allowance coverage remain OPEN; latest report contains43226 unreviewed_candidate errors and no stale/invalid allowances."
 }

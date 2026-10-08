@@ -1,0 +1,60 @@
+{
+  "head": "3d2e5f29",
+  "scope": "Exact Ask3 integration and guard status; no B64 closure",
+  "Ask": {
+    "test": "apps/runner/src/ask-reclassified-errors.test.ts",
+    "pass": 13,
+    "fail": 0,
+    "skip": 0,
+    "types": "tsc -b --pretty false completed; empty diagnostic log",
+    "independent": "4b92c536 24PASS/types0"
+  },
+  "guard_controls": {
+    "command": "node --test scripts/authoring-language-guard/*.test.mjs",
+    "pass": 21,
+    "fail": 0
+  },
+  "repository_guard": {
+    "command": "node scripts/check-authoring-language.mjs --report /var/tmp/synapsor-b64-main-owned/evidence/language-guard-reviewed-current.json",
+    "status": "NOT_PASS",
+    "candidates": 43591,
+    "reviewed": 365,
+    "unmatched": 43226,
+    "note": "Syntax candidates, not English decisions; no blanket exemption"
+  },
+  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/",
+  "legitimate_audit": {
+    "total": 141,
+    "legitimate": 101,
+    "reclassify_typed": 25,
+    "retired": 15,
+    "pin": "a6f16baa"
+  },
+  "remaining_typed_delete": {
+    "Ask": [
+      0,
+      0
+    ],
+    "Read": [
+      0,
+      0
+    ],
+    "Chat": [
+      9,
+      0
+    ],
+    "Privacy": [
+      23,
+      2
+    ],
+    "Action": [
+      43,
+      5
+    ],
+    "Main": [
+      38,
+      0
+    ]
+  },
+  "count_limit": "Lane scoped closure distinct from Main integration; Read last6/public ports still pending. No overall PASS."
+}

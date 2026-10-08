@@ -38,10 +38,10 @@
     }
   },
   "heavy_slots": {
-    "1": "Action finite public hard-limit/retirement controls; sole editor",
-    "2": "B65 runtime finite native hard-limit controls",
-    "3": "R1 independent Ask3 then Privacy revision20 finite after release",
-    "4": "Chat new9 finite before/after max1"
+    "1": "Action finite controls (announce start/end)",
+    "2": "B65 runtime returned; native namespace lifetime remains OPEN",
+    "3": "Privacy seven failing-before finished; no current runtime",
+    "4": "B66 independent Chat NEW9 finite controls authorized max1"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -1228,12 +1228,12 @@
       ]
     },
     "chat_presentation": {
-      "pin": "768d85e6",
+      "pin": "85af6451",
       "branch_typed": 9,
       "branch_delete": 0,
       "main_pending_typed": 9,
       "main_pending_delete": 0,
-      "source": "Original29typed/1delete source accepted/integrated; nine reclassified presentation/routing/provenance sites newly assigned.",
+      "source": "Original29typed/1delete accepted/integrated. New9 implemented85af6451, independent pending9/Main pending9. Original30 before3P27F\u2192after30P; final31P, affected74P,extra2P overlap; types0. Exact packet8e1cc439 assignedB66review.",
       "audit_reclassified_ids": [
         "I03543",
         "I03544",
