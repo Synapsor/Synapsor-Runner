@@ -1,15 +1,15 @@
-ACTIVE B64 — Owner resumed; usage pause REMOVED. Paid CLOSED; current Main extractionf938749a (boundary20162lines).
-B64 clock unchanged: T0 2026-10-08T06:32:23Z; end 2026-10-13T06:32:23Z; final24h 2026-10-12T06:32:23Z. Frozen candidate3/history/holds untouched.
-Main: consents6c / codex/b64-authoring-protocol-20261008, product55010d2c private-pushed; no partial product edit. [Contract](docs/development/adr-b51-shared-input-interaction.md).
-Done: English scope reader/all callers deleted8e5085bb; old exact refusal9516a3eb/R2fourPASS; legacy checkpoint shapes7524bf59/R2fivePASS. [Removal list](docs/development/b64-read-scope-parser-removal.md).
-Public25ed70cc Review→Yes PASS, same q/history/no planning-mapping replay/disabledsave. Replace raw continuation OPEN; prior v1 public observations are not current Read.v2 qualification.
-Native protocolfe0a22cb+ec35a00d:106P/types0, future-envelope90P/R2scopedACCEPT. Malformed-envelope55010d2c before1P3F/after88P; independent550 and mixedRead.v2 checks NEXT.
-Read owner: b57-fixture-prep / codex/b64-read-scope-20261008 @16a7425f; canonical0814+e8 R1ninePASS component; projector003+16 actualsevenPASS; wire2900fourteenPASS. Not integrated into Main yet.
-Helper: b56-owned-dir-remedy / codex/b64-presentation-20261008 @e9ad098b paused; ff0664a1 genuine reviewed-NOT-ACTIVE structural1PASS; native17 blocked before corrected projector, not rerun.
-R1: early-full-triage1652 / codex/b64-principal-independent-20261008 @84e4fc80 paused; next independently review projector16a7425f/helperff PS05/06/12, then public. RLS typed-ack gap remains OPEN.
-R2: reviewer-consents6d / codex/b64-reviewer2-typed-boundaries-20261008 @10d37538; evidence backupd37c7f72; next550 primitive guard and PC03 mixedRead.v2/native/public binding. All prior failed captures retained.
-EXACT NEXT after resume: helper adopts owner16a7425f then runs node node_modules/vitest/vitest.mjs run apps/runner/src/native-read-scope-fixture.test.ts apps/runner/src/authoring-read-scope-question.test.ts apps/runner/src/authoring-read-scope-host.test.ts --maxWorkers=1 --minWorkers=1 under its existing isolated HOME/TMP/network harness.
-Main NEXT after finite reviews: compose canonical/projector+genuine fixture; wire actual subject inventory; remove jobRequestsPrincipalIsolation via typed dispatch, not broader roots. Then Replace/revision/reuse and Action native/public adapters.212 old fixture rows still open; v1 ports not v2-qualified.
-[Compact results](docs/development/candidate4-integration/DEV-RECORD.json); logs /var/tmp/synapsor-b64-main-owned/evidence/. No full/freeze/installed PASS. Helper activated original fixture preserved but excluded from preactivation proof.
-Tester01a117fd-4600-76a3-baf7-e404eb16d0d3 PAUSED/CLOSED, privatebackup21c3b3dc. Luna35total; liabilities15.27063125 inclhold1.2693125; remaining19.72936875. No paid/uncertain operation open.
-Continue through usage thresholds; Owner will pause explicitly. Private checkpoints often; max2heavy/8workers, isolated0700HOME/TMP+decoy/free8GiB. No automated usage pause.
+ACTIVE B64 — usage pause REMOVED by Owner; continue/private checkpoints. Paid CLOSED.
+Clock unchanged: T0 2026-10-08T06:32:23Z; end 2026-10-13T06:32:23Z; final24h 2026-10-12T06:32:23Z. Frozen candidate3/history/holds untouched.
+Main codex/b64-authoring-protocol-20261008 @d4633d8e; extraction f938749a reduces boundary20204→20162. [Contract](docs/development/adr-b51-shared-input-interaction.md).
+Integrated reviewed Read canonical/projector/helper/RLS through3d276c08; R1 scoped projector7PASS + RLS5PASS at9df30259; helper18PASS integrated. Public lifecycle not yet qualified.
+Entry d4633d8e: current native records validate before UI/metadata, old envelope refuses first. Before bypassFAIL preserved; after protocol14PASS; original R2 PC03 public variants pending.
+R2 primitive550 scoped10PASS; mixed native3PASS+cold1PASS, public2FAIL befored463. [Reviewer handoff](../reviewer-consents6d/docs/development/b64-reviewer2/HANDOFF.md).
+Read owner codex/b64-read-replacement-20261008 from3d276c08; implement bound raw Replace continuation/actual next model turn. R1 RP01–07 presealed88b7c6dd; no fake completion/replay/inherited Yes.
+Read inventory907bd91d:212 exact rows proposed26 legacy-English assertions/168 typed ports/18 adapter gaps; no blanket deletion or safety waiver. Independent adjudication pending.
+Action owner b64-action-typed / codex/b64-action-typed-20261008 fromf938749a; typed dispatch/diff implementation active, R2 preseal; no boundary edits. [Map](../b56-owned-dir-remedy/docs/development/b64-presentation/ACTION-WIRING-MAP.md).
+Main EXACT NEXT: fresh native subject context + typed principal dispatch; remove jobRequestsPrincipalIsolation and extract principal review owner. Preserve unknown scope as pending, never broaden roots.
+Helper807c0dbf native fixture18PASS/map34eaf818 privately pushed, finite assignment complete. R1 next public composedv2/Replace; R2 original PC03 gate then Action counterexamples.
+Tests: isolated0700HOME/TMP under /var/tmp, no network/provider; max2heavy/8workers, free8GiB floor. No full/freeze/installed PASS; older fixture type errors remain separate.
+[Compact DEV record](docs/development/candidate4-integration/DEV-RECORD.json); logs /var/tmp/synapsor-b64-main-owned/evidence/; before failures retained. Root checkout navigation only.
+Tester paused/CLOSED backup21c3b3dc; Luna35total, liabilities15.27063125 inclhold1.2693125, remaining19.72936875. No paid/uncertain operation open.
+Commit/private-push each checkpoint (never origin/rootconfig/secrets); one editor per hotspot. No automatic usage monitoring or pause.
