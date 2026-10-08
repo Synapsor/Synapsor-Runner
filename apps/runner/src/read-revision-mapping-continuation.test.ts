@@ -23,7 +23,7 @@ import { generateModelReadWorkload, type ModelReadWorkloadInput } from "./read-w
 import { READ_SCOPE_PROTOCOL, type ReadScopeProposal } from "./read-structured-scope.js";
 import { storeReadWorkloadAnalysis, type ReadWorkloadView } from "./read-workloads.js";
 import type { ReadRevisionMappingOwner } from "./read-revision-mapping-continuation.js";
-import { prepareReadRevisionAnalysis } from "./authoring-read-revision-scope.js";
+import { prepareReadRevisionAnalysis, storeCommittedReadRevisionAnalysis } from "./authoring-read-revision-scope.js";
 
 // The setup, mapping, revision, consumed records and commit are real owners.
 // Fake model replies use only actual transmitted refs/catalog + declared facts.
@@ -47,7 +47,7 @@ function proposal(refs: Array<{kind:string;id:string;text:string}>, subjects: Ar
   }] };
 }
 const response = (tool: string, args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: randomUUID(), name: tool, arguments: JSON.stringify(args) }] } });
-it.each(["ordinary", "native_adapter", "native_checkpoint", "native_checkpoint_absent", "native_checkpoint_foreign", "native_checkpoint_commit_drift", "native_wrong_commit", "native_foreign_commit", "native_no_ack", "native_save_failure", "changed_model", "changed_task", "changed_provider_destination", "missing_binding", "wrong_saved_candidate", "foreign_question"] as const)("continues only the exact actually committed revision: %s", async mode => {
+it.each(["ordinary", "native_adapter", "native_analyzed", "native_checkpoint", "native_checkpoint_absent", "native_checkpoint_foreign", "native_checkpoint_commit_drift", "native_wrong_commit", "native_foreign_commit", "native_no_ack", "native_save_failure", "changed_model", "changed_task", "changed_provider_destination", "missing_binding", "wrong_saved_candidate", "foreign_question"] as const)("continues only the exact actually committed revision: %s", async mode => {
   const nativeCase = mode.startsWith("native_"), checkpointCase = mode.startsWith("native_checkpoint");
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "native-read-revision-continuation-"));
   try {
@@ -122,13 +122,14 @@ it.each(["ordinary", "native_adapter", "native_checkpoint", "native_checkpoint_a
           plan: { kind: "rows", resource: "work.items", select: ["label"], where: [{ field: "label", op: "eq", value: "Visible" }] } }], forbidden: [] });
       } },
     } as ModelReadWorkloadInput));
-    await mapping(); expect(calls).toBe(1); expect(state.read!.assistance_history!.state.call_count).toBe(1);
+    const originalMapping = await mapping(); expect(calls).toBe(1); expect(state.read!.assistance_history!.state.call_count).toBe(1);
     const previousAnalysis = stored!, history = structuredClone(state.read!.assistance_history);
     const instruction = "Label the existing item register Customer items; keep all fields and restrictions unchanged.";
     const mutation = await prepareBoundaryResourceReviewMutation(root, { resource_id: "work.items", metadata: { label: "Customer items" },
       actor: "declared fixture operator", reason: instruction }, async () => prepared.inspection);
-    const retained = prepareReadRevisionAnalysis({ selected: stored, expected: state.read!, currentBoundary: boundary, preparedCandidate: mutation.candidate });
-    expect(retained).toMatchObject({ state: "pending_mapping", reason: "exact_plan_unavailable" });
+    const retained = prepareReadRevisionAnalysis({ selected: stored, expected: state.read!, currentBoundary: boundary, preparedCandidate: mutation.candidate,
+      ...(mode === "native_analyzed" ? { originalWorkload: originalMapping.workload } : {}) });
+    expect(retained).toMatchObject(mode === "native_analyzed" ? { state: "analyzed" } : { state: "pending_mapping", reason: "exact_plan_unavailable" });
     await save({ pendingReadRevision: instruction, pendingReadRevisionState: { instruction, provenance: "operator", privacy_only: false } });
     const native = createNativeReadScope({ projectRoot: root, ports: {
       snapshot: () => ({ resume: state, revision: state.revision_digest, blocked: false, ...records(), read: state.read }),
@@ -141,10 +142,12 @@ it.each(["ordinary", "native_adapter", "native_checkpoint", "native_checkpoint_a
         if (mode === "native_no_ack") return;
         if (mode === "native_save_failure") throw new Error("Fixture saved-commit acknowledgment unavailable");
         await save({ operatorQuestions: update.questions,
-        generationRecovery: update.generation ?? state.generation_recovery, pendingReadRevisionState: update.pendingReadRevisionState ?? state.pending_read_revision_state }); },
+        generationRecovery: update.generation ?? state.generation_recovery, pendingReadRevisionState: update.completedReadRevision ? null : update.pendingReadRevisionState ?? state.pending_read_revision_state,
+          ...(update.completedReadRevision ? { pendingReadRevision: undefined } : {}), read: update.read ?? state.read }); },
     }, interact: async () => { throw new Error("No fabricated review"); } });
     const preview = () => ({ scope: projectAuthoringReadScopePreview({ resume: state, boundary, structuralReview: structural,
-      records: records(), preparedCandidate: mutation.candidate, preparedLock: mutation.build.lock }) });
+      records: records(), preparedCandidate: mutation.candidate, preparedLock: mutation.build.lock }),
+      ...(retained.state === "analyzed" ? { analysis: retained.analysis } : {}) });
     let locked = false;
     if (nativeCase) expect(await native.preview(boundary, mutation)).toEqual(preview().scope);
     let staged: Parameters<ReadRevisionCheckpointAccess["install"]>[0] & { questions?: typeof state.operator_questions } = {};
@@ -164,10 +167,24 @@ it.each(["ordinary", "native_adapter", "native_checkpoint", "native_checkpoint_a
       dependencies: { requestJson: async actual => { const inventory = visible(actual.body, "Host scope inventory: ");
         return response("runner__submit_read_boundary_revision", { read_scope: proposal(inventory.references, inventory.catalog.subject_scopes),
           resource_changes: [{ resource: "work.items", settings: { metadata: { label: "Customer items" } } }] }); } } }));
-    expect(revision.read_scope_state).toBe("pending_mapping"); expect(state.pending_read_revision_state?.result_received).toBe(true);
+    expect(revision.read_scope_state).toBe(mode === "native_analyzed" ? "analyzed_proposal" : "pending_mapping"); expect(state.pending_read_revision_state?.result_received).toBe(true);
     await commitBoundaryResourceReviewMutation(root, mutation); structural = await loadBoundaryReviewContext(root); boundary = structural.candidate;
     await save({ binding: boundaryAuthoringResumeBinding(structural.bundle), pendingReadRevisionState: { ...state.pending_read_revision_state!, saved_read_digest: explorationBoundaryCandidateDigest(boundary) } });
     const old = state.operator_questions!.find(q => q.id === state.pending_read_revision_state!.scope_question_id)!;
+    if (mode === "native_analyzed") {
+      const saved = await storeCommittedReadRevisionAnalysis({ projectRoot: root, prepared: retained, expected: state.read!, committedCandidate: boundary });
+      expect(saved.review).toBeUndefined();
+      const priorRead = structuredClone(state.read), generationBefore = structuredClone(state.generation_recovery);
+      const id = await native.commitAnalyzedRevisionScope({ boundary, questionId: old.id, savedReadDigest: explorationBoundaryCandidateDigest(boundary),
+        analysis: { analysis_id: saved.analysis_id, analysis_digest: saved.analysis_digest } });
+      const current = state.operator_questions!.find(q => q.id === id)!;
+      expect(calls).toBe(1); expect(current.confirmation).toBeUndefined(); expect(current.proposal).toBeDefined();
+      expect(current.read_scope!.completion).toEqual(old.read_scope!.completion); expect(current.read_scope!.record).toEqual(old.read_scope!.record);
+      expect(state.read).toMatchObject({ analysis_id: saved.analysis_id, analysis_digest: saved.analysis_digest, scope_question_id: id,
+        assistance_history: priorRead!.assistance_history });
+      expect(state.pending_read_revision_state).toBeUndefined(); expect(state.pending_read_revision).toBeUndefined();
+      expect(state.generation_recovery).toEqual(generationBefore); return;
+    }
     let current = createReadScopeQuestion({ id: randomUUID(), revision: old.revision + 1, scope_digest: old.scope_digest, context_digest: contextDigest(),
       read_scope: { ...old.read_scope!, predecessor_id: old.id } });
     if (nativeCase) {
