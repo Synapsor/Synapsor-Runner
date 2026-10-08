@@ -1589,10 +1589,7 @@ async function runOpenAiCompatibleTurn(input: {
                 : focusedIntentCheck;
               if (fallbackIntentCheck.mode === "balanced"
                 && (!fallbackArguments || !localPlanMatchesRequirements(fallbackArguments, requirements))) {
-                fallbackArguments = requirements.exactArguments;
-                fallbackIntentCheck = fallbackArguments
-                  ? await resolveAskIntentCheck(input.gateway, fallbackArguments)
-                  : focusedIntentCheck;
+                fallbackArguments = undefined;
               }
             }
             if (!fallbackArguments) {
@@ -1902,10 +1899,7 @@ async function runOpenAiCompatibleTurn(input: {
           planInstruction: requirements.instruction,
         });
         usage = repaired.usage;
-        const repairedArguments = repaired.arguments
-          && localPlanMatchesRequirements(repaired.arguments, requirements)
-          ? repaired.arguments
-          : requirements.exactArguments;
+        const repairedArguments = repaired.arguments;
         if (!repairedArguments || !localPlanMatchesRequirements(repairedArguments, requirements)) {
           return rememberProviderHistory(
             completeLocalPlanMismatchAnswer(input.configuration, traces, usage),
