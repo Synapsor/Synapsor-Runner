@@ -1,0 +1,683 @@
+{
+  "observed_utc": "2026-10-08T18:03:49.758046+00:00",
+  "status": "READ_ONLY_AUDIT_NO_DELETION",
+  "units": "Bytes exact; directory sizes are du allocated blocks, volume sizes Docker UsageData; permission-limited directory sizes are LOWER BOUNDS.",
+  "protected_containers": "Untouched; synapsor-retained-a771-1379 and synapsor-helper1160-pg retained/exited, their bind roots outside requested set. No containers restarted/created/deleted for audit.",
+  "process_check": "No matching cwd/exe/fd observed in accessible /proc entries; inaccessible process state not claimed inspected.",
+  "limitations": [
+    "Five DB bind roots not traversable as current user; sudo -n unavailable. Their displayed sizes exclude unreadable PostgreSQL/MySQL data.",
+    "36 anonymous volume ownership/archive coverage not established; retain, do not infer disposable from dangling.",
+    "No volume or directory content removed or archived. Package blob hashing reads only code cache, never Source DB rows."
+  ],
+  "volumes": [
+    {
+      "name": "0349642bd5e33380ee7fcb9655adf57c6aa3bd132c1024f22d24c9ad72df502a",
+      "created": "2026-10-07T01:10:32-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47958457,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "1cf7aed60eca3f2bbdef87d32380e491b56fdd2b2f0a13a630a7da40ceba759d",
+      "created": "2026-10-07T02:50:18-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 218710872,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "2bb5aab1d66cf972b6e195f4f0cba53123641b7375ccbb113242c05163eb25b2",
+      "created": "2026-10-07T17:49:04-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 218710864,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "2dad699d679a3646ea0ece1a04ca5eb0404c01fad46aec5b6d6b7010ecd2872d",
+      "created": "2026-10-07T02:50:37-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 218593305,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "35afc0c623d56de1700f1b9baa2e6d56bcf0db4bdbd714ed033b6810ea3f3a16",
+      "created": "2026-10-07T01:07:02-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47983033,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "3bd48cd70f6be0d910b9ec504617a317b57e20940d28529d9d75bd4da40d091b",
+      "created": "2026-10-07T05:57:04-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47958457,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "4449e389e659d9a838650f0808774d970936595cd059bc307c1a78945e7b5cb5",
+      "created": "2026-10-07T09:26:19-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 48007609,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "4555fa4c02bc80ab6d9666b88694fb6014ae3e2492472926083cff333c47234e",
+      "created": "2026-10-06T23:30:40-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47966649,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "498e26b8d338d4a27c12b88b2f4bb412a7b1ecd4695b1ded830fa72fc8f35e20",
+      "created": "2026-10-07T17:47:24-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 48007609,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "49f455b30a2c8297579c220535807a365202aec25975f57513fb33fef3a22b0c",
+      "created": "2026-10-07T05:57:18-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47966649,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "4e27b157717808e0c74d323ad5dec72faca6e05005c397753aa025b5266e591b",
+      "created": "2026-10-07T05:55:46-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 48007609,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "5837e522210a2d3cdb82d5a14f4e402bbe7af0e48f5d6279d7fa49f1f2da230a",
+      "created": "2026-10-07T05:57:28-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 218710856,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "7158bd4cfc39e4c87d47630756c53011e8f03d1830ef62cbf4ba95ce9635aef0",
+      "created": "2026-10-06T23:30:51-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 218710884,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "7d974ab01aa1d12f25373f9ceb71491545eae348e073a1538c8ed5ecc956ab25",
+      "created": "2026-10-07T02:50:08-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47966649,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "827c4ae5e362d799194042e5e4f5a36175c0be6ab93c53e9f5d99d7930a04d6f",
+      "created": "2026-10-07T01:11:12-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 218710865,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "87619b84629115c71e0aabc2d731bfc105128c22eec2d6768b3aab04e5e0f5c0",
+      "created": "2026-10-06T23:31:09-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 218593270,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "87adf5c307238951ccfef02bbd6ceafc247a15760c28ea7349521be75fe1258c",
+      "created": "2026-10-07T17:45:19-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47983033,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "8b1e351c5879da8cb7829f881fd59178cd259e6579653f7b182daf2638a533a5",
+      "created": "2026-10-07T17:48:53-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47966649,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "8d89f255dff5b4b36872c2ffaabbad2686f02f8e86d8217e8ffb7aacebc97916",
+      "created": "2026-10-07T09:27:37-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47958457,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "8d90e27dbcb3901b3a97cb04a9c237f3ffcd4412a190ca1ce50ab501c3bb2f94",
+      "created": "2026-10-06T23:30:26-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47958457,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "8dc71f9fe84e41ade9d3a4c3f3b461322f116367043cc7de69ff42d71ec34f7b",
+      "created": "2026-10-07T09:27:59-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 218710872,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "90c48bb4bb0c730b12eb002f15a3d19600ccc6de494406a9824d6d7818b89631",
+      "created": "2026-10-07T01:08:23-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 48007609,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "9520a7774bf7225e8c66ff6f6d59ae70654d8cd996c88010a8e81e3ebcd10d94",
+      "created": "2026-10-07T09:28:19-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 218593291,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "9cc1985260b17a704f1dd97a0f6d92579b5f2c0b2b1471f16757dbb3dcc9a9e3",
+      "created": "2026-10-07T17:49:23-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 218593322,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "9dbdb38526407a18c4cc4395e70ab827b108b379474a53328752e7325bc9ab1e",
+      "created": "2026-10-07T02:48:34-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 48007609,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "a19a22640dfc0423c91d76027f1e46e98253faa46e991cc6b3d8e359fb0f0b3a",
+      "created": "2026-10-07T09:24:56-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47983033,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "a5e1c340ebee3fb137475818067b11977bdf8ab34625f1457f4efc9725e05335",
+      "created": "2026-10-07T01:10:55-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47966649,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "a7f35ff4f17845049a5bbd5b97bf1c68d7762a33b5be3cdfc83da0c70450d405",
+      "created": "2026-10-07T02:47:09-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47983033,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "aea67aa02fa25a124816c9fe52738556bf70b901606b8a5ed64b3f4b51baa638",
+      "created": "2026-10-07T09:27:49-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47966649,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "af5c88bb1158aa2297fcfb84354aa218a51bd724aa2154805b1c221f7221d646",
+      "created": "2026-10-07T17:48:40-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47958457,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "b6b483b47da8901b49e9e6f2e03a58e243e5295e31f421cd37b6d977f70bad86",
+      "created": "2026-10-07T02:49:54-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47958457,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "b882aede1c101b7b00ffbc3448f4432479b2f6743dc5d1d8055190b9dbd53fc4",
+      "created": "2026-10-06T23:29:07-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 48007609,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "c0715a6b55a40cd8429693a13f388658d16ce8d8e33630be39ea5eea20550964",
+      "created": "2026-10-07T05:54:24-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47983033,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "c5978618e1e3bfca4320e3a8591ddf6abd6144638c186a5512fd3ff02571cbc6",
+      "created": "2026-10-07T05:57:47-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 218593304,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "cc2ae6a0253308a9ca9635523fd2508271c7f622b14dbae71321050ce185e6d9",
+      "created": "2026-10-06T23:27:46-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 47983033,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "d3ed837c665dce85cf8dfd8e13e8c1627a9a5981f41f62b91bd62ea9346c8d06",
+      "created": "2026-10-07T01:11:36-07:00",
+      "labels": {
+        "com.docker.volume.anonymous": ""
+      },
+      "bytes": 218593324,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "Unattributed anonymous data; zero container references does not establish evidence redundancy. Keep pending ownership/archive proof."
+    },
+    {
+      "name": "synapsor-native-kc-b-posteffect-copy",
+      "created": "2026-09-20T21:43:28-07:00",
+      "labels": {
+        "synapsor.case": "KC-B-posteffect",
+        "synapsor.task": "native-continuation-20260921"
+      },
+      "bytes": 48485319,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "KEEP: labeled KC-B-posteffect/native-continuation-20260921; referenced by retained continuation-prework/b-live-prepared/private/final-state/container-final-inspect.json. No verified equivalent volume archive."
+    },
+    {
+      "name": "telecom-customer-service_caddy_config",
+      "created": "2026-08-26T14:16:48-07:00",
+      "labels": {
+        "com.docker.compose.config-hash": "1bc0ee11dc3f3fb0753116ae311f3788961ab79108bc09ec4b58be376d953882",
+        "com.docker.compose.project": "telecom-customer-service",
+        "com.docker.compose.version": "5.1.4",
+        "com.docker.compose.volume": "caddy_config"
+      },
+      "bytes": 1126,
+      "container_ref_count": 0,
+      "decision": "KEEP",
+      "reason": "KEEP pending application-owner confirmation; persistent compose Caddy config, not a Runner disposable test fixture."
+    }
+  ],
+  "directories": [
+    {
+      "path": "/var/tmp/synapsor-b50-harness1368-v1",
+      "allocated_bytes": 457711616,
+      "size_is_lower_bound": false,
+      "measurement_errors": [],
+      "mounts": [],
+      "decision": "DELETE_CANDIDATE_AFTER_OWNER_APPROVAL",
+      "reason": "Standalone clean Git source copy at cfbc9785, no ignored/untracked files, both branches same commit, ancestor of verified privately pushed Main96f97352; home/tmp empty. No container mount or visible process reference. Historical source/evidence files remain in private Git."
+    },
+    {
+      "path": "/var/tmp/synapsor-candidate3-accepted067e-live-db1622-owned",
+      "allocated_bytes": 33927168,
+      "size_is_lower_bound": true,
+      "measurement_errors": [
+        "du: cannot read directory '/var/tmp/synapsor-candidate3-accepted067e-live-db1622-owned/postgres-data': Permission denied",
+        "du: cannot read directory '/var/tmp/synapsor-candidate3-accepted067e-live-db1622-owned/mysql-data': Permission denied"
+      ],
+      "mounts": [
+        {
+          "container": "synapsor-live-db-synapsor-candidate3-accepted067e-live-db1622-owned-mysql",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-accepted067e-live-db1622-owned/mysql-data",
+          "destination": "/var/lib/mysql"
+        },
+        {
+          "container": "synapsor-live-db-synapsor-candidate3-accepted067e-live-db1622-owned-postgres",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-accepted067e-live-db1622-owned/postgres-data",
+          "destination": "/var/lib/postgresql/data"
+        }
+      ],
+      "decision": "KEEP",
+      "reason": "KEEP: still backs retained stopped DB/evidence containers. Database data included in this root; never delete by directory glob."
+    },
+    {
+      "path": "/var/tmp/synapsor-candidate3-accepted067e-remaining-two1623-owned",
+      "allocated_bytes": 173862912,
+      "size_is_lower_bound": true,
+      "measurement_errors": [
+        "du: cannot read directory '/var/tmp/synapsor-candidate3-accepted067e-remaining-two1623-owned/postgres-data': Permission denied",
+        "du: cannot read directory '/var/tmp/synapsor-candidate3-accepted067e-remaining-two1623-owned/mysql-data': Permission denied"
+      ],
+      "mounts": [
+        {
+          "container": "synapsor-derived-four-646e3d27",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-accepted067e-remaining-two1623-owned/decoy-parent/test-root/tmp/derived-four-fbd3e248-d046-4c8c-94ad-3b243aecc281",
+          "destination": "/evidence"
+        },
+        {
+          "container": "synapsor-derived-four-3493caab",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-accepted067e-remaining-two1623-owned/decoy-parent/test-root/tmp/derived-fifty-2615fa11-543e-48be-a4f4-b88beaa00919",
+          "destination": "/evidence"
+        },
+        {
+          "container": "synapsor-live-db-synapsor-candidate3-accepted067e-remaining-two1623-owned-mysql",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-accepted067e-remaining-two1623-owned/mysql-data",
+          "destination": "/var/lib/mysql"
+        },
+        {
+          "container": "synapsor-live-db-synapsor-candidate3-accepted067e-remaining-two1623-owned-postgres",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-accepted067e-remaining-two1623-owned/postgres-data",
+          "destination": "/var/lib/postgresql/data"
+        }
+      ],
+      "decision": "KEEP",
+      "reason": "KEEP: still backs retained stopped DB/evidence containers. Database data included in this root; never delete by directory glob."
+    },
+    {
+      "path": "/var/tmp/synapsor-candidate3-live-db1613-owned",
+      "allocated_bytes": 234221568,
+      "size_is_lower_bound": true,
+      "measurement_errors": [
+        "du: cannot read directory '/var/tmp/synapsor-candidate3-live-db1613-owned/postgres-data': Permission denied",
+        "du: cannot read directory '/var/tmp/synapsor-candidate3-live-db1613-owned/mysql-data': Permission denied"
+      ],
+      "mounts": [
+        {
+          "container": "synapsor-derived-four-311219e8",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-live-db1613-owned/decoy-parent/test-root/tmp/derived-four-21fa3957-0c39-4749-ba3b-1ca134c32364",
+          "destination": "/evidence"
+        },
+        {
+          "container": "synapsor-derived-four-a0bc1606",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-live-db1613-owned/decoy-parent/test-root/tmp/derived-fifty-d961c6ce-93f2-44ab-8902-c3a5abb2f370",
+          "destination": "/evidence"
+        },
+        {
+          "container": "synapsor-live-db-synapsor-candidate3-live-db1613-owned-mysql",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-live-db1613-owned/mysql-data",
+          "destination": "/var/lib/mysql"
+        },
+        {
+          "container": "synapsor-live-db-synapsor-candidate3-live-db1613-owned-postgres",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-live-db1613-owned/postgres-data",
+          "destination": "/var/lib/postgresql/data"
+        }
+      ],
+      "decision": "KEEP",
+      "reason": "KEEP: still backs retained stopped DB/evidence containers. Database data included in this root; never delete by directory glob."
+    },
+    {
+      "path": "/var/tmp/synapsor-candidate3-offline1618-owned",
+      "allocated_bytes": 39952384,
+      "size_is_lower_bound": false,
+      "measurement_errors": [],
+      "mounts": [],
+      "decision": "KEEP",
+      "reason": "KEEP evidence/runtime; only exact duplicate cache blobs separately listed may be deletion candidates."
+    },
+    {
+      "path": "/var/tmp/synapsor-candidate3-package1614-v1-owned",
+      "allocated_bytes": 2334720,
+      "size_is_lower_bound": false,
+      "measurement_errors": [],
+      "mounts": [],
+      "decision": "KEEP",
+      "reason": "KEEP small qualification namespace/decoy until evidence-owner disposition; mainly node compile cache, no need to delete as a whole."
+    },
+    {
+      "path": "/var/tmp/synapsor-candidate3-read-clock-fifty1626-owned",
+      "allocated_bytes": 164384768,
+      "size_is_lower_bound": true,
+      "measurement_errors": [
+        "du: cannot read directory '/var/tmp/synapsor-candidate3-read-clock-fifty1626-owned/postgres-data': Permission denied",
+        "du: cannot read directory '/var/tmp/synapsor-candidate3-read-clock-fifty1626-owned/mysql-data': Permission denied"
+      ],
+      "mounts": [
+        {
+          "container": "synapsor-derived-four-039bb18e",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-read-clock-fifty1626-owned/decoy-parent/test-root/tmp/derived-fifty-1c72da60-010a-4378-98c9-4b61edfcee7a",
+          "destination": "/evidence"
+        },
+        {
+          "container": "synapsor-live-db-synapsor-candidate3-read-clock-fifty1626-owned-mysql",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-read-clock-fifty1626-owned/mysql-data",
+          "destination": "/var/lib/mysql"
+        },
+        {
+          "container": "synapsor-live-db-synapsor-candidate3-read-clock-fifty1626-owned-postgres",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-read-clock-fifty1626-owned/postgres-data",
+          "destination": "/var/lib/postgresql/data"
+        }
+      ],
+      "decision": "KEEP",
+      "reason": "KEEP: still backs retained stopped DB/evidence containers. Database data included in this root; never delete by directory glob."
+    },
+    {
+      "path": "/var/tmp/synapsor-candidate3-read-clock-live-db1626-owned",
+      "allocated_bytes": 33935360,
+      "size_is_lower_bound": true,
+      "measurement_errors": [
+        "du: cannot read directory '/var/tmp/synapsor-candidate3-read-clock-live-db1626-owned/postgres-data': Permission denied",
+        "du: cannot read directory '/var/tmp/synapsor-candidate3-read-clock-live-db1626-owned/mysql-data': Permission denied"
+      ],
+      "mounts": [
+        {
+          "container": "synapsor-live-db-synapsor-candidate3-read-clock-live-db1626-owned-mysql",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-read-clock-live-db1626-owned/mysql-data",
+          "destination": "/var/lib/mysql"
+        },
+        {
+          "container": "synapsor-live-db-synapsor-candidate3-read-clock-live-db1626-owned-postgres",
+          "state": "exited",
+          "source": "/var/tmp/synapsor-candidate3-read-clock-live-db1626-owned/postgres-data",
+          "destination": "/var/lib/postgresql/data"
+        }
+      ],
+      "decision": "KEEP",
+      "reason": "KEEP: still backs retained stopped DB/evidence containers. Database data included in this root; never delete by directory glob."
+    },
+    {
+      "path": "/var/tmp/synapsor-candidate3-read-clock-offline1626-owned",
+      "allocated_bytes": 479707136,
+      "size_is_lower_bound": false,
+      "measurement_errors": [],
+      "mounts": [],
+      "decision": "KEEP",
+      "reason": "KEEP evidence/runtime; only exact duplicate cache blobs separately listed may be deletion candidates."
+    },
+    {
+      "path": "/var/tmp/synapsor-candidate3-successor-offline1622-owned",
+      "allocated_bytes": 479780864,
+      "size_is_lower_bound": false,
+      "measurement_errors": [],
+      "mounts": [],
+      "decision": "KEEP",
+      "reason": "KEEP evidence/runtime; only exact duplicate cache blobs separately listed may be deletion candidates."
+    },
+    {
+      "path": "/var/tmp/synapsor-full1276-owned",
+      "allocated_bytes": 712232960,
+      "size_is_lower_bound": false,
+      "measurement_errors": [],
+      "mounts": [],
+      "decision": "KEEP",
+      "reason": "KEEP: original full-suite/Class19 data and in-place verified recovery archive; archive lives INSIDE this directory."
+    },
+    {
+      "path": "/var/tmp/synapsor-tester-candidate2-installed-v1",
+      "allocated_bytes": 635871232,
+      "size_is_lower_bound": false,
+      "measurement_errors": [],
+      "mounts": [],
+      "decision": "KEEP",
+      "reason": "KEEP: installed qualification, private paid/guard/recovery evidence; no verified full archive. Package/code backup is not job/evidence backup."
+    },
+    {
+      "path": "/var/tmp/synapsor-tester-candidate3-installed-read-clock-v1",
+      "allocated_bytes": 1186705408,
+      "size_is_lower_bound": false,
+      "measurement_errors": [],
+      "mounts": [],
+      "decision": "KEEP",
+      "reason": "KEEP installed runtime/home/evidence and canonical cache; package-only archives exist but do not cover all private evidence. Exact redundant blobs separately proposed."
+    },
+    {
+      "path": "/var/tmp/synapsor-tester-candidate3-installed-successor-v1",
+      "allocated_bytes": 1182486528,
+      "size_is_lower_bound": false,
+      "measurement_errors": [],
+      "mounts": [],
+      "decision": "KEEP",
+      "reason": "KEEP installed runtime/home/evidence and canonical cache; package-only archives exist but do not cover all private evidence. Exact redundant blobs separately proposed."
+    },
+    {
+      "path": "/var/tmp/synapsor-tester-candidate3-installed-v1",
+      "allocated_bytes": 1178329088,
+      "size_is_lower_bound": false,
+      "measurement_errors": [],
+      "mounts": [],
+      "decision": "KEEP",
+      "reason": "KEEP installed runtime/home/evidence and canonical cache; package-only archives exist but do not cover all private evidence. Exact redundant blobs separately proposed."
+    }
+  ]
+}

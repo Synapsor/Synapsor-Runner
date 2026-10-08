@@ -1,0 +1,42 @@
+READ-ONLY DISK REVIEW — 2026-10-08
+NO DELETION PERFORMED. All deletion candidates require Owner approval.
+
+VOLUMES — KEEP (38, 3646.67 MiB total)
+36 anonymous volumes: zero container references, but no evidence-owner or archive coverage established. KEEP pending proof; dangling does not mean disposable.
+synapsor-native-kc-b-posteffect-copy: 46.24 MiB — KEEP recovery/post-effect evidence.
+telecom-customer-service_caddy_config: 1126 bytes — KEEP persistent app configuration pending its owner.
+Every volume name, exact bytes and classification: INVENTORY.json.
+
+REQUESTED DIRECTORIES (whole-root decision; cache exception below)
+DELETE_CANDIDATE_AFTER_OWNER_APPROVAL | 436.51 MiB | /var/tmp/synapsor-b50-harness1368-v1
+KEEP | >= 32.36 MiB | /var/tmp/synapsor-candidate3-accepted067e-live-db1622-owned
+KEEP | >= 165.81 MiB | /var/tmp/synapsor-candidate3-accepted067e-remaining-two1623-owned
+KEEP | >= 223.37 MiB | /var/tmp/synapsor-candidate3-live-db1613-owned
+KEEP | 38.10 MiB | /var/tmp/synapsor-candidate3-offline1618-owned
+KEEP | 2.23 MiB | /var/tmp/synapsor-candidate3-package1614-v1-owned
+KEEP | >= 156.77 MiB | /var/tmp/synapsor-candidate3-read-clock-fifty1626-owned
+KEEP | >= 32.36 MiB | /var/tmp/synapsor-candidate3-read-clock-live-db1626-owned
+KEEP | 457.48 MiB | /var/tmp/synapsor-candidate3-read-clock-offline1626-owned
+KEEP | 457.55 MiB | /var/tmp/synapsor-candidate3-successor-offline1622-owned
+KEEP | 679.24 MiB | /var/tmp/synapsor-full1276-owned
+KEEP | 606.41 MiB | /var/tmp/synapsor-tester-candidate2-installed-v1
+KEEP | 1131.73 MiB | /var/tmp/synapsor-tester-candidate3-installed-read-clock-v1
+KEEP | 1127.71 MiB | /var/tmp/synapsor-tester-candidate3-installed-successor-v1
+KEEP | 1123.74 MiB | /var/tmp/synapsor-tester-candidate3-installed-v1
+
+Five DB-root sizes are LOWER BOUNDS: PG/MySQL data is not traversable by this user. No complete size claimed. Their stopped containers still bind these roots.
+full1276 contains its own recovery archive: deleting the parent would delete that archive.
+Installed roots retain histories/qualification/private evidence; package-only archives and sanitized Git backups do not replace them.
+
+DELETION CANDIDATES ONLY — AFTER OWNER APPROVAL
+1. Entire /var/tmp/synapsor-b50-harness1368-v1: 436.51 MiB. Clean standalone Git copy, both branches at cfbc9785; private-pushed Main96f97352 includes it; no ignored/untracked files, home/tmp empty, no mounts or visible process references.
+2. Exact redundant blobs under /var/tmp/synapsor-tester-candidate3-installed-v1/cache/_cacache/content-v2: 882.59 MiB; 630 SHA-512-equal files, 0 unmatched.
+2. Exact redundant blobs under /var/tmp/synapsor-tester-candidate3-installed-successor-v1/cache/_cacache/content-v2: 886.56 MiB; 631 SHA-512-equal files, 0 unmatched.
+2. Exact redundant blobs under /var/tmp/synapsor-candidate3-successor-offline1622-owned/cache/_cacache/content-v2: 437.08 MiB; 576 SHA-512-equal files, 0 unmatched.
+2. Exact redundant blobs under /var/tmp/synapsor-candidate3-read-clock-offline1626-owned/cache/_cacache/content-v2: 441.06 MiB; 577 SHA-512-equal files, 0 unmatched.
+Do NOT delete whole cache roots or metadata: retain index-v5, logs, tmp, nonmatching files and all runtime/home/evidence.
+Every proposed blob was independently SHA-512 checked against the retained canonical content at /var/tmp/synapsor-tester-candidate3-installed-read-clock-v1/cache/_cacache/content-v2. Keep that canonical copy. Exact file/counterpart/hash manifest: CACHE-DUPLICATE-MANIFEST.json.
+Total proposed reclaimable allocated footprint: 3.012 GiB (cache duplicates 2.585 GiB + B50 copy 0.426 GiB). Actual filesystem free-space gain can differ.
+
+Protected containers synapsor-retained-a771-1379 and synapsor-helper1160-pg and their bind roots are untouched/outside the deletion list. No container created, started, stopped, pruned or deleted for this audit.
+No matching cwd/exe/fd observed in accessible process entries. Recheck activity, mounts and hashes immediately before any later approved deletion.
