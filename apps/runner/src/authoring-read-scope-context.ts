@@ -4,6 +4,8 @@ import { assertCurrentAuthoringEnvelope, parseStructuredAuthoringProtocol } from
 import { activePolicySource, type PolicySourceSession } from "./authoring-policy-source.js";
 import type { BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { projectReadScopeHostContext, type ReadScopeHostContextInput } from "./read-current-evidence.js";
+import { projectReadSubjectContext, type ReadSubjectReviewContext } from "./authoring-read-subject-context.js";
+import { explorationBoundaryCandidateDigest as candidateDigest } from "./auto-boundary.js";
 import { readWorkloadCatalog } from "./read-workload-model.js";
 
 /** The public host supplies an acknowledged job and currently inspected Read
@@ -13,7 +15,7 @@ export function projectAuthoringReadScopeContext(input: {
   resume: BoundaryAuthoringResumeState;
   boundary: ExplorationBoundaryDraft;
   sources?: PolicySourceSession;
-  principalScopedRootResources?: readonly string[];
+  structuralReview?: ReadSubjectReviewContext;
   records: NonNullable<ReadScopeHostContextInput["records"]>;
   answerQuestionIds?: readonly string[];
   native?: ReadScopeHostContextInput["native"];
@@ -27,10 +29,15 @@ export function projectAuthoringReadScopeContext(input: {
     throw new Error("READ_SCOPE_CONTEXT_INVALID: The saved setup's exact Source attachment is unavailable or changed.");
   const job = { created_at: input.resume.created_at, boundary_name: input.resume.binding.boundary_name };
   const request = { id: `job:${canonicalJsonDigest(job)}`, text: input.resume.job_intent };
-  const catalog = readWorkloadCatalog(input.boundary, input.principalScopedRootResources);
+  const catalog = readWorkloadCatalog(input.boundary);
+  if (input.structuralReview && candidateDigest(input.structuralReview.candidate) !== candidateDigest(input.boundary))
+    throw new Error("READ_SUBJECT_CONTEXT_CHANGED: The native structural review does not match this Read candidate.");
+  const subjects = input.structuralReview ? projectReadSubjectContext({ context: input.structuralReview,
+    sourceDigest: (source?.digest ?? canonicalJsonDigest(null)) as `sha256:${string}` }).subject_scopes : [];
+
   return projectReadScopeHostContext({ request,
     ...(source ? { source: { session_id: input.sources!.id, snapshot: source } } : {}),
-    catalog: { digest: catalog.digest, resources: catalog.resources,
+    catalog: { digest: catalog.digest, resources: catalog.resources, subject_scopes: subjects,
       relationships: catalog.resources.flatMap(resource => resource.relationships.map(relationship => ({
         id: relationship.id, from: resource.id, to: relationship.target_resource,
       }))) },

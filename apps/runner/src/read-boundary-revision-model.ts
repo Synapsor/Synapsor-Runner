@@ -91,7 +91,7 @@ export async function generateModelReadBoundaryRevision(input: {
   /** Native evidence loaded by the protected authoring host. A model quote or
    * saved presentation alone never establishes current business meaning. */
   currentEvidenceRecords?: () => CurrentReadEvidenceRecords;
-  structuredScope?: { protocol: typeof READ_SCOPE_PROTOCOL; current: () => ReadRevisionScopeContext };
+  structuredScope?: { protocol: typeof READ_SCOPE_PROTOCOL; current: () => ReadRevisionScopeContext | Promise<ReadRevisionScopeContext> };
   env?: NodeJS.ProcessEnv;
   apiKey?: string;
   apiKeyEnv?: string;
@@ -132,7 +132,7 @@ export async function generateModelReadBoundaryRevision(input: {
   const boundaryDigest = explorationBoundaryCandidateDigest(input.boundary);
   const serializedCatalog = JSON.stringify(catalog);
   if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL) throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED");
-  const structured = input.structuredScope ? structuredClone(input.structuredScope.current()) : undefined;
+  const structured = input.structuredScope ? structuredClone(await input.structuredScope.current()) : undefined;
   const structuredDigest = currentReadScopeContextDigest(structured);
   const nativeScope = structured?.native ? currentStructuredReadEvidence({ ...structured.native,
     expectedBinding: structured.binding, references: structured.references, catalog: structured.catalog }) : undefined;
@@ -205,7 +205,7 @@ export async function generateModelReadBoundaryRevision(input: {
             references: structured.references, catalog: structured.catalog });
           if (!record.proposal.requirements.some(requirement => requirement.disposition === "unresolved"))
             throw new Error("READ_SCOPE_INVALID: A scope-only response must retain a genuine unresolved mapping; it cannot claim an edit is satisfied.");
-          assertCurrent(); scopeRecord = record; scopeState = "pending_mapping"; changes = []; policyChanges = []; issue = "";
+          await assertCurrent(); scopeRecord = record; scopeState = "pending_mapping"; changes = []; policyChanges = []; issue = "";
           return { ok: true, value: { status: "pending_scope_mapping", authority_granted: false,
             source_query_executed: false, source_database_changed: false } };
         } catch (error) { issue = error instanceof Error ? error.message : String(error); return refusal(issue); }
@@ -312,7 +312,7 @@ export async function generateModelReadBoundaryRevision(input: {
         const preview = await input.validateRevision?.(parsed);
         if (structured) {
           if (!preview) throw new Error("READ_SCOPE_PREVIEW_REQUIRED: The protected owner must supply the exact preview scope; no analysis is inferred from settings.");
-          assertCurrent();
+          await assertCurrent();
           scopeRecord = resolveReadScopeProposal(proposedScope, { expectedBinding: preview.scope.binding,
             references: preview.scope.references, catalog: preview.scope.catalog, ...(preview.analysis ? { analysis: preview.analysis } : {}) });
           const assessment = preview.analysis ? assessReadScopeDraft(scopeRecord, preview.analysis) : undefined;
@@ -427,9 +427,9 @@ export async function generateModelReadBoundaryRevision(input: {
     skipRunnerQuestionContext: true,
     requiredInitialToolName: SUBMIT_READ_BOUNDARY_REVISION_TOOL,
     completeAfterRequiredTool: true,
-    authorityGuard: () => readBoundaryRevisionCatalog(input.boundary).digest === catalog.digest
+    authorityGuard: async () => readBoundaryRevisionCatalog(input.boundary).digest === catalog.digest
       && canonicalJsonDigest(currentMeanings()) === evidenceDigest
-      && currentReadScopeContextDigest(input.structuredScope?.current()) === structuredDigest
+      && currentReadScopeContextDigest(await input.structuredScope?.current()) === structuredDigest
       ? authorityDigest
       : canonicalJsonDigest({ stale: true }),
   }); };
@@ -443,10 +443,10 @@ export async function generateModelReadBoundaryRevision(input: {
     privacy_only: input.privacyOnly ?? null, vocabulary_only: input.vocabularyOnly ?? null,
     allow_prerequisite_review: allowPrerequisiteReview, allow_relationship_review: allowRelationshipReview,
     base_question: baseQuestion, provider_system_prompt: providerSystemPrompt });
-  const assertCurrent = () => {
+  const assertCurrent = async () => {
     if (explorationBoundaryCandidateDigest(input.boundary) !== boundaryDigest
       || readBoundaryRevisionCatalog(input.boundary).digest !== catalog.digest
-      || currentReadScopeContextDigest(input.structuredScope?.current()) !== structuredDigest) throw new Error(
+      || currentReadScopeContextDigest(await input.structuredScope?.current()) !== structuredDigest) throw new Error(
       "READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The exact Read draft or catalog changed while clarification was pending; no replacement was sent.");
   };
   let usage: ModelReadBoundaryRevisionResult["usage"], correctionUsed = authoringInterruptedProducerCorrections().correction_used, clarificationCount = 0;
@@ -461,13 +461,13 @@ export async function generateModelReadBoundaryRevision(input: {
       "READ_BOUNDARY_REVISION_STAGED_REVALIDATION_REQUIRED: Retained host selections require actual current source/catalog revalidation before resuming.");
     await input.revalidateStagedSelections({ ...(reviewedPrerequisite ? { reviewed_prerequisite: structuredClone(reviewedPrerequisite) } : {}),
       ...(reviewedRelationship ? { reviewed_relationship: structuredClone(reviewedRelationship) } : {}) }, structuredClone(input.boundary));
-    assertCurrent();
+    await assertCurrent();
   };
   const checkpoint = async (stage: "waiting" | "decided" | "dispatching", dispatchQuestion?: string) => {
     if (stage === "decided" && pending) lastDecided = structuredClone(pending);
     if (stage !== "dispatching" && pending) previousQuestion = { stage, pending_question: structuredClone(pending) };
     if (!input.onCheckpoint || stage !== "dispatching" && !pending) return;
-    assertCurrent();
+    await assertCurrent();
     await input.onCheckpoint(readBoundaryRevisionCheckpoint({ input_digest: inputDigest, boundary_digest: boundaryDigest,
       catalog_digest: catalog.digest, tool_digest: authorityDigest, ...(stage === "dispatching" ? { stage, dispatch_question: dispatchQuestion!, ...(previousQuestion ? { previous_question: structuredClone(previousQuestion) } : {}) } : { stage, pending_question: pending! }), state: {
         call_count: callCount, correction_used: correctionUsed, ...(wording.snapshot() ? { wording: wording.snapshot() } : {}), prerequisite_review_failed: prerequisiteReviewFailed,
@@ -563,7 +563,7 @@ export async function generateModelReadBoundaryRevision(input: {
             ...(parent.nested_checkpoint ? { resumeCheckpoint: structuredClone(parent.nested_checkpoint) } : {}),
             ...(parent.completion ? { parentCompletion: parent.completion } : {}),
             onCheckpoint: async nested => {
-              assertCurrent();
+              await assertCurrent();
               pending = { ...parent, nested_checkpoint: structuredClone(nested) };
               await checkpoint("waiting");
             },
@@ -623,7 +623,7 @@ export async function generateModelReadBoundaryRevision(input: {
       if (decision.state === "declined") {
         throw new Error("READ_BOUNDARY_REVISION_CLARIFICATION_DECLINED: no field exposure was changed.");
       }
-      assertCurrent();
+      await assertCurrent();
       if (input.resumeCheckpoint && (reviewedPrerequisite || reviewedRelationship)) await revalidateStaged();
       const result = await run([
         `Operator business clarifications: ${JSON.stringify(clarificationAnswers.slice(-16))}.`,
@@ -654,7 +654,7 @@ export async function generateModelReadBoundaryRevision(input: {
       source_database_changed: false,
       ...(usage ? { usage } : {}),
     };
-    assertCurrent();
+    await assertCurrent();
     await input.onCheckpoint?.(undefined, structuredClone(input.boundary), result, completion);
     return result;
   } finally {

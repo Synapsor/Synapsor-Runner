@@ -164,7 +164,7 @@ export async function planModelBoundaryJob(input: {
   /** Previously reviewed inventory; cannot be silently replanned. */
   expectedActionOutcomes?: readonly string[];
   currentState: BoundaryJobCurrentState;
-  structuredScope?: { protocol: typeof READ_SCOPE_PROTOCOL; current: () => StructuredReadPlanningContext };
+  structuredScope?: { protocol: typeof READ_SCOPE_PROTOCOL; current: () => StructuredReadPlanningContext | Promise<StructuredReadPlanningContext> };
   availableResourceIds?: string[];
   clarificationAnswer?: string;
   env?: NodeJS.ProcessEnv;
@@ -184,7 +184,7 @@ export async function planModelBoundaryJob(input: {
     : boundedText(input.clarificationAnswer, "Boundary job clarification", 3_000);
   const state = normalizeCurrentState(input.currentState);
   const availableResourceIds = normalizeAvailableResourceIds(input.availableResourceIds ?? []);
-  const structured = input.structuredScope ? structuredClone(input.structuredScope.current()) : undefined;
+  const structured = input.structuredScope ? structuredClone(await input.structuredScope.current()) : undefined;
   const structuredView = structured ? { binding: structured.binding, references: structured.references, catalog: structured.catalog,
     reusable: structured.reusable ? currentStructuredReadEvidence({ ...structured.reusable, expectedBinding: structured.binding,
       references: structured.references, catalog: structured.catalog }).record.proposal : undefined,
@@ -308,8 +308,8 @@ export async function planModelBoundaryJob(input: {
     skipRunnerQuestionContext: true,
     requiredInitialToolName: PLAN_BOUNDARY_JOB_TOOL,
     completeAfterRequiredTool: true,
-    authorityGuard: () => canonicalJsonDigest(state) === canonicalJsonDigest(normalizeCurrentState(input.currentState))
-      && (!input.structuredScope || currentReadScopeContextDigest(input.structuredScope.current()) === currentReadScopeContextDigest(structured))
+    authorityGuard: async () => canonicalJsonDigest(state) === canonicalJsonDigest(normalizeCurrentState(input.currentState))
+      && (!input.structuredScope || currentReadScopeContextDigest(await input.structuredScope.current()) === currentReadScopeContextDigest(structured))
       ? authorityDigest
       : canonicalJsonDigest({ stale: true }),
   });

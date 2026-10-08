@@ -7626,7 +7626,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       readCheckpoint: () => readAssistanceCheckpoint, readHandoffs: () => ownerHandoffs,
       scopeInventory: async permit => {
         await assertAuthoringResumeCurrent(undefined, false, permit);
-        const current = await loadBoundaryReviewContext(input.projectRoot), scope = typedReadContext(current.candidate);
+        const current = await loadBoundaryReviewContext(input.projectRoot), scope = await typedReadContext(current.candidate);
         return { ...scope, questions: operatorQuestions, handoffs: ownerHandoffs, generation: generationRecovery };
       },
       readQuestions: () => operatorQuestions, readRecovery: () => generationRecovery,

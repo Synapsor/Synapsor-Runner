@@ -48,16 +48,24 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     return questions.filter(q => q.read_scope?.mode === "missing_answer" && q.raw_answer?.text.trim() && !q.disposition
       && !questions.some(next => next.read_scope?.predecessor_id === q.id)).map(q => q.id);
   };
-  const context = (boundary: ExplorationBoundaryDraft, answerQuestionIds = answerIds()) => {
+  const project = (boundary: ExplorationBoundaryDraft, structuralReview: Awaited<ReturnType<typeof loadBoundaryReviewContext>>,
+    answerQuestionIds = answerIds()) => {
     const state = snapshot();
-    return projectAuthoringReadScopeContext({ resume: state.resume, boundary, sources: state.sources,
+    return projectAuthoringReadScopeContext({ resume: state.resume, boundary, structuralReview, sources: state.sources,
       records: { questions: state.questions, handoffs: state.handoffs, generation: state.generation }, answerQuestionIds });
+  };
+  const context = async (boundary: ExplorationBoundaryDraft, answerQuestionIds = answerIds(), permit?: ProjectAuthorityMutationPermit) => {
+    await input.ports.assertCurrent(permit);
+    const current = await loadBoundaryReviewContext(input.projectRoot);
+    const projected = project(boundary, current, answerQuestionIds);
+    await input.ports.assertCurrent(permit);
+    return projected;
   };
   const host = createReadScopeHost({ access: {
     mutate: input.ports.mutate,
     load: async (questionId, permit) => {
       await input.ports.assertCurrent(permit);
-      const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot(), scope = context(current.candidate);
+      const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot(), scope = project(current.candidate, current);
       const question = state.questions.find(q => q.id === questionId);
       if (!question?.read_scope) return unavailable("The exact native Read question");
       const stored = question.read_scope.record.analysis_digest && state.read?.scope_question_id === questionId
@@ -78,7 +86,7 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
   }, interact: input.interact });
   const recordNoRead = async (record: ReadScopeRecord, completion: AuthoringQuestionCompletion) => input.ports.mutate(async permit => {
     await input.ports.assertCurrent(permit);
-    const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot(), inventory = context(current.candidate);
+    const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot(), inventory = project(current.candidate, current);
     const question = proposeReadScopeReview(createReadScopeQuestion({ id: randomUUID(), revision: 1,
       scope_digest: input.ports.questionScope(), context_digest: await input.ports.questionContext(permit),
       read_scope: { mode: "review", record, completion } }), inventory.binding, undefined, inventory);
