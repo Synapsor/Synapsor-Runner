@@ -1,3 +1,6 @@
+import { createActionSubjectQuestion } from "./authoring-action-subject.js";
+import { actionSubjectOriginDigest } from "./authoring-action-subject-binding.js";
+import { authoringActionCheckpoint } from "./authoring-generation-recovery.js";
 import { randomUUID } from "node:crypto";
 import { createOwnerHandoff, ownerHandoffCheckpoint } from "./authoring-owner-handoff.js";
 import { runOperatorQuestionModel } from "./authoring-operator-question-model.js";
@@ -496,6 +499,53 @@ describe("conversational Action authoring tools", () => {
     const declaredPauseIntent = "For billing.accounts, only an active account without a risk hold may request pausing. "
       + "Set only status to paused, proposal-only, with no direct execution. Require one billing_reviewer for every proposal, "
       + "no automatic shared limits, and a 300-second proposal lifetime. Read the subject account under its existing trusted scope.";
+    it("stages subject review until its actual whole batch is consumed and keeps the owning turn open", async () => {
+      const f = controlled();
+      f.queues.push({ status: 200, body: { output: [call("runner.submit_verification_boundary_draft"),
+        call("runner.submit_effect_envelope_draft")].flatMap(r => r.body.output).map((tool, i) => ({ ...tool, call_id: `subject-batch-${i}` })) } });
+      const prepareResources = vi.fn(async ({ context }: { context: Parameters<NonNullable<Parameters<typeof converseActionRuleDraft>[0]["prepareResources"]>>[0]["context"] }) => context);
+      const subjectReview: NonNullable<Parameters<typeof converseActionRuleDraft>[0]["subjectReview"]> = {
+        stage: inventory => {
+          f.events.push("subject-stage");
+          const material = { version: 1 as const, outcome: "billing.pause", logical_turn_id: inventory.checkpoint.logical_turns!.at(-1)!.id,
+            baseline: null, request_digest: inventory.checkpoint.intent_digest, applicability_digest: canonicalJsonDigest(inventory.context.builtCatalog.catalog),
+            candidate_digest: canonicalJsonDigest(inventory.components), targets: inventory.targets.map(target => ({ target, target_digest: canonicalJsonDigest(target),
+              options: [{ reference: canonicalJsonDigest({ target, scope: "principal" }), target_digest: canonicalJsonDigest(target), kind: "principal" as const,
+                dependencies_digest: canonicalJsonDigest(inventory.context.builtCatalog.catalog) }] })) };
+          return { material, entries: material.targets.map(t => ({ state: "awaiting" as const, target_digest: t.target_digest })) };
+        },
+        review: async port => {
+          f.events.push("subject-review");
+          expect(port.completion).toBeDefined(); expect(port.staged).toBeDefined();
+          const op = f.state()!.operations.find(o => o.id === port.completion!.operation_id)!;
+          expect(op.state).toBe("handled");
+          expect(prepareResources).not.toHaveBeenCalled();
+          const q = createActionSubjectQuestion({ binding: { version: 1, material: port.staged!.material,
+            origin: { completion: port.completion!, material_digest: actionSubjectOriginDigest(port.staged!.material, port.staged!.entries) } },
+            entries: port.staged!.entries, scope_digest: port.checkpoint().intent_digest, context_digest: port.checkpoint().context_digest });
+          await port.saveQuestion(q, port.completion);
+          return undefined;
+        }, assertCurrent: () => { throw Error("Pending subject cannot reach validation"); },
+      };
+      await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, authoringProtocol: { version: "synapsor.structured-authoring.v2" }, subjectReview, prepareResources,
+        onCheckpoint: async (next, metadata) => {
+          if (metadata?.subject_question?.completion) {
+            const q = metadata.subject_question.question;
+            const saved = authoringActionCheckpoint(f.state()!, metadata.subject_question.completion, { consumer: "action_rule_components", kind: "subject_proposal",
+              material_digest: q.action_subject!.origin.material_digest });
+            Object.assign(f.state()!, saved);
+            expect(next.subject_question).toEqual({ id: q.id, revision: q.revision, question_digest: q.digest });
+          }
+          await f.onCheckpoint(next, metadata);
+        }, assertLogicalTurnBoundary: f.boundary }))).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      expect(f.events.filter(e => e.startsWith("subject-"))).toEqual(["subject-stage", "subject-review"]);
+      expect(f.requestJson).toHaveBeenCalledOnce(); expect(f.queues).toEqual([]);
+      expect(f.readCheckpoint().components.verification).toBeDefined();
+      expect(f.readCheckpoint().components.effect).toBeUndefined();
+      expect(f.readCheckpoint().logical_turns!.at(-1)).toMatchObject({ iterations_used: 1, tool_calls_used: 2 });
+      expect(f.readCheckpoint().logical_turns!.at(-1)!.completed).toBeUndefined();
+      expect(f.state()!.operations.at(-1)?.action_checkpoint?.kind).toBe("subject_proposal");
+    });
     it("hands the twelfth validated Action batch to Runner without a thirteenth narration call", async () => {
       const f = controlled();
       for (const name of ["runner.submit_verification_boundary_draft", "runner.submit_effect_envelope_draft",

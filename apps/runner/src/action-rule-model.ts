@@ -1,3 +1,5 @@
+import { actionSubjectTargets, assertActionSubjectStage, type ActionSubjectPorts, type ActionSubjectStaged } from "./authoring-action-subject-ports.js";
+import { parseOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { parseStructuredAuthoringProtocol, assertAuthoringProtocolUnchanged, type StructuredAuthoringProtocol } from "./authoring-protocol.js";
 import { randomUUID } from "node:crypto";
@@ -236,6 +238,7 @@ export type ModelActionRuleDraftInput = {
     expected_checkpoint_digest?: `sha256:${string}`;
     ordinary_completion?: NonNullable<ActionAuthoringLogicalTurn["completed"]>;
     version_completion?: AuthoringQuestionCompletion;
+    subject_question?: { question: OperatorQuestion; completion?: AuthoringQuestionCompletion };
   }) => Promise<void>;
   onRelationshipReview?: (lines: string[]) => void;
   /** The enclosing policy review owns the next visible turn once compilation succeeds. */
@@ -247,6 +250,7 @@ export type ModelActionRuleDraftInput = {
     resourceIds: string[];
     /** Subject roots or effect targets; linked private facts are compiler-scoped. */
     principalScopeResourceIds: string[];
+    subjectQuestion?: NonNullable<ActionRuleAuthoringCheckpoint["subject_question"]>;
   }) => Promise<ActionRuleModelPreparedContext>;
   reviewPrivateSource?: (input: {
     resource: string;
@@ -286,6 +290,7 @@ export type ModelActionRuleDraftInput = {
    * alone must not admit a new ordinary turn or seed legacy counters. */
   assertLogicalTurnBoundary?: (input: { checkpoint: ActionRuleAuthoringCheckpoint;
     purpose: "ordinary_advance" | "legacy_start"; completion?: AuthoringQuestionCompletion }) => Promise<void>;
+  subjectReview?: ActionSubjectPorts;
   askClarification?: (question: string) => Promise<string | undefined>;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
@@ -358,11 +363,14 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   const savedCheckpoint = input.checkpoint ? parseActionRuleAuthoringCheckpoint(input.checkpoint) : undefined;
   const protocol = input.authoringProtocol ? parseStructuredAuthoringProtocol(input.authoringProtocol) : undefined;
   if (savedCheckpoint) assertAuthoringProtocolUnchanged(savedCheckpoint.authoring_protocol, protocol);
-  const mediatedVersion = Boolean(input.stageVersionQuestion || input.reviewVersionQuestion);
-  if (mediatedVersion && (!input.stageVersionQuestion || !input.reviewVersionQuestion || !input.onCheckpoint || !input.assertLogicalTurnBoundary))
+  const mediatedTurn = Boolean(input.stageVersionQuestion || input.reviewVersionQuestion || input.subjectReview);
+  if (mediatedTurn && (!input.onCheckpoint || !input.assertLogicalTurnBoundary)
+    || (input.stageVersionQuestion || input.reviewVersionQuestion) && (!input.stageVersionQuestion || !input.reviewVersionQuestion))
     throw new Error("ACTION_VERSION_CONVERSATION_UNAVAILABLE: The owning checkpoint and currentness route are required before drafting.");
-  if (!mediatedVersion && savedCheckpoint?.pending_version)
+  if (!input.reviewVersionQuestion && savedCheckpoint?.pending_version)
     throw new Error("ACTION_VERSION_CONVERSATION_UNAVAILABLE: Resume this pending Version question through its original supported route.");
+  if (input.subjectReview && !protocol || savedCheckpoint?.subject_question && !input.subjectReview)
+    throw new Error("ACTION_SUBJECT_REVIEW_UNAVAILABLE: Resume typed subjects through their pinned native owner; no fallback is available.");
   if (savedCheckpoint && savedCheckpoint.intent_digest !== canonicalJsonDigest(intent)) {
     throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: The saved components belong to another action. Resume the original job; no authority changed.");
   }
@@ -480,6 +488,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let checkpointNeedsRevalidation = false;
   let pendingQuestion = savedCheckpoint?.pending_question;
   let pendingVersion = savedCheckpoint?.pending_version;
+  let subjectQuestion = savedCheckpoint?.subject_question;
+  let stagedSubject: ActionSubjectStaged | undefined;
   let logicalTurns = structuredClone(savedCheckpoint?.logical_turns);
   let currentCheckpoint = savedCheckpoint;
   let stagedVersion: ReturnType<NonNullable<ModelActionRuleDraftInput["stageVersionQuestion"]>> | undefined;
@@ -525,6 +535,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     components: structuredClone(submissions) as ActionRuleAuthoringCheckpoint["components"],
     ...(pendingQuestion ? { pending_question: pendingQuestion } : {}),
     ...(pendingVersion ? { pending_version: pendingVersion } : {}),
+    ...(subjectQuestion ? { subject_question: subjectQuestion } : {}),
     ...(logicalTurns ? { logical_turns: logicalTurns } : {}),
     ...(operatorMessages.length ? { operator_messages: operatorMessages } : {}),
     ...(reviewedRelationships.size ? { reviewed_relationships: [...reviewedRelationships].sort() } : {}),
@@ -534,7 +545,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   });
   const persistCheckpoint = async (checkpoint: ActionRuleAuthoringCheckpoint, expectedDigest = currentCheckpoint?.digest,
     metadata?: Omit<NonNullable<Parameters<NonNullable<ModelActionRuleDraftInput["onCheckpoint"]>>[1]>, "expected_checkpoint_digest">) => {
-    if (mediatedVersion) assertActionLogicalTurnJournalAdvance(currentCheckpoint, checkpoint);
+    if (mediatedTurn) assertActionLogicalTurnJournalAdvance(currentCheckpoint, checkpoint);
     await input.onCheckpoint?.(checkpoint, { ...(expectedDigest ? { expected_checkpoint_digest: expectedDigest } : {}), ...metadata });
     currentCheckpoint = checkpoint;
     logicalTurns = structuredClone(checkpoint.logical_turns);
@@ -547,7 +558,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     save: async (next, expectedDigest) => persistCheckpoint(next, expectedDigest),
   });
   const startOrdinaryTurn = async () => {
-    if (!mediatedVersion) return;
+    if (!mediatedTurn) return;
     const tail = logicalTurns?.at(-1);
     if (tail && !tail.completed) return;
     if (currentCheckpoint) {
@@ -560,7 +571,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     await saveCheckpoint();
   };
   const completeOrdinaryTurn = async (kind: "ordinary_clarification" | "compiled_draft", result: AskTurnResult) => {
-    if (!mediatedVersion) return;
+    if (!mediatedTurn) return;
     const last = completedAuthoringQuestion(result);
     if (!last) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The ordinary Action turn has no genuine consumed completion.", 409);
     const completion = authoringQuestionSequenceCompletion([...ordinaryCompletions, last]);
@@ -572,7 +583,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     ordinaryCompletions.length = 0;
   };
   const resolvePendingVersion = async (completion?: AuthoringQuestionCompletion) => {
-    if (!mediatedVersion || !input.reviewVersionQuestion) throw new Error("ACTION_VERSION_CONVERSATION_UNAVAILABLE");
+    if (!mediatedTurn || !input.reviewVersionQuestion) throw new Error("ACTION_VERSION_CONVERSATION_UNAVAILABLE");
     const prepared = await input.reviewVersionQuestion({ context, ...(stagedVersion ? { staged: stagedVersion } : {}),
       ...(completion ? { completion } : {}), checkpoint: () => { if (!currentCheckpoint) throw new Error("ACTION_LOGICAL_TURN_NOT_SAVED"); return currentCheckpoint; },
       episodeBudget: owningBudget, reserveCorrection: owningBudget.reserveCorrection,
@@ -597,6 +608,45 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     const index = reviewedVersionFields.findIndex(review => review.resource === prepared.review.resource);
     if (index < 0) reviewedVersionFields.push(prepared.review); else reviewedVersionFields[index] = prepared.review;
     pendingQuestion = undefined; pendingVersion = undefined; stagedVersion = undefined;
+    await saveCheckpoint();
+  };
+  const subjectInventory = (components = checkpointSnapshot().components) => ({ context, checkpoint: checkpointSnapshot(), components, targets: actionSubjectTargets(components) });
+  const resolvePendingSubject = async (completion?: AuthoringQuestionCompletion) => {
+    if (!input.subjectReview) throw new Error("ACTION_SUBJECT_REVIEW_UNAVAILABLE");
+    const reviewed = await input.subjectReview.review({ context, ...(stagedSubject ? { staged: stagedSubject } : {}),
+      ...(completion ? { completion } : {}), checkpoint: () => { if (!currentCheckpoint) throw new Error("ACTION_LOGICAL_TURN_NOT_SAVED"); return currentCheckpoint; },
+      episodeBudget: owningBudget,
+      async saveQuestion(question, consumed) {
+        const q = parseOperatorQuestion(question);
+        if (!q.action_subject || q.action_subject.material.logical_turn_id !== logicalTurns?.at(-1)?.id || logicalTurns?.at(-1)?.completed
+          || q.action_subject.material.request_digest !== canonicalJsonDigest(intent)
+          || stagedSubject && canonicalJsonDigest(q.action_subject.material) !== canonicalJsonDigest(stagedSubject.material))
+          throw new Error("ACTION_SUBJECT_STALE: Preserve the exact staged subject and open owning turn.");
+        subjectQuestion = { id: q.id, revision: q.revision, question_digest: q.digest };
+        await saveCheckpoint({ subject_question: { question: q, ...(consumed ? { completion: consumed } : {}) } });
+      },
+    });
+    if (!reviewed) throw new AskError("ASK_CANCELLED", "The Action subject remains pending in the same saved job.", 499);
+    const q = parseOperatorQuestion(reviewed);
+    if (!q.confirmation || !q.action_subject || !logicalTurns?.some(turn => turn.id === q.action_subject!.material.logical_turn_id)
+      || stagedSubject && q.action_subject.material.logical_turn_id !== logicalTurns.at(-1)?.id
+      || !currentCheckpoint?.subject_question || currentCheckpoint.subject_question.id !== q.id
+      || currentCheckpoint.subject_question.revision !== q.revision || currentCheckpoint.subject_question.question_digest !== q.digest)
+      throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The subject review has no exact acknowledged native save. No continuation was admitted.", 409);
+    input.subjectReview.assertCurrent(subjectInventory());
+    // The staged components were saved uncompiled. Prepare their structural
+    // dependencies only after the subject question's acknowledged decision.
+    for (const phase of ["verification", "effect"] as const) {
+      const submission = submissions[phase];
+      if (!submission) continue;
+      const prepared = await preparePhaseResources({ phase, submission, input, activeContext: context, subjectQuestion });
+      context = prepared.context;
+      submissions[phase] = phase === "verification"
+        ? reconcileRunnerScopedVerification(submission as VerificationSubmission, context.builtCatalog,
+          workUnitRepairParent?.correction.editable_paths.some(path => path.startsWith("/verification/")))
+        : reconcileRunnerScopedEffect(submission as EffectSubmission, context.builtCatalog);
+    }
+    stagedSubject = undefined;
     await saveCheckpoint();
   };
   const tools = ACTION_RULE_PHASES.map((phase) => conversationalPhaseTool(phase, input.session.provider === "openai_compatible", !!baseline || preparedDrafts.length > 0, Boolean(protocol)));
@@ -692,6 +742,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       if (validators && !validators.get(name)?.(args))
         return phaseRefusal("ASK_TOOL_ARGUMENTS_INVALID: Submit only the fields in the current typed tool schema. Model arguments cannot contain operator identity, confirmation, authority or host revisions.");
       if (name === "runner.inspect_action_draft") return { ok: true, value: snapshot() };
+      if (stagedSubject) return phaseRefusal("ACTION_SUBJECT_QUESTION_PENDING: Later mutations in this consumed batch are refused while its exact subject review is pending.");
       if (stagedVersion || pendingVersion) return phaseRefusal("ACTION_VERSION_QUESTION_PENDING: The saved counter question is pending. Later mutations in this consumed batch are refused.");
       if (readOnlyRequest) return phaseRefusal("The operator's no-new-actions request is pending. No later component edit is accepted.");
       if (protocol && clarification) return phaseRefusal("ACTION_BUSINESS_QUESTION_PENDING: The exact Action question is pending. Later mutations in this consumed batch are refused.");
@@ -817,6 +868,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
             builtCatalog: context.builtCatalog,
           });
           submissions.approval = bindApprovalLimitsToValidatedOutcome(submissions.approval as ApprovalSubmission, submissions.rule as RuleSubmission);
+          try { input.subjectReview?.assertCurrent(subjectInventory()); }
+          catch (error) { infrastructureFailure = error; throw error; }
           const draft = assembleDraft(submissions);
           if (input.expectedOutcome && draft.outcome !== input.expectedOutcome) return phaseRefusal(`AUTHORING_PROGRAM_OUTCOME_MISMATCH: This work item must produce ${input.expectedOutcome}; the submitted outcome differs. Correct only this Action, preserving the rest of the reviewed agenda.`);
           if (input.reservedOutcomes?.includes(draft.outcome) && baseline?.outcome !== draft.outcome) {
@@ -872,8 +925,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           const presented = businessWording(parsed.question);
           if (presented.state === "rephrase") {
             correctionUsed = true;
-            if (!mediatedVersion || await owningBudget.reserveWordingCorrection()) {
-              businessWordingReserved = mediatedVersion;
+            if (!mediatedTurn || await owningBudget.reserveWordingCorrection()) {
+              businessWordingReserved = mediatedTurn;
               businessWordingIssue = presented.guidance;
               return phaseRefusal(presented.guidance);
             }
@@ -887,8 +940,21 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           ? mergeRevisionSubmission({ phase, candidate: parsed.submission, current: submissions[phase]!, baseline, changedFields: parsed.changed_fields, allowPendingSelectorReview: !!input.reviewHistorySelectors })
           : parsed.submission;
         if (phase === "rule" && input.expectedOutcome && (submission as RuleSubmission).outcome !== input.expectedOutcome) return phaseRefusal(`AUTHORING_PROGRAM_OUTCOME_MISMATCH: Submit the exact current work-item outcome ${input.expectedOutcome}. A different Action cannot replace this checkpoint.`);
+        if (input.subjectReview && (phase === "verification" || phase === "effect")) {
+          const components = { ...checkpointSnapshot().components, [phase]: structuredClone(submission) as Record<string, unknown> };
+          const inventory = subjectInventory(components);
+          let staged: ActionSubjectStaged | undefined;
+          try { staged = input.subjectReview.stage(inventory); }
+          catch (error) { infrastructureFailure = error; throw error; }
+          if (staged) {
+            try { stagedSubject = assertActionSubjectStage(staged, inventory); }
+            catch (error) { infrastructureFailure = error; throw error; }
+            submissions[phase] = submission;
+            return { ok: true, value: { status: "subject_question_staged", authority_granted: false, source_database_changed: false } };
+          }
+        }
         if (phase === "verification" || phase === "effect") {
-          const prepared = await preparePhaseResources({ phase, submission, input, activeContext: context }).catch((error) => {
+          const prepared = await preparePhaseResources({ phase, submission, input, activeContext: context, ...(subjectQuestion ? { subjectQuestion } : {}) }).catch((error) => {
             infrastructureFailure = error;
             throw error;
           });
@@ -1002,6 +1068,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     businessWording = operatorClarificationGate({ stage: "action", context: operatorBusinessContext(context.builtCatalog.authoring.resources) });
     businessWordingReserved = false;
   };
+  if (subjectQuestion) await resolvePendingSubject();
   if (pendingVersion) {
     operatorMessage = pendingQuestion!.operator_message;
     await resolvePendingVersion();
@@ -1040,13 +1107,13 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       correctionUsed = true;
     }
     const result = await runAskProviderTurn({
-      ...(mediatedVersion ? { actionLogicalTurnBudget: owningBudget } : {}),
+      ...(mediatedTurn ? { actionLogicalTurnBudget: owningBudget } : {}),
       // A question or a compatible host-validated draft returns to Runner.
       // The whole batch is consumed first; the compiled gate refuses later edits.
-      stopAfterAuthoringToolBatch: () => Boolean(stagedVersion || clarification || compiled?.client_compatibility.compatible),
+      stopAfterAuthoringToolBatch: () => Boolean(stagedSubject || stagedVersion || clarification || compiled?.client_compatibility.compatible),
       authoringInput: {consumer: "action_rule_components", operator_message: operatorMessage,
         ...(program ? {program_resume_revision: program.resume_revision as `sha256:${string}`} : {}),
-        ...(mediatedVersion ? {logical_turn_id: logicalTurns!.at(-1)!.id} : {})},
+        ...(mediatedTurn ? {logical_turn_id: logicalTurns!.at(-1)!.id} : {})},
       configuration, tools, gateway, authorityDigest,
       signal: input.signal ?? new AbortController().signal,
       dependencies: {
@@ -1088,6 +1155,13 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       conversationalAuthoring: true,
     });
     usage = mergeUsage(usage, result.usage);
+    if (stagedSubject) {
+      const completion = completedAuthoringQuestion(result);
+      if (!completion) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The staged subject has no genuine consumed batch completion.", 409);
+      ordinaryCompletions.push(completion);
+      await resolvePendingSubject(completion);
+      continue;
+    }
     if (stagedVersion) {
       const completion = completedAuthoringQuestion(result);
       if (!completion) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The staged Version question has no consumed batch completion.", 409);
@@ -1125,18 +1199,18 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     if (businessWordingIssue) {
       const presented = { state: "rephrase" as const, guidance: businessWordingIssue };
       if (presented.state === "rephrase") {
-        if (mediatedVersion && !businessWordingReserved && !await owningBudget.reserveWordingCorrection()) {
+        if (mediatedTurn && !businessWordingReserved && !await owningBudget.reserveWordingCorrection()) {
           // A restart cannot mint another wording call. A fully consumed valid
           // question may use the same local template, never replay transport.
           response = presentOperatorClarification(response, { stage: "action",
             context: operatorBusinessContext(context.builtCatalog.authoring.resources) });
           businessWordingIssue = undefined;
         } else {
-        businessWordingReserved = mediatedVersion;
+        businessWordingReserved = mediatedTurn;
         correctionUsed = true;
         mechanicalResponseFeedback = presented.guidance;
         const completion = completedAuthoringQuestion(result);
-        if (mediatedVersion && completion) ordinaryCompletions.push(completion);
+        if (mediatedTurn && completion) ordinaryCompletions.push(completion);
         await saveCheckpoint();
         continue;
         }
@@ -1159,7 +1233,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       correctionUsed = true;
       mechanicalResponseFeedback = "AUTHORING_TYPED_SUBMISSION_REQUIRED: Narration, punctuation and finished claims do not submit a requirement or complete this stage. Use the current typed drafting tools; Runner requires actual components and successful validation. No operator answer or authority was inferred.";
       const completion = completedAuthoringQuestion(result);
-      if (mediatedVersion && completion) ordinaryCompletions.push(completion);
+      if (mediatedTurn && completion) ordinaryCompletions.push(completion);
       await saveCheckpoint();
       continue;
     }
@@ -1171,7 +1245,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       ...(completedAuthoringQuestion(result) ? {completion: completedAuthoringQuestion(result)} : {})};
     // Commit the typed consumer handoff before waiting. Escape does not answer
     // the question and cannot turn an uncommitted response into a saved pause.
-    if (mediatedVersion) await completeOrdinaryTurn("ordinary_clarification", result); else await saveCheckpoint();
+    if (mediatedTurn) await completeOrdinaryTurn("ordinary_clarification", result); else await saveCheckpoint();
     while (pendingQuestion) await askPendingQuestion();
   }
 }
@@ -1550,6 +1624,7 @@ async function preparePhaseResources(input: {
   submission: PhaseSubmission;
   input: Parameters<typeof generateModelActionRuleDraft>[0];
   activeContext: ActionRuleModelPreparedContext;
+  subjectQuestion?: NonNullable<ActionRuleAuthoringCheckpoint["subject_question"]>;
 }): Promise<{
   context: ActionRuleModelPreparedContext;
   serializedCatalog: string;
@@ -1567,6 +1642,7 @@ async function preparePhaseResources(input: {
   const context = await input.input.prepareResources({
     context: input.activeContext,
     phase: input.phase,
+    ...(input.subjectQuestion ? { subjectQuestion: input.subjectQuestion } : {}),
     resourceIds: [...new Set(resourceIds)].sort(),
     principalScopeResourceIds: input.phase === "verification"
       ? [...new Set((input.submission as VerificationSubmission).resources.filter((resource) => resource.source.kind === "subject_ref").map((resource) => resource.resource))].sort()
