@@ -1,6 +1,5 @@
 import { reviewRequiredPrincipalScopes } from "./authoring-principal-scope-host.js";
-import { OLDER_AUTHORING_SETUP_MESSAGE } from "./authoring-protocol.js";
-import { enterSavedAuthoringSetup } from "./authoring-saved-setup-entry.js";
+import { enterSavedAuthoringSetup, savedSetupEntryNotice } from "./authoring-saved-setup-entry.js";
 import { createNativeReadScope } from "./authoring-read-scope-native.js";
 import { READ_SCOPE_PROTOCOL } from "./read-structured-scope.js";
 import { currentBoundaryJobReadRequests } from './boundary-job-read-requests.js';
@@ -4028,9 +4027,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   const loadedResume = resumeBinding
     ? await readBoundaryAuthoringResumeState(input.projectRoot, resumeBinding)
     : { status: "none" as const };
-  if (loadedResume.status === "invalid" && loadedResume.reason === OLDER_AUTHORING_SETUP_MESSAGE)
-    return boundaryAssistResult({ tone: "warning", title: "Older setup cannot be resumed",
-      lines: [OLDER_AUTHORING_SETUP_MESSAGE], footer: "The saved setup is unchanged; no model request or migration was started." });
+  const entryNotice = savedSetupEntryNotice(loadedResume);
+  if (entryNotice) return boundaryAssistResult(entryNotice);
   const revalidateSavedJob = loadedResume.status === "stale"
     && loadedResume.value.binding.boundary_name === resumeBinding?.boundary_name;
   const availableResume = loadedResume.status === "ready" ? loadedResume.value
