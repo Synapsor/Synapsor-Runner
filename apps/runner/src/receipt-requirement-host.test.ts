@@ -21,7 +21,7 @@ import { createModelAuthoringConversation } from './model-authoring-conversation
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, {recursive:true,force:true}); });
-async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceText?:string;productionHost?:boolean;nominateTarget?:boolean;onRefresh?:()=>Promise<void>}={}) {
+async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceText?:string;productionHost?:boolean;nominateTarget?:boolean;onRefresh?:()=>Promise<void>;currentContext?:()=>string}={}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'receipt-host-')); roots.push(root);
   const source = policyTextSnapshot(Buffer.from(options.sourceText ?? 'Describe a change as complete only from its trusted completion receipt.'), 'declared-policy.txt');
   const sources = newPolicySourceSession(); sources.snapshots = [source]; sources.active = source.version;
@@ -83,7 +83,7 @@ async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceTe
     readSources:()=>sources,readQuestions:()=>state.questions!,readHandoff:()=>state.handoffs!.at(-1),
     scopeDigest:()=>scope,storeDigest:()=>store,currentDraft:prepared as never,refreshEvidence:async()=>{events.push('Evidence refresh');await options.onRefresh?.();},
     readConfiguration:async()=>draft.runner_evidence.runtime_contract.receipt_configuration as never,
-    questionContext:async()=>{if(canonicalJsonDigest(await loadPolicySources(root,sources.id))!==canonicalJsonDigest(sources))throw new PolicySourceChangedError();return context();},
+    questionContext:async()=>{if(canonicalJsonDigest(await loadPolicySources(root,sources.id))!==canonicalJsonDigest(sources))throw new PolicySourceChangedError();return options.currentContext ? canonicalJsonDigest(options.currentContext()) : context();},
     mutate:operation=>withProjectAuthorityMutation(root,operation),
     acknowledgeResume:async()=>{events.push('Source acknowledgment');await fs.writeFile(file,JSON.stringify(state));},
     assertGenerationAdmission:()=>{events.push('Generation admission');},reviewAnswer:review=>invoke(interact,review),
@@ -182,6 +182,16 @@ it('finishes only a missing Source projection after a durable native confirmatio
   expect(native.questions!.at(-1)?.budget?.iterations_used).toBe(1);
 });
 
+it('refuses receipt reuse when the checked reader or Action context changes during refresh',async()=>{
+  let context='declared current reader and Action role',onRefresh=async()=>{};
+  const f=await fixture({nominateTarget:true,onRefresh:()=>onRefresh(),currentContext:()=>context});
+  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed'});
+  const before=f.inspect(),calls=f.requests.length;
+  onRefresh=async()=>{context='changed inspected role, same cached draft and Source';};
+  await expect(f.productionInvoke(async()=>{throw new Error('Changed evidence cannot be reused or prompt');}))
+    .rejects.toThrow('POLICY_SOURCE_CHANGED');
+  expect(f.inspect()).toEqual(before);expect(f.requests).toHaveLength(calls);
+});
 it.each([2_000,2_001,16_000])('preserves the full %i-character Source target within native question material limits',async length=>{
   const text='R'.repeat(length-2)+' Z';
   const f=await fixture({sourceText:text});
@@ -233,6 +243,16 @@ it('refuses a reused receipt interpretation when Source changes during evidence 
   await expect(f.productionInvoke(async()=>{throw new Error('A stale interpretation must not ask again or be reused');}))
     .rejects.toThrow('POLICY_SOURCE_CHANGED');
   expect(await loadPolicySources(f.root,f.sources.id)).toEqual(winner);
+  expect(f.inspect()).toEqual(before);expect(f.requests).toHaveLength(calls);
+});
+it('refuses receipt reuse when the checked reader or Action context changes during refresh',async()=>{
+  let context='declared current reader and Action role',onRefresh=async()=>{};
+  const f=await fixture({nominateTarget:true,onRefresh:()=>onRefresh(),currentContext:()=>context});
+  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed'});
+  const before=f.inspect(),calls=f.requests.length;
+  onRefresh=async()=>{context='changed inspected role, same cached draft and Source';};
+  await expect(f.productionInvoke(async()=>{throw new Error('Changed evidence cannot be reused or prompt');}))
+    .rejects.toThrow('POLICY_SOURCE_CHANGED');
   expect(f.inspect()).toEqual(before);expect(f.requests).toHaveLength(calls);
 });
 it.each([2_000,2_001,16_000])('production target nomination and mapping preserve a %i-character Source',async length=>{
