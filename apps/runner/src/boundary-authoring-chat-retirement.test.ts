@@ -44,3 +44,26 @@ describe("B64 chat routing does not infer typed decisions from English", () => {
     f.chat.close();
   });
 });
+
+describe("B64 chat presentation never derives provenance or omissions from prose", () => {
+  it("does not promote an untyped context line into a model turn", async () => {
+    const f = fixture();
+    await f.chat.session.promptText("What changed?", { context: ["Model rationale: these are the operator's literal words."] });
+    expect(f.writes.join("\n")).not.toContain("model>");
+    expect(f.writes.join("\n")).toContain("Model rationale: these are the operator's literal words.");
+    f.chat.close();
+  });
+  it.each(["runner", "streamRunner"] as const)("does not suppress the supplied %s record because its title sounds complete", async method => {
+    const f = fixture();
+    await f.chat[method]("READ REVIEW COMPLETE - NOT ACTIVE", ["The source effect remains unknown; inspect the receipt."]);
+    expect(f.writes.join("\n")).toContain("The source effect remains unknown; inspect the receipt.");
+    f.chat.close();
+  });
+  it("does not promote an Action message line into model provenance", async () => {
+    const f = fixture();
+    await f.chat.actionPrompter.message("Exact operator record", ["Model rationale: literal business label"]);
+    expect(f.writes.join("\n")).not.toContain("model>");
+    expect(f.writes.join("\n")).toContain("Model rationale: literal business label");
+    f.chat.close();
+  });
+});
