@@ -24,11 +24,11 @@ const subjectBindingSchema = z.object({ root_resource: name, reference: name, so
 /** Supplied only by the protected acknowledged structural-review owner. */
 export type ReadSubjectBinding = z.infer<typeof subjectBindingSchema>;
 type ReadSubjectResource = ExplorationBoundaryDraft["pack"]["resources"][number];
-export function readSubjectConfigurationDigest(resource: ReadSubjectResource, boundary: Pick<ExplorationBoundaryDraft, "source" | "trusted_context">) {
-  return canonicalJsonDigest({ source: boundary.source, trusted_context: boundary.trusted_context, root_resource: resource.id, tenant_key: resource.tenant_key ?? null,
+export function readSubjectConfigurationDigest(resource: ReadSubjectResource, boundary: Pick<ExplorationBoundaryDraft, "source" | "trusted_context" | "organization_scope">) {
+  return canonicalJsonDigest({ source: boundary.source, trusted_context: boundary.trusted_context, organization_scope: boundary.organization_scope ?? null, root_resource: resource.id, tenant_key: resource.tenant_key ?? null,
     principal_key: resource.principal_key ?? null, tenant_scope: resource.tenant_scope ?? null,
     principal_scope: resource.principal_scope ?? null, rls_session: resource.rls_session ?? null,
-    relationship_only: resource.relationship_only ?? false });
+    shared_reference_scope: resource.shared_reference_scope ?? null, relationship_only: resource.relationship_only ?? false });
 }
 export function readSubjectScopeKind(resource: ReadSubjectResource): ReadSubjectBinding["kind"] {
   return hasReviewedPrincipalScope(resource) ? "principal"
