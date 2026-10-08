@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   DEFAULT_REVIEWED_EXPLORATION_BUDGETS,
@@ -10,165 +10,76 @@ import {
   buildReadWorkloadPlanCards,
   extractReadAuthorityAtoms,
   normalizeReadWorkloadSet,
-  rankReadWorkloadPlanCardsForJob,
-  recommendReadWorkloadPlanCardsForJob,
   readWorkloadFromPlanCards,
   rehydrateSanitizedReadWorkloadPlan,
   sanitizeReadWorkloadPlan,
   type ReadWorkloadPlanCard,
   type ReadWorkloadSet,
 } from "./read-workload-assist.js";
+import { createManualReadOwner } from "./authoring-manual-read.js";
+import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { validateExplorePlan } from "./scoped-explore.js";
 
 describe("Read workload boundary compiler", () => {
-  it("requires explicit aggregate selection even when private-policy terms match metadata", () => {
+  it("selects only declared exact plans, never private aggregates or a same-schema substitute", () => {
     const cards: ReadWorkloadPlanCard[] = [
       { id: "candidates", title: "List build candidates", detail: "Candidate status",
         plan: { kind: "rows", resource: "release_ops.build_candidates", select: ["status"] } },
-      { id: "checks", title: "Count build checks by related slot ref", detail: "Build checks related slot ref",
+      { id: "checks", title: "Count build checks", detail: "Private checks",
         plan: { kind: "aggregate", resource: "release_ops.build_checks", measures: [{ function: "count" }] } },
+      { id: "opaque", title: "List x7", detail: "Opaque unrelated resource",
+        plan: { kind: "rows", resource: "release_ops.x7", select: ["c1"] } },
     ];
     const before = structuredClone(cards);
-    const recommendation = recommendReadWorkloadPlanCardsForJob(cards,
-      "List build candidates. Use build checks privately, never expose check counts or aggregates by slot ref.");
-    expect(recommendation.cards.map(card => card.id)).toEqual(["candidates"]);
+    expect(readWorkloadFromPlanCards({ cards, selectedIds: ["candidates"] }).allowed.map(item => item.id)).toEqual(["candidates"]);
+    expect(readWorkloadFromPlanCards({ cards, selectedIds: ["checks"] }).allowed.map(item => item.id)).toEqual(["checks"]);
     expect(readWorkloadFromPlanCards({ cards, selectedIds: ["checks"] }).allowed[0]!.plan.kind).toBe("aggregate");
+    expect(() => readWorkloadFromPlanCards({ cards, selectedIds: [] })).toThrow();
+    expect(() => readWorkloadFromPlanCards({ cards, selectedIds: ["unknown"] })).toThrow();
     expect(cards).toEqual(before);
   });
 
-  it("does not substitute a different question when dropping an aggregate recommendation", () => {
-    const cards: ReadWorkloadPlanCard[] = [
-      { id: "count", title: "Count checks by slot ref", detail: "Checks slot ref aggregate",
-        plan: { kind: "aggregate", resource: "checks", measures: [{ function: "count" }] } },
-      { id: "rows", title: "List checks", detail: "Check kind", plan: { kind: "rows", resource: "checks", select: ["kind"] } },
-    ];
-    expect(recommendReadWorkloadPlanCardsForJob(cards, "Count checks by slot ref", 1).cards).toEqual([]);
-  });
-
-  it("ranks no-model cards from the job without selecting or changing them", () => {
-    const cards: ReadWorkloadPlanCard[] = [
-      {
-        id: "sites",
-        title: "Count sites by region",
-        detail: "Group site count by region",
-        plan: { kind: "aggregate", resource: "renewable_ops.sites", measures: [{ function: "count" }] },
-      },
-      {
-        id: "maintenance",
-        title: "List maintenance requests",
-        detail: "Return request type, priority, requested hours",
-        plan: { kind: "rows", resource: "renewable_ops.maintenance_requests", select: ["priority", "requested_hours"] },
-      },
-      {
-        id: "inspections",
-        title: "Count inspections by inspection kind",
-        detail: "Group the reviewed count by inspection kind",
-        plan: { kind: "aggregate", resource: "renewable_ops.inspections", measures: [{ function: "count" }] },
-      },
-    ];
-
-    const ranked = rankReadWorkloadPlanCardsForJob(
-      cards,
-      "Summarize urgent inspections and propose maintenance requests with four labor hours.",
-    );
-
-    expect(ranked.map((card) => card.id)).toEqual(["maintenance", "inspections", "sites"]);
-    expect(cards.map((card) => card.id)).toEqual(["sites", "maintenance", "inspections"]);
-  });
-
-  it("recommends matching rows while leaving aggregate matches for explicit choice", () => {
-    const cards: ReadWorkloadPlanCard[] = [
-      {
-        id: "maintenance_rows",
-        title: "List maintenance requests",
-        detail: "Return priority and requested hours",
-        plan: { kind: "rows", resource: "renewable_ops.maintenance_requests", select: ["priority"] },
-      },
-      {
-        id: "maintenance_count",
-        title: "Count maintenance requests by priority",
-        detail: "Group maintenance requests by priority",
-        plan: { kind: "aggregate", resource: "renewable_ops.maintenance_requests", measures: [{ function: "count" }] },
-      },
-      {
-        id: "inspections",
-        title: "Count inspections by inspection kind",
-        detail: "Group inspections by inspection kind",
-        plan: { kind: "aggregate", resource: "renewable_ops.inspections", measures: [{ function: "count" }] },
-      },
-      {
-        id: "sites",
-        title: "Count sites by region",
-        detail: "Group sites by region",
-        plan: { kind: "aggregate", resource: "renewable_ops.sites", measures: [{ function: "count" }] },
-      },
-    ];
-
-    const recommendation = recommendReadWorkloadPlanCardsForJob(
-      cards,
-      "Explain inspection workload and open maintenance requests.",
-      3,
-    );
-
-    expect(recommendation).toMatchObject({
-      source: "reviewed_metadata",
-      matched_resource_count: 1,
+  it("binds a direct selection to proposed scopes without model evidence or automatic recommendations", async () => {
+    const candidate = generatedBoundary();
+    const cards = buildReadWorkloadPlanCards(candidate);
+    const selected = cards.find(card => card.plan.kind === "rows")!;
+    let revision = 1;
+    const confirm = vi.fn(async (_prompt, options) => {
+      expect(options.defaultValue).toBe(false);
+      expect(options.context.join("\n")).toContain("PROPOSED");
+      return true;
     });
-    expect(recommendation.cards.map((card) => card.id)).toEqual(["maintenance_rows"]);
-    expect(recommendReadWorkloadPlanCardsForJob(cards.filter(card => card.plan.kind === "aggregate"),
-      "Count maintenance requests and inspections.").cards).toEqual([]);
-    expect(recommendation.cards.map((card) => card.id)).not.toContain("sites");
-    expect(cards.map((card) => card.id)).toEqual([
-      "maintenance_rows",
-      "maintenance_count",
-      "inspections",
-      "sites",
-    ]);
-  });
-
-  it("does not invent a no-model recommendation when reviewed metadata does not match", () => {
-    const recommendation = recommendReadWorkloadPlanCardsForJob([
-      {
-        id: "sites",
-        title: "Count sites by region",
-        detail: "Group sites by region",
-        plan: { kind: "aggregate", resource: "renewable_ops.sites", measures: [{ function: "count" }] },
-      },
-    ], "Explain quarterly invoices and customer refunds.");
-
-    expect(recommendation).toEqual({
-      cards: [],
-      matched_resource_count: 0,
-      source: "reviewed_metadata",
+    const select = vi.fn(async (_cards, options) => {
+      expect(options.initialSelectedIds).toEqual([]);
+      return [selected.id];
     });
+    const owner = createManualReadOwner({ load: async () => ({ candidate, binding: { revision } }),
+      session: { confirm, selectReadWorkloadCards: select } as unknown as BoundaryReviewInteractiveSession });
+    expect(await owner.requirement([String(selected.plan.resource)])).toBeUndefined();
+    const exact = (await owner.cards())!;
+    expect(exact.allowed.map(item => item.id)).toEqual([selected.id]);
+    expect(await owner.requirement([String(selected.plan.resource), "unselected"])).toEqual({ required: [], unresolved: ["unselected"] });
+    await expect(owner.assertCurrent(exact)).resolves.toBeUndefined();
+    const changed = structuredClone(exact); changed.allowed[0]!.plan.limit = 2;
+    await expect(owner.assertCurrent(changed)).rejects.toThrow("MANUAL_READ_SELECTION_CHANGED");
+    revision += 1;
+    expect(await owner.requirement([String(selected.plan.resource)])).toEqual({ required: [], unresolved: [String(selected.plan.resource)] });
+    expect(confirm).toHaveBeenCalledTimes(1);
   });
 
-  it("does not treat a shared schema name as evidence for an opaque resource", () => {
-    const recommendation = recommendReadWorkloadPlanCardsForJob([
-      {
-        id: "orders",
-        title: "List work orders",
-        detail: "Return priority and estimated duration",
-        plan: {
-          kind: "rows",
-          resource: "fleet_ops.work_orders",
-          select: ["priority", "estimated_minutes"],
-        },
-      },
-      {
-        id: "opaque",
-        title: "List x7",
-        detail: "Return k1, c1, and c2",
-        plan: {
-          kind: "rows",
-          resource: "fleet_ops.x7",
-          select: ["k1", "c1", "c2"],
-        },
-      },
-    ], "Help a fleet dispatcher understand their work orders and priorities.");
-
-    expect(recommendation.cards.map((card) => card.id)).toEqual(["orders"]);
-    expect(recommendation.matched_resource_count).toBe(1);
+  it("does not adopt declined or stale manual selection, including an imported operator_exact_plan label", async () => {
+    const candidate = generatedBoundary();
+    const cards = buildReadWorkloadPlanCards(candidate);
+    const exact = readWorkloadFromPlanCards({ cards, selectedIds: [cards[0]!.id] });
+    let revision = 1;
+    const owner = createManualReadOwner({ load: async () => ({ candidate, binding: revision }),
+      session: { confirm: async () => false } as unknown as BoundaryReviewInteractiveSession });
+    expect(await owner.exact(exact)).toBeUndefined();
+    expect(await owner.requirement([String(exact.allowed[0]!.plan.resource)])).toBeUndefined();
+    const stale = createManualReadOwner({ load: async () => ({ candidate, binding: revision }),
+      session: { confirm: async () => { revision += 1; return true; } } as unknown as BoundaryReviewInteractiveSession });
+    await expect(stale.exact(exact)).rejects.toThrow("MANUAL_READ_SELECTION_CHANGED");
+    expect(await stale.requirement([String(exact.allowed[0]!.plan.resource)])).toBeUndefined();
   });
 
   it("offers deterministic reviewed question cards without model or source access", () => {

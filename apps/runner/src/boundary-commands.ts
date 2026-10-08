@@ -325,7 +325,6 @@ import {
   verifiedActionAuthorityDetails,
   verifiedActionAuthoritySections,
 } from "./verified-action-review.js";
-import { prepareQuickProposalAction } from "./guided-action-quick.js";
 import {
   buildDelegationDraft,
   writeDelegationDraft,
@@ -378,16 +377,11 @@ import { ActionAuthoringReadOnlyRequest } from "./action-rule-model.js";
 import {
   READ_WORKLOAD_ANALYSIS_VERSION,
   analyzeReadWorkloadSet,
-  buildReadWorkloadPlanCards,
   normalizeReadWorkloadSet,
-  rankReadWorkloadPlanCardsForJob,
-  recommendReadWorkloadPlanCardsForJob,
-  readWorkloadFromPlanCards,
   rehydrateSanitizedReadWorkloadPlan,
-  type ReadWorkloadPlanCard,
   type ReadWorkloadSet,
 } from "./read-workload-assist.js";
-import { READ_SELECTION_GUIDANCE } from "./read-workload-selection-guidance.js";
+import { createManualReadOwner } from "./authoring-manual-read.js";
 import {
   commitReadWorkloadCandidate,
   prepareReadWorkloadCandidate,
@@ -4363,9 +4357,16 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     },
   }, interact: view => presentReadScopeInteraction({ view, session: input.session }) });
   const typedReadContext = readScopeReview.context, acknowledgedReadAnswerIds = readScopeReview.answerIds;
+  const manualRead = createManualReadOwner({ session: input.session, load: async () => {
+    const current = await loadBoundaryReviewContext(input.projectRoot);
+    return { candidate: current.candidate, binding: { review: current.bundle.mutation_bindings,
+      job: jobIntent, source: authoringConversation?.policySources ?? null } };
+  } });
+  const resolveModelReadRequirement = (resources: readonly string[]) => !resources.length
+    ? Promise.resolve({ required: [], unresolved: [] })
+    : readScopeReview.principalRequirement(resources, jobPlan?.state === "planned" ? jobPlan.read_scope : undefined);
   const reviewJobPrincipalScopeForResources = (request: Omit<Parameters<typeof reviewRequiredPrincipalScopes>[0], "actor" | "resolveRequirement">) =>
-    reviewRequiredPrincipalScopes({ ...request, actor: localInteractiveActor,
-      resolveRequirement: resources => readScopeReview.principalRequirement(resources, jobPlan?.state === "planned" ? jobPlan.read_scope : undefined) });
+    reviewRequiredPrincipalScopes({ ...request, actor: localInteractiveActor, resolveRequirement: resolveModelReadRequirement });
   const persistOwnerQuestion = async (question: string, consumer: AuthoringOwnerHandoff["consumer"],
     completion?: AuthoringOwnerHandoff["completion"], expectedContext?: `sha256:${string}`) => mutateOwnerHandoff(async permit => {
     const currentContext = await ownerQuestionContext(permit, consumer);
@@ -6906,41 +6907,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     result: Awaited<ReturnType<typeof generateModelActionSuggestion>>;
   }> = [];
   const prepareRunnerGuidedWorkload = async (): Promise<ReadWorkloadView | undefined> => {
-    const builtCards = buildReadWorkloadPlanCards(mappingBoundary);
-    const cards = input.jobFirst
-      ? rankReadWorkloadPlanCardsForJob(builtCards, jobIntent)
-      : builtCards;
-    if (!cards.length) {
-      throw new Error("No reviewed question cards are available yet. Review at least one table or use Advanced exact JSON for a specific plan.");
-    }
-    const selectedIds = await selectRunnerGuidedReadCards({
-      session: input.session,
-      cards,
-      jobIntent: input.jobFirst ? jobIntent.trim() : undefined,
-    });
-    if (selectedIds === undefined) return undefined;
-    let exact = readWorkloadFromPlanCards({ cards, selectedIds });
-    if (actionIntents.length) {
-      actionInspection = await (input.actionProjectInspector ?? inspectActionProject)(
-        input.projectRoot,
-        process.env,
-      );
-      const actionCatalog = guidedActionOptionsFromCandidate({
-        candidate: mappingBoundary,
-        inspection: actionInspection,
-      });
-      const supportEntries = noModelActionSupportEntries({
-        actionIntents,
-        options: actionCatalog,
-        existingIds: exact.allowed.map((entry) => entry.id),
-      });
-      if (supportEntries.length) {
-        exact = normalizeReadWorkloadSet({
-          ...exact,
-          allowed: [...exact.allowed, ...supportEntries],
-        });
-      }
-    }
+    const exact = await manualRead.cards();
+    if (!exact) return undefined;
     preparedWorkload = exact;
     const analysis = analyzeReadWorkloadSet({ workload: exact, generatedBoundary: mappingBoundary });
     return storeReadWorkloadAnalysis({
@@ -6966,6 +6934,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if (exact.source?.kind !== "operator_exact_plan" && exact.source?.kind !== "plan_playground") {
       throw new Error("Exact workload import must declare source.kind=operator_exact_plan or plan_playground.");
     }
+    if (!await manualRead.exact(exact)) return boundaryAssistResult(boundaryAssistBackNotice());
     preparedWorkload = exact;
     const analysis = analyzeReadWorkloadSet({ workload: exact, generatedBoundary: mappingBoundary });
     workload = await storeReadWorkloadAnalysis({
@@ -8476,13 +8445,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         );
       }
       const supportEntries: ReadWorkloadSet["allowed"] = [];
-      if (actionMappingFellBack) {
-        supportEntries.push(...noModelActionSupportEntries({
-          actionIntents,
-          options: actionCatalog,
-          existingIds: mappedWorkload.allowed.map((entry) => entry.id),
-        }));
-      } else for (const [index, preMapped] of preMappedActions.entries()) {
+      if (!actionMappingFellBack) for (const [index, preMapped] of preMappedActions.entries()) {
         if (preMapped.result.assessment.status !== "suggested") continue;
         const result = preMapped.result;
         const suggestion = result.assessment.suggestion;
@@ -8713,7 +8676,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       "No Read remapping, activation, or source query",
     ]);
   } else {
-    const principalScope = await reviewJobPrincipalScopeForResources({
+    const principalScope = await reviewRequiredPrincipalScopes({
+      actor: localInteractiveActor,
+      resolveRequirement: async resources => await manualRead.requirement(resources) ?? resolveModelReadRequirement(resources),
       projectRoot: input.projectRoot,
       schemaInspector: input.schemaInspector,
       session: input.session,
@@ -8780,6 +8745,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     const reasonDefault = `Compile representative workload ${workload.analysis.workload_name}.`;
     context = await loadBoundaryReviewContext(input.projectRoot);
+    if (preparedWorkload) await manualRead.assertCurrent(preparedWorkload);
     const preview = await prepareReadWorkloadCandidate({
       projectRoot: input.projectRoot,
       workload,
@@ -12487,68 +12453,6 @@ function uniqueWorkloadEntryId(base: string, existingIds: string[]): string {
   throw new Error(`READ_WORKLOAD_ID_DUPLICATED: could not allocate a bounded id for ${base}.`);
 }
 
-async function selectRunnerGuidedReadCards(input: {
-  session: BoundaryReviewInteractiveSession;
-  cards: ReadWorkloadPlanCard[];
-  jobIntent?: string;
-}): Promise<string[] | undefined> {
-  const recommendation = input.jobIntent
-    ? recommendReadWorkloadPlanCardsForJob(input.cards, input.jobIntent)
-    : { cards: [], matched_resource_count: 0, source: "reviewed_metadata" as const };
-  const recommendedIds = recommendation.cards.map((card) => card.id);
-  if (recommendedIds.length && input.session.chooseOption) {
-    const decision = await input.session.chooseOption(
-      "RUNNER-GUIDED READ DRAFT",
-      [
-        {
-          value: "use",
-          label: `Use these ${recommendedIds.length} exact question${recommendedIds.length === 1 ? "" : "s"}  [recommended]`,
-          detail: "Saves a minimized disabled candidate; exact Read Boundary review is still next.",
-        },
-        {
-          value: "edit",
-          label: "Review or change exact questions",
-          detail: "Open every compiler-valid card with Runner's matches already selected.",
-        },
-        { value: "back", label: "Back" },
-      ],
-      {
-        initialValue: "use",
-        context: [
-          `Runner matched reviewed metadata across ${recommendation.matched_resource_count} resource${recommendation.matched_resource_count === 1 ? "" : "s"}. No model or source query ran.`,
-          ...recommendation.cards.map((card) => `- ${card.title}`),
-          ...READ_SELECTION_GUIDANCE,
-          "This is drafting assistance only. Nothing activates until the exact boundary review.",
-        ],
-      },
-    );
-    if (!decision || decision === "back") return undefined;
-    if (decision === "use") return recommendedIds;
-  }
-  if (input.session.selectReadWorkloadCards) {
-    return input.session.selectReadWorkloadCards(input.cards, {
-      initialSelectedIds: recommendedIds,
-      recommendationLabel: recommendedIds.length
-        ? `Runner preselected ${recommendedIds.length} explainable match${recommendedIds.length === 1 ? "" : "es"}; review or change them.`
-        : "Select exact questions; aggregates need explicit selection. No model or source query ran.",
-    });
-  }
-  const selectedText = await input.session.promptText([
-    "CHOOSE REPRESENTATIVE QUESTIONS",
-    "Select every question the agent needs. This selects exact plan shapes; it does not activate access.",
-    ...READ_SELECTION_GUIDANCE,
-    ...input.cards.map((card, index) =>
-      `${index + 1}${recommendedIds.includes(card.id) ? "*" : " "} ${card.title}\n   ${card.detail}`),
-    ...(recommendedIds.length
-      ? ["Blank Enter uses the starred Runner recommendation."]
-      : []),
-    "Numbers (comma-separated; ranges allowed, for example 1,3-5)",
-  ].join("\n"));
-  if (selectedText === undefined) return undefined;
-  if (!selectedText.trim() && recommendedIds.length) return recommendedIds;
-  return parseReadWorkloadCardSelection(selectedText, input.cards.map((card) => card.id));
-}
-
 function semanticActionReadSupportEntries(input: {
   compiled: CompiledActionRuleModelDraftV1;
   catalog: BuiltActionRuleAuthoringCatalogV1;
@@ -13047,50 +12951,6 @@ async function actionRuleAuthorityDraftFromCompiled(
   });
 }
 
-function noModelActionSupportEntries(input: {
-  actionIntents: string[];
-  options: Awaited<ReturnType<typeof guidedActionOptions>>;
-  existingIds: string[];
-}): ReadWorkloadSet["allowed"] {
-  const entries: ReadWorkloadSet["allowed"] = [];
-  for (const [index, intent] of input.actionIntents.entries()) {
-    let preparation: ReturnType<typeof prepareQuickProposalAction>;
-    try {
-      preparation = prepareQuickProposalAction({ options: input.options, intent });
-    } catch {
-      // Action readiness belongs to the separate Action Boundary review. This
-      // helper may preserve a proven target, but must not block that review.
-      continue;
-    }
-    const resources = preparation.state === "ready"
-      ? [preparation.action.resource]
-      : preparation.selected.resource
-        ? [preparation.selected.resource]
-        : preparation.recommendations.resource
-          ? [preparation.recommendations.resource]
-          : preparation.decision.kind === "resource"
-            ? preparation.decision.choices.map((choice) => choice.value).slice(0, 8)
-            : [];
-    for (const resource of [...new Set(resources)]) {
-      const id = uniqueWorkloadEntryId(
-        `action_review_${index + 1}`,
-        [...input.existingIds, ...entries.map((entry) => entry.id)],
-      );
-      entries.push({
-        id,
-        description: `Review the exact fields required to propose a change to ${resource}.`,
-        plan: {
-          kind: "aggregate",
-          resource,
-          measures: [{ function: "count" }],
-          top_n: 1,
-        },
-      });
-    }
-  }
-  return entries;
-}
-
 function representativeReadCoverage(analysis: ReadWorkloadView["analysis"]): {
   supported: number;
   total: number;
@@ -13138,36 +12998,6 @@ function modelReadPlanSummary(plan: ReadWorkloadSet["allowed"][number]["plan"]):
     ...measures,
   ].join("; ");
   return `${resource}: ${summary || "reviewed aggregate"}`;
-}
-
-function parseReadWorkloadCardSelection(input: string, ids: string[]): string[] {
-  const normalized = input.trim().toLowerCase();
-  if (normalized === "all") return [...ids];
-  if (!normalized) {
-    throw new Error("Choose at least one representative question number.");
-  }
-  const indexes = new Set<number>();
-  for (const token of normalized.split(/[\s,]+/).filter(Boolean)) {
-    const range = /^(\d+)-(\d+)$/.exec(token);
-    if (range) {
-      const start = Number(range[1]);
-      const end = Number(range[2]);
-      if (start < 1 || end < start || end > ids.length) {
-        throw new Error(`Question range ${token} is outside 1-${ids.length}.`);
-      }
-      for (let index = start; index <= end; index += 1) indexes.add(index - 1);
-      continue;
-    }
-    if (!/^\d+$/.test(token)) {
-      throw new Error(`Question selection ${token} is not a number or range.`);
-    }
-    const index = Number(token);
-    if (index < 1 || index > ids.length) {
-      throw new Error(`Question number ${index} is outside 1-${ids.length}.`);
-    }
-    indexes.add(index - 1);
-  }
-  return [...indexes].sort((left, right) => left - right).map((index) => ids[index]!);
 }
 
 async function interactiveBoundaryLimitsReview(input: {

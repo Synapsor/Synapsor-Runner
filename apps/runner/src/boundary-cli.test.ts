@@ -4787,10 +4787,12 @@ describe("boundary operator-plane CLI", () => {
           expect(options?.initialValue).toBe("cards");
           return "cards";
         }
-        if (title === "RUNNER-GUIDED READ DRAFT") return "use";
         throw new Error(`Unexpected one-job choice: ${title}`);
       },
+      selectReadWorkloadCards: async cards => cards.filter(card => card.plan.kind === "rows"
+        && ["public.service_visits", "public.maintenance_requests"].includes(String(card.plan.resource))).map(card => card.id),
       confirm: async (prompt, options) => {
+        if (prompt === "Use these exact Read plans under the proposed scopes shown?") return true;
         if (prompt.includes("Should this job include an Action Boundary")) {
           expect(options?.defaultValue).toBe(false);
           return true;
