@@ -420,7 +420,7 @@ describe("identity-bound routing/loader and predicate scope",()=>{
     const wrong={status:"draft",name:f.next.name,outcome:f.next.outcome,require:f.next.require,derive:f.next.derive,
       ...(f.next.inputs ? {inputs:f.next.inputs} : {}),ttl_seconds:f.next.ttl_seconds+1,review:f.next.review};
     const steps=[tool("runner__submit_verification_boundary_draft",{status:"draft",...f.next.verification}),tool("runner__submit_action_rule_draft",wrong),
-      tool("runner__validate_action_draft",{}),{status:200,body:{output:[{type:"message",role:"assistant",content:[{type:"output_text",text:"Resume this exact nominated repair later?"}]}]}}];
+      tool("runner__validate_action_draft",{}),tool("runner__submit_approval_policy_draft",{status:"clarification",question:"Resume this exact nominated repair later?"})];
     let checkpoint:ActionRuleAuthoringCheckpoint|undefined;const encoded:string[]=[];
     await expect(generateModelActionRuleDraft({...common,workUnitCorrection:{draft:f.compiled.draft,assessment:f.assessment},
       session:{provider:"openai",model:"owned-offline-model",conversation:{turns:[],policySources:f.sources},dependencies:{requestJson:async request=>{encoded.push(JSON.stringify(request.body));return steps.shift()!;}}},

@@ -410,7 +410,7 @@ describe("conversational Action authoring tools", () => {
 
   describe("mediated Version actual producer batch and owning checkpoint", () => {
     function controlled(provider: "openai" | "openai_compatible" = "openai") {
-      const events: string[] = [], requests: unknown[] = [], queues: Array<ReturnType<typeof call> | ReturnType<typeof say>> = [];
+      const events: string[] = [], requests: unknown[] = [], queues: Array<ReturnType<typeof call> | ReturnType<typeof say> | ReturnType<typeof questionReply>> = [];
       let checkpoint: ActionRuleAuthoringCheckpoint | undefined, state: AuthoringTransportState | undefined;
       let handoff: ReturnType<typeof createOwnerHandoff> | undefined, question: ReturnType<typeof createOperatorQuestion> | undefined;
       const review = { resource: "billing.accounts", field: "version", maintenance: "all_writers_increment" as const,
@@ -612,7 +612,9 @@ describe("conversational Action authoring tools", () => {
         askClarification: async () => "One billing reviewer." }))).rejects.toMatchObject({ code: "ASK_CANCELLED" });
       const turns = f.readCheckpoint().logical_turns!;
       expect(turns).toHaveLength(2); expect(turns[0]!.completed?.kind).toBe("ordinary_clarification");
-      expect(turns[0]).toMatchObject({ iterations_used: 1, tool_calls_used: 0 });
+      // The migrated question is an actual typed tool, charged in the same
+      // single provider iteration. The former prose fixture used zero tools.
+      expect(turns[0]).toMatchObject({ iterations_used: 1, tool_calls_used: 1 });
       expect(turns[1]).toMatchObject({ iterations_used: 1, tool_calls_used: 1 });
       expect(f.boundary).toHaveBeenCalledOnce(); expect(f.readCheckpoint().operator_messages).toEqual(["One billing reviewer."]);
       expect(f.state()!.operations[0]!.question_handoff!.answered!.answer).toBe("One billing reviewer.");
@@ -3216,21 +3218,27 @@ describe("model-guided Action Rule authoring", () => {
     const calls: string[] = [];
     const requestBodies: string[] = [];
     const baseline = policyModelDraft();
-    const requestJson = phaseResponder(calls, (name) => {
-      if (name.endsWith("submit_approval_policy_draft")) {
-        return {
-          ...payloadFor(name),
-          changed_fields: ["required_approvals"],
-          mode: "human",
-          required_role: "reviewer",
-          required_approvals: 2,
-          shared_limits: [],
-        };
-      }
-      return { ...payloadFor(name), changed_fields: [] };
-    }, requestBodies);
+    const strings = (value: unknown): string[] => typeof value === "string" ? [value]
+      : Array.isArray(value) ? value.flatMap(strings)
+      : value && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
+    const requestJson = vi.fn<NonNullable<AskProviderDependencies["requestJson"]>>(async request => {
+      requestBodies.push(JSON.stringify(request.body));
+      if (requestBodies.length > 1) throw new Error("A declared approval change needs no extra model request");
+      const line = strings(request.body).flatMap(value => value.split("\n"))
+        .find(value => value.startsWith("Current disabled draft: "))!;
+      const current = JSON.parse(line.slice("Current disabled draft: ".length));
+      const changes = { ...current.components.approval, status: "draft", changed_fields: ["required_approvals"],
+        // Unlisted candidate changes cannot replace baseline policy or duties.
+        mode: "human", required_role: "reviewer", required_approvals: 2, shared_limits: [] };
+      calls.push("runner__submit_approval_policy_draft", "runner__validate_action_draft");
+      return { status: 200, body: { output: [
+        { type: "function_call", call_id: "approval_change", name: calls[0], arguments: JSON.stringify(changes) },
+        { type: "function_call", call_id: "validate_change", name: calls[1], arguments: "{}" },
+      ] } };
+    });
 
-    const result = await generateModelActionRuleDraft({
+    const result = await converseActionRuleDraft({
+      authoringProtocol: { version: "synapsor.structured-authoring.v2" },
       session: {
         provider: "openai",
         model: "gpt-5.6-terra",
@@ -3251,16 +3259,15 @@ describe("model-guided Action Rule authoring", () => {
     });
     expect(result.compiled.draft.require).toEqual(baseline.require);
     expect(result.compiled.draft.effect).toEqual(baseline.effect);
-    expect(result.compiled.draft.verification).toEqual({
-      ...baseline.verification,
-      resources: [{
-        ...baseline.verification.resources[0]!,
-        fields: ["account_id", "risk_hold", "status", "version"],
-      }],
-    });
-    expect(calls).toEqual(["runner__submit_approval_policy_draft"]);
+    // Ordinary typed revisions retain the exact model-safe baseline. Mandatory
+    // PK/version/tenant/principal fields belong to the compiler's verification boundary,
+    // not a text-selected phase rewriting the unchanged submitted component.
+    expect(result.compiled.draft.verification).toEqual(baseline.verification);
+    expect(result.compiled.verification_boundary.resources[0]!.fields.map(field => field.name))
+      .toEqual(["account_id", "principal_id", "risk_hold", "status", "tenant_id", "version"]);
+    expect(calls).toEqual(["runner__submit_approval_policy_draft", "runner__validate_action_draft"]);
     expect(requestBodies).toHaveLength(1);
-    expect(requestBodies[0]).toContain("Existing reviewed rule baseline");
+    expect(requestBodies[0]).toContain("Current disabled draft:");
     expect(result.revision).toEqual({
       outcome: "billing.pause_account",
       changed_phases: ["approval"],

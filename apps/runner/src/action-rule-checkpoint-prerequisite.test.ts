@@ -161,7 +161,7 @@ function reviseCheckpoint(checkpoint: ActionRuleAuthoringCheckpoint, change: (va
   return actionRuleAuthoringCheckpoint(core);
 }
 
-const pausedResponse = { status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text: "Keep the existing draft pending?" }] }] } };
+const pausedResponse = { status: 200, body: { output: [{ type: "function_call", call_id: "pending_question", name: "runner__submit_approval_policy_draft", arguments: JSON.stringify({ status: "clarification", question: "Keep the existing draft pending?" }) }] } };
 
 describe("retained public-origin collection checkpoint prerequisites", () => {
   it("reviews a missing private collection before the stale guard, then validates the full unchanged insurance rule", async () => {

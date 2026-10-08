@@ -9,15 +9,14 @@
   "after": {
     "command": "vitest run apps/runner/src/action-rule-model.test.ts -t \"B64|already-correct baseline|edits only the selected component|bounds repeated incomplete\" --maxWorkers=1 --minWorkers=1 --testTimeout=20000",
     "result": "17 PASS; original provider counts preserved; three typed revision language variants compare the complete compiled candidate",
-    "typecheck": "Only pending Main-owned boundary import error TS2305: modelActionRuleRevisionFocus deleted; baseline types PASS"
+    "typecheck": "Only TS2305 at Main-owned boundary import of deleted modelActionRuleRevisionFocus. No Action/fixture diagnostics after typed queue union fix."
   },
   "environment": "Owned 0700 /var/tmp HOME/TMP; bwrap --unshare-net; no provider access",
-  "reviewer": "Independent R2 preseal/review requested through Main; not self-approved",
+  "reviewer": "R2 independently accepts the two fixture-port semantic contracts (typed tool charged1; one-batch edit provider1 with exact baseline and compiler guards). Concrete final pin review pending; not whole Action acceptance.",
   "main_hook": "Remove modelActionRuleRevisionFocus import/call in boundary-commands.ts; neutral progress label, never English-derived approval-only claim",
   "open": [
     "Focused-only English mechanical/lifetime/diagnostic classifiers remain pending retirement/fixture ports.",
     "Source approval-limit/execution-intent English safety checks need typed evidence bindings; not removed or bypassed.",
-    "Old narration-as-question fixtures require typed-tool ports with assertions/counts unchanged.",
     "Full public native/CAS/typed-field route acceptance remains Main/reviewer-owned."
   ],
   "clock": {
@@ -29,12 +28,19 @@
   "fixture_migration": {
     "baseline": "206 PASS / 1 new expected failure / 1 live-provider skip on f938749a with new controls",
     "before_ports": "163 PASS / 44 FAIL / 1 live-provider skip",
-    "after_ports": "205 PASS / 2 FAIL / 1 live-provider skip",
+    "after_ports": "207 PASS / 0 FAIL / 1 live-provider skip",
     "changes": "Explicitly declared fake-model operator questions now submit clarification tools; narration-only negative controls remain narration. Provider counts and cancellation/privacy/currentness/save assertions unchanged.",
-    "remaining": [
-      "Logical-turn tool_calls_used expected0 from old narration; actual typed tool charges1, iterations unchanged. Await independent semantic agreement.",
-      "Focused English approval-only phase shortcut expected1 request; prepare ordinary typed changed_fields preservation equivalent rather than relaxing to4."
-    ],
-    "logs": "/var/tmp/synapsor-b64-action-owned/evidence/action-file-{baseline-inventory,migration-inventory,typed-fixtures}.log"
+    "remaining": [],
+    "logs": "/var/tmp/synapsor-b64-action-owned/evidence/action-file-{baseline-inventory,migration-inventory,typed-fixtures}.log",
+    "contract_changes_for_independent_adjudication": [
+      "The actual typed clarification consumes1 tool in the same1 provider iteration; old prose consumed0 tools. No limit or provider-count increase.",
+      "Old focused English approval-only optimization replaced by ordinary typed changed_fields+validate in ONE provider batch (original1 request preserved). Unlisted hostile fields ignored, full automatic policy retained. Exact model-safe Verification baseline preserved and compiler PK/version/tenant/principal guard fields asserted separately."
+    ]
+  },
+  "affected_regressions": {
+    "result": "118 PASS in checkpoint prerequisite and Source work-unit assessment; 2 PASS in native typed source file",
+    "fixture_ports": "Two declared pending business questions now use explicit clarification tool payloads; all assertions unchanged",
+    "command": "vitest run apps/runner/src/action-rule-checkpoint-prerequisite.test.ts apps/runner/src/action-work-unit-source-assessment.test.ts apps/runner/src/authoring-typed-parameter-source.test.ts --maxWorkers=2 --minWorkers=1 --testTimeout=20000",
+    "first": "118 PASS / 2 FAIL from the two narration-only question fixtures, preserved in affected-source-native.log"
   }
 }
