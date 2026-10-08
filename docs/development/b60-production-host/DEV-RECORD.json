@@ -31,5 +31,12 @@
     "No full suite/final package/freeze/installed or paid qualification claimed",
     "Initial affected command named three nonexistent files; actual matched7-file result is reported; corrected names included in next affected run."
   ],
-  "runtime_head": "09921c3e3988f0438ed460c7af5bc8553efa54a8"
+  "runtime_head": "09921c3e3988f0438ed460c7af5bc8553efa54a8",
+  "post_reboot_route_fix": {
+    "before": "public fixture817f6ff0 ready-v6: completed refused coverage1, receipt mappings0; ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION; unchanged test preserved",
+    "cause": "Coverage saved the completed unaccepted submission in Source but only canonical-report success acknowledged its recovery consumer. The receipt host was reached, and correctly refused a new question over handled/uncheckpointed output.",
+    "design": "Shared producer acknowledgement uses the actual decoded completion identity plus exact producer episode/context/submission, only after the guarded durable Source submission save and a currentness recheck. Native recovery writer separately CAS-saves Resume. It marks only that consumed turn checkpointed; no acceptance, new allowance, question, copied response or historical output is minted. Partial/unknown and unrelated handled output remain fenced.",
+    "results": "types0; three exact-consumer controls PASS (unrelated handled retained, wrong producer refused unchanged, cold JSON cannot acknowledge); initial unit fixture invalid UUID3F retained then corrected test-only UUID; public successor pending",
+    "boundary_lines": 20100
+  }
 }

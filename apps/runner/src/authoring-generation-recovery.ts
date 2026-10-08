@@ -675,6 +675,29 @@ export function authoringQuestionSequenceCompletion(completions: readonly Author
   return structuredClone(last);
 }
 
+/** A durable producer record may retain a refused semantic result. Acknowledge
+ * only its live decoded turn after the owning record's guarded save returns.
+ * This grants no business acceptance and never promotes other handled output. */
+export async function acknowledgeAuthoringProducer(
+  completion: AuthoringQuestionCompletion,
+  producer: NonNullable<ProviderHttpInput["authoringInput"]>,
+): Promise<void> {
+  const frame = storage.getStore(), host = frame?.host;
+  if (!host?.available()) return;
+  const known = authoringQuestionSequenceCompletion([completion]);
+  const refs = frame!.completedTurns.get(canonicalJsonDigest(completion));
+  if (!known || !refs?.length || canonicalJsonDigest(known) !== canonicalJsonDigest(completion)) throw invalid();
+  const next = structuredClone(host.read()!);
+  for (const ref of refs) {
+    const op = next.operations.find(item => item.id === ref.id);
+    if (!op || canonicalJsonDigest(op.producer_input ?? null) !== canonicalJsonDigest(producer))
+      throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION",
+        "The saved producer record does not match this completed turn. No historical operation was acknowledged.", 409);
+    if (op.state === "handled") { op.state = "checkpointed"; op.checkpoint_seen = true; }
+  }
+  await writeRecoveryState(host, next);
+}
+
 /** Prepare only this live, actually consumed Action sequence for the SAME
  * currentness/CAS save as its semantic material. Saved JSON cannot mint the
  * ephemeral decoder association, and this function performs no independent write. */
