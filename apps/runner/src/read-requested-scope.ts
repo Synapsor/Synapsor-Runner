@@ -1,118 +1,124 @@
-/** Transient lower-bound coverage derived from original operator wording and
- * actual inspected identities. This is not permission, complete English
- * interpretation, or a replacement for native meaning/Source review. Never
- * derive it from a model routing summary. Recompute against current metadata.
- */
+/** Transient evidence from the complete operator request and current inspected
+ * identities. Requirements are a lower bound, never permission or a claim that
+ * arbitrary prose has been completely interpreted. Names nominate candidates. */
+export type RequestedReadAssociations = {
+  required: string[];
+  candidates: string[][];
+  ambiguous: string[][];
+};
+
 export function requestedReadResourceIds(jobIntent: string, availableResourceIds: string[]): string[] {
   return requestedReadResourceAssociations(jobIntent, availableResourceIds).required;
 }
 
-export function requestedReadResourceAssociations(jobIntent: string, availableResourceIds: string[]): {
-  required: string[]; ambiguous: string[][];
-} {
-  const readText = readOrientedJobText(jobIntent);
-  if (!availableResourceIds.length || !readText) return { required: [], ambiguous: [] };
-  const qualified = [...readText.matchAll(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu)].map(match => match[0]);
-  const explicit = new Set(availableResourceIds.filter(id => qualified.some(token => token === id || token.startsWith(`${id}.`))));
-  // A qualified reference cannot fall back to the same table in another schema.
-  const words = normalizedSemanticWords(readText.replace(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu, " "));
-  const candidates = availableResourceIds.map(id => ({ id, words: normalizedSemanticWords(id.split(".").at(-1) ?? id) }))
-    .filter(candidate => candidate.words.length && (containsWordSequence(words, candidate.words)
-      || candidate.words.filter(token => !RESOURCE_MENTION_STOP_WORDS.has(token)).length > 0
-        && containsWordSequence(words, candidate.words.filter(token => !RESOURCE_MENTION_STOP_WORDS.has(token)))));
-  const grouped = new Map<string, string[]>();
-  for (const candidate of candidates) grouped.set(candidate.words.join(" "), [...(grouped.get(candidate.words.join(" ")) ?? []), candidate.id]);
-  const ambiguous = [...grouped.values()].filter(ids => ids.length > 1 && !ids.some(id => explicit.has(id)));
-  return { required: availableResourceIds.filter(id => explicit.has(id) || candidates.some(candidate => candidate.id === id
-    && grouped.get(candidate.words.join(" "))!.length === 1)), ambiguous };
+export function requestedReadResourceAssociations(jobIntent: string, availableResourceIds: string[]): RequestedReadAssociations {
+  const text = readOrientedJobText(jobIntent);
+  const qualified = qualifiedReferences(text);
+  const required = availableResourceIds.filter(id => qualified.some(token => token === id || token.startsWith(`${id}.`)));
+  const words = requestWords(text);
+  const candidates = candidateGroups(words, availableResourceIds.map(id => ({ id })), new Set());
+  return { required, candidates, ambiguous: candidates.filter(group => group.length > 1) };
 }
 
-/** Current host-resolved definitions can associate an exact business phrase
- * with an inspected ID. Catalog labels only identify collisions; they never
- * establish a mapping. Unsupported prose is not an inferred scope decision. */
+/** Definitions must come from current host-resolved meaning evidence. Catalog
+ * labels and basenames have identical candidate-only status. Neither a model
+ * selecting a candidate nor a unique catalog spelling establishes association. */
 export function resolveRequestedReadScope(input: {
   original: string;
   resources: readonly { id: string; label?: string }[];
   definitions: readonly { resource: string; phrases: readonly string[] }[];
   statements: readonly string[];
-}): { required: string[]; excluded: string[]; ambiguous: string[][]; unresolved: boolean } {
+}): RequestedReadAssociations & { excluded: string[]; conflicts: string[]; unresolved: boolean } {
   const ids = input.resources.map(resource => resource.id);
+  const text = readOrientedJobText(input.original);
   const base = requestedReadResourceAssociations(input.original, ids);
-  const words = normalizedSemanticWords(readOrientedJobText(input.original).replace(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu, " "));
-  const phraseMatches = (phrase: string, inWords = words) => {
-    const phraseWords = normalizedSemanticWords(phrase);
-    return phraseWords.length > 0 && containsWordSequence(inWords, phraseWords);
-  };
-  const attributed = input.definitions.filter(definition => ids.includes(definition.resource)
-    && definition.phrases.some(phrase => phraseMatches(phrase))).map(definition => definition.resource);
-  const required = new Set([...base.required, ...attributed]);
+  const words = requestWords(text);
   const definitionsByPhrase = new Map<string, string[]>();
-  for (const definition of input.definitions) for (const phrase of definition.phrases) if (phraseMatches(phrase)) {
-    const key = normalizedSemanticWords(phrase).join(" ");
-    definitionsByPhrase.set(key, [...new Set([...(definitionsByPhrase.get(key) ?? []), definition.resource])]);
-  }
-  // A basename inside an exact, uniquely attributed business phrase is not
-  // a separate request for unrelated homonymous tables. Preserve collisions
-  // for any additional, uncovered occurrence of that basename in the request.
-  const attributedWordPositions = new Set<number>();
-  for (const [phrase, targets] of definitionsByPhrase) if (targets.length === 1) {
-    const phraseWords = phrase.split(" ");
-    for (let index = 0; index <= words.length - phraseWords.length; index += 1) {
-      if (phraseWords.every((word, offset) => word === words[index + offset])) {
-        phraseWords.forEach((_word, offset) => attributedWordPositions.add(index + offset));
-      }
+  for (const definition of input.definitions) {
+    if (!ids.includes(definition.resource)) continue;
+    for (const phrase of definition.phrases) {
+      const phraseWords = normalizedSemanticWords(phrase);
+      if (!containsWordSequence(words, phraseWords)) continue;
+      const key = phraseWords.join(" ");
+      definitionsByPhrase.set(key, [...new Set([...(definitionsByPhrase.get(key) ?? []), definition.resource])]);
     }
   }
-  const hasUncoveredBasename = (id: string) => {
-    const name = normalizedSemanticWords(id.split(".").at(-1) ?? id);
-    return [name, name.filter(word => !RESOURCE_MENTION_STOP_WORDS.has(word))].some(needle => needle.length > 0
-      && words.some((_word, index) => needle.every((word, offset) => word === words[index + offset])
-        && needle.some((_part, offset) => !attributedWordPositions.has(index + offset))));
-  };
-  const qualified = [...readOrientedJobText(input.original).matchAll(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu)].map(match => match[0]);
-  for (const id of base.required) if (!attributed.includes(id)
-    && !qualified.some(token => token === id || token.startsWith(`${id}.`))
-    && !hasUncoveredBasename(id)) required.delete(id);
-  const groups = base.ambiguous.filter(group => group.some(hasUncoveredBasename));
-  groups.push(...[...definitionsByPhrase.values()].filter(group => group.length > 1));
-  const labels = new Map<string, string[]>();
-  for (const resource of input.resources) if (resource.label && phraseMatches(resource.label)) {
-    const key = normalizedSemanticWords(resource.label).join(" ");
-    labels.set(key, [...(labels.get(key) ?? []), resource.id]);
+  const required = new Set(base.required);
+  const covered = new Set<number>();
+  const conflictingDefinitions: string[][] = [];
+  for (const [phrase, targets] of definitionsByPhrase) {
+    if (targets.length !== 1) { conflictingDefinitions.push(targets); continue; }
+    required.add(targets[0]!);
+    for (const start of sequencePositions(words, phrase.split(" "))) {
+      phrase.split(" ").forEach((_word, offset) => covered.add(start + offset));
+    }
   }
-  groups.push(...[...labels.values()].filter(group => group.length > 1));
-  const ambiguous = groups.filter(group => {
-    // Only actual current attributable definitions resolve a label/name
-    // collision. A merely mentioned ID or model-selected plan cannot.
-    const resolved = group.filter(id => attributed.includes(id));
-    if (resolved.length === 1) { required.add(resolved[0]!); return false; }
-    return true;
-  }).filter((group, index, all) => all.findIndex(other => JSON.stringify(other) === JSON.stringify(group)) === index);
-  // An attributed naming collision is a choice to resolve, not a request to
-  // include every resource carrying that definition. Explicit IDs remain bound.
-  for (const group of ambiguous) for (const id of group) if (!base.required.includes(id)) required.delete(id);
+  const candidates = distinctGroups([...candidateGroups(words, input.resources, covered), ...conflictingDefinitions]);
   const excluded = new Set<string>();
-  for (const text of [input.original, ...input.statements]) {
-    for (const clause of unquotedRequest(text).split(/[;\n]|(?<=[.!?])\s+/u)) {
-      const negative = /^\s*(?:do\s+not|don['’]t|never)\s+(?:read|show|list|include|expose)\s+(.+?)\.?\s*$/iu.exec(clause)
-        ?? /^\s*exclude\s+(.+?)\.?\s*$/iu.exec(clause)
-        ?? /^\s*(.+?)\s+(?:is|are)\s+(?:excluded|not\s+requested)\.?\s*$/iu.exec(clause);
-      if (!negative) continue;
-      const negativeWords = normalizedSemanticWords(negative[1]!);
-      // Exact root references only: a private resource.field prohibition
-      // does not prohibit the resource's other, public fields.
-      const target = negative[1]!.trim();
-      for (const id of ids) if (target === id) excluded.add(id);
-      for (const definition of input.definitions) if (definition.phrases.some(phrase => {
+  for (const source of [input.original, ...input.statements]) for (const clause of requestClauses(source)) {
+    const target = negativeTarget(clause);
+    if (!target) continue;
+    for (const id of ids) if (target === id) excluded.add(id);
+    const negativeWords = normalizedSemanticWords(target);
+    // Whole-root evidence only. A field restriction is not a root exclusion.
+    for (const definition of input.definitions) if (ids.includes(definition.resource)
+      && definition.phrases.some(phrase => {
         const phraseWords = normalizedSemanticWords(phrase);
         return phraseWords.length > 0 && phraseWords.length === negativeWords.length
           && phraseWords.every((word, index) => word === negativeWords[index]);
       })) excluded.add(definition.resource);
+  }
+  const unknownReference = qualifiedReferences(text).some(token => !ids.some(id => token === id || token.startsWith(`${id}.`)));
+  return { required: [...required], excluded: [...excluded], candidates,
+    ambiguous: candidates.filter(group => group.length > 1), conflicts: [...required].filter(id => excluded.has(id)),
+    unresolved: Boolean(text) && (unknownReference || required.size === 0 && candidates.length === 0) };
+}
+
+function qualifiedReferences(text: string): string[] {
+  return [...text.matchAll(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu)].map(match => match[0]);
+}
+function requestWords(text: string): string[] {
+  return normalizedSemanticWords(text.replace(/[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+/gu, " "));
+}
+function sequencePositions(words: string[], needle: string[]): number[] {
+  if (!needle.length) return [];
+  return words.flatMap((_word, index) => needle.every((word, offset) => word === words[index + offset]) ? [index] : []);
+}
+function distinctGroups(groups: string[][]): string[][] {
+  return groups.map(group => [...new Set(group)]).filter((group, index, all) =>
+    all.findIndex(other => other.length === group.length && other.every(id => group.includes(id))) === index);
+}
+function candidateGroups(words: string[], resources: readonly { id: string; label?: string }[], covered: Set<number>): string[][] {
+  const occurrences: { start: number; end: number; ids: string[] }[] = [];
+  for (const resource of resources) {
+    const name = normalizedSemanticWords(resource.id.split(".").at(-1) ?? resource.id);
+    const phrases = [name, name.filter(word => !RESOURCE_MENTION_STOP_WORDS.has(word)),
+      ...(resource.label ? [normalizedSemanticWords(resource.label)] : [])];
+    for (const phrase of phrases) for (const start of sequencePositions(words, phrase)) {
+      if (phrase.every((_word, offset) => covered.has(start + offset))) continue;
+      occurrences.push({ start, end: start + phrase.length, ids: [resource.id] });
     }
   }
-  return { required: [...required], excluded: [...excluded], ambiguous,
-    unresolved: required.size === 0 && ambiguous.length === 0 && words.length > 0
-      && input.definitions.some(definition => definition.phrases.length > 0) };
+  // Overlapping label/basename occurrences are one unresolved association,
+  // including a unique basename competing with a different resource's label.
+  const groups: typeof occurrences = [];
+  for (const occurrence of occurrences.sort((a, b) => a.start - b.start || a.end - b.end)) {
+    const previous = groups.at(-1);
+    if (previous && occurrence.start < previous.end) {
+      previous.end = Math.max(previous.end, occurrence.end); previous.ids.push(...occurrence.ids);
+    } else groups.push({ ...occurrence, ids: [...occurrence.ids] });
+  }
+  return distinctGroups(groups.map(group => group.ids));
+}
+
+function requestClauses(text: string): string[] {
+  return unquotedRequest(text).split(/[;\n]|(?<=[.!?])\s+|(?:,\s*|\s+)(?:and|but)\s+(?=(?:do\s+not|don['’]t|never|not)\b)/iu);
+}
+function negativeTarget(clause: string): string | undefined {
+  const negative = /^\s*(?:do\s+not|don['’]t|never)\s+(?:read|show|list|include|expose)\s+(.+?)\.?\s*$/iu.exec(clause)
+    ?? /^\s*(?:exclude|not)\s+(.+?)\.?\s*$/iu.exec(clause)
+    ?? /^\s*(.+?)\s+(?:is|are)\s+(?:excluded|not\s+requested)\.?\s*$/iu.exec(clause);
+  return negative?.[1]?.trim();
 }
 
 /** A literal, complete identity list is the one upper bound this helper can
@@ -127,18 +133,18 @@ export function exactOnlyReadResourceIds(text: string, availableResourceIds: rea
 }
 
 function readOrientedJobText(jobIntent: string): string {
-  const fragments = unquotedRequest(jobIntent)
+  const fragments = requestClauses(jobIntent).filter(clause => !negativeTarget(clause)).join("; ")
     // Keep nominal Read authority and its explicit exception in the same
     // clause: splitting "saved job and Read Boundary" loses preservation,
     // while splitting "Read Boundary but include ..." loses the addition.
-    .split(/(?<=[.!?;])\s+|(?:,\s*|\s+)(?:and|but)\s+(?=(?:(?:do\s+not|don't|never|not)\s+)?(?:read(?!\s+(?:boundary|mapping|revision)\b)|view|inspect|show|list)\b)/iu)
+    .split(/(?<=[.!?;])\s+|(?:,\s*|\s+)(?:and|but)\s+(?=(?:(?:do\s+not|don['’]t|never|not)\s+)?(?:read(?!\s+(?:boundary|mapping|revision)\b)|view|inspect|show|list)\b)/iu)
     .flatMap((sentence) => {
       // "Keep the same Read Boundary" names preserved authority, not a
       // request to expose the private verification facts later in the clause.
       // Continue scanning: a subsequent "and show ..." is still a read request.
       const readMatch = [...sentence.matchAll(/\b(?:read|view|inspect|explore|analy[sz]e|understand|answer|report|show|list|summari[sz]e|explain)\b/giu)]
         .find(match => !isPreservedReadBoundaryMention(sentence, match.index)
-          && !/\b(?:do\s+not|don't|never)\s+$/iu.test(sentence.slice(0, match.index)));
+          && !/\b(?:do\s+not|don['’]t|never)\s+$/iu.test(sentence.slice(0, match.index)));
       if (!readMatch) return [];
       const afterRead = sentence.slice(readMatch.index);
       const actionConnector = /\b(?:and|then)\s+(?:(?:let|allow)\s+(?:the\s+)?(?:agent|model|user|customer|them|it)\s+)?(?:propos(?:e|ing)|update|insert|delete|write|apply|approve|change)\b/iu.exec(afterRead);
@@ -149,13 +155,21 @@ function readOrientedJobText(jobIntent: string): string {
 
 function unquotedRequest(text: string): string {
   const chars = [...text];
-  let end: string | undefined;
-  return chars.map((char, index) => {
-    if (end) { if (char === end) end = undefined; return char === "\n" ? "\n" : " "; }
+  let result = "";
+  for (let index = 0; index < chars.length; index += 1) {
+    const char = chars[index]!;
     const apostrophe = /['’]/u.test(char) && /[\p{L}\p{N}]/u.test(chars[index - 1] ?? "") && /[\p{L}\p{N}]/u.test(chars[index + 1] ?? "");
-    if (!apostrophe && /["'“‘`]/u.test(char)) { end = char === "“" ? "”" : char === "‘" ? "’" : char; return " "; }
-    return char;
-  }).join("");
+    if (apostrophe || !/["'“‘`]/u.test(char)) { result += char; continue; }
+    const end = char === "“" ? "”" : char === "‘" ? "’" : char;
+    const close = chars.indexOf(end, index + 1);
+    const content = chars.slice(index + 1, close === -1 ? chars.length : close).join("");
+    // Quoted literal identities in a current Read instruction retain identity;
+    // historical quoted instructions remain opaque, not executable requests.
+    result += close !== -1 && /^[\p{L}\p{N}_]+(?:\.[\p{L}\p{N}_]+)+$/u.test(content.trim())
+      ? ` ${content.trim()} ` : content.replace(/[^\n]/gu, " ");
+    index = close === -1 ? chars.length : close;
+  }
+  return result;
 }
 
 function isPreservedReadBoundaryMention(sentence: string, index: number): boolean {

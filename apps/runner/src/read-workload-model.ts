@@ -245,8 +245,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       return [{ resource: resource.id, phrases }];
     }), statements: activeMeaningStatements().map(statement => statement.text) });
   const requestedScopeQuestions = (scope = currentRequestedScope()) => {
-    const questions = scope.ambiguous.map(alternatives => ({ alternatives,
-      reason: `The requested record name matches more than one inspected resource: ${alternatives.join(", ")}. Confirm the intended business records before accepting this mapping.`,
+    const questions = scope.candidates.map(alternatives => ({ alternatives,
+      reason: `The requested record name has an unestablished association with inspected resources: ${alternatives.join(", ")}. Confirm the intended business records before accepting this mapping.`,
       question: "Which records should this task show? More than one available set of records matches the name in your request. Describe the intended information so the mapping can be reviewed." }));
     if (scope.unresolved) questions.push({ alternatives: catalog.resources.map(resource => resource.id),
       reason: "The retained request has no exact association with the current attributed resource definitions. Preserve the request and establish the intended business mapping before accepting it.",
@@ -504,6 +504,11 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         const requiredResources = requestedResources.required;
         const allowedResources = new Set(workloadNamingEntries({ allowed: args.allowed }, catalog)
           .flatMap(entry => isRecord(entry) && isRecord(entry.plan) && typeof entry.plan.resource === "string" ? [entry.plan.resource] : []));
+        if (requestedResources.conflicts.length) {
+          workloadValidationBlockers = [`READ_WORKLOAD_SCOPE_CONFLICT: The retained request and current exclusions conflict for ${requestedResources.conflicts.join(", ")}. Preserve both instructions and resolve the business scope before accepting a mapping.`];
+          return { ok: false, error_code: "READ_WORKLOAD_SCOPE_CONFLICT", value: { blockers: workloadValidationBlockers,
+            authority_granted: false, source_query_executed: false, source_database_changed: false } };
+        }
         const excludedResources = requestedResources.excluded.filter(resource => allowedResources.has(resource));
         if (excludedResources.length) {
           workloadValidationBlockers = [`READ_WORKLOAD_EXCLUDED_RESOURCE: Current operator/Source instructions exclude ${excludedResources.join(", ")}. Do not add that access or treat a routing summary as permission.`];
