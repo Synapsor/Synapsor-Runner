@@ -1235,3 +1235,21 @@ describe("unestablished requested Read routing", () => {
     expect(currentState).toEqual(before);
   });
 });
+
+
+describe("current exact Read request bindings", () => {
+  it.each(["reuse", "resume"] as const)("retains a current exact %s request without another question", async readMode => {
+    const description = "Read membership names and expiry dates.";
+    const state = { ...reusableState, read: { ...reusableState.read,
+      resource_ids: ["club.members"], resumable_draft_count: 1, resumable_resource_ids: ["club.members"],
+      [readMode === "reuse" ? "reviewed_requests" : "resumable_requests"]: [{ description, resource_ids: ["club.members"] }],
+    } };
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "retained_read",
+      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: readMode, action_mode: "none", summary: "Retain the exact saved request." }) }] } }));
+    const result = await planModelBoundaryJob({ jobIntent: `Prepare the requested program. ${description}`, currentState: state,
+      availableResourceIds: ["club.members"], egressAcknowledged: true,
+      session: { provider: "openai", model: "declared-request-binding", apiKey: "local-only", dependencies: { requestJson } } });
+    expect(result).toMatchObject({ state: "planned", read_mode: readMode, authority_granted: false, source_database_changed: false });
+    expect(requestJson).toHaveBeenCalledOnce();
+  });
+});
