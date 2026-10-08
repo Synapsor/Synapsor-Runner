@@ -3,6 +3,7 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import type { ControlPolicyScope, ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { createProjectRuntimeStore } from "./control-policy-store.js";
 import { createOptionalOwnerPolicyRuntime, type LocalOwnerPolicyReview } from "./owner-policy-runtime.js";
@@ -143,11 +144,14 @@ export async function createWorkbenchAskMcpGateway(input: {
               _meta: pendingPresentation.request_meta,
             });
             const localPresentation = pendingPresentation.take();
-            if (result.isError === true && isMcpInputValidationRefusal(result)) {
-              return invalidModelToolArgumentsResult(name);
-            }
             const views = askToolResultViews(result, localPresentation);
             const value = views.local;
+            if (result.isError === true && !isRecord(result.structuredContent)
+              && !localPresentation && typeof value.error_code !== "string") {
+              // Some SDK failures contain only vendor prose and lose their native
+              // code. Withhold that diagnostic; its wording cannot prove a cause.
+              return unknownMcpToolFailureResult("MCP_TOOL_REFUSED");
+            }
             const providerProjection = views.withheld || views.operator_metadata_withheld
               ? {
                 value: views.provider,
@@ -175,8 +179,10 @@ export async function createWorkbenchAskMcpGateway(input: {
           } finally {
             pendingPresentation.cancel();
           }
-        } catch {
-          return invalidModelToolArgumentsResult(name);
+        } catch (error) {
+          return error instanceof McpError && error.code === ErrorCode.InvalidParams
+            ? invalidModelToolArgumentsResult(name)
+            : unknownMcpToolFailureResult("MCP_TOOL_FAILED");
         }
       },
       ...(toolSurface.some((tool) => tool.name === "app.describe_data")
@@ -264,15 +270,17 @@ function invalidModelToolArgumentsResult(name: string): AskToolCallResult {
   };
 }
 
-function isMcpInputValidationRefusal(
-  result: Awaited<ReturnType<Client["callTool"]>>,
-): boolean {
-  if (!Array.isArray(result.content)) return false;
-  return result.content.some((item) =>
-    isRecord(item)
-    && item.type === "text"
-    && typeof item.text === "string"
-    && item.text.includes("Input validation error: Invalid arguments for tool"));
+function unknownMcpToolFailureResult(code: "MCP_TOOL_REFUSED" | "MCP_TOOL_FAILED"): AskToolCallResult {
+  return {
+    ok: false,
+    error_code: code,
+    value: {
+      ok: false,
+      error_code: code,
+      message: "The reviewed MCP tool call failed without a typed cause. Its unstructured diagnostic was withheld.",
+      source_database_changed: false,
+    },
+  };
 }
 
 async function connectRuntimeSurface(input: {

@@ -6588,10 +6588,16 @@ function safeError(error: unknown): string {
 }
 
 function redactedDatabaseError(error: unknown): string {
-  const message = safeError(error)
-    .replace(/(?:postgres|mysql)(?:ql)?:\/\/\S+/gi, "<redacted-database-url>")
-    .replace(/(?:password|token|secret|api[_-]?key)\s*[=:]\s*\S+/gi, "$1=<redacted>");
-  if (/timeout|timed out|connection|pool|too many clients|unavailable/i.test(message)) return "temporary database connection or timeout failure";
-  if (/column|relation|table|schema|does not exist|unknown/i.test(message)) return "reviewed schema no longer matches the source";
-  return "database rejected the reviewed read";
+  // Driver codes are structured facts. Never inspect or forward exception prose:
+  // even otherwise ordinary diagnostics can contain credentials and identities.
+  const code = error !== null && typeof error === "object" && "code" in error
+    && typeof error.code === "string" ? error.code : undefined;
+  if (code && ["ECONNREFUSED", "ETIMEDOUT", "ECONNRESET", "EHOSTUNREACH", "ENOTFOUND",
+    "08006", "08001", "57P01", "53300", "PROTOCOL_CONNECTION_LOST"].includes(code)) {
+    return "temporary database connection or timeout failure";
+  }
+  if (code && ["42P01", "42703", "3F000", "ER_NO_SUCH_TABLE", "ER_BAD_FIELD_ERROR", "ER_BAD_DB_ERROR"].includes(code)) {
+    return "reviewed schema no longer matches the source";
+  }
+  return "database failure; cause unavailable";
 }
