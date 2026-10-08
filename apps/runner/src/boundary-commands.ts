@@ -1,3 +1,5 @@
+import { boundaryAuthoringResumeBinding } from "./authoring-resume-binding.js";
+export { boundaryAuthoringResumeBinding } from "./authoring-resume-binding.js";
 import { authoringPermissionPresentation } from "./authoring-permission-presentation.js";
 import { reloadReadReviewAfterCommit, saveBoundaryReviewSignoff, saveReviewedDisabledBoundary, saveReadReviewSignoff, type ReadReviewSignoff, type ReadReviewPredecessorCheck } from "./authoring-read-review-save.js";
 import { readMeaningPromptHandoff } from "./authoring-read-prompt-binding.js";
@@ -3046,16 +3048,6 @@ function boundaryModelLabel(model: Pick<ActionModelSuggestionSession, "provider"
   return `${model.provider}[${model.model}]`;
 }
 
-export function boundaryAuthoringResumeBinding(
-  bundle: BoundaryReviewBundle,
-): BoundaryAuthoringResumeBinding {
-  return {
-    boundary_name: bundle.candidate.pack.name,
-    generation_lock_fingerprint: bundle.authority.generation_lock_fingerprint,
-    schema_fingerprint: bundle.authority.schema_fingerprint,
-    role_posture_fingerprint: bundle.authority.role_posture_fingerprint,
-  };
-}
 
 function boundaryAuthoringResumeModelSession(
   saved: BoundaryAuthoringResumeState,
