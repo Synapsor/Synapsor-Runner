@@ -1,0 +1,59 @@
+{
+  "authority": "Owner B65 CROSS-RESOURCE INVARIANT TEST PACK, attachment de468b9a-5464-40fa-b848-b06dceb57f26",
+  "status": "ACTIVE finite test/characterization pack; not authorization for every invariant capability",
+  "window": {
+    "T0": "2026-10-08T16:56:15Z",
+    "end": "2026-10-12T16:56:15Z",
+    "last24h": "integration/acceptance; unchanged"
+  },
+  "owners": {
+    "runtime": "01a112d4-bd54-7441-b272-5932b16e4971 existing runtime implementer",
+    "native_tester": "01a117fd-4600-76a3-baf7-e404eb16d0d3 independent native/public evidence and SUPPORT-MATRIX",
+    "fixture_helper": "existing /root/b59_regression_fix in own worktree; CASE-MANIFEST + independent pure reference states; no product/native changes",
+    "Main": "integration and B64 typed contract, exact cross-lane handoffs",
+    "reviewer": "existing R2 source/native acceptance; no implementer selfapproval"
+  },
+  "first": "Sequential total30/limit50: freshINSERT25 refuses,20 reaches50,10 reaches40; includedexisting10 UPDATEto25 gives45valid/to35 gives55refused. Record actualcheck, stale is not invariant proof. Ordinary open\u2192close eligibility stays precondition.",
+  "priority": [
+    "sequential",
+    "T01 column relation",
+    "T03 cross-table team budget",
+    "T04 threshold-changing INSERT",
+    "T08 whole atomic UPDATE group",
+    "T09 three contenders"
+  ],
+  "remaining_characterizations": [
+    "T02 minimum population",
+    "T05 cross-table exclusivity",
+    "T06 distinct count",
+    "T07 business group move",
+    "T10 indirect rate fact"
+  ],
+  "outcomes": [
+    "ENFORCED",
+    "UNSUPPORTED_REFUSED",
+    "DEFECT",
+    "NOT_REACHED_HARNESS"
+  ],
+  "evidence_dimensions": [
+    "public admission vs nativecomponent",
+    "locking",
+    "complete poststate",
+    "private scoped outcomes",
+    "recovery/receipts",
+    "useful progress/fresh continuation"
+  ],
+  "method": "Exact Owner synthetic fixtures; independent private oracles, real processes/connections/barriers/database waits, both orders; no queue1/mutex/sleeps-only/hiddenconstraint substitute. PG then supportedMySQL, preserve B66 narrowgrants/rollback and B61actualreceipt scope.",
+  "no_expansion": [
+    "paid/provider/model calls",
+    "new money/clocks/frozenpatch/tools/stores",
+    "source grants/RLS relaxation",
+    "arbitrary invariant support beyond approved scope",
+    "term/scope dropping, humanapproval fallback, altered amounts",
+    "replay/unknown capacity release"
+  ],
+  "current_boundary": "Current narrow PG writer hard capability remains unsupported until Source execution-lifetime proven under its actual posture; prior unsafe namespace COMMIT55 preserved. Existingprivileged native4PASS is separate, completedreceiptDU01 repair ongoing. No publicpositive transfer.",
+  "reuse": "Keep completed B65 G3/G4/G5, B66, B61 evidence; run only uncovered exact contracts. Compact DEV group records, no per-case freeze/archive ceremony.",
+  "manifest": "Helper owns one CASE-MANIFEST.json; Main/Tester import exact pin rather than duplicate manifest.",
+  "counts": "B64 counts/owners unchanged by new characterizationpack; B64 work continues."
+}

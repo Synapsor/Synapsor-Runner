@@ -9,6 +9,6 @@ Read accepted a174 last6 +932 persistence +47native assess await coherent Main i
 NEXT Main: integrate selective Privacy typed protocol + Read packets, then actual public confirmations/activation/active serializers; no whole dependency snapshots, no fabricated scope/origins.
 Privacy23/2: native vocabulary ports and full Source inventory binding pending;9ffd adapter scope defects now finite producer repair, R2review/strict compatibility pending; no global guard weakening.
 Action43/5: same owner owns typed Source producer/public hard_limit8e339; Main renderer + review label hooks pending; runtime approval.shared_limits locator567d ready.
-B65 namespace replacement COMMIT55 remains preserved; current narrow writer hard capability unsupported until proven; receipt8-column9464 positive separate. Runtime/R2 finite namespace/duplicate controls active; no public support inferred.
-Slots1returned/2B65runtime/3Privacyfinite/4B66CLIreview;4heavy max8workers/run,8GiB free floors,isolated0700 resources; keep all storage, revisit below30GB.
+B65 finite [cross-resource pack](docs/development/b65-cross-resource/PLAN.json) active: sequential5→T01/T03/T04/T08/T09; Tester native, Readhelper manifest/oracles, runtime existing repair; no new capability/grants/clock. Namespace/replay gaps retained.
+Slots1B65Tester/2B65runtime/3Privacyfinite/4B66CLIreview;4heavy max8workers/run,8GiB free floors,isolated0700 resources; keepallstorage/revisitbelow30GB. Main38→36 accepted; public Read integration NEXT.
 Luna35total/liabilities15.27063125 inclhold1.2693125/remain19.72936875; no paid/model calls. Commit+private-push every checkpoint; no freeze or overall B64 PASS.
