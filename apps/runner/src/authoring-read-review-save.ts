@@ -15,7 +15,9 @@ export type ReadReviewCommit = {
   progress: BoundaryReviewProgress;
   authoring_binding?: ReadAuthoringBindings;
 };
-export type ReadReviewSignoff = (context: ReviewContext, committed: ReadReviewCommit) => Promise<void>;
+export type ReadReviewSignoff = (context: ReviewContext, committed: ReadReviewCommit, before: ReviewContext) => Promise<void>;
+/** A local projection check only; never prompt, call a model, or wait here. */
+export type ReadReviewPredecessorCheck = (before: ReviewContext) => undefined;
 
 export async function reloadReadReviewAfterCommit(projectRoot: string, mutation: {
   candidate_digest: `sha256:${string}`;
@@ -34,9 +36,10 @@ export async function reloadReadReviewAfterCommit(projectRoot: string, mutation:
   return context;
 }
 
-export async function saveBoundaryReviewSignoff(projectRoot: string,
-  context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>, progress: BoundaryReviewProgress,
-): Promise<ReadAuthoringBindings | undefined> {
+async function commitBoundaryReviewSignoff(projectRoot: string,
+  context: ReviewContext, progress: BoundaryReviewProgress,
+  assertBeforeSave?: ReadReviewPredecessorCheck,
+): Promise<{ before: ReviewContext; authoring_binding: ReadAuthoringBindings | undefined }> {
   const shown = structuredClone({ bindings: context.bundle.mutation_bindings, previous: context.progress ?? null, progress });
   return withProjectAuthorityMutation(projectRoot, async (held) => {
     const current = await loadBoundaryReviewContext(held.projectRoot);
@@ -45,23 +48,37 @@ export async function saveBoundaryReviewSignoff(projectRoot: string,
       throw Object.assign(new Error("This Boundary changed while you were reviewing it. Reopen the current revision before signing off; your earlier review was not saved."),
         { code: "POLICY_AUTHORING_REVIEW_CHANGED" });
     }
-    return saveBoundaryReviewProgress(held.projectRoot, shown.progress, shown.bindings.authoring, held);
+    // Bind the continuation to the actual context checked by this writer, not
+    // a caller's expected projection or a later independently loaded revision.
+    const before = structuredClone(current);
+    if (assertBeforeSave && assertBeforeSave(structuredClone(before)) !== undefined) {
+      throw new Error("READ_REVIEW_PREDECESSOR_CHECK_INVALID: The local review predecessor check must complete synchronously without returning a result. Nothing was saved.");
+    }
+    const authoring_binding = await saveBoundaryReviewProgress(held.projectRoot, shown.progress, shown.bindings.authoring, held);
+    return { before, authoring_binding };
   });
+}
+
+export async function saveBoundaryReviewSignoff(projectRoot: string,
+  context: ReviewContext, progress: BoundaryReviewProgress,
+): Promise<ReadAuthoringBindings | undefined> {
+  return (await commitBoundaryReviewSignoff(projectRoot, context, progress)).authoring_binding;
 }
 
 /** Acknowledge only this protected save. A refused/uncertain save or a
  * competing revision before reload never invokes the continuation. */
 export async function saveReadReviewSignoff(input: {
   projectRoot: string; context: ReviewContext; progress: BoundaryReviewProgress;
+  assertBeforeSave?: ReadReviewPredecessorCheck;
   onReviewSignoff?: ReadReviewSignoff;
 }): Promise<ReadReviewCommit> {
   const progress = structuredClone(input.progress);
-  const authoring_binding = await saveBoundaryReviewSignoff(input.projectRoot, input.context, progress);
+  const { before, authoring_binding } = await commitBoundaryReviewSignoff(input.projectRoot, input.context, progress, input.assertBeforeSave);
   const committed: ReadReviewCommit = { candidate_digest: progress.candidate_digest,
     review_revision: progress.revision, progress, ...(authoring_binding ? { authoring_binding } : {}) };
   if (input.onReviewSignoff) {
     const context = await reloadReadReviewAfterCommit(input.projectRoot, committed);
-    await input.onReviewSignoff(context, committed);
+    await input.onReviewSignoff(context, committed, before);
   }
   return committed;
 }
@@ -71,6 +88,7 @@ export async function saveReviewedDisabledBoundary(input: {
   context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>;
   actor: string;
   reason: string;
+  assertBeforeSave?: ReadReviewPredecessorCheck;
   onReviewSignoff?: ReadReviewSignoff;
 }): Promise<ReadReviewCommit> {
   const progress = createBoundaryReviewProgress({

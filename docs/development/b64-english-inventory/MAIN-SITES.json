@@ -6,14 +6,14 @@
       "id": "MAIN-EN-001",
       "file": "apps/runner/src/boundary-commands.ts",
       "lines": [
-        3174,
+        3181,
         3238
       ],
-      "owner": "isBoundaryAuthoringExplanationQuestion / promptModelGuidedActionClarification",
-      "decision": "English question prefixes distinguish explanation from business answer and spend narration calls",
-      "structured_reachable": "no production caller of prompt helper remains",
+      "owner": "promptModelGuidedActionClarification",
+      "decision": "Unused old clarification prompt helper contains English explanation/answer routing",
+      "structured_reachable": "no production caller of this helper remains; shared classifier separately remains live",
       "disposition": "delete",
-      "production_call_chain": "Unreferenced local helper; remove with preserved typed explanation/answer tests",
+      "production_call_chain": "Unused prompt helper only; classifier is live in Read revision and policy owner answer and must be replaced through typed interaction",
       "scope": "authoring"
     },
     {
@@ -757,6 +757,48 @@
       "disposition": "typed",
       "production_call_chain": "resolveRefusalAccessGuidance \u2192 exactGroupingReviewable",
       "scope": "ask_separate"
+    },
+    {
+      "id": "MAIN-EN-001A",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        3174,
+        3179
+      ],
+      "owner": "isBoundaryAuthoringExplanationQuestion",
+      "decision": "English prefixes classify a raw operator response as explanation rather than business answer",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "Read revision and policy owner question call shared classifier; replace with typed model interaction, not lexical rules",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-001B",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        9168,
+        9168
+      ],
+      "owner": "Read revision answer loop",
+      "decision": "Classifier diverts operator answer into narrated explanation, extra provider call and repeat question",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "interactiveReadWorkloadAssistSessionInner -> readModelAnswer -> isBoundaryAuthoringExplanationQuestion",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-001C",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        10205,
+        10205
+      ],
+      "owner": "policy owner answer loop",
+      "decision": "Classifier selects whether raw answer is persisted or explanation call consumes another turn",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "policy clarification -> operator answer -> isBoundaryAuthoringExplanationQuestion",
+      "scope": "authoring"
     }
   ],
   "method": "AST literals/calls/string comparisons plus owning-function/caller inspection; grouped supporting ranges, not comparable to historical regex-line count. Exact mechanical remainder will be aggregated separately.",
@@ -775,6 +817,12 @@
       "file": "packages/runner-alias/bin/synapsor-runner.mjs",
       "disposition": "legitimate",
       "reason": "Single module import; no language classification."
+    }
+  ],
+  "corrections": [
+    {
+      "reason": "Original MAIN-EN-001 grouped an unused helper with its shared classifier but missed two other production callers. Helper deletion remains valid; classifier and live calls require typed replacement.",
+      "basis": "Source2857e2e4 remains inventory pin; direct source inspection confirms callers9168/10205; no product change."
     }
   ]
 }

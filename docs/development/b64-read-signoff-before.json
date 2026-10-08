@@ -7,5 +7,16 @@
   },
   "log": "/var/tmp/synapsor-b64-main-owned/evidence/read-signoff-predecessor-before.log",
   "scope": "Actual protected Read signoff predecessor validation and actual before-context acknowledgement; existing concurrent native save rejection passes. No product fix yet.",
-  "next": "Independent variant then narrow protected-save guard; public Action adapter remains open."
+  "next": "Independent variant then narrow protected-save guard; public Action adapter remains open.",
+  "after": {
+    "focused_files": 3,
+    "passed": 8,
+    "log": "/var/tmp/synapsor-b64-main-owned/evidence/read-signoff-predecessor-after.log",
+    "typecheck_exit": 0,
+    "typecheck_log": "/var/tmp/synapsor-b64-main-owned/evidence/read-signoff-predecessor-types2.log",
+    "prior_typecheck": "exit1 on test noop inferred void rather than required undefined; retained types.log; explicit undefined fixes type only",
+    "independent_verdict": "PENDING",
+    "public_binding": "NOT RUN"
+  },
+  "change": "Existing protected owner reads actual current predecessor after binding check, invokes local synchronous check on a clone, commits with existing writer, and supplies actual before context only after exact committed reload. Existing public writer return contract unchanged. No boundary growth."
 }

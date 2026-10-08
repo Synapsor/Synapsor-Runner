@@ -50,7 +50,7 @@ describe("Read signoff actual predecessor boundary", () => {
     await saveReadReviewSignoff({ projectRoot: root, context, progress });
     const current = canonicalJsonDigest(await loadBoundaryReviewContext(root));
     const continued = vi.fn();
-    const options = { projectRoot: root, context, progress, assertBeforeSave: () => {}, onReviewSignoff: continued };
+    const options = { projectRoot: root, context, progress, assertBeforeSave: () => undefined, onReviewSignoff: continued };
     await expect(saveReadReviewSignoff(options)).rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
     expect(continued).not.toHaveBeenCalled();
     expect(canonicalJsonDigest(await loadBoundaryReviewContext(root))).toBe(current);

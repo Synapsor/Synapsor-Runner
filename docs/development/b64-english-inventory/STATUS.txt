@@ -1,5 +1,5 @@
 COMPLETE STATIC INVENTORY — see REPORT.txt and INVENTORY.json.
 Source2857e2e4;25269 unique candidate sites covered,0unclassified.
-454 annotated spans:247typed/66delete/141legitimate; runtime Ask/code/audit separated.
+457 annotated spans:250typed/66delete/141legitimate; runtime Ask/code/audit separated.
 English retirement implementation remains OPEN; no behavioral or release acceptance implied.
 Historical UNCLASSIFIED-CANDIDATES.json is retained and fully joined to final manifests.

@@ -9,22 +9,22 @@
     "unclassified_unique_ast_sites": 0,
     "annotation_spans_by_disposition": {
       "delete": 66,
-      "replace_with_typed": 247,
+      "replace_with_typed": 250,
       "legitimate": 141
     },
     "audited_source_lines_by_disposition": {
       "legitimate": 18547,
-      "replace_with_typed": 1057,
-      "delete": 131
+      "replace_with_typed": 1059,
+      "delete": 129
     },
     "candidate_files": 504,
-    "primary_spans": 454,
+    "primary_spans": 457,
     "conflicting_delete_vs_typed_nodes": 0,
     "typescript_files_scanned": 563,
     "span_dispositions_by_scope": {
       "authoring_or_shared": {
         "delete": 66,
-        "replace_with_typed": 219,
+        "replace_with_typed": 222,
         "legitimate": 129
       },
       "separate_code_or_audit": {
@@ -4729,7 +4729,7 @@
       "annotation_id": "I01960",
       "provenance": "Action04e65e5d",
       "additional_annotations": [
-        "I03584"
+        "I03587"
       ],
       "coverage_scope": "separate_code_or_audit"
     },
@@ -4750,7 +4750,7 @@
       "annotation_id": "I01961",
       "provenance": "Action04e65e5d",
       "additional_annotations": [
-        "I03592"
+        "I03595"
       ],
       "coverage_scope": "separate_code_or_audit"
     },
@@ -4771,7 +4771,7 @@
       "annotation_id": "I01962",
       "provenance": "Action04e65e5d",
       "additional_annotations": [
-        "I03594"
+        "I03597"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -7031,14 +7031,14 @@
       "id": "MAIN-EN-001",
       "file": "apps/runner/src/boundary-commands.ts",
       "lines": [
-        3174,
+        3181,
         3238
       ],
-      "owner": "isBoundaryAuthoringExplanationQuestion / promptModelGuidedActionClarification",
-      "decision": "English question prefixes distinguish explanation from business answer and spend narration calls",
-      "structured_reachable": "no production caller of prompt helper remains",
+      "owner": "promptModelGuidedActionClarification",
+      "decision": "Unused old clarification prompt helper contains English explanation/answer routing",
+      "structured_reachable": "no production caller of this helper remains; shared classifier separately remains live",
       "disposition": "delete",
-      "production_call_chain": "Unreferenced local helper; remove with preserved typed explanation/answer tests",
+      "production_call_chain": "Unused prompt helper only; classifier is live in Read revision and policy owner answer and must be replaced through typed interaction",
       "scope": "authoring",
       "annotation_id": "I03525",
       "provenance": "Main5a62b761",
@@ -7946,6 +7946,57 @@
       "coverage_scope": "separate_runtime_ask"
     },
     {
+      "id": "MAIN-EN-001A",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        3174,
+        3179
+      ],
+      "owner": "isBoundaryAuthoringExplanationQuestion",
+      "decision": "English prefixes classify a raw operator response as explanation rather than business answer",
+      "structured_reachable": "yes",
+      "disposition": "replace_with_typed",
+      "production_call_chain": "Read revision and policy owner question call shared classifier; replace with typed model interaction, not lexical rules",
+      "scope": "authoring",
+      "annotation_id": "I03579",
+      "provenance": "Main5a62b761",
+      "coverage_scope": "authoring_or_shared"
+    },
+    {
+      "id": "MAIN-EN-001B",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        9168,
+        9168
+      ],
+      "owner": "Read revision answer loop",
+      "decision": "Classifier diverts operator answer into narrated explanation, extra provider call and repeat question",
+      "structured_reachable": "yes",
+      "disposition": "replace_with_typed",
+      "production_call_chain": "interactiveReadWorkloadAssistSessionInner -> readModelAnswer -> isBoundaryAuthoringExplanationQuestion",
+      "scope": "authoring",
+      "annotation_id": "I03580",
+      "provenance": "Main5a62b761",
+      "coverage_scope": "authoring_or_shared"
+    },
+    {
+      "id": "MAIN-EN-001C",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        10205,
+        10205
+      ],
+      "owner": "policy owner answer loop",
+      "decision": "Classifier selects whether raw answer is persisted or explanation call consumes another turn",
+      "structured_reachable": "yes",
+      "disposition": "replace_with_typed",
+      "production_call_chain": "policy clarification -> operator answer -> isBoundaryAuthoringExplanationQuestion",
+      "scope": "authoring",
+      "annotation_id": "I03581",
+      "provenance": "Main5a62b761",
+      "coverage_scope": "authoring_or_shared"
+    },
+    {
       "id": "R1G01",
       "file": "apps/runner/src/boundary-commands.ts",
       "lines": [
@@ -7955,7 +8006,7 @@
       "disposition": "replace_with_typed",
       "decision": "English labels strip Change prefix and omit Completion lines in activation readback.",
       "call_chain": "interactiveReadWorkloadAssistSessionInner:10868 -> semanticActionActivationReviewLines -> semanticActionBusinessReviewLines; use structured fields, preserve complete view",
-      "annotation_id": "I03579",
+      "annotation_id": "I03582",
       "provenance": "Residual193959f60",
       "coverage_scope": "authoring_or_shared"
     },
@@ -7969,7 +8020,7 @@
       "disposition": "replace_with_typed",
       "decision": "Run: prefix extracts commands and removes them from compact checkpoint.",
       "call_chain": "ordinary post-activation execution review -> executionNotice -> displayed checkpoint/retained run commands; return explicit command records",
-      "annotation_id": "I03580",
+      "annotation_id": "I03583",
       "provenance": "Residual193959f60",
       "coverage_scope": "authoring_or_shared"
     },
@@ -7983,7 +8034,7 @@
       "disposition": "replace_with_typed",
       "decision": "Run: prefix extracts reviewed execution command from presentation lines.",
       "call_chain": "runPostActivationAskHandoff -> execution setup notice; no command inferred from arbitrary model prose, still typed notice needed",
-      "annotation_id": "I03581",
+      "annotation_id": "I03584",
       "provenance": "Residual193959f60",
       "coverage_scope": "authoring_or_shared"
     },
@@ -7997,7 +8048,7 @@
       "disposition": "replace_with_typed",
       "decision": "REVIEW: note prefix determines note ordering/filtering.",
       "call_chain": "formatFocusedBoundaryActivationReview -> grouped final structural view; use typed review-needed field",
-      "annotation_id": "I03582",
+      "annotation_id": "I03585",
       "provenance": "Residual193959f60",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8011,7 +8062,7 @@
       "disposition": "replace_with_typed",
       "decision": "Database-declared enum values recovered from an English evidence line prefix.",
       "call_chain": "describeReviewedField -> reviewed field display; source fact must come from typed enum metadata, not rendered evidence string",
-      "annotation_id": "I03583",
+      "annotation_id": "I03586",
       "provenance": "Residual193959f60",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8025,7 +8076,7 @@
       "disposition": "replace_with_typed",
       "decision": "English generic-argument/action-prefix/suffix/operation word dictionaries.",
       "call_chain": "contract-tools analyzeCapabilitySurface -> contract lint output; strict/fail-on-warning can fail CLI, no native authoring evidence save",
-      "annotation_id": "I03585",
+      "annotation_id": "I03588",
       "provenance": "Residual193959f60",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8039,7 +8090,7 @@
       "disposition": "replace_with_typed",
       "decision": "Field/capability-name tokens determine generic-operation warnings.",
       "call_chain": "same analyzeCapabilitySurface -> collectGenericArgumentFindings/collectOperationNamingFinding",
-      "annotation_id": "I03586",
+      "annotation_id": "I03589",
       "provenance": "Residual193959f60",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8053,7 +8104,7 @@
       "disposition": "replace_with_typed",
       "decision": "Token normalization supporting explicit advisory word dictionaries.",
       "call_chain": "tokenizeIdentifier -> dictionary warning functions; not reviewed business permission",
-      "annotation_id": "I03587",
+      "annotation_id": "I03590",
       "provenance": "Residual193959f60",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8067,7 +8118,7 @@
       "disposition": "replace_with_typed",
       "decision": "Punctuation and result-row matching determine removed repeated result lines.",
       "call_chain": "modelAnswerForDisplay -> matchingResultRows; extends MAIN-EN-036; runtime Ask/local-ui only",
-      "annotation_id": "I03588",
+      "annotation_id": "I03591",
       "provenance": "Residual193959f60",
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8081,7 +8132,7 @@
       "disposition": "replace_with_typed",
       "decision": "Normalized response text contains actual result tokens; matching rows determine duplicate answer rendering.",
       "call_chain": "modelAnswerForDisplay -> matchingResultRows/matchingUniqueResultRows/resultComparisonTokens; no B64 grant; literal containment is not entailment",
-      "annotation_id": "I03589",
+      "annotation_id": "I03592",
       "provenance": "Residual193959f60",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8095,7 +8146,7 @@
       "disposition": "legitimate",
       "decision": "Exact SDK input-validation error text recognizes wire argument refusal.",
       "call_chain": "gateway callTool -> isMcpInputValidationRefusal -> MCP_TOOL_ARGUMENTS_INVALID; no interpretation of business answer, technical structured error preferable",
-      "annotation_id": "I03590",
+      "annotation_id": "I03593",
       "provenance": "Residual193959f60",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8109,7 +8160,7 @@
       "disposition": "legitimate",
       "decision": "Recognizes exact host save-wrapper prefix plus underlying native error codes.",
       "call_chain": "coordinated Action checkpoint save -> contained failure treatment; not policy meaning, typed cause would improve robustness",
-      "annotation_id": "I03591",
+      "annotation_id": "I03594",
       "provenance": "Residual193959f60",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8123,7 +8174,7 @@
       "disposition": "legitimate",
       "decision": "Punctuation/case normalization matches explicit reviewed resource IDs/table aliases.",
       "call_chain": "resolve active Explore target -> exact ID first, aliases second, outer caller refuses ambiguous/unknown; no NL subject intent inferred",
-      "annotation_id": "I03593",
+      "annotation_id": "I03596",
       "provenance": "Residual193959f60",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8139,7 +8190,7 @@
       "call_chain": "formatGuidedBoundaryReady -> fresh guided onboarding summary",
       "structured_job_reachability": "reachable setup presentation",
       "ask_runtime": false,
-      "annotation_id": "I04402",
+      "annotation_id": "I04405",
       "provenance": "Residual2112e258e",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8155,10 +8206,10 @@
       "call_chain": "required typed producer ingress -> strict scope/assistance branches; isRunnerResolvedReadMechanicalQuestion is retired English helper",
       "structured_job_reachability": "unreachable in admitted typed mapping",
       "ask_runtime": false,
-      "annotation_id": "I04403",
+      "annotation_id": "I04406",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04404"
+        "I04407"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8174,10 +8225,10 @@
       "call_chain": "required structuredScope ingress L175 -> parseJobPlan L491; classifier calls L516/L643/L656 guarded !structured",
       "structured_job_reachability": "unreachable in admitted typed planning",
       "ask_runtime": false,
-      "annotation_id": "I04405",
+      "annotation_id": "I04408",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04406"
+        "I04409"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8193,10 +8244,10 @@
       "call_chain": "required structuredScope ingress L175 -> parseJobPlan L491; classifier calls L516/L643/L656 guarded !structured",
       "structured_job_reachability": "unreachable in admitted typed planning",
       "ask_runtime": false,
-      "annotation_id": "I04407",
+      "annotation_id": "I04410",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04408"
+        "I04411"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8212,10 +8263,10 @@
       "call_chain": "required structuredScope ingress L175 -> parseJobPlan L491; classifier calls L516/L643/L656 guarded !structured",
       "structured_job_reachability": "unreachable in admitted typed planning",
       "ask_runtime": false,
-      "annotation_id": "I04409",
+      "annotation_id": "I04412",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04410"
+        "I04413"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8231,10 +8282,10 @@
       "call_chain": "required structuredScope ingress L175 -> parseJobPlan L491; classifier calls L516/L643/L656 guarded !structured",
       "structured_job_reachability": "unreachable in admitted typed planning",
       "ask_runtime": false,
-      "annotation_id": "I04411",
+      "annotation_id": "I04414",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04412"
+        "I04415"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8250,10 +8301,10 @@
       "call_chain": "required structuredScope ingress L175 -> parseJobPlan L491; classifier calls L516/L643/L656 guarded !structured",
       "structured_job_reachability": "unreachable in admitted typed planning",
       "ask_runtime": false,
-      "annotation_id": "I04413",
+      "annotation_id": "I04416",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04414"
+        "I04417"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8269,10 +8320,10 @@
       "call_chain": "required structuredScope ingress L175 -> parseJobPlan L491; classifier calls L516/L643/L656 guarded !structured",
       "structured_job_reachability": "unreachable in admitted typed planning",
       "ask_runtime": false,
-      "annotation_id": "I04415",
+      "annotation_id": "I04418",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04416"
+        "I04419"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8288,7 +8339,7 @@
       "call_chain": "required structuredScope ingress L175 -> parseJobPlan L491; classifier calls L516/L643/L656 guarded !structured",
       "structured_job_reachability": "unreachable in admitted typed planning",
       "ask_runtime": false,
-      "annotation_id": "I04417",
+      "annotation_id": "I04420",
       "provenance": "Residual2112e258e",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8304,7 +8355,7 @@
       "call_chain": "required structuredScope ingress L175 -> parseJobPlan L491; classifier calls L516/L643/L656 guarded !structured",
       "structured_job_reachability": "unreachable in admitted typed planning",
       "ask_runtime": false,
-      "annotation_id": "I04418",
+      "annotation_id": "I04421",
       "provenance": "Residual2112e258e",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8320,10 +8371,10 @@
       "call_chain": "required structuredScope ingress L175 -> parseJobPlan L491; classifier calls L516/L643/L656 guarded !structured",
       "structured_job_reachability": "unreachable in admitted typed planning",
       "ask_runtime": false,
-      "annotation_id": "I04419",
+      "annotation_id": "I04422",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04420"
+        "I04423"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8339,10 +8390,10 @@
       "call_chain": "required structuredScope ingress L175 -> parseJobPlan L491; classifier calls L516/L643/L656 guarded !structured",
       "structured_job_reachability": "unreachable in admitted typed planning",
       "ask_runtime": false,
-      "annotation_id": "I04421",
+      "annotation_id": "I04424",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04422"
+        "I04425"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8358,7 +8409,7 @@
       "call_chain": "listBoundaryResourceReviews -> structural review UI/native progress",
       "structured_job_reachability": "reachable structural review",
       "ask_runtime": false,
-      "annotation_id": "I04423",
+      "annotation_id": "I04426",
       "provenance": "Residual2112e258e",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8374,7 +8425,7 @@
       "call_chain": "resolveRefusalAccessGuidance -> operationPermission -> operationAvailable",
       "structured_job_reachability": "Ask runtime refusal guidance, separately owned from B64 authoring",
       "ask_runtime": true,
-      "annotation_id": "I04424",
+      "annotation_id": "I04427",
       "provenance": "Residual2112e258e",
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8390,10 +8441,10 @@
       "call_chain": "resolveRefusalAccessGuidance -> operationPermission -> operationAvailable",
       "structured_job_reachability": "Ask runtime refusal guidance, separately owned from B64 authoring",
       "ask_runtime": true,
-      "annotation_id": "I04425",
+      "annotation_id": "I04428",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04426"
+        "I04429"
       ],
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8409,7 +8460,7 @@
       "call_chain": "resolveRefusalAccessGuidance -> operationPermission -> operationAvailable",
       "structured_job_reachability": "Ask runtime refusal guidance, separately owned from B64 authoring",
       "ask_runtime": true,
-      "annotation_id": "I04427",
+      "annotation_id": "I04430",
       "provenance": "Residual2112e258e",
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8425,7 +8476,7 @@
       "call_chain": "resolveAskAccessGuidance L74 -> normalizedSearchText / phraseMatches -> singularTerm",
       "structured_job_reachability": "Ask runtime guidance, separately owned from B64 authoring",
       "ask_runtime": true,
-      "annotation_id": "I04428",
+      "annotation_id": "I04431",
       "provenance": "Residual2112e258e",
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8441,7 +8492,7 @@
       "call_chain": "resolveAskAccessGuidance L74 -> normalizedSearchText / phraseMatches -> singularTerm",
       "structured_job_reachability": "Ask runtime guidance, separately owned from B64 authoring",
       "ask_runtime": true,
-      "annotation_id": "I04429",
+      "annotation_id": "I04432",
       "provenance": "Residual2112e258e",
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8457,7 +8508,7 @@
       "call_chain": "resolveAskAccessGuidance L74 -> normalizedSearchText / phraseMatches -> singularTerm",
       "structured_job_reachability": "Ask runtime guidance, separately owned from B64 authoring",
       "ask_runtime": true,
-      "annotation_id": "I04430",
+      "annotation_id": "I04433",
       "provenance": "Residual2112e258e",
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8473,10 +8524,10 @@
       "call_chain": "resolveAskAccessGuidance L74 -> normalizedSearchText / phraseMatches -> singularTerm",
       "structured_job_reachability": "Ask runtime guidance, separately owned from B64 authoring",
       "ask_runtime": true,
-      "annotation_id": "I04431",
+      "annotation_id": "I04434",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04432"
+        "I04435"
       ],
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8492,11 +8543,11 @@
       "call_chain": "resolveAskAccessGuidance L74 -> normalizedSearchText / phraseMatches -> singularTerm",
       "structured_job_reachability": "Ask runtime guidance, separately owned from B64 authoring",
       "ask_runtime": true,
-      "annotation_id": "I04433",
+      "annotation_id": "I04436",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04434",
-        "I04435"
+        "I04437",
+        "I04438"
       ],
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8512,7 +8563,7 @@
       "call_chain": "resolveAskAccessGuidance L74 -> normalizedSearchText / phraseMatches -> singularTerm",
       "structured_job_reachability": "Ask runtime guidance, separately owned from B64 authoring",
       "ask_runtime": true,
-      "annotation_id": "I04436",
+      "annotation_id": "I04439",
       "provenance": "Residual2112e258e",
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8528,7 +8579,7 @@
       "call_chain": "resolveAskAccessGuidance L74 -> normalizedSearchText / phraseMatches -> singularTerm",
       "structured_job_reachability": "Ask runtime guidance, separately owned from B64 authoring",
       "ask_runtime": true,
-      "annotation_id": "I04437",
+      "annotation_id": "I04440",
       "provenance": "Residual2112e258e",
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8544,7 +8595,7 @@
       "call_chain": "resolveAskAccessGuidance L74 -> normalizedSearchText / phraseMatches -> singularTerm",
       "structured_job_reachability": "Ask runtime guidance, separately owned from B64 authoring",
       "ask_runtime": true,
-      "annotation_id": "I04438",
+      "annotation_id": "I04441",
       "provenance": "Residual2112e258e",
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8560,10 +8611,10 @@
       "call_chain": "resolveAskAccessGuidance L74 -> normalizedSearchText / phraseMatches -> singularTerm",
       "structured_job_reachability": "Ask runtime guidance, separately owned from B64 authoring",
       "ask_runtime": true,
-      "annotation_id": "I04439",
+      "annotation_id": "I04442",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04440"
+        "I04443"
       ],
       "coverage_scope": "separate_runtime_ask"
     },
@@ -8579,11 +8630,11 @@
       "call_chain": "coverageFinding -> coverage feedback -> permitsSecondCoverageCorrection / scoped correction allowance",
       "structured_job_reachability": "reachable structured policy coverage",
       "ask_runtime": false,
-      "annotation_id": "I04441",
+      "annotation_id": "I04444",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04442",
-        "I08157"
+        "I04445",
+        "I08160"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8599,11 +8650,11 @@
       "call_chain": "coverageFinding -> coverage feedback -> permitsSecondCoverageCorrection / scoped correction allowance",
       "structured_job_reachability": "reachable structured policy coverage",
       "ask_runtime": false,
-      "annotation_id": "I04443",
+      "annotation_id": "I04446",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04444",
-        "I08158"
+        "I04447",
+        "I08161"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8619,10 +8670,10 @@
       "call_chain": "coverageFinding -> coverage feedback -> permitsSecondCoverageCorrection / scoped correction allowance",
       "structured_job_reachability": "reachable structured policy coverage",
       "ask_runtime": false,
-      "annotation_id": "I04445",
+      "annotation_id": "I04448",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I08159"
+        "I08162"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8638,11 +8689,11 @@
       "call_chain": "coverageFinding -> coverage feedback -> permitsSecondCoverageCorrection / scoped correction allowance",
       "structured_job_reachability": "reachable structured policy coverage",
       "ask_runtime": false,
-      "annotation_id": "I04446",
+      "annotation_id": "I04449",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04447",
-        "I08160"
+        "I04450",
+        "I08163"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8658,15 +8709,15 @@
       "call_chain": "coverageFinding -> coverage feedback -> permitsSecondCoverageCorrection / scoped correction allowance",
       "structured_job_reachability": "reachable structured policy coverage",
       "ask_runtime": false,
-      "annotation_id": "I04448",
+      "annotation_id": "I04451",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04449",
-        "I04450",
-        "I04451",
         "I04452",
         "I04453",
-        "I08161"
+        "I04454",
+        "I04455",
+        "I04456",
+        "I08164"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8682,10 +8733,10 @@
       "call_chain": "coverageFinding -> coverage feedback -> permitsSecondCoverageCorrection / scoped correction allowance",
       "structured_job_reachability": "reachable structured policy coverage",
       "ask_runtime": false,
-      "annotation_id": "I04454",
+      "annotation_id": "I04457",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I08162"
+        "I08165"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8701,10 +8752,10 @@
       "call_chain": "coverageFinding -> coverage feedback -> permitsSecondCoverageCorrection / scoped correction allowance",
       "structured_job_reachability": "reachable structured policy coverage",
       "ask_runtime": false,
-      "annotation_id": "I04455",
+      "annotation_id": "I04458",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I08163"
+        "I08166"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8720,10 +8771,10 @@
       "call_chain": "coverageFinding -> coverage feedback -> permitsSecondCoverageCorrection / scoped correction allowance",
       "structured_job_reachability": "reachable structured policy coverage",
       "ask_runtime": false,
-      "annotation_id": "I04456",
+      "annotation_id": "I04459",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I08164"
+        "I08167"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8739,10 +8790,10 @@
       "call_chain": "coverageFinding -> coverage feedback -> permitsSecondCoverageCorrection / scoped correction allowance",
       "structured_job_reachability": "reachable structured policy coverage",
       "ask_runtime": false,
-      "annotation_id": "I04457",
+      "annotation_id": "I04460",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I08165"
+        "I08168"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8758,10 +8809,10 @@
       "call_chain": "coverageFinding -> coverage feedback -> permitsSecondCoverageCorrection / scoped correction allowance",
       "structured_job_reachability": "reachable structured policy coverage",
       "ask_runtime": false,
-      "annotation_id": "I04458",
+      "annotation_id": "I04461",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I08166"
+        "I08169"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8777,10 +8828,10 @@
       "call_chain": "coverageFinding -> coverage feedback -> permitsSecondCoverageCorrection / scoped correction allowance",
       "structured_job_reachability": "reachable structured policy coverage",
       "ask_runtime": false,
-      "annotation_id": "I04459",
+      "annotation_id": "I04462",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I08167"
+        "I08170"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8796,10 +8847,10 @@
       "call_chain": "capabilityCandidate -> explicit MCP audit candidate generation",
       "structured_job_reachability": "explicit audit generation; not normal B64 job planning",
       "ask_runtime": false,
-      "annotation_id": "I04460",
+      "annotation_id": "I04463",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04461"
+        "I04464"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8815,10 +8866,10 @@
       "call_chain": "capabilityCandidate -> explicit MCP audit candidate generation",
       "structured_job_reachability": "explicit audit generation; not normal B64 job planning",
       "ask_runtime": false,
-      "annotation_id": "I04462",
+      "annotation_id": "I04465",
       "provenance": "Residual2112e258e",
       "additional_annotations": [
-        "I04463"
+        "I04466"
       ],
       "coverage_scope": "authoring_or_shared"
     },
@@ -8834,7 +8885,7 @@
       "call_chain": "explicitReadStatements/readMeaningClauses -> legacy naming evidence; typed mapping must use native typed refs",
       "structured_job_reachability": "retired English helper; callers detailed in primary Read inventory",
       "ask_runtime": false,
-      "annotation_id": "I04464",
+      "annotation_id": "I04467",
       "provenance": "Residual2112e258e",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8850,7 +8901,7 @@
       "call_chain": "explicitReadStatements/readMeaningClauses -> legacy naming evidence; typed mapping must use native typed refs",
       "structured_job_reachability": "retired English helper; callers detailed in primary Read inventory",
       "ask_runtime": false,
-      "annotation_id": "I04465",
+      "annotation_id": "I04468",
       "provenance": "Residual2112e258e",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8866,7 +8917,7 @@
       "reason": "Bind displayed evidence to exact structured candidate ID; this fallback currently affects explanation, not structural authority. Preserve actual candidate proof.",
       "production_call_chain": "public review \u2192 resolveBlockedResource \u2192 render selected row/tenant evidence",
       "structured_reachable": true,
-      "annotation_id": "I08153",
+      "annotation_id": "I08156",
       "provenance": "Residual3688c8419",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8882,7 +8933,7 @@
       "reason": "Use typed readiness from same reviewed counts; display remains derived.",
       "production_call_chain": "public review \u2192 chooseResource \u2192 boundaryReviewLeft \u2192 action availability",
       "structured_reachable": true,
-      "annotation_id": "I08154",
+      "annotation_id": "I08157",
       "provenance": "Residual3688c8419",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8898,7 +8949,7 @@
       "reason": "Use typed readiness; never derive capability availability from prose.",
       "production_call_chain": "public review \u2192 chooseResource \u2192 boundary rows",
       "structured_reachable": true,
-      "annotation_id": "I08155",
+      "annotation_id": "I08158",
       "provenance": "Residual3688c8419",
       "coverage_scope": "authoring_or_shared"
     },
@@ -8914,7 +8965,7 @@
       "reason": "Separate typed review completion from its Complete label; preserve existing activation/currentness checks.",
       "production_call_chain": "public review \u2192 chooseResource \u2192 candidate action controls",
       "structured_reachable": true,
-      "annotation_id": "I08156",
+      "annotation_id": "I08159",
       "provenance": "Residual3688c8419",
       "coverage_scope": "authoring_or_shared"
     }
@@ -8940,7 +8991,7 @@
     "Read": "c5880196/43878ced/112e258e",
     "Action": "04e65e5d/c623f154/688c8419",
     "Generic": "f1903b4e/93959f60",
-    "Main": "5a62b761"
+    "Main": "5a62b761 + live classifier correction after8fcb3a1b"
   },
   "zero_candidate_files": [
     "apps/runner/src/action-preview-ledger.ts",
@@ -9002,5 +9053,11 @@
     "packages/spec/src/load.ts",
     "packages/spec/src/types.ts",
     "packages/spec/src/version.ts"
+  ],
+  "corrections": [
+    {
+      "reason": "Original MAIN-EN-001 grouped an unused helper with its shared classifier but missed two other production callers. Helper deletion remains valid; classifier and live calls require typed replacement.",
+      "basis": "Source2857e2e4 remains inventory pin; direct source inspection confirms callers9168/10205; no product change."
+    }
   ]
 }
