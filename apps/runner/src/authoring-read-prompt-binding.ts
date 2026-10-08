@@ -11,7 +11,9 @@ export function readMeaningPromptHandoff(input: { handoffs: readonly AuthoringOw
   if (handoff.consumer === "read_clarification" || handoff.consumer === "read_value_context") return handoff;
   if (handoff.consumer !== "read_revision_instruction") return undefined;
   const questions = parseOperatorQuestions(input.questions, input.handoffs, input.generation);
-  const question = questions.find(q => q.handoff_id === handoff.id && q.read_scope?.mode === "replacement_answer");
+  const current = questions.filter(q => q.handoff_id === handoff.id && q.read_scope?.mode === "replacement_answer"
+    && !questions.some(successor => successor.read_scope?.predecessor_id === q.id));
+  const question = current.length === 1 ? current[0] : undefined;
   if (!question || question.disposition || question.confirmation || question.raw_answer
     || question.scope_digest !== handoff.scope_digest || question.context_digest !== handoff.context_digest) return undefined;
   const review = questions.find(q => q.id === question.read_scope!.review_question_id);
