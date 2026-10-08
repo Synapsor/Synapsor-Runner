@@ -419,7 +419,7 @@ describe("conversational Action authoring tools", () => {
         events.push("request"); requests.push(request.body);
         const next = queues.shift(); if (!next) throw new Error("Controlled finite provider queue exhausted");
         if (provider === "openai_compatible") {
-          const output = next.body.output;
+          const output: Array<ReturnType<typeof call>["body"]["output"][number] | ReturnType<typeof say>["body"]["output"][number]> = next.body.output;
           const calls = output.filter((item): item is { type: string; call_id: string; name: string; arguments: string } => item.type === "function_call");
           if (calls.length) return { status: 200, body: { choices: [{ message: { role: "assistant", content: null,
             tool_calls: calls.map(item => ({ id: item.call_id, type: "function", function: { name: item.name, arguments: item.arguments } })) } }] } };
