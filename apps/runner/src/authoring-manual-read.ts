@@ -45,7 +45,8 @@ export function createManualReadOwner(input: {
     const confirmed = await input.session.confirm("Use these exact Read plans under the proposed scopes shown?", {
       defaultValue: false, context: [
         "PROPOSED READ SELECTION — structural review and activation are still required.",
-        ...exact.allowed.map(entry => `${entry.id}: ${JSON.stringify(entry.plan)}`),
+        ...exact.allowed.map(entry => `Allow ${entry.id}: ${JSON.stringify(entry.plan)}`),
+        ...exact.forbidden.map(entry => `Must remain refused ${entry.id}: ${JSON.stringify(entry.plan)}`),
         ...[...roots.keys()].map(root => `${root}: ${scope(current.candidate, root)!.text}`),
         "This selects only these plans, operations and fields. It grants no Action authority.",
       ],
@@ -57,6 +58,7 @@ export function createManualReadOwner(input: {
   };
   return {
     async cards() {
+      selection = undefined;
       const current = await input.load();
       const cards = buildReadWorkloadPlanCards(current.candidate).map(card => ({ ...card,
         detail: `${card.detail}\nPROPOSED scope: ${scope(current.candidate, String(card.plan.resource))?.text ?? "Unresolved; structural review is required."}` }));
@@ -70,7 +72,7 @@ export function createManualReadOwner(input: {
             value === undefined ? undefined : parseReadWorkloadCardSelection(value, cards.map(card => card.id)));
       return ids === undefined ? undefined : accept(readWorkloadFromPlanCards({ cards, selectedIds: ids }), current);
     },
-    async exact(workload: ReadWorkloadSet) { return accept(workload, await input.load()); },
+    async exact(workload: ReadWorkloadSet) { selection = undefined; return accept(workload, await input.load()); },
     async requirement(resources: readonly string[]): Promise<{ required: string[]; unresolved: string[] } | undefined> {
       if (!selection) return undefined;
       const roots = [...new Set(resources)].sort();
