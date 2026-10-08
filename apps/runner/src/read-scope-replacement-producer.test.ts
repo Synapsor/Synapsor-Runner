@@ -19,7 +19,7 @@ import type { ReadScopeReplacementOwner } from "./read-current-evidence.js";
 // Genuine mapping completion and native saved history, not a fabricated dispatch.
 // The operator's declared correction only changes the requested row limit.
 describe("Read post-review replacement producer", () => {
-  it.each(["ordinary", "captured_before_restart", "cancel_then_resume", "changed_model", "changed_task", "second_decline"] as const)("continues %s with one new mapping call, retained history and separate default-No review", async mode => {
+  it.each(["ordinary", "captured_before_restart", "cancel_then_resume", "changed_model", "changed_task", "second_decline", "spent_answer_allowance"] as const)("continues %s with one new mapping call, retained history and separate default-No review", async mode => {
     const f = await nativeFixture();
     try {
       const boundary = (await loadBoundaryReviewContext(f.dir)).candidate;
@@ -132,6 +132,19 @@ describe("Read post-review replacement producer", () => {
       const next = questions.at(-1)!;
       expect(next.read_scope!.predecessor_id).toBe(old.id); expect(next.confirmation).toBeUndefined();
       expect(questions.find(q => q.id === old.id)!.confirmation).toBeUndefined();
+      if (mode === "spent_answer_allowance") {
+        for (let correction = 2; correction <= 4; correction++) {
+          await saveQuestion(leaveOperatorQuestionPending(questions.at(-1)!, "declined")); questions = f.state().operator_questions!;
+          await run(await reloadOwner());
+          expect(calls).toBe(correction + 1); expect(prompts).toBe(correction);
+        }
+        await saveQuestion(leaveOperatorQuestionPending(questions.at(-1)!, "declined")); questions = f.state().operator_questions!;
+        const before = d(f.state());
+        await expect(run(await reloadOwner())).rejects.toThrow("READ_SCOPE_ASSISTANCE_LIMIT");
+        expect(calls).toBe(5); expect(prompts).toBe(4); expect(d(f.state())).toBe(before);
+        expect(f.state().read!.assistance_history!.state.call_count).toBe(5);
+        expect(f.state().read!.assistance_history!.state.scope_replacements).toHaveLength(4); return;
+      }
       if (mode === "second_decline") {
         await saveQuestion(leaveOperatorQuestionPending(next, "declined")); questions = f.state().operator_questions!;
         const priorWords = structuredClone(questions.filter(q => q.raw_answer));

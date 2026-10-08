@@ -4,9 +4,9 @@
 4. RLS b381 native factory independently accepted 5 controls; canonical/projector/helper incorporated by Main.
 5. cbefe133 makes Read currentness async/fresh; 3b6786ef/f8b3d8fe add native replacement testimony with no fabricated completion.
 6. New producer checkpoint: actual mapped review→decline→raw→one new mapping→separate default-No group; actual counters/history retained.
-7. Proof25 PASS; before3 FAIL. R1 found changed-model/task2F; stable invocation binding fix5P awaits same independent variants.
+7. Producer7P; earlier25 affectedP. R1 d312d475 independently ACCEPT8 controls incl2fixed invocation failures/repeated replacement/actual spent budget.
 8. Main hook: postReviewReplacement exact read+records+analysis; structuredScope replacementAnswer/resolveReplacementAnswer; checkpoint access.readPreparedRead.
 9. Main must wire public Resume/group routes and same held permit; public and interrupted replacement dispatch remain NOT RUN here.
-10. R1 RP01–07 preseal88b7c6dd; immutable successor independent review next, no self-acceptance.
+10. RP01–07 producer scope accepted; Main public/CAS wait proofs and no-Read planning continuation remain separate.
 11. Host v2 fixture ports14P,17filtered; next independent RP verdict/public wiring.212-row migration remains proposed, no waiver.
 12. Typecheck retains old v2 fixture migration errors; no touched product error. No running provider/test operations at checkpoint.
