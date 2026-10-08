@@ -1,5 +1,6 @@
+import { STRUCTURED_AUTHORING_RESUME_VERSION, parseStructuredAuthoringProtocol, assertAuthoringProtocolUnchanged, type StructuredAuthoringProtocol } from "./authoring-protocol.js";
 import { assertAuthoringReadDecision, assertAuthoringReadCheckpoint, assertAuthoringTransportAdvance, assertAuthoringQuestionHandoff, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
-import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION } from "./authoring-program-capacity.js";
+import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION, isAuthoringProgramResume } from "./authoring-program-capacity.js";
 import { ownerHandoffCheckpoint, parseOwnerHandoffs, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import { assertOperatorQuestionsAdvance, parseOperatorQuestions, type OperatorQuestion } from "./authoring-operator-question.js";
 import fs from "node:fs/promises";
@@ -194,7 +195,8 @@ export type BoundaryPolicyReviewCompletion = {
 };
 
 export type BoundaryAuthoringResumeState = {
-  schema_version: typeof BOUNDARY_AUTHORING_RESUME_VERSION | typeof AUTHORING_PROGRAM_RESUME_VERSION;
+  schema_version: typeof BOUNDARY_AUTHORING_RESUME_VERSION | typeof AUTHORING_PROGRAM_RESUME_VERSION | typeof STRUCTURED_AUTHORING_RESUME_VERSION;
+  authoring_protocol?: StructuredAuthoringProtocol;
   state: "in_progress";
   binding: BoundaryAuthoringResumeBinding;
   stage: BoundaryAuthoringResumeStage;
@@ -284,6 +286,8 @@ export function buildBoundaryAuthoringResumeState(input: {
   binding: BoundaryAuthoringResumeBinding;
   stage: BoundaryAuthoringResumeStage;
   jobIntent: string;
+  /** Explicit for a fresh job; omission retains an existing job's pinned mode. */
+  authoringProtocol?: StructuredAuthoringProtocol;
   provider: BoundaryAuthoringResumeState["model"]["provider"];
   model: string;
   conversation?: readonly AskHistoryTurn[];
@@ -322,6 +326,9 @@ export function buildBoundaryAuthoringResumeState(input: {
   now?: string;
 }): BoundaryAuthoringResumeState {
   if (input.previous) assertBoundaryAuthoringResumeState(input.previous);
+  const protocol = input.authoringProtocol === undefined ? input.previous?.authoring_protocol
+    : parseStructuredAuthoringProtocol(input.authoringProtocol);
+  if (input.previous) assertAuthoringProtocolUnchanged(input.previous.authoring_protocol, protocol);
   const now = input.now ?? new Date().toISOString();
   const conversation = modelAuthoringHistory(createModelAuthoringConversation(input.conversation));
   const readAssistance = input.readAssistanceCheckpoint === undefined
@@ -338,7 +345,7 @@ export function buildBoundaryAuthoringResumeState(input: {
   const action = input.action ?? (input.previous?.binding.boundary_name === input.binding.boundary_name
     && input.previous.job_intent === input.jobIntent.trim()
     && (boundaryAuthoringActionIsUnfinished(input.previous.action)
-      || input.previous.schema_version === AUTHORING_PROGRAM_RESUME_VERSION) ? input.previous.action : undefined);
+      || isAuthoringProgramResume(input.previous)) ? input.previous.action : undefined);
   const reviewedVersionFields = parseReviewedActionVersionFields(input.reviewedVersionFields
     ?? (input.previous?.binding.boundary_name === input.binding.boundary_name
       && input.previous.job_intent === input.jobIntent.trim() ? boundaryAuthoringVersionReviews(input.previous) : []), 32);
@@ -346,14 +353,15 @@ export function buildBoundaryAuthoringResumeState(input: {
     ?? (input.previous?.binding.boundary_name === input.binding.boundary_name ? input.previous.read_prerequisite_decisions ?? [] : []));
   const actionWorkflow = input.actionWorkflow ?? input.previous?.action_workflow;
   if (actionWorkflow !== undefined && actionWorkflow !== "program") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Unknown Action workflow.");
-  const programVersion = actionWorkflow === "program" || input.previous?.schema_version === AUTHORING_PROGRAM_RESUME_VERSION
+  const programVersion = actionWorkflow === "program" || Boolean(input.previous && isAuthoringProgramResume(input.previous))
     || (action?.intents?.length ?? 0) > AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions
     || (input.pendingActionAddition?.retained_action.intents?.length ?? 0) > AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions;
   const maximum = programVersion ? AUTHORING_PROGRAM_CAPACITY.totalActions : AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions;
   const core = {
-    schema_version: programVersion ? AUTHORING_PROGRAM_RESUME_VERSION : BOUNDARY_AUTHORING_RESUME_VERSION,
+    schema_version: protocol ? STRUCTURED_AUTHORING_RESUME_VERSION : programVersion ? AUTHORING_PROGRAM_RESUME_VERSION : BOUNDARY_AUTHORING_RESUME_VERSION,
+    ...(protocol ? { authoring_protocol: protocol } : {}),
     state: "in_progress" as const,
-    ...(actionWorkflow ? { action_workflow: actionWorkflow } : {}),
+    ...((actionWorkflow || protocol && programVersion) ? { action_workflow: "program" as const } : {}),
     binding: normalizeBinding(input.binding),
     stage: input.stage,
     job_intent: reviewedText(
@@ -446,6 +454,23 @@ export async function writeBoundaryAuthoringResumeState(
     // Legacy explicit replacement still serializes; public continuations must
     // supply the last acknowledged revision (null means the file was absent).
     const previous = options ? await compareResumeRevision(held.projectRoot, frozen.binding, expected!) : undefined;
+    // Even explicit replacement without a CAS option must not erase a pinned
+    // protocol. It is not permission to reinterpret saved evidence as legacy.
+    const observed = previous ?? await readBoundaryAuthoringResumeState(held.projectRoot, frozen.binding);
+    const prior = "status" in observed ? observed.status === "ready" || observed.status === "stale" ? observed.value : undefined : observed;
+    if (prior) assertAuthoringProtocolUnchanged(prior.authoring_protocol, frozen.authoring_protocol);
+    if (frozen.authoring_protocol && "status" in observed && observed.status === "invalid")
+      throw new Error("AUTHORING_PROTOCOL_INVALID: Preserve the unreadable saved job; it cannot be replaced by a new protocol record.");
+    if (prior?.authoring_protocol) {
+      if (!options || prior.created_at !== frozen.created_at)
+        throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: Structured continuation requires the original job and exact acknowledged save revision.");
+      // A changed job description is not permission to drop decisions, attempts
+      // or uncertain operations. Same-job-only legacy checks are insufficient.
+      assertOperatorQuestionsAdvance(prior.operator_questions ?? [], frozen.operator_questions ?? []);
+      if (prior.generation_recovery && !frozen.generation_recovery)
+        throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Interrupted generation history cannot be removed from this structured job.");
+      if (frozen.generation_recovery) assertAuthoringTransportAdvance(prior.generation_recovery, frozen.generation_recovery);
+    }
     if (previous?.job_intent === frozen.job_intent && previous.binding.boundary_name === frozen.binding.boundary_name) {
       assertOperatorQuestionsAdvance(previous.operator_questions ?? [], frozen.operator_questions ?? []);
       if (previous.generation_recovery && !frozen.generation_recovery)
@@ -555,7 +580,7 @@ export async function clearBoundaryAuthoringResumeState(projectRootInput: string
     try { state = JSON.parse(await fs.readFile(filePath, "utf8")); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return true; throw error; }
     assertBoundaryAuthoringResumeState(state);
-    if (state.schema_version === AUTHORING_PROGRAM_RESUME_VERSION
+    if (isAuthoringProgramResume(state) || state.authoring_protocol !== undefined
       || boundaryAuthoringActionIsUnfinished(state.action) || state.read_assistance || state.pending_job_revision || state.pending_read_revision
       || state.pending_action_addition || state.pending_action_revision || state.pending_action_removal
       || state.reconciled_action_revisions?.length || state.action_edit_dispositions?.length || state.pending_policy_review || state.completed_policy_reviews?.length
@@ -608,7 +633,7 @@ export function assertBoundaryAuthoringResumeState(
   value: unknown,
 ): asserts value is BoundaryAuthoringResumeState {
   if (!isRecord(value)
-    || (value.schema_version !== BOUNDARY_AUTHORING_RESUME_VERSION && value.schema_version !== AUTHORING_PROGRAM_RESUME_VERSION)
+    || (value.schema_version !== BOUNDARY_AUTHORING_RESUME_VERSION && value.schema_version !== AUTHORING_PROGRAM_RESUME_VERSION && value.schema_version !== STRUCTURED_AUTHORING_RESUME_VERSION)
     || value.state !== "in_progress"
     || !isRecord(value.binding)
     || !isRecord(value.model)
@@ -624,6 +649,8 @@ export function assertBoundaryAuthoringResumeState(
     || value.source_database_changed !== false) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: the saved authoring state is invalid.");
   }
+  if (value.schema_version === STRUCTURED_AUTHORING_RESUME_VERSION) parseStructuredAuthoringProtocol(value.authoring_protocol);
+  else if (value.authoring_protocol !== undefined) throw new Error("AUTHORING_PROTOCOL_INVALID: A structured protocol requires its versioned native envelope.");
   if (!["planning", "read_mapping", "action_drafting", "authority_review", "client_setup"].includes(value.stage)) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: the saved authoring stage is invalid.");
   }
@@ -651,7 +678,7 @@ export function assertBoundaryAuthoringResumeState(
     }
     reviewedText(value.read_intent, "Read intent", MAX_BOUNDARY_READ_QUESTION_CHARACTERS);
   }
-  const maximum = value.schema_version === AUTHORING_PROGRAM_RESUME_VERSION
+  const maximum = isAuthoringProgramResume(value as { schema_version: string; action_workflow?: string })
     ? AUTHORING_PROGRAM_CAPACITY.totalActions : AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions;
   if (value.action !== undefined) {
     normalizeAction(value.action as BoundaryAuthoringResumeAction, maximum);

@@ -1,4 +1,4 @@
-import { AUTHORING_PROGRAM_RESUME_VERSION } from "./authoring-program-capacity.js";
+import { isAuthoringProgramResume } from "./authoring-program-capacity.js";
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { isPreparedProgramRemoval } from "./authoring-program-completion.js";
 import { savedAuthoringPolicyReview } from "./authoring-saved-review.js";
@@ -110,7 +110,7 @@ async function readGuidedActionJobReview(input: {
   }
   const preparedRemoval = isPreparedProgramRemoval(saved.value, input.currentDraft);
   const pending = unfinishedActionIntents(preparedRemoval ? { ...saved.value, pending_action_removal: undefined } : saved.value, input.currentOutcomes);
-  if (saved.value.schema_version === AUTHORING_PROGRAM_RESUME_VERSION) {
+  if (isAuthoringProgramResume(saved.value)) {
     const ready = !pending.length && !saved.value.pending_job_revision && !saved.value.pending_read_revision
       && !saved.value.pending_policy_review && ["authority_review", "client_setup"].includes(saved.value.stage);
     return { completeProgram: { draftsComplete: ready },
@@ -176,7 +176,7 @@ export async function assertCompleteSelectedActionProgram(input: {
   }
   if (loaded.status === "none") return;
   if (loaded.status === "invalid") return refuse("The saved program integrity cannot be verified.");
-  if (loaded.value.schema_version !== AUTHORING_PROGRAM_RESUME_VERSION) return;
+  if (!isAuthoringProgramResume(loaded.value)) return;
   if (loaded.status !== "ready") return refuse("The saved program belongs to older database or access metadata.");
   const saved = loaded.value;
   const outcomes = input.draft.authority.rules.map(rule => rule.rule.outcome);

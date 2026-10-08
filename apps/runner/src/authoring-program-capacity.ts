@@ -46,3 +46,10 @@ export function authoringReviewPage<T>(items: readonly T[], page: number, matche
   return { items: selected.slice(start, start + AUTHORING_PROGRAM_CAPACITY.reviewPageActions), page, pages,
     start, matched: selected.length, total: items.length };
 }
+
+/** Workflow capacity and protocol version are separate. Structured jobs retain
+ * their explicit workflow; v3 alone never increases the legacy action cap. */
+export function isAuthoringProgramResume(value: { schema_version: string; action_workflow?: string }): boolean {
+  return value.schema_version === AUTHORING_PROGRAM_RESUME_VERSION
+    || value.schema_version === "synapsor.boundary-authoring-resume.v3" && value.action_workflow === "program";
+}

@@ -32,7 +32,7 @@ import { prepareReadBusinessStatementDecision } from "./authoring-business-state
 import { actionRuleAuthoringCheckpoint, actionLogicalTurnMaterialDigest, assertActionLogicalTurnJournalAdvance,
   type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { sourceInputFidelity } from "./authoring-input-policy.js";
-import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION, authoringProgramProgressLines } from "./authoring-program-capacity.js";
+import { AUTHORING_PROGRAM_CAPACITY, isAuthoringProgramResume, authoringProgramProgressLines } from "./authoring-program-capacity.js";
 import { scopedDisclosureStoreDigest } from "./authoring-scoped-disclosure.js";
 import { reviewExcludedFieldMetadata } from "./authoring-excluded-field-review.js";
 import { localScopedDisclosureReview } from "./authoring-scoped-disclosure-operation.js";
@@ -4530,7 +4530,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   // An exact late edit uses the existing one-outcome work loop, while the v2
   // saved agenda remains the complete program. Its pending edit checkpoint is
   // separate from any unfinished original Action checkpoint.
-  const programRevisionAgenda = availableResume?.schema_version === AUTHORING_PROGRAM_RESUME_VERSION && availableResume.action?.intents?.length
+  const programRevisionAgenda = availableResume && isAuthoringProgramResume(availableResume) && availableResume.action?.intents?.length
     ? structuredClone(availableResume.action) : undefined;
   let preserveProgramRevisionAgenda = Boolean(programRevisionAgenda && pendingActionRevision);
   // Read edits and metadata recovery recompile saved outcomes, not an unfinished agenda.

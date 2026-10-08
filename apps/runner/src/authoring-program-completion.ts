@@ -1,4 +1,4 @@
-import { AUTHORING_PROGRAM_RESUME_VERSION } from "./authoring-program-capacity.js";
+import { isAuthoringProgramResume } from "./authoring-program-capacity.js";
 import type { BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import type { ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 
@@ -11,7 +11,7 @@ export function isPreparedProgramRemoval(resume: BoundaryAuthoringResumeState, d
   const completed = resume.action?.completed_outcomes;
   const intents = resume.action?.intents;
   const outcomes = draft?.authority.rules.map(rule => rule.rule.outcome);
-  return Boolean(resume.schema_version === AUTHORING_PROGRAM_RESUME_VERSION && removal && !removal.mode && draft && resume.stage === "authority_review"
+  return Boolean(isAuthoringProgramResume(resume) && removal && !removal.mode && draft && resume.stage === "authority_review"
     && !resume.action?.checkpoint
     && removal.authority_name === draft.authority.name && removal.draft_digest === draft.digest
     && outcomes && completed && intents && intents.length === completed.length && new Set(intents).size === intents.length

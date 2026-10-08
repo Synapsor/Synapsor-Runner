@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { buildBoundaryAuthoringResumeState, assertBoundaryAuthoringResumeState,
-  readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+  clearBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 
 const digest = canonicalJsonDigest("owned protocol fixture");
 const base = { binding: { boundary_name: "owned", generation_lock_fingerprint: digest,
@@ -49,4 +49,26 @@ describe("B64 protocol pin in native Resume", () => {
       expect(await readBoundaryAuthoringResumeState(root, base.binding)).toEqual({ status: "ready", value: fresh });
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
+  it("requires acknowledged CAS and retains a pinned job even before components exist", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-b64-currentness-"));
+    try {
+      const fresh = structured();
+      await writeBoundaryAuthoringResumeState(root, fresh, { expectedRevisionDigest: null });
+      const next = buildBoundaryAuthoringResumeState({ ...base, previous: fresh, stage: "read_mapping" });
+      await expect(writeBoundaryAuthoringResumeState(root, next)).rejects.toThrow("BOUNDARY_AUTHORING_RESUME_CHANGED");
+      await expect(writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: digest })).rejects.toThrow("BOUNDARY_AUTHORING_RESUME_CHANGED");
+      expect(await clearBoundaryAuthoringResumeState(root)).toBe(false);
+      await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: fresh.revision_digest });
+      expect(await readBoundaryAuthoringResumeState(root, base.binding)).toEqual({ status: "ready", value: next });
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+  it("does not equate protocol version with broader program capacity", async () => {
+    const { isAuthoringProgramResume } = await import("./authoring-program-capacity.js");
+    expect(isAuthoringProgramResume(structured())).toBe(false);
+    expect(isAuthoringProgramResume({ schema_version: "synapsor.boundary-authoring-resume.v1", action_workflow: "program" })).toBe(false);
+    const program = buildBoundaryAuthoringResumeState({ ...base, authoringProtocol: protocol, actionWorkflow: "program" });
+    expect(isAuthoringProgramResume(program)).toBe(true);
+    expect(program.schema_version).toBe("synapsor.boundary-authoring-resume.v3");
+  });
+
 });
