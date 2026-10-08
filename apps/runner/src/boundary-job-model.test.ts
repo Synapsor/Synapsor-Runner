@@ -1211,3 +1211,27 @@ it("replays both complete captured planning requests and unchanged submitted too
     else expect(result.operation).toBeUndefined(); // Historical no-change plan is not retroactively rewritten as a review verdict.
   }
 });
+
+
+describe("unestablished requested Read routing", () => {
+  it.each([
+    ["Read customer accounts.", "none"], ["Read customer accounts.", "reuse"],
+    ["Read outstanding obligations.", "none"], ["Read outstanding obligations.", "reuse"],
+  ])("retains unresolved %s before %s routing", async (jobIntent, readMode) => {
+    const currentState = { ...reusableState, read: { ...reusableState.read, resource_ids: ["finance.accounts"] } };
+    const before = structuredClone(currentState);
+    const requestJson = vi.fn(async (request: { body: unknown }) => {
+      expect(JSON.stringify(request.body)).toContain(jobIntent);
+      const args = requestJson.mock.calls.length === 1
+        ? { status: "planned", read_mode: readMode, action_mode: "none", summary: "Keep existing access." }
+        : { status: "clarification", question: "Which business records should this request cover, and should the reviewed access remain unchanged?" };
+      return { status: 200, body: { output: [{ type: "function_call", call_id: "scope_route",
+        name: "runner__plan_boundary_job", arguments: JSON.stringify(args) }] } };
+    });
+    const result = await planModelBoundaryJob({ jobIntent, currentState, availableResourceIds: ["finance.accounts"],
+      session: { provider: "openai", model: "declared-routing-fixture", apiKey: "local-fixture-only", dependencies: { requestJson } }, egressAcknowledged: true });
+    expect(result).toMatchObject({ state: "clarification", authority_granted: false, source_database_changed: false });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(currentState).toEqual(before);
+  });
+});
