@@ -24,6 +24,30 @@ const older = (version = "synapsor.boundary-authoring-resume.v1") => {
 };
 
 describe("B64 protocol pin in native Resume", () => {
+  it("refuses the earlier structured development pin before inspecting its saved records", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-b64-earlier-pin-"));
+    try {
+      const relative = await writeBoundaryAuthoringResumeState(root, structured(), { expectedRevisionDigest: null });
+      const file = path.resolve(root, relative);
+      const old = seal({ ...structured(), authoring_protocol: { version: "synapsor.structured-authoring.v1" },
+        operator_questions: [{ deliberately_unsupported_old_record: true }] });
+      const bytes = JSON.stringify(old);
+      await fs.writeFile(file, bytes);
+      const files = await fs.readdir(path.join(root, ".synapsor"));
+      const notices: unknown[] = [];
+      await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"],
+        async () => { throw new Error("Earlier pin must not inspect Source"); }, undefined, undefined,
+        { onAuthoringResult: notice => notices.push(notice), boundaryAuthoringChatFactory: () => {
+          throw new Error("Earlier pin must not open chat");
+        } });
+      expect(notices).toEqual([expect.objectContaining({ lines: [OLDER_AUTHORING_SETUP_MESSAGE] })]);
+      expect(await readBoundaryAuthoringResumeState(root, base.binding)).toEqual({ status: "invalid", reason: OLDER_AUTHORING_SETUP_MESSAGE });
+      await expect(clearBoundaryAuthoringResumeState(root)).rejects.toThrow(OLDER_AUTHORING_SETUP_MESSAGE);
+      await expect(writeBoundaryAuthoringResumeState(root, structured())).rejects.toThrow();
+      expect(await fs.readdir(path.join(root, ".synapsor"))).toEqual(files);
+      expect(await fs.readFile(file, "utf8")).toBe(bytes);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("pins the new explicit mode and preserves it without reinterpreting legacy jobs", () => {
     const legacy = older();
     expect(buildBoundaryAuthoringResumeState(base).authoring_protocol).toEqual(protocol);
