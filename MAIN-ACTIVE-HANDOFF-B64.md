@@ -1,4 +1,4 @@
-USAGE PAUSE — ready to switch — 2026-10-08T09:53:32Z; account95%USED. Paid CLOSED; no new work until Owner resumes.
+ACTIVE B64 — Owner resumed; usage pause REMOVED. Paid CLOSED; current Main extractionf938749a (boundary20162lines).
 B64 clock unchanged: T0 2026-10-08T06:32:23Z; end 2026-10-13T06:32:23Z; final24h 2026-10-12T06:32:23Z. Frozen candidate3/history/holds untouched.
 Main: consents6c / codex/b64-authoring-protocol-20261008, product55010d2c private-pushed; no partial product edit. [Contract](docs/development/adr-b51-shared-input-interaction.md).
 Done: English scope reader/all callers deleted8e5085bb; old exact refusal9516a3eb/R2fourPASS; legacy checkpoint shapes7524bf59/R2fivePASS. [Removal list](docs/development/b64-read-scope-parser-removal.md).
@@ -12,4 +12,4 @@ EXACT NEXT after resume: helper adopts owner16a7425f then runs node node_modules
 Main NEXT after finite reviews: compose canonical/projector+genuine fixture; wire actual subject inventory; remove jobRequestsPrincipalIsolation via typed dispatch, not broader roots. Then Replace/revision/reuse and Action native/public adapters.212 old fixture rows still open; v1 ports not v2-qualified.
 [Compact results](docs/development/candidate4-integration/DEV-RECORD.json); logs /var/tmp/synapsor-b64-main-owned/evidence/. No full/freeze/installed PASS. Helper activated original fixture preserved but excluded from preactivation proof.
 Tester01a117fd-4600-76a3-baf7-e404eb16d0d3 PAUSED/CLOSED, privatebackup21c3b3dc. Luna35total; liabilities15.27063125 inclhold1.2693125; remaining19.72936875. No paid/uncertain operation open.
-All lanes private-pushed/clean, no owned tests/Runner/model processes or Git index locks; containers/evidence retained. Resume same window; max2heavy/8workers, isolated0700HOME/TMP+decoy/free8GiB, no routine owner GO.
+Continue through usage thresholds; Owner will pause explicitly. Private checkpoints often; max2heavy/8workers, isolated0700HOME/TMP+decoy/free8GiB. No automated usage pause.
