@@ -20,6 +20,7 @@ import {
 } from "./analytics-shell.js";
 import {
   computeAskAuthority,
+  hasOwnerSettingsOnlyAskAuthority,
   resolveActiveBoundarySummary,
   resolveAskDeploymentProfile,
   resolvePendingBoundaryReviewSummary,
@@ -203,9 +204,11 @@ export async function tryAsk(
     });
     const tools = await initialGateway.listTools();
     const ownerReviewEnabled = Boolean(initialGateway.ownerPolicyReview);
-    const ownerSettingsOnly = initialGateway.ownerSettingsOnly === true;
+    const ownerSettingsOnly = initialGateway.ownerSettingsOnly === true
+      && hasOwnerSettingsOnlyAskAuthority({ tools, ownerManagementBinding: initialGateway.ownerManagementBinding });
     assertAnalyticsTools(tools.map((tool) => tool.name));
-    const profile = await profileResolver(projectRoot);
+    const profile = ownerSettingsOnly && !dependencies.profileResolver
+      ? "unknown" : await profileResolver(projectRoot);
     if (!ownerSettingsOnly && profile !== "development" && profile !== "staging") {
       throw new AskError(
         "ASK_AUTHORING_UNAVAILABLE",
@@ -417,15 +420,15 @@ export async function tryAsk(
       projectRoot,
       env,
       });
-      const activeBoundary = await resolveActiveBoundarySummary(projectRoot);
-      const boundaryCatalog = await (
+      const activeBoundary = ownerSettingsOnly ? undefined : await resolveActiveBoundarySummary(projectRoot);
+      const boundaryCatalog = ownerSettingsOnly ? undefined : await (
         dependencies.boundaryCatalogLoader ?? loadActiveBoundaryCatalog
       )(projectRoot);
       const askIntentModes = await askIntentCheckModesForBoundaries(
         projectRoot,
         boundaryCatalog?.boundaries.map((boundary) => boundary.name) ?? [],
       );
-      const pendingBoundaryReview = await resolvePendingBoundaryReviewSummary(projectRoot);
+      const pendingBoundaryReview = ownerSettingsOnly ? undefined : await resolvePendingBoundaryReviewSummary(projectRoot);
       const listProtectable = dependencies.listProtectable ?? listProtectableQueries;
       const createDraft = dependencies.createProtectedDraft ?? createProtectedQueryDraft;
       const activateProtected = dependencies.activateProtected ?? activateProtectedQuery;
@@ -572,11 +575,13 @@ export async function tryAsk(
           if (previewAuthority.authority_digest === authority.authority_digest) {
             return { status: "unchanged" as const };
           }
-          const previewBoundary = await resolveActiveBoundarySummary(projectRoot);
+          const previewOwnerOnly = gateway.ownerSettingsOnly === true
+            && hasOwnerSettingsOnlyAskAuthority({ tools: previewTools, ownerManagementBinding: gateway.ownerManagementBinding });
+          const previewBoundary = previewOwnerOnly ? undefined : await resolveActiveBoundarySummary(projectRoot);
           const accepted = await confirm({
             providerLabel: providerDisplayLabel(provider, configuration.endpoint_scope),
             modelLabel: model,
-            boundaryLabel: previewBoundary?.name ?? "newly activated reviewed access",
+            boundaryLabel: previewOwnerOnly ? "authenticated agent settings" : previewBoundary?.name ?? "newly activated reviewed access",
           });
           if (!accepted) return { status: "cancelled" as const };
 
@@ -599,6 +604,8 @@ export async function tryAsk(
           }
           configuration = session.rebindAuthority(recheckedAuthority.authority_digest);
           authority = recheckedAuthority;
+          const refreshedOwnerOnly = gateway.ownerSettingsOnly === true
+            && hasOwnerSettingsOnlyAskAuthority({ tools: recheckedTools, ownerManagementBinding: gateway.ownerManagementBinding });
           const [refreshedSummary, refreshedBoundary, refreshedCatalog, refreshedPending] = await Promise.all([
             loadReviewedAccessSummary({
               gatewayFactory,
@@ -607,9 +614,9 @@ export async function tryAsk(
               projectRoot,
               env,
             }),
-            resolveActiveBoundarySummary(projectRoot),
-            (dependencies.boundaryCatalogLoader ?? loadActiveBoundaryCatalog)(projectRoot),
-            resolvePendingBoundaryReviewSummary(projectRoot),
+            refreshedOwnerOnly ? undefined : resolveActiveBoundarySummary(projectRoot),
+            refreshedOwnerOnly ? undefined : (dependencies.boundaryCatalogLoader ?? loadActiveBoundaryCatalog)(projectRoot),
+            refreshedOwnerOnly ? undefined : resolvePendingBoundaryReviewSummary(projectRoot),
           ]);
           return {
             status: "updated" as const,

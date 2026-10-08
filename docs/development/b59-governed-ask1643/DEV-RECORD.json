@@ -1,0 +1,149 @@
+{
+  "task": "Necessary governed Read Ask recognition dependency",
+  "base": "d9f8635509a32093ae952314175f21116ef2faa9",
+  "runtime_head": "28e724e42175d16a088c189a89ca3a160047a828",
+  "status": "FOCUSED_TYPES_PASS_PENDING_INDEPENDENT_MAIN_INTEGRATION",
+  "format_or_command_change": false,
+  "product_files": [
+    "apps/runner/src/ask-authority.ts"
+  ],
+  "scope": "Existing governed resolver feeds shared Ask profile/authority/summary; no legacy fallback while governed bound. No Source DB/provider/paid/full. In-process SQLite fixtures use public native operator consent, controlled4tool gateway, prepared no-query reply.",
+  "runs": {
+    "initial-build": {
+      "exit": 1,
+      "stop": null,
+      "seconds": 63.69824171066284,
+      "pgid": 3586178,
+      "owned_live": [],
+      "free_bytes": 101654147072,
+      "head": "d9f8635509a32093ae952314175f21116ef2faa9",
+      "result_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-governed-ask1643/initial-build/RESULT.json",
+      "result_sha256": "e9c25e83b4f8317ddedb65174de84f60905bd7385fd5e44ab7c6e78069b73b94"
+    },
+    "fixed-fixture-build": {
+      "exit": 0,
+      "stop": null,
+      "seconds": 33.67637610435486,
+      "pgid": 3588997,
+      "owned_live": [],
+      "free_bytes": 101653245952,
+      "head": "80a57c55c2bdeb9cc088f39a40c5b0b7f6bb510c",
+      "result_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-governed-ask1643/fixed-fixture-build/RESULT.json",
+      "result_sha256": "87a14c71be6470e52965aa9c4d3a6d7cfdfe09d65ae4e214a23eb269f05a61c0"
+    },
+    "before-v1": {
+      "exit": 1,
+      "stop": null,
+      "seconds": 19.462801933288574,
+      "pgid": 3590047,
+      "owned_live": [],
+      "free_bytes": 101652647936,
+      "head": "80a57c55c2bdeb9cc088f39a40c5b0b7f6bb510c",
+      "result_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-governed-ask1643/before-v1/RESULT.json",
+      "result_sha256": "b35ce978d6d7e06a18e6daf5804bcbb13ca21b1e80af7eff9d34913994780375",
+      "tests": {
+        "numPassedTests": 1,
+        "numFailedTests": 3,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "e7fbe7a924f1004ccfe1471e736e1d7bb9e377fcbae0c1ef218de93483e792f1"
+    },
+    "after-v1": {
+      "exit": 0,
+      "stop": null,
+      "seconds": 20.86592173576355,
+      "pgid": 3590807,
+      "owned_live": [],
+      "free_bytes": 101650817024,
+      "head": "80a57c55c2bdeb9cc088f39a40c5b0b7f6bb510c",
+      "result_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-governed-ask1643/after-v1/RESULT.json",
+      "result_sha256": "e440c99c91253dc981dc55b4cfb3a94f554a1556192b5612bf3d5e0f8d0f0e78",
+      "tests": {
+        "numPassedTests": 30,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      },
+      "vitest_sha256": "32fe0a5d8a7d1c4473e344af946d8c367eeea385471faf7890968bb758162eac"
+    },
+    "currentness-v1": {
+      "exit": 1,
+      "stop": null,
+      "seconds": 16.06309938430786,
+      "pgid": 3591548,
+      "owned_live": [],
+      "free_bytes": 101650833408,
+      "head": "80a57c55c2bdeb9cc088f39a40c5b0b7f6bb510c",
+      "result_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-governed-ask1643/currentness-v1/RESULT.json",
+      "result_sha256": "11b87fb83c09670948986d19c35ad359b1fc45bdb3246fb730f9464883169e9a",
+      "tests": {
+        "numPassedTests": 2,
+        "numFailedTests": 1,
+        "numPendingTests": 4
+      },
+      "vitest_sha256": "dd4d4934cf228d85227b00143c8dfd382546bf7aac30fee260a8979ee513ab73"
+    },
+    "no-query-v2": {
+      "exit": 0,
+      "stop": null,
+      "seconds": 9.439626693725586,
+      "pgid": 3593053,
+      "owned_live": [],
+      "free_bytes": 101636534272,
+      "head": "80a57c55c2bdeb9cc088f39a40c5b0b7f6bb510c",
+      "result_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-governed-ask1643/no-query-v2/RESULT.json",
+      "result_sha256": "0d3a88f35da9fb5aa75d4db136f05ef413a9ce2abe3cd6b015a2d11ca045fd5f",
+      "tests": {
+        "numPassedTests": 1,
+        "numFailedTests": 0,
+        "numPendingTests": 6
+      },
+      "vitest_sha256": "62fb6209dd653fb2f3a9ccf57aca36db1b2ddcdfe11916512972624a353a8ff9"
+    },
+    "final-types": {
+      "exit": 0,
+      "stop": null,
+      "seconds": 22.470568895339966,
+      "pgid": 3594028,
+      "owned_live": [],
+      "free_bytes": 101635489792,
+      "head": "28e724e42175d16a088c189a89ca3a160047a828",
+      "result_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-governed-ask1643/final-types/RESULT.json",
+      "result_sha256": "a0a7bc2afb6b9a3cff263804aa38b79248f5288aed806142fa3231e40ea94798"
+    }
+  },
+  "preserved_failures": [
+    "initial build freshness failed because new test source was added during preparation; fixed-head preparation33.68s passes",
+    "before1P3F reaches genuine unknownprofile/pre-egress denial/stalelegacyrevocation gap",
+    "currentness2P1F positive fake gateway omitted required authoring mode; native guard correctly refused; only fixture field corrected and one test rerun"
+  ],
+  "owner_only_repair": {
+    "state": "GENUINE_BEFORE_FAILURE_PRESERVED_PATCH_APPLIED_AFTER",
+    "base": "f55757ba496b45b6ed20c7671764ca39dd293bc4",
+    "cause": "Governed Read enumeration precedes existing exact authenticated settings-only exception; parent-only owner fixture has no Read selection, so unrelated strict Read refusal prevents technical settings navigation.",
+    "product_files": [
+      "apps/runner/src/ask-authority.ts",
+      "apps/runner/src/try-ask.ts"
+    ],
+    "gateway_assumptions": "Native current authenticated ownerManagementBinding plus exactly four owner-settings-only tools, exact agent_rules discriminator and no Source fields; owner binding/config/tool digest revalidated. Backend owner flag alone does not waive Source checks.",
+    "original_target_assertions_unchanged": true,
+    "tests_prepared": "Two new controls: native authenticated owner-only source-unavailable view/default profile+catalog absence; strict native corrupt/incomplete Read plus normal/broadened/missing-binding source path refuses before consent/provider.",
+    "owned": "/var/tmp/synapsor-b59-owner-only-dependency1647-owned",
+    "runtime": "0700 HOME/TMP/project outside home; explicit test root .git discovery boundary; parent20b70562 sentinel presence only",
+    "patch": "/var/tmp/synapsor-b59-owner-only-dependency1647-owned/owner-only.patch",
+    "patch_sha256": "59b0450fb22d50a78c2ed9666bd8ba1bed17f9e6c16ecc89e720da1a5b292cda",
+    "product_patch_applied": true,
+    "execution": "BEFORE_COMPLETE_AFTER_TYPES_PENDING",
+    "provider_calls": 0,
+    "owned_processes": 0,
+    "scope": "Necessary settings-only Ask dependency repair; no new command, tool, authority, fixture Source repair, legacy fallback, whole gate or paid behavior.",
+    "before": {
+      "exit": 1,
+      "passed": 0,
+      "failed": 1,
+      "intentional_filter_skipped": 13,
+      "actual": "Original unknown-profile target rejects Stored Read authority is invalid before settings shell; assertions unchanged.",
+      "capture": "/var/tmp/synapsor-b59-owner-only-dependency1647-owned/decoy-parent/test-root/captures/before-original-unknown",
+      "owned_live": []
+    }
+  }
+}

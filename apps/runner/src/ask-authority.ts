@@ -225,7 +225,9 @@ export async function computeAskAuthority(input: {
   mode: AskMode;
   ownerManagementBinding?: `sha256:${string}`;
 }): Promise<AskAuthority> {
-  const activeBoundaries = await optionalActiveBoundaries(input.projectRoot);
+  // The authenticated settings-only surface owns no Source Read authority.
+  const ownerOnly = input.mode === "authoring" && hasOwnerSettingsOnlyAskAuthority(input);
+  const activeBoundaries = ownerOnly ? [] : await optionalActiveBoundaries(input.projectRoot);
   const activeBoundaryDigests = activeBoundaries
     .map((boundary) => boundary.digest)
     .sort();
@@ -239,7 +241,7 @@ export async function computeAskAuthority(input: {
     })
     : undefined;
   if (input.mode === "authoring" && !activeBoundarySetDigest
-    && !(input.ownerManagementBinding && ownerSettingsOnlySurface(input.tools))) {
+    && !ownerOnly) {
     throw new AskError(
       "ASK_AUTHORING_AUTHORITY_UNAVAILABLE",
       "Authoring Ask requires an active reviewed Scoped Explore digest.",
@@ -281,6 +283,15 @@ export async function computeAskAuthority(input: {
     ...(activeBoundarySetDigest ? { active_boundary_set_digest: activeBoundarySetDigest } : {}),
     ...(activeBoundaryDigests.length ? { active_boundary_digests: activeBoundaryDigests } : {}),
   };
+}
+
+/** Only the native owner binding plus the exact restricted four-tool surface
+ * can make Source Read irrelevant. This is not a fallback for source tools. */
+export function hasOwnerSettingsOnlyAskAuthority(input: {
+  tools: AskToolDefinition[]; ownerManagementBinding?: `sha256:${string}`;
+}): boolean {
+  return Boolean(input.ownerManagementBinding && /^sha256:[a-f0-9]{64}$/u.test(input.ownerManagementBinding)
+    && ownerSettingsOnlySurface(input.tools));
 }
 
 function ownerSettingsOnlySurface(tools: AskToolDefinition[]): boolean {
