@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { principalScopeReviewDecision } from "./boundary-principal-review.js";
 import { isReadRelationshipScopePair } from "./read-relationship-scope.js";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -6429,7 +6430,7 @@ function generatedContractTests(
 
 function unresolvedDecisions(
   graph: AutoBoundaryEvidenceGraph,
-  boundary?: Pick<ExplorationBoundaryDraft, "pack" | "trusted_context" | "deployment_profile" | "organization_scope">,
+  boundary: Pick<ExplorationBoundaryDraft, "pack" | "trusted_context" | "deployment_profile" | "organization_scope" | "source" | "role_posture_fingerprint">,
 ): string[] {
   const boundaryResources = new Map(
     (boundary?.pack.resources ?? []).map((resource) => [resource.id, resource]),
@@ -6463,13 +6464,7 @@ function unresolvedDecisions(
           : resource.derived_tenant_scope?.selected
             ? `${resource.id}: confirm mandatory derived tenant scope via ${resource.derived_tenant_scope.selected.path_id} to ${resource.derived_tenant_scope.selected.ancestor_resource}.${resource.derived_tenant_scope.selected.ancestor_column}`
             : `${resource.id}: confirm reviewed shared reference with no tenant predicate`,
-      resource.principal_key.selected
-        ? `${resource.id}: confirm principal scope ${resource.principal_key.selected}`
-        : resource.derived_principal_scope?.selected
-          ? `${resource.id}: confirm mandatory derived principal scope via ${resource.derived_principal_scope.selected.path_id} to ${resource.derived_principal_scope.selected.ancestor_resource}.${resource.derived_principal_scope.selected.ancestor_column}`
-          : boundaryResources.get(resource.id)?.rls_session?.principal_setting
-            ? `${resource.id}: confirm database-enforced principal scope through PostgreSQL RLS setting ${boundaryResources.get(resource.id)!.rls_session!.principal_setting}`
-            : `${resource.id}: confirm principal scope not configured`,
+      principalScopeReviewDecision(boundaryResources.get(resource.id)!, boundary).decision,
       `${resource.id}: confirm visible and kept-out fields`,
       `${resource.id}: confirm filter/sort/group/aggregate-only field permissions`,
       `${resource.id}: confirm minimum cohort and extraction/differencing budgets`,

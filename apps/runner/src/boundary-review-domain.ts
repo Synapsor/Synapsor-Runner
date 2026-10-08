@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { principalScopeReviewDecision } from "./boundary-principal-review.js";
 import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
@@ -730,7 +731,13 @@ export function reconcileBoundaryReviewProgress(
 
 export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): BoundaryReviewDecision[] {
   const resources = new Map(candidate.pack.resources.map((resource) => [resource.id, resource]));
+  const principalDecisions = new Map(candidate.pack.resources.map(resource => {
+    const decision = principalScopeReviewDecision(resource, candidate);
+    return [decision.decision, decision] as const;
+  }));
   return candidate.unresolved_decisions.map((decision) => {
+    const principal = principalDecisions.get(decision);
+    if (principal) return principal;
     if (decision.startsWith("deployment profile:")) {
       return reviewDecision("global.deployment_profile", "deployment_profile", decision, {
         deployment_profile: candidate.deployment_profile,
@@ -811,24 +818,6 @@ export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): Bo
         shared_reference_scope: resource.shared_reference_scope,
         tenant_predicate: "not_applied",
         field_privacy_controls: "unchanged",
-      }, resourceId);
-    }
-    if (detail.startsWith("confirm principal scope ")) {
-      return reviewDecision(`resource.${resourceId}.principal_scope`, "principal_scope", decision, {
-        principal_key: resource.principal_key ?? null,
-        ...(candidate.trusted_context.provider === "http_claims"
-          ? { trusted_principal_http_claim: candidate.trusted_context.principal_claim }
-          : { trusted_principal_env: candidate.trusted_context.principal_env }),
-        rls_session: resource.rls_session ?? null,
-      }, resourceId);
-    }
-    if (detail.startsWith("confirm mandatory derived principal scope ")) {
-      return reviewDecision(`resource.${resourceId}.principal_scope`, "principal_scope", decision, {
-        principal_scope: resource.principal_scope,
-        ...(candidate.trusted_context.provider === "http_claims"
-          ? { trusted_principal_http_claim: candidate.trusted_context.principal_claim }
-          : { trusted_principal_env: candidate.trusted_context.principal_env }),
-        rls_session: resource.rls_session ?? null,
       }, resourceId);
     }
     if (detail === "confirm visible and kept-out fields") {
