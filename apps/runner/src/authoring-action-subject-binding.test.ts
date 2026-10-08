@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canonicalJsonDigest as hash } from "@synapsor-runner/protocol";
-import { parseActionSubjectBinding, parseActionSubjectEntries, actionSubjectOriginDigest } from "./authoring-action-subject-binding.js";
+import { parseActionSubjectBinding, parseActionSubjectEntries, parseActionSubjectMaterial, actionSubjectOriginDigest } from "./authoring-action-subject-binding.js";
 const target = { kind: "primary_effect" as const, resource: "service.requests" };
 const targetDigest = hash(target);
 const material = {
@@ -264,4 +264,24 @@ describe("Action subject host coherent decision boundary (component ports)", () 
     const f = hostFixture(scenario); await expect(f.run()).rejects.toThrow("ACTION_SUBJECT_CHANGED");
     expect(f.read().confirmation).toBeUndefined(); expect(f.saves()).toBe(scenario === "drift" ? 0 : 1);
   });
+});
+
+it("v2 requested principal scope has no established option or final confirmation", () => {
+  const m = { ...material, version: 2, structural: { kind: "boundary_review", boundary_id: "reviewed_staging", review_revision: 1,
+    binding: { draft_digest: hash("draft"), candidate_digest: hash("boundary"), generation_lock_fingerprint: hash("lock"),
+      schema_fingerprint: hash("schema"), role_posture_fingerprint: hash("role"), review_revision: 1 },
+    bundle_digest: hash("bundle"), source_digest: hash(null), confirmations_digest: hash("acks") },
+    targets: material.targets.map(t => ({ ...t, options: [] })) };
+  const typed = parseActionSubjectMaterial(m);
+  const entries = [{ state: "awaiting" as const, target_digest: targetDigest }];
+  const b = { version: 2 as const, material: typed, origin: { completion, material_digest: actionSubjectOriginDigest(typed, entries) } };
+  const q = createActionSubjectQuestion({ binding: b, entries, scope_digest: hash("scope"), context_digest: hash("context") });
+  if (q.proposal?.value?.kind !== "action_subject") throw Error("missing");
+  const v = q.proposal.value.record.view, f = v.fields[0]!;
+  const requested = applyActionSubjectFieldEvent(q, { kind: "select_option", binding: v.binding, field_id: f.id,
+    target_digest: f.target_digest, dependencies_digest: f.dependencies_digest, value: "request:principal" });
+  expect(requested.proposal?.value?.kind === "action_subject" && requested.proposal.value.record.entries[0])
+    .toMatchObject({ state: "requested", requested_kind: "principal" });
+  expect(JSON.stringify(requested.proposal)).not.toContain('"scope_reference"');
+  expect(() => confirmOperatorAnswer(requested)).toThrow(/Unresolved Action subjects/);
 });

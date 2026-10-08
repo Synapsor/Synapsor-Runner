@@ -214,6 +214,13 @@ export async function reviewRequiredPrincipalScopes(input: {
   resourceIds: Iterable<string>;
   actor(): string;
   resolveRequirement(resources: readonly string[]): Promise<{ required: string[]; unresolved: string[] }>;
+  /** Report the real protected structural save, including before bindings.
+   * This is not final business/proof confirmation and cannot invent a model response. */
+  /** Persist the exact pending preview association before any structural write.
+   * This grants no proof; a rejected/uncertain save prevents the write. */
+  onPrepared?(preview: Awaited<ReturnType<typeof prepareBoundaryReviewMutationBatch>>): Promise<void>;
+  onCommitted?(result: { preview: Awaited<ReturnType<typeof prepareBoundaryReviewMutationBatch>>;
+    committed: Awaited<ReturnType<typeof commitBoundaryReviewMutationBatch>> }): Promise<void>;
   modelSession?: ActionModelSuggestionSession;
   modelNarrator?: typeof narrateValidatedAuthoringStep;
   modelInterpreter?: typeof interpretPrincipalScopeAnswer;
@@ -450,8 +457,11 @@ export async function reviewRequiredPrincipalScopes(input: {
       input.schemaInspector,
     );
     assertRunning();
+    await input.onPrepared?.(structuredClone(preview));
+    assertRunning();
     // Once started, the atomic commit must finish before cancellation unwinds.
     const committed = await commitBoundaryReviewMutationBatch(input.projectRoot, preview);
+    await input.onCommitted?.({ preview: structuredClone(preview), committed: structuredClone(committed) });
     assertRunning();
     changed = true;
     savedDecisions.push(...decisions);

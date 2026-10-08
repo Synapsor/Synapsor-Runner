@@ -4,6 +4,7 @@ import type { OperatorQuestion } from "./authoring-operator-question.js";
 import { parseActionSubjectEntries, type ActionSubjectEntry } from "./authoring-action-subject-binding.js";
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/u).transform(v => v as `sha256:${string}`);
 const submitted = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("requested"), target_digest: digest, requested_kind: z.enum(["principal", "tenant", "global"]) }).strict(),
   z.object({ state: z.literal("awaiting"), target_digest: digest }).strict(),
   z.object({ state: z.literal("unresolved"), target_digest: digest, question: z.string().min(1).max(4000) }).strict(),
   z.object({ state: z.literal("proposed"), target_digest: digest, meaning: z.enum(["trusted_principal", "reviewed_scope"]), scope_reference: digest }).strict(),
@@ -15,11 +16,12 @@ export function actionSubjectSubmissionSchema(q: OperatorQuestion) {
   const target = { type: "string", enum: b.material.targets.map(t => t.target_digest) };
   const common = { target_digest: target };
   return { type: "array", minItems: b.material.targets.length, maxItems: b.material.targets.length, items: { oneOf: [
+    ...(b.version === 2 ? [{ type: "object", additionalProperties: false, required: ["state", "target_digest", "requested_kind"], properties: { ...common, state: { const: "requested" }, requested_kind: { enum: ["principal", "tenant", "global"] } } }] : []),
     { type: "object", additionalProperties: false, required: ["state", "target_digest"], properties: { ...common, state: { const: "awaiting" } } },
     { type: "object", additionalProperties: false, required: ["state", "target_digest", "question"], properties: { ...common, state: { const: "unresolved" }, question: { type: "string", minLength: 1, maxLength: 4000 } } },
     { type: "object", additionalProperties: false, required: ["state", "target_digest", "meaning", "scope_reference"], properties: { ...common,
       state: { const: "proposed" }, meaning: { enum: ["trusted_principal", "reviewed_scope"] },
-      scope_reference: { type: "string", enum: b.material.targets.flatMap(t => t.options.map(o => o.reference)) } } },
+      scope_reference: { type: "string", enum: (q.proposal?.value?.kind === "action_subject" && q.proposal.value.record.review_material?.targets || b.material.targets).flatMap(t => t.options.map(o => o.reference)) } } },
   ] } };
 }
 export function decodeActionSubjectSubmission(q: OperatorQuestion, input: unknown): ActionSubjectEntry[] {
@@ -33,8 +35,18 @@ export function decodeActionSubjectSubmission(q: OperatorQuestion, input: unknow
     // Exact unchanged typed choices retain their original support; the captured
     // answer cannot silently replace another already established record.
     const old = previous.find(e => e.target_digest === entry.target_digest);
-    if (entry.state === "awaiting" && old?.state === "proposed") return old;
+    if (entry.state === "awaiting" && (old?.state === "proposed" || old?.state === "requested")) return old;
+    if (entry.state === "requested" && old?.state === "requested" && entry.requested_kind === old.requested_kind) return old;
     if (entry.state === "proposed" && old?.state === "proposed" && entry.meaning === old.meaning && entry.scope_reference === old.scope_reference) return old;
     return entry.state === "awaiting" ? entry : { ...entry, support };
-  }), q.action_subject.material);
+  }), q.action_subject.material, q.proposal?.value?.kind === "action_subject" ? q.proposal.value.record.review_material : undefined);
+}
+
+/** Prepared context distinguishes the immutable producer material from current
+ * host-verified options; the model never needs hidden structural proof records. */
+export function actionSubjectModelContext(q: OperatorQuestion) {
+  if (!q.action_subject || q.proposal?.value?.kind !== "action_subject") throw new Error("ACTION_SUBJECT_REQUIRED");
+  const record = q.proposal.value.record;
+  return { material: q.action_subject.material, effective_options: (record.review_material?.targets ?? q.action_subject.material.targets)
+    .map(target => ({ target_digest: target.target_digest, options: target.options })), entries: record.entries };
 }

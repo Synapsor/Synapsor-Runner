@@ -408,10 +408,34 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
         || predecessor.action_subject?.material.logical_turn_id !== q.action_subject.material.logical_turn_id
         || result.some(other => other.id !== q.id && other.action_subject?.predecessor?.question_id === predecessor.id)
         : q.revision !== 1) invalid("An Action subject replacement must retain its exact predecessor and owning turn.");
+      // A retained interpretation may still cite the first raw answer after
+      // multiple explicit replacements. Resolve only the exact acknowledged
+      // predecessor chain, never another question with similar words/targets.
+      const subjectLineage = [q];
+      for (let ancestor = predecessor; ancestor;) {
+        if (subjectLineage.some(item => item.id === ancestor!.id) || !seen.has(ancestor.id))
+          invalid("The Action subject predecessor chain is not exact retained history.");
+        subjectLineage.push(ancestor);
+        const parent = ancestor.action_subject?.predecessor;
+        ancestor = parent ? result.find(item => item.id === parent.question_id && item.digest === parent.question_digest) : undefined;
+        if (parent && !ancestor) invalid("The Action subject predecessor history is unavailable.");
+      }
       const records = [...(q.proposal_history ?? []), ...(q.proposal ? [q.proposal] : [])];
       for (const proposal of records) {
         if (proposal.value?.kind !== "action_subject") invalid("An Action subject cannot omit its retained full proposal.");
         const record = proposal.value.record;
+        if (record.provenance.kind === "host_predecessor_projection") {
+          const previous = predecessor?.proposal?.value;
+          if (!predecessor?.action_subject || previous?.kind !== "action_subject" || !previous.record.review_material
+            || canonicalJsonDigest(predecessor.action_subject.material) !== canonicalJsonDigest(q.action_subject.material)
+            || canonicalJsonDigest(predecessor.action_subject.origin) !== canonicalJsonDigest(q.action_subject.origin)
+            || canonicalJsonDigest(previous.record.entries) !== canonicalJsonDigest(record.entries)
+            || canonicalJsonDigest(previous.record.review_material) !== canonicalJsonDigest(record.review_material))
+            invalid("The effective subject projection is not the exact retained predecessor's current proof.");
+        }
+        if (record.provenance.kind === "host_structural_review" && (!record.review_material
+          || record.review_material.request_ack.question_id !== q.id || record.review_material.request_ack.question_revision !== q.revision))
+          invalid("The structural subject proof has no exact acknowledged owning question.");
         if (record.provenance.kind === "model_answer") {
           const c = record.provenance.completion, op = generation?.operations.find(o => o.id === c.operation_id);
           if (!op || op.state !== "checkpointed" || !op.checkpoint_seen || op.request_digest !== c.request_digest || op.context_digest !== c.context_digest
@@ -423,7 +447,7 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
           if (entry.state === "awaiting" || !entry.support || entry.support.kind === "operator_choice") continue;
           const support = entry.support;
           if (support.kind === "operator_answer") {
-            const answerQuestion = [q, predecessor].find(p => p?.id === support.question_id);
+            const answerQuestion = subjectLineage.find(p => p.id === support.question_id);
             if (!answerQuestion || answerQuestion.revision !== support.question_revision || answerQuestion.context_digest !== support.context_digest
               || !answerQuestion.raw_answer || !answerQuestion.raw_answer.text.trim() || answerQuestion.raw_answer.id !== support.answer_id
               || canonicalJsonDigest(answerQuestion.raw_answer) !== support.answer_digest)

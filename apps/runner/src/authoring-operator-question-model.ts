@@ -1,4 +1,4 @@
-import { actionSubjectSubmissionSchema, decodeActionSubjectSubmission } from "./authoring-action-subject-model.js";
+import { actionSubjectSubmissionSchema, actionSubjectModelContext, decodeActionSubjectSubmission } from "./authoring-action-subject-model.js";
 import type { ActionSubjectEntry } from "./authoring-action-subject-binding.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionModelSuggestionSession } from "./action-tui.js";
@@ -194,8 +194,8 @@ async function runQuestionModel(input: OperatorQuestionModelInput): Promise<Stag
       "For receipt meaning, propose applied_change_receipt and pending_or_approved only when the captured answer establishes both the trusted completion evidence and the distinction from unapplied requests. Unknown stays pending. Do not select or infer a receipt location or transaction guarantee from these words; Runner separately supplies current configuration for an explicit applicability readback.",
     ]),
     ...(q.kind !== "action_subject" ? [] : [
-      "For Action subject scope, submit every exact target once. Map only the actual answer to an advertised option. Keep unrelated established entries unchanged. Vague/unknown words require an unresolved entry with one narrower plain business follow-up; never guess principal, tenant or global scope. A typed choice is not activation or a write grant.",
-      `Current exact subject targets/options and retained typed entries: ${JSON.stringify({ material: q.action_subject!.material, entries: q.proposal?.value?.kind === "action_subject" ? q.proposal.value.record.entries : [] })}`,
+      "For Action subject scope, submit every exact target once. Map only the actual answer to a currently advertised effective option. For version 2, when the answer establishes a principal, tenant or global request but no corresponding option exists, submit requested with that requested_kind; this is pending verification, not established scope. Keep unrelated established entries unchanged. Vague/unknown words require an unresolved entry with one narrower plain business follow-up; never guess principal, tenant or global scope. A typed choice is not activation or a write grant.",
+      `Current exact subject targets/options and retained typed entries: ${JSON.stringify(actionSubjectModelContext(q))}`,
     ]),
     ...(q.kind !== "input_bounds" ? [] : [q.source_binding
       ? "For Source-review input ranges, valid exact Source line start/end are required as policy provenance."
