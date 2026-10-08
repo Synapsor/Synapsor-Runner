@@ -217,7 +217,17 @@ function unquotedRequest(text: string): string {
 }
 
 function isPreservedReadBoundaryMention(sentence: string, index: number): boolean {
-  if (!/^read\s+(?:boundary|mapping|revision)\b/iu.test(sentence.slice(index))) return false;
+  const before = sentence.slice(0, index), after = sentence.slice(index);
+  // A complete unchanged-capability list can use the noun Read without the
+  // word Boundary. Keep this narrow: a following business object, exception,
+  // or new Read clause still goes through ordinary requested-scope checks.
+  if (/^read\s*(?:,|and\b|unchanged\b)/iu.test(after)
+    && /\bunchanged[.!?\s]*$/iu.test(after)
+    && !/\b(?:but|except|include|expose|extend|expand)\b/iu.test(after)) {
+    const preservation = [...before.matchAll(/\b(?:keep|reuse|retain|preserve|leave)\b/giu)].at(-1);
+    if (preservation && !/\b(?:do\s+not|don['’]t|never)\s+$/iu.test(before.slice(0, preservation.index))) return true;
+  }
+  if (!/^read\s+(?:boundary|mapping|revision)\b/iu.test(after)) return false;
   // A Read-directed exception contradicts preservation. A generic "and add"
   // after a retained Read noun is not itself a new Read instruction; typed
   // Action routing owns that addition. Subsequent actual Read verbs are still
