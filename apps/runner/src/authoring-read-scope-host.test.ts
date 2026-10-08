@@ -5,12 +5,13 @@ import { createReadScopeHost, type ReadScopeInteraction, type ReadScopeInteracti
 import { presentReadScopeInteraction } from "./authoring-question-presenter.js";
 import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { leaveOperatorQuestionPending } from "./authoring-operator-question.js";
-import { nativeFixture, binding, inventory, analysis } from "./test-fixtures/native-read-scope.js";
+import { nativeFixture } from "./test-fixtures/native-read-scope.js";
 
 // Actual controlled provider and native Resume CAS. The mutation callback models
 // the protected owner's lease boundary; this is not installed/public acceptance.
 async function setup(options: { pending?: boolean; noRead?: boolean } = {}) {
   const f = await nativeFixture(options.noRead, options.pending), q = await f.produce();
+  const {binding,inventory,analysis}=f;
   const controls = { currentBinding: structuredClone(binding), failSave: false,
     duringWait: undefined as (() => Promise<void>) | undefined };
   let locked = false;

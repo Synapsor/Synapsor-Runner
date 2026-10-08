@@ -5,29 +5,27 @@ import { parseOperatorQuestion, proposeOperatorAnswer, captureOperatorAnswer, pr
 import { READ_SCOPE_PROTOCOL, resolveReadScopeProposal } from "./read-structured-scope.js";
 import { proposeReadScopeReview, confirmReadScopeReview, resolveNativeReadScope } from "./authoring-read-scope-question.js";
 import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
-import { binding, inventory, analysis, question, nativeFixture } from "./test-fixtures/native-read-scope.js";
+import { nativeFixture } from "./test-fixtures/native-read-scope.js";
 
 describe("B64 native scope question", () => {
-  it("records explicit no-Read review without fabricating an analyzed workload", () => {
-    const original = question();
-    const record = resolveReadScopeProposal({ protocol: READ_SCOPE_PROTOCOL, applicability: "no_read_requested", original_request: "job", requirements: [] },
-      { expectedBinding: binding, references: original.read_scope.record.references, catalog: { resources: [], relationships: [] } });
-    const { digest: _, ...body } = original;
-    const qbody = { ...body, read_scope: { ...body.read_scope, record } };
-    const q = parseOperatorQuestion({ ...qbody, digest: d(qbody) });
-    const review = proposeOperatorAnswer(q, { question_id: q.id, revision: q.revision, source_reference: d(q.read_scope),
-      disposition: "proposed", value: { kind: "read_scope", scope_digest: record.digest } });
-    expect(review.read_scope!.record.analysis_digest).toBeUndefined(); expect(review.confirmation).toBeUndefined();
+  it("records explicit no-Read review without fabricating an analyzed workload", async () => {
+    const f=await nativeFixture(true);
+    try { const q=await f.produce(),record=q.read_scope!.record;
+      const review=proposeOperatorAnswer(q,{question_id:q.id,revision:q.revision,source_reference:d(q.read_scope),disposition:"proposed",value:{kind:"read_scope",scope_digest:record.digest}});
+      expect(review.read_scope!.record.analysis_digest).toBeUndefined();expect(review.confirmation).toBeUndefined();
+    }finally{await fs.rm(f.dir,{recursive:true,force:true});}
   });
-  it("retains a typed proposal in the existing question owner without inventing raw testimony", () => {
-    const q = parseOperatorQuestion(question());
-    expect(q.version).toBe(2); expect(q.raw_answer).toBeUndefined(); expect(q.confirmation).toBeUndefined();
+  it("retains a typed proposal in the existing question owner without inventing raw testimony", async () => {
+    const f=await nativeFixture();try { const q=parseOperatorQuestion(await f.produce());
+      expect(q.version).toBe(2);expect(q.raw_answer).toBeUndefined();expect(q.confirmation).toBeUndefined();
+    }finally{await fs.rm(f.dir,{recursive:true,force:true});}
   });
 });
 
 describe("B64 scope native persistence and reconstruction", () => {
   it("keeps a genuine not-yet-mapped proposal pending instead of calling absent analysis stale", async () => {
     const f = await nativeFixture(false, true);
+    const {binding,inventory,analysis}=f;
     try {
       const q = await f.produce();
       for (const actual of [undefined, analysis()]) {
@@ -40,6 +38,7 @@ describe("B64 scope native persistence and reconstruction", () => {
   });
   it("reviews an explicit no-Read interpretation without fabricating a workload analysis", async () => {
     const f = await nativeFixture(true);
+    const {binding,inventory,analysis}=f;
     try {
       const q = await f.produce();
       expect(() => proposeReadScopeReview(q, binding, analysis(), inventory)).toThrow("READ_SCOPE_REVIEW_STALE");
@@ -53,6 +52,7 @@ describe("B64 scope native persistence and reconstruction", () => {
   });
   it("requires the current host reference contents even when a copied digest is unchanged", async () => {
     const f = await nativeFixture();
+    const {binding,inventory,analysis}=f;
     try {
       const q = await f.produce(), proposal = proposeReadScopeReview(q, binding, analysis(), inventory);
       const accepted = confirmReadScopeReview(proposal, binding, analysis(), proposal.digest, inventory); await f.save(accepted);
@@ -64,6 +64,7 @@ describe("B64 scope native persistence and reconstruction", () => {
   });
   it("saves only the explicit complete review and reconstructs it without a live provider registry", async () => {
     const f = await nativeFixture();
+    const {binding,inventory,analysis}=f;
     try {
       const q = await f.produce();
       expect(() => captureOperatorAnswer(presentOperatorQuestion(q, "Review scope"), "yes")).toThrow();
@@ -81,6 +82,7 @@ describe("B64 scope native persistence and reconstruction", () => {
   });
   it("checks exact current analysis, displayed revision and saved producer association", async () => {
     const f = await nativeFixture();
+    const {binding,inventory,analysis}=f;
     try {
       const q = await f.produce(), proposal = proposeReadScopeReview(q, binding, analysis(), inventory);
       expect(() => confirmReadScopeReview(proposal, binding, { ...analysis(), workload_digest: d("changed") }, proposal.digest, inventory)).toThrow("READ_SCOPE_REVIEW_STALE");
@@ -93,6 +95,7 @@ describe("B64 scope native persistence and reconstruction", () => {
   });
   it("a cancelled replacement never resurrects the earlier confirmed scope", async () => {
     const f = await nativeFixture();
+    const {binding,inventory,analysis}=f;
     try {
       const q = await f.produce(), proposal = proposeReadScopeReview(q, binding, analysis(), inventory);
       const accepted = confirmReadScopeReview(proposal, binding, analysis(), proposal.digest, inventory); await f.save(accepted);
