@@ -343,7 +343,9 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       structuredReadScope = undefined;
       structuredScopeRequest = undefined;
       lastSubmission = structuredClone(args);
-      if (input.structuredScope && Object.keys(args).some(key => !["allowed", "forbidden", "read_scope"].includes(key))) {
+      const assistanceBranch = Object.keys(args).length === 1
+        && (Object.hasOwn(args, "value_request") || Object.hasOwn(args, "relationship_review_request"));
+      if (input.structuredScope && !assistanceBranch && Object.keys(args).some(key => !["allowed", "forbidden", "read_scope"].includes(key))) {
         workloadValidationBlockers = ["READ_SCOPE_PROTOCOL_INVALID: This job requires the structured scope tool. Legacy meaning or clarification fields cannot select a fallback protocol."];
         return { ok: false, error_code: "READ_SCOPE_PROTOCOL_INVALID", value: { blockers: workloadValidationBlockers,
           authority_granted: false, source_query_executed: false, source_database_changed: false } };
@@ -412,6 +414,23 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           error_code: "READ_WORKLOAD_NAMING_EVIDENCE_INVALID", blockers: workloadValidationBlockers,
           authority_granted: false, source_query_executed: false, source_database_changed: false,
         } };
+      }
+      if (Object.hasOwn(args, "relationship_review_request")) {
+        if (!input.relationshipReviewHandler || relationshipReviews >= MAX_READ_RELATIONSHIP_REVIEWS
+          || mechanicalClarificationRequest || valueRequest || clarificationRequest)
+          return { ok: false, error_code: "READ_RELATIONSHIP_REVIEW_LIMIT", value: { authority_granted: false,
+            source_query_executed: false, source_database_changed: false } };
+        try {
+          const request = args.relationship_review_request;
+          if (!isRecord(request) || Object.keys(request).some(key => !["resource", "reason", "question"].includes(key)))
+            throw new Error("The relationship review needs one exact root, reason and question.");
+          mechanicalClarificationRequest = parseReadClarificationRequest({ ...request, category: "relationship_support" }, catalog);
+          return { ok: true, value: { status: "relationship_review_requested", resource: mechanicalClarificationRequest.resource,
+            authority_granted: false, source_query_executed: false, source_database_changed: false } };
+        } catch (error) {
+          return { ok: false, error_code: "READ_RELATIONSHIP_REVIEW_INVALID", value: { message: error instanceof Error ? error.message : String(error),
+            authority_granted: false, source_query_executed: false, source_database_changed: false } };
+        }
       }
       if (isRecord(args.value_request)) {
         if (valueRequestResolved || valueRequest || clarificationRequest) {
@@ -773,6 +792,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     "Retain unresolved original scope explicitly. Naming metadata only suggests mappings. The operator will review the original request and exact proposed scope together; do not claim it is confirmed, saved or active.",
     "Plan kinds and operations must match the catalog. Trusted tenant/principal predicates are injected by Runner; never supply SQL, identity values, activation or confirmation.",
     "Structural validation and normal privacy/relationship constraints still apply. No source queries or authority grants occur here.",
+    "If exact observed values are indispensable, submit only value_request for one exact reviewed resource and field. Runner asks for separate value and egress consent; it does not query or disclose from your request alone.",
+    "If an inspected record link is missing, submit only relationship_review_request for its exact root. Runner offers existing structural review; never infer joins or request private keys. Neither assistance branch is a scope proposal or authority.",
     `Workload name: ${name}`,
     `Allowed questions: ${JSON.stringify(allowedQuestions)}`,
     `Forbidden questions: ${JSON.stringify(forbiddenQuestions)}`,
@@ -950,16 +971,17 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     // The pin is an ingress contract, not permission to reinterpret an older
     // question/history shape under the new tool. Keep that history for inspection.
     const retainedQuestion = saved.stage === "dispatching" ? saved.previous_question?.pending_question : saved.pending_question;
-    if (retainedQuestion && retainedQuestion.kind !== "scope"
+    if (retainedQuestion && !["scope", "value", "relationship"].includes(retainedQuestion.kind)
       || saved.state.clarified_targets.length || saved.state.clarification_answers.length
       || saved.state.unresolved_answers?.length || saved.state.reviewed_replacements?.length
-      || saved.state.resolved_mechanical_request || saved.state.approved_value_context
-      || saved.state.naming_correction_workload || saved.state.relationship_reviews
+      || saved.state.resolved_mechanical_request && saved.state.resolved_mechanical_request.category !== "relationship_support"
+      || saved.state.naming_correction_workload
       || saved.state.clarification_from_invalid_naming || saved.state.clarification_resolved
-      || saved.state.mechanical_clarification_resolved || saved.state.value_request_resolved
+      || saved.state.mechanical_clarification_resolved && !saved.state.relationship_reviews
       || saved.state.naming_evidence_correction_used)
       throw new Error("READ_SCOPE_CHECKPOINT_UNSUPPORTED: The retained assistance shape belongs to a retired protocol. Preserve its history; no legacy handler or replay was started.");
-    if ((!replacementOwner || input.resumeCheckpoint) && (saved.input_digest !== inputDigest() || saved.tool_digest !== authorityDigest)
+    if (!saved.state.scope_producer_binding
+      || (!replacementOwner || input.resumeCheckpoint) && (saved.input_digest !== inputDigest() || saved.tool_digest !== authorityDigest)
       || saved.boundary_digest !== expectedBoundaryDigest || saved.catalog_digest !== catalog.digest || saved.state.relationship_review_limit !== relationshipReviewLimit)
       throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The original mapping input, boundary, catalog or provider changed. Preserve the pending question and revalidate; no replacement was sent.");
     const canonicalRequest = (request: ModelReadClarificationRequest) => {
@@ -1598,14 +1620,28 @@ function readWorkloadToolDefinition(resourceIds: string[], structuredScope = fal
     name: SUBMIT_READ_WORKLOAD_TOOL,
     title: "Submit one non-authoritative read workload",
     description: "Submit exact candidate Explore plans for allowed and forbidden questions. Runner validates and minimizes them; this tool never grants or activates authority.",
-    input_schema: structuredScope ? {
+    input_schema: structuredScope ? { oneOf: [{
       type: "object", additionalProperties: false, required: ["allowed", "forbidden", ...(retainedScope ? [] : ["read_scope"])],
       properties: {
         allowed: { type: "array", minItems: 0, maxItems: 40, items: entrySchema },
         forbidden: { type: "array", minItems: 0, maxItems: 40, items: entrySchema },
         read_scope: readScopeProposalSchema,
       },
-    } : {
+    }, {
+      type: "object", additionalProperties: false, required: ["value_request"], properties: {
+        value_request: { type: "object", additionalProperties: false, required: ["resource", "field", "reason", "question"], properties: {
+          resource: { type: "string", enum: resourceIds }, field: { type: "string", minLength: 1, maxLength: 256 },
+          reason: { type: "string", minLength: 1, maxLength: 500 }, question: { type: "string", minLength: 1, maxLength: 500 },
+        } },
+      },
+    }, {
+      type: "object", additionalProperties: false, required: ["relationship_review_request"], properties: {
+        relationship_review_request: { type: "object", additionalProperties: false, required: ["resource", "reason", "question"], properties: {
+          resource: { type: "string", enum: resourceIds }, reason: { type: "string", minLength: 1, maxLength: 500 },
+          question: { type: "string", minLength: 1, maxLength: 500 },
+        } },
+      },
+    }] } : {
       oneOf: [
         {
           type: "object",

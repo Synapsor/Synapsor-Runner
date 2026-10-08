@@ -387,14 +387,15 @@ describe("durable Read assistance producer checkpoint", () => {
   });
 
   it("leaves Escape or EOF at the value wait pending and accepts intentional without_values only as its typed decision", async () => {
+    const typed = declaredWorkloadScope("List my orders", "status_rows", generatedBoundaryWithoutStatusEnum());
     let checkpoint: any;
     const valueRequest = { ...request, reason: "Exact status vocabulary is indispensable", question: "May Runner use the separately reviewed status vocabulary?" };
     const first = vi.fn(async () => response({ value_request: valueRequest }));
     const boundary = generatedBoundaryWithoutStatusEnum();
-    await expect(generateModelReadWorkload({ ...setup(first), generatedBoundary: boundary, onCheckpoint: async (value: any) => { checkpoint = structuredClone(value); }, valueRequestHandler: async () => undefined } as any)).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
+    await expect(generateModelReadWorkload({ ...setup(first), structuredScope: typed.structuredScope, generatedBoundary: boundary, onCheckpoint: async (value: any) => { checkpoint = structuredClone(value); }, valueRequestHandler: async () => undefined } as any)).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
     expect(checkpoint.stage).toBe("waiting"); expect(checkpoint.pending_question).not.toHaveProperty("decision"); expect(first).toHaveBeenCalledOnce();
-    const bodies: unknown[] = [], next = vi.fn(async r => { bodies.push(r.body); return diagnosticResponse("valid"); });
-    await generateModelReadWorkload({ ...setup(next), generatedBoundary: boundary, resumeCheckpoint: checkpoint, onCheckpoint: async (value: any) => { if (value && value.stage !== "dispatching") checkpoint = structuredClone(value); },
+    const bodies: unknown[] = [], next = vi.fn(async r => { bodies.push(r.body); return diagnosticResponse("valid", typed.proposal); });
+    await generateModelReadWorkload({ ...setup(next), structuredScope: typed.structuredScope, generatedBoundary: boundary, resumeCheckpoint: checkpoint, onCheckpoint: async (value: any) => { if (value && value.stage !== "dispatching") checkpoint = structuredClone(value); },
       valueRequestHandler: async () => ({ state: "without_values" }) } as any);
     expect(checkpoint.stage).toBe("decided"); expect(checkpoint.pending_question.decision).toEqual({ state: "without_values" }); expect(next).toHaveBeenCalledOnce();
     expect(JSON.stringify(bodies[0])).toContain("declined observed-value context");
@@ -561,15 +562,16 @@ describe("durable Read assistance producer checkpoint", () => {
   });
 
   it("restores the pending relationship review counter without resending or charging the same review slot twice", async () => {
+    const typed = declaredWorkloadScope("List my orders", "status_rows");
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
     const linkRequest = { resource: request.resource, category: "relationship_support" as const, reason: "The related business detail needs an inspected link", question: "Prepare the missing related business detail path." };
-    const first = vi.fn(async () => response({ clarification_request: linkRequest })), review = vi.fn(async () => undefined);
-    await expect(generateModelReadWorkload({ ...setup(first), relationshipReviewHandler: review,
+    const first = vi.fn(async () => response({ relationship_review_request: { resource: linkRequest.resource, reason: linkRequest.reason, question: linkRequest.question } })), review = vi.fn(async () => undefined);
+    await expect(generateModelReadWorkload({ ...setup(first), structuredScope: typed.structuredScope, relationshipReviewHandler: review,
       onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("READ_RELATIONSHIP_REVIEW_PENDING");
     if(!checkpoint || checkpoint.stage!=="waiting")throw new Error("Expected the actual pending relationship checkpoint");
     expect(checkpoint.pending_question.kind).toBe("relationship"); expect(checkpoint?.state.relationship_reviews).toBe(1);
     const noSend = vi.fn();
-    await expect(generateModelReadWorkload({ ...setup(noSend), resumeCheckpoint: checkpoint, relationshipReviewHandler: review,
+    await expect(generateModelReadWorkload({ ...setup(noSend), structuredScope: typed.structuredScope, resumeCheckpoint: checkpoint, relationshipReviewHandler: review,
       onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("READ_RELATIONSHIP_REVIEW_PENDING");
     expect(checkpoint?.state.relationship_reviews).toBe(1); expect(noSend).not.toHaveBeenCalled(); expect(review).toHaveBeenCalledTimes(2);
     const { digest: _digest, schema_version: _schema, ...core } = checkpoint!;
@@ -577,10 +579,11 @@ describe("durable Read assistance producer checkpoint", () => {
   });
 
   it("retains exact typed history through dispatch without reopening the decided value request", async () => {
+    const typed = declaredWorkloadScope("List my orders", "status_rows", generatedBoundaryWithoutStatusEnum());
     let decided: ReadWorkloadAssistanceCheckpoint | undefined; const dispatches: ReadWorkloadAssistanceCheckpoint[] = [];
     const value = { ...request, question: "May Runner use separately reviewed fulfillment words?" };
-    const sends = vi.fn().mockResolvedValueOnce(response({ value_request: value })).mockResolvedValueOnce(diagnosticResponse("valid"));
-    const result = await generateModelReadWorkload({ ...setup(sends), generatedBoundary: generatedBoundaryWithoutStatusEnum(),
+    const sends = vi.fn().mockResolvedValueOnce(response({ value_request: value })).mockResolvedValueOnce(diagnosticResponse("valid", typed.proposal));
+    const result = await generateModelReadWorkload({ ...setup(sends), structuredScope: typed.structuredScope, generatedBoundary: generatedBoundaryWithoutStatusEnum(),
       valueRequestHandler: async () => ({ state: "without_values" }), onCheckpoint: async cp => {
         if(cp?.stage === "decided") decided = structuredClone(cp);
         if(cp?.stage === "dispatching") dispatches.push(structuredClone(cp));
