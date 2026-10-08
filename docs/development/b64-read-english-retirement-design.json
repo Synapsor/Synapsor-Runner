@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "status": "CHARACTERIZATION_AND_DESIGN_ONLY_NO_PRODUCT_EXTRACTION",
+  "base": "7c91d9a0",
+  "branch": "codex/b64-read-english-retirement-20261008",
+  "scope": "Retired Read English chain plus live shared nonblank-unknown shortcut; no blanket test deletion or semantic completeness claim",
+  "independent_preseal": {
+    "pin": "6e5b4d2f",
+    "path": "early-full-triage1652/docs/development/b64-native-constraints-independent/READ-RETIREMENT-PRESEAL.json",
+    "cases": "ZR01-ZR07"
+  },
+  "results": [
+    {
+      "case": "ZR-initial-correction",
+      "result": "PASS",
+      "route": "Actual generateModelReadWorkload + native checkpoint host + disk Resume CAS via existing typedReadAssistanceFixture",
+      "calls": 2,
+      "english_instrumentation": "isUnknownReadMeaning/findReadMeaningEvidence/isExplicitReadMeaningStatement/readDefinitionPhrases throw if called",
+      "confirmation": "absent"
+    },
+    {
+      "case": "ZR-unknown-typed-unresolved-cold-resume",
+      "result": "PASS",
+      "route": "Actual native missing-answer host captures I am not sure -> second typed unresolved proposal -> operator cancel -> disk reload -> one typed continuation",
+      "calls": "2 before pause + 1 continuation",
+      "raw": "exact prior raw retained/unconfirmed; no English helper called"
+    },
+    {
+      "case": "ZR-shared-host-uncertainty",
+      "result": "FAIL_EXPECTED_BEFORE",
+      "route": "Existing protected disk business-statement host + declared pending typed adapter (not public Read route proof)",
+      "raw": "I'm not sure",
+      "actual_mapper_calls": 0,
+      "expected_mapper_calls": 1,
+      "actual_english_calls": 1
+    },
+    {
+      "case": "ZR-shared-host-explanation",
+      "result": "FAIL_EXPECTED_BEFORE",
+      "route": "Same real host port; ordinary explanation containing unknown",
+      "actual_mapper_calls": 1,
+      "actual_english_calls": 1,
+      "expected_english_calls": 0
+    }
+  ],
+  "evidence": {
+    "native_and_first_host": "/var/tmp/synapsor-b64-read-retirement-owned/evidence/before.json",
+    "corrected_host_before": "/var/tmp/synapsor-b64-read-retirement-owned/evidence/host-before-corrected.json",
+    "harness_correction": "First host fixtures lacked a required resource for read_mapping; corrected to actual Action-host attributed continuation. Original run retained; not product failure."
+  },
+  "pending_proofs": [
+    "Actual public Read-edit business statement route and protected native decision adapter coverage; current shared-host test is finite port characterization only.",
+    "Actual typed revision + public/cold Replace zero-English instrumentation; existing accepted behavior controls remain, but not yet rerun with forbidden-owner instrumentation.",
+    "Typed scope Source/raw/stale/foreign/approved-value regression batch after bounded extraction; no extra approval or allowance."
+  ],
+  "implementation_sequence": [
+    "R1 independently adjudicates before controls/ledger. Main explicitly releases product slot; no product extraction before then.",
+    "Remove language-only Read producer branches/prompts/legacy callback wiring while retaining native scope owner and every common finite guard. Main owns boundary-commands wiring.",
+    "Remove raw unknown shortcut only through typed mapper contract. For each existing unadapted domain route, expose exact pending gap rather than affirming or inventing meaning. Version owner coordinates separately.",
+    "Keep exact audit/history codecs strict and preserve old data. No migration or second accepted store; unsupported old semantic records cannot be promoted.",
+    "Run native zero-English and safety counterparts; reviewer variants and full gate per shared cadence."
+  ],
+  "rows": [
+    {
+      "id": "RR01",
+      "locations": "read-meaning-evidence.ts:29-100,126-175,203-261",
+      "decision": "definition/negation/transition/imperative English chain",
+      "production_chain": "createCurrentReadEvidence -> findReadMeaningEvidence/readDefinitionPhrases; explicitReadTaskTargets has no production caller",
+      "disposition": "delete retired classifiers, not shared exact shape codecs",
+      "existing_tests": "read-meaning-evidence.test.ts:13,31,50,56,62,70,74,79,82,87,94,112,119,123; read-meaning-lab-regressions.test.ts:17-58",
+      "replacement_contract": "Retire verb/synonym recognition expectations. Port wrong-target, ambiguous identity, negative/excluded scope and no field-from-root grant to strict scope requirements/authority atoms. Do not delete corresponding safety assertions."
+    },
+    {
+      "id": "RR02",
+      "locations": "read-current-evidence.ts:159-229,230-340,385",
+      "decision": "old confirmed meaning/index English interpretation",
+      "production_chain": "mapping/revision legacy currentEvidence closure; actual typed consumers call currentStructuredReadEvidence instead",
+      "disposition": "remove retired language interpretation/currentEvidenceRecords ports after call graph proof",
+      "existing_tests": "read-current-evidence.test.ts:17 onward",
+      "replacement_contract": "Native lineage, omission retention, foreign raw/index rejection, Source drift, replacement/no-old-Yes must remain under resolveNativeReadScope and exact reference owner. Structured confirmed index alone never permission."
+    },
+    {
+      "id": "RR03",
+      "locations": "read-current-evidence.ts:36-134,362-383",
+      "decision": "native typed scope and exact reviewed request projection",
+      "production_chain": "planning/mapping/revision/Action subject -> currentStructuredReadEvidence, projectReadScopeHostContext, context digest, replacement continuation; boundary-job-read-requests -> exact request bindings",
+      "disposition": "KEEP typed native/provenance/currentness owners",
+      "existing_tests": "read-scope-host-context; authoring-read-scope-question; read-scope-replacement-producer tests",
+      "replacement_contract": "No extraction that deletes the whole evidence module. Exact IDs/digests/native generation/history remain protected."
+    },
+    {
+      "id": "RR04",
+      "locations": "read-workload-model.ts:284-312,400-435,498-574,602,722-839,886-894,1259-1370,1770-2102",
+      "decision": "legacy meaning/opaque-label/mechanical question and English prompt copy",
+      "production_chain": "mandatory structuredScope ingress L155; strict typed branches reject old clarification; legacy currentMeaning/hostMeanings guarded/not reached",
+      "disposition": "delete retired prompt/handlers only after typed zero-call controls cover continuation",
+      "existing_tests": "read-workload-model legacy naming/opaque/unknown blocks; migration manifest retained",
+      "replacement_contract": "Approved-value guard L2073 is LIVE (moved to common branch L677) and must remain. Exact misplaced field/compilation/authority omission/currentness checks are not retired English."
+    },
+    {
+      "id": "RR05",
+      "locations": "read-boundary-revision-model.ts:139-146,408-431",
+      "decision": "legacy currentMeanings closure",
+      "production_chain": "mandatory typed scope L128; currentMeanings returns [] for structured",
+      "disposition": "delete unreachable language closure/prompts, retain actual typed evidence and candidate analysis",
+      "existing_tests": "read-boundary-revision-model tests; read-current-evidence revision fixtures",
+      "replacement_contract": "Need zero-call actual revision/save/Resume controls before removal. Preserve relationship/private prerequisite assistance and compile/currentness checks."
+    },
+    {
+      "id": "RR06",
+      "locations": "authoring-read-meaning-host.ts:106-165",
+      "decision": "old attributed meaning clarify English unknown shortcut",
+      "production_chain": "legacy clarify callback remains wired at boundary-commands:7233 but typed producer uses answerScope/answerScopeReplacement",
+      "disposition": "remove retired legacy clarify route with Main boundary wiring; preserve supported raw scope methods",
+      "existing_tests": "authoring-read-meaning-host / read-workload-reviewed-followup tests",
+      "replacement_contract": "Do not infer absent route from filename. Characterize actual typed scope methods and public Replace/cancel/blank before deleting legacy entry."
+    },
+    {
+      "id": "RR07",
+      "locations": "authoring-business-statement-host.ts:229",
+      "decision": "LIVE nonblank raw unknown shortcut before typed decision.mapAnswer",
+      "production_chain": "shared Action/Read-edit business host -> captured raw -> English classifier -> returns before domain mapper",
+      "disposition": "replace with typed domain mapping result; no silent affirmative fallback for adapters absent",
+      "existing_tests": "new B64 zero-English raw capture controls; existing pending/Replace/save fault cases",
+      "replacement_contract": "Failing-before: unknown raw retained but mapAnswer 0, classifier 1. Ordinary explanation mapAnswer 1 but classifier 1. Blank/cancel/caps/currentness still stop mechanically."
+    },
+    {
+      "id": "RR08",
+      "locations": "authoring-version-conversation.ts:125",
+      "decision": "LIVE Version unknown shortcut",
+      "production_chain": "Version controller -> raw text unknown recognizer before version mapping",
+      "disposition": "coordinate Version owner; not removed by Read-only patch",
+      "existing_tests": "Version blank/unknown/mapping tests",
+      "replacement_contract": "Every-writer facts remain unresolved until typed mapping + exact readback + explicit decision; deleting regex cannot turn unknown into Yes."
+    },
+    {
+      "id": "RR09",
+      "locations": "read-workload-assistance-checkpoint.ts:203; read-workload-assist.ts:1038; read-meaning-evidence.ts:109-124",
+      "decision": "persisted old unresolved answer codec calls lexical predicate",
+      "production_chain": "normalization of unresolved_answers/meaning_attempts; current typed arrays empty, malicious/nonempty state could still invoke English",
+      "disposition": "keep strict inert history shape or explicit unsupported-old-record rejection; remove lexical validation, no authority upgrade/migration",
+      "existing_tests": "checkpoint corruption/history/raw attempt tests",
+      "replacement_contract": "Do not silently drop old words/counters. Native scope_answers/replacements remain exact question/revision/answer references. Final disposition requires native-record owner review."
+    },
+    {
+      "id": "RR10",
+      "locations": "read-meaning-evidence.ts:177-200; read-workload-assist.ts:1014-1038",
+      "decision": "exact historical evidence schema validation",
+      "production_chain": "stored workload source codec -> normalizeReadMeaningEvidence",
+      "disposition": "KEEP exact schema/digest/reference validation as audit-only data, rename/extract if needed",
+      "existing_tests": "read-meaning-evidence.test.ts:98 unknown_key/wrong_digest/missing_version",
+      "replacement_contract": "No English semantics here. Retain malformed/extra authority rejection; source quote is provenance, not applicability or permission."
+    },
+    {
+      "id": "RR11",
+      "locations": "read-workload-model.ts:677,2073-2101",
+      "decision": "approved literal context guard",
+      "production_chain": "common actual candidate validation -> ALL exact root.field filters checked against approved values",
+      "disposition": "KEEP actual current literal guard unchanged",
+      "existing_tests": "b64-read-approved-value-characterization tests + independent a981c4c0",
+      "replacement_contract": "Do not restore operator whitelist; neq/comparison semantics need typed plan + native review. Mixed unapproved values and foreign qualified filters stay refused."
+    },
+    {
+      "id": "RR12",
+      "locations": "authoring-read-scope-question.ts; authoring-read-scope-binding.ts; authoring-read-scope-host.ts",
+      "decision": "current typed scope/raw/confirmation ownership",
+      "production_chain": "actual producer completion -> native question -> raw testimony -> typed proposal -> full readback/default-No -> protected CAS",
+      "disposition": "KEEP existing single store and owner",
+      "existing_tests": "native question/host/replacement/provenance suite",
+      "replacement_contract": "Confirmed scope omission/delta/exclusion/currentness cannot be replaced by raw Source/English parsing. Initial-target exact delta remains separately open."
+    }
+  ],
+  "parent_manifest": "b64-read-producer-migration.json is unchanged. This ledger adds family-level removal contracts, not a claim that all remaining migration rows passed.",
+  "limits": [
+    "Paid CLOSED; frozen candidates untouched.",
+    "Storage: keep all evidence/worktrees/caches/volumes; revisit below ~30GB, existing 8GiB floor.",
+    "T0 2026-10-08T06:32:23Z; end2026-10-13T06:32:23Z, final24 starts2026-10-12T06:32:23Z."
+  ]
+}

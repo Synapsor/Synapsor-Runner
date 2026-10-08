@@ -4,8 +4,10 @@ import path from "node:path";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { afterEach, expect, it } from "vitest";
-import { createBusinessStatementHost, type BusinessStatementRecordUpdate } from "./authoring-business-statement-host.js";
+import { afterEach, expect, it, vi } from "vitest";
+import * as readEnglishEvidence from "./read-meaning-evidence.js";
+import { createOperatorQuestion } from "./authoring-operator-question.js";
+import { createBusinessStatementHost, type BusinessStatementRecordUpdate, type BusinessStatementDecisionAdapter } from "./authoring-business-statement-host.js";
 import type { BusinessStatementInteraction, BusinessStatementResponse } from "./authoring-business-statement-interaction.js";
 import { PolicySourceChangedError } from "./authoring-policy-source.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
@@ -27,7 +29,7 @@ async function fixture() {
   let insideMutation: (() => void) | undefined;
   const context = () => canonicalJsonDigest({ declared: "Source/schema/role", statements });
   const inspect = () => structuredClone(state), reload = async () => { state = JSON.parse(await fs.readFile(file, "utf8")); };
-  const host = (interact: (view: BusinessStatementInteraction) => Promise<BusinessStatementResponse>, assertCurrent = async () => {}) => createBusinessStatementHost({
+  const host = (interact: (view: BusinessStatementInteraction) => Promise<BusinessStatementResponse>, assertCurrent = async () => {}, decision?: BusinessStatementDecisionAdapter) => createBusinessStatementHost({
     question: "How many reviewers are needed?", stage: "action_drafting", producerQuestionDigest: canonicalJsonDigest("declared producer question"),
     assertCurrent,
     access: {
@@ -47,7 +49,7 @@ async function fixture() {
         statements.push(answer); await fs.writeFile(source, JSON.stringify(statements)); events.push("Source append");
       },
       prepareReadDecision: async () => ({}), checkpointFailure: subject => new Error(`${subject} checkpoint incomplete`),
-    }, interact,
+    }, interact, ...(decision ? { decision } : {}),
   });
   return { root, file, source, host, events, inspect, reload, setFailure: (next: typeof failure) => { failure = next; },
     statements: () => [...statements], install: (update: BusinessStatementRecordUpdate) => { state = { ...state, ...update }; },
@@ -226,3 +228,31 @@ it("a failed acceptance save retains the committed Source append and fences a re
   f.setFailure(undefined); await expect(f.host(answer("Two reviewers")).review()).rejects.toThrow("POLICY_SOURCE_CHANGED");
   expect(f.inspect()).toEqual(before); expect(f.statements()).toEqual(["Two reviewers"]);
 });
+
+// Characterization only: the typed domain mapper owns unresolved meaning.
+// This uses the existing protected disk host ports, not a public-flow claim.
+it.each(["I'm not sure", "The phrase unknown is the customer-visible state label"])(
+  "B64 zero-English raw capture delegates nonblank testimony to the typed adapter: %s", async raw => {
+    const f = await fixture();
+    const classify = vi.spyOn(readEnglishEvidence, "isUnknownReadMeaning");
+    let mapped = 0;
+    const decision: BusinessStatementDecisionAdapter = {
+      kind: "attributed_meaning", appendToSource: false,
+      createQuestion: identity => createOperatorQuestion({ ...identity, revision: 1, kind: "attributed_meaning",
+        target: { phase: "action_rule_components", outcomes: [] }, material: [], continuation: "action_rule_review" }),
+      replacementQuestion: next => next, canReview: () => true,
+      mapAnswer: async ports => {
+        await ports.assertCurrent(); mapped++;
+        expect(ports.readQuestion().raw_answer?.text).toBe(raw);
+        return "pending";
+      },
+    };
+    try {
+      expect(await f.host(answer(raw), undefined, decision).review()).toBeUndefined();
+      expect(f.inspect().questions!.at(-1)?.raw_answer?.text).toBe(raw);
+      expect(f.inspect().questions!.at(-1)?.confirmation).toBeUndefined();
+      expect(f.statements()).toEqual([]);
+      expect.soft(mapped).toBe(1);
+      expect(classify).not.toHaveBeenCalled();
+    } finally { classify.mockRestore(); }
+  });

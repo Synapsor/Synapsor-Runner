@@ -1,15 +1,15 @@
-1. B64 Read lane ACTIVE; paid CLOSED; frozen candidates untouched; no usage stop (Owner superseded it).
-2. T0 2026-10-08T06:32:23Z; end Oct13 same; final24 begins Oct12 same, unchanged.
-3. Worktree W/b57-fixture-prep; branch codex/b64-read-replacement-20261008; private backup only; all checkpoints pushed.
-4. Replacement/RLS/projector predecessors independently accepted; Main owns public routes and boundary hot spots.
-5. Assistance3ed + decided-answer70d + strict-valueb188 accepted/integrated by Main; composed88PASS, records b64-read-typed-assistance-wip.json.
-6. Terminal answer-limit043 independently ACCEPT: four answers/five calls, no extra correction; real transport sidecars exact checkpointed pending (R1).
-7. Eighteen exact assistance/durable migration rows component-PASS; b64-read-migration-assistance-17.json supplements Main manifest without overwriting it.
-8. Relationship seven ports808: whole file25PASS, original guard assertions/callcounts unchanged; b64-read-relationship-seven.json.
-9. Full workload808 remains62PASS/88FAIL,0skip:76 direct missing pins,6 unresolved-fixture subjects,6 legacy provenance wrappers; raw report preserved.
-10. Six unresolved subject fixtures1da corrected (6PASS, assertions unchanged); six omission successors912 (MIG137–142)6PASS, actual native records/counts/events.
-11. Headless/long-job MIG143/192 now2PASS; shared existing description-limit guidance restored; b64-read-pending-two.json (independent review pending).
-12. R2 provenance plan RP01–08 now16PASS actual native records + groupedhost/confirmedYes/delta/privacy (b64-read-provenance-eight.json); independent review pending.
-13. Currentness2PASS/interruption2PASS pending review; read-only36-row policy map + initial target-delta design written (b64-read-policy-quote-map.json/b64-read-initial-target-delta-design.json).
-14. R2-adjudicated unknown first2 now2PASS (b64-read-unknown-two.json):2call pending/fourraw5callcap; two save-fault rows await precise R2 rule; no delta implementation.
-15. Main owns integration/public checks; keep original failures and compact per-group records; no authority/Source/allowance bypasses.
+1. B64 Read ACTIVE; paid CLOSED; frozen candidates untouched; no usage stop; storage KEEP ALL until Owner revisits below ~30GB (8GiB floor).
+2. Clock unchanged: T0 2026-10-08T06:32:23Z; end Oct13 same; final24 begins Oct12 same.
+3. Worktree W/b57-fixture-prep; branch codex/b64-read-english-retirement-20261008 based Main7c91d9a0; private backup only.
+4. Prior approved-value/provenance fixes integrated Main6ebfe9b7:24PASS/types0; no comparator whitelist; exact guards retained.
+5. Canonical English inventory complete/Main7c91; my earlier288+1631+3687 rows preserved on replacement branch112e258e.
+6. Current bounded task is characterization/design ONLY; product extraction awaits Main slot and independent review.
+7. Read retirement ledger: b64-read-english-retirement-design.json (12 owner families, explicit keep/delete/typed-adapter contracts).
+8. Actual typed mapping+bounded correction PASS2calls with retired English exports throwing; native review stays unconfirmed.
+9. Actual unknown-sounding raw→typed unresolved→cold Resume PASS2+1calls, exact history retained; existing typed fixture, no seeded mapping.
+10. Shared business host before:2FAIL; unknown raw mapAnswer0/classifier1; ordinary explanation mapAnswer1/classifier1; expected zero English.
+11. First host fixture-shape failure preserved separately; corrected actual Action attributed continuation, no public Read-route claim.
+12. Evidence /var/tmp/synapsor-b64-read-retirement-owned/evidence/{before.json,host-before-corrected.json,types.log}; types PASS0.
+13. R1 preseal6e5b4d2f ZR01–07; next independent review exact checkpoint and public revision/Replace zero-English controls.
+14. Keep native scope/provenance/currentness/caps/approved-value/relationship guards; no blanket legacy test deletion, no new store/migration.
+15. No running tests/Runner/models; next command is selected characterization run after reviewer feedback; Main alone owns boundary/shared product slot.
