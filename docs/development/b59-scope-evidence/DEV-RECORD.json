@@ -1,5 +1,5 @@
 {
-  "status": "TARGETED_CLOSED_BROAD_FIXTURE_CLASSIFICATION_PENDING",
+  "status": "AFFECTED_272_PASS_TYPES_PASS_INDEPENDENT_SUPPLEMENT_PENDING",
   "base": "04497a793e6345f6d8e75a291e78b5a19a1b99e2",
   "test_pin": "15a7c098e5e1f045928ffb9490298d4fefdd641a",
   "baseline": {
@@ -21,10 +21,8 @@
     "read-workload-assistance-checkpoint.ts": "Exact optional binding parsing; legacy bytes/digests unmodified"
   },
   "open": [
-    "47 existing broad workload fixtures classified for independent agreement before changes",
-    "Related-only projection and genuine answered root reuse remain separate consumer investigations",
-    "Independent presealed typed/legacy/currentness set pending on immutable2d724",
-    "No full/public CLI/DB/provider/activation qualification claimed"
+    "Independent presealed supplemental three root/structural controls pending on de3c908c",
+    "Main serial integration and eventual integrated final qualification remain separate; no full/CLI/DB/provider credit"
   ],
   "worker": {
     "maxWorkers": 1,
@@ -32,8 +30,8 @@
     "network": "unshare-net",
     "floor_GiB": 8
   },
-  "head": "2d72454704ac1753509ce61850ff78f473ebc37c",
-  "runtime": "6c207c8279eb21c114f3e764da34d9580f94aa70",
+  "head": "de3c908c844a46065721e1cc0dfe9a91db7bb28f",
+  "runtime": "de3c908c844a46065721e1cc0dfe9a91db7bb28f",
   "runs": [
     {
       "stage": "baseline",
@@ -574,6 +572,140 @@
         ],
         "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
       }
+    },
+    {
+      "stage": "held-consumers-before",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/held-consumers-before",
+      "result": {
+        "stage": "held-consumers-before",
+        "exit": 1,
+        "seconds": 6.80931218600017,
+        "head_before": "e836669be1fa7f1ad277db4353328a97c7cab3c9",
+        "head_after": "e836669be1fa7f1ad277db4353328a97c7cab3c9",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-held-consumers-before",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-workload-model.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/held-consumers-before/vitest.json",
+          "-t",
+          "corrects shared-table reads|does not let a table-only clarification"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 2,
+        "numPendingTests": 130,
+        "numTotalTests": 132
+      }
+    },
+    {
+      "stage": "fixture-successors-v1",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/fixture-successors-v1",
+      "result": {
+        "stage": "fixture-successors-v1",
+        "exit": 1,
+        "seconds": 8.010624665999785,
+        "head_before": "d2a1c695996d5062cc2bc33fedf6e20c0165d163",
+        "head_after": "d2a1c695996d5062cc2bc33fedf6e20c0165d163",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-fixture-successors-v1",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-workload-model.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/fixture-successors-v1/vitest.json"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 129,
+        "numFailedTests": 3,
+        "numPendingTests": 0,
+        "numTotalTests": 132
+      }
+    },
+    {
+      "stage": "consumers-v2",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/consumers-v2",
+      "result": {
+        "stage": "consumers-v2",
+        "exit": 0,
+        "seconds": 11.613859043020057,
+        "head_before": "de3c908c844a46065721e1cc0dfe9a91db7bb28f",
+        "head_after": "de3c908c844a46065721e1cc0dfe9a91db7bb28f",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-consumers-v2",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-requested-scope.test.ts",
+          "apps/runner/src/boundary-requested-read-scope.test.ts",
+          "apps/runner/src/boundary-job-model.test.ts",
+          "apps/runner/src/read-workload-model.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/consumers-v2/vitest.json"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 272,
+        "numFailedTests": 0,
+        "numPendingTests": 0,
+        "numTotalTests": 272
+      }
+    },
+    {
+      "stage": "types-v5",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/types-v5",
+      "result": {
+        "stage": "types-v5",
+        "exit": 0,
+        "seconds": 7.609322013013298,
+        "head_before": "de3c908c844a46065721e1cc0dfe9a91db7bb28f",
+        "head_after": "de3c908c844a46065721e1cc0dfe9a91db7bb28f",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-types-v5",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/typescript/bin/tsc",
+          "-b",
+          "--pretty",
+          "false"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      }
     }
   ],
   "owned_process_closure": {
@@ -593,9 +725,26 @@
       3859410,
       3860280,
       3862071,
-      3863040
+      3863040,
+      3869163,
+      3872417,
+      3877032,
+      3877675
     ],
     "live": []
   },
-  "compatibility": "Optional host-created requested_read_scope digest; model cannot assert it. Untagged old scope purpose remains pending without rewriting history/digest. Older strict parsers may reject new optional field; no downgrade-success claim."
+  "compatibility": "Optional host-created requested_read_scope digest; model cannot assert it. Untagged old scope purpose remains pending without rewriting history/digest. Older strict parsers may reject new optional field; no downgrade-success claim.",
+  "review": {
+    "original": "Independent0446P8F preserved; b42816P0F",
+    "typed": "Independent2d724 six controls6P0F including genuine old checkpoint and freshOS current typed wait; scoped mapper/disk only",
+    "fixtures": "b57 agreed44 named root-fact successors (actual whole original retained), long-wire pending, related definition separately agreed; prior raw failures preserved",
+    "supplement": "c7df preseal before structural edit; honest root-binding commit existed but reviewer had not read it; pending"
+  },
+  "classification_notes": [
+    "consumers-v1 total48F:47 in workload file + separate doublequote wire-assertion encoding failure; the latter corrected without product change and now in272PASS",
+    "Declared root facts append exact original context, never replace it or derive from metadata; no response added/counter increased",
+    "Original invented-field fixture unchanged; native structural refusal restored before business scope",
+    "New root question uses actual host task/target/alternatives binding; generic old untagged purpose remains pending; field answer separate",
+    "Native structural analysis moved earlier once, same result used; blocked cannot become ready/authority, ready still passes all semantic checks"
+  ]
 }

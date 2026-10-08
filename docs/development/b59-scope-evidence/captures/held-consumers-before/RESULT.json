@@ -1,0 +1,27 @@
+{
+  "stage": "held-consumers-before",
+  "exit": 1,
+  "seconds": 6.80931218600017,
+  "head_before": "e836669be1fa7f1ad277db4353328a97c7cab3c9",
+  "head_after": "e836669be1fa7f1ad277db4353328a97c7cab3c9",
+  "status_before": "",
+  "status_after": "",
+  "owned_outer_closed": true,
+  "stop": null,
+  "root": "/var/tmp/synapsor-b59-1647-held-consumers-before",
+  "native_argv": [
+    "/usr/bin/node",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/read-workload-model.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "--reporter=json",
+    "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/held-consumers-before/vitest.json",
+    "-t",
+    "corrects shared-table reads|does not let a table-only clarification"
+  ],
+  "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+}

@@ -1,0 +1,25 @@
+{
+  "stage": "fixture-successors-v1",
+  "exit": 1,
+  "seconds": 8.010624665999785,
+  "head_before": "d2a1c695996d5062cc2bc33fedf6e20c0165d163",
+  "head_after": "d2a1c695996d5062cc2bc33fedf6e20c0165d163",
+  "status_before": "",
+  "status_after": "",
+  "owned_outer_closed": true,
+  "stop": null,
+  "root": "/var/tmp/synapsor-b59-1647-fixture-successors-v1",
+  "native_argv": [
+    "/usr/bin/node",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/read-workload-model.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "--reporter=json",
+    "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/fixture-successors-v1/vitest.json"
+  ],
+  "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+}
