@@ -10,7 +10,7 @@ export const legitimateUses = new Set([
 const methods = new Set(['test', 'exec', 'match', 'matchAll', 'search', 'includes',
   'startsWith', 'endsWith', 'indexOf', 'lastIndexOf', 'split', 'replace', 'replaceAll',
   'toLowerCase', 'toUpperCase', 'toLocaleLowerCase', 'toLocaleUpperCase', 'normalize',
-  'trim', 'trimStart', 'trimEnd', 'has', 'get', 'localeCompare']);
+  'trim', 'trimStart', 'trimEnd', 'has', 'get', 'set', 'add', 'delete', 'localeCompare']);
 const sha = value => createHash('sha256').update(value).digest('hex');
 const printer = ts.createPrinter({ removeComments: true });
 const print = (node, source) => printer.printNode(ts.EmitHint.Unspecified, node, source);
@@ -120,6 +120,21 @@ export function scanSources(texts) {
             if (dictionary) lookupOwners.add(dictionary);
           }
         }
+      }
+      if (kind === 'text_or_membership_operation' && ts.isPropertyAccessExpression(node.expression)) {
+        // A collection/regex receiver is part of the interpreted vocabulary,
+        // including mutations performed in a separate declaration.
+        const collectReceiver = expression => {
+          let symbol = checker.getSymbolAtLocation(expression);
+          if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+          for (const declaration of symbol?.declarations ?? []) {
+            if (!names.has(declaration.getSourceFile().fileName)) continue;
+            const receiver = outer(declaration);
+            if (receiver) lookupOwners.add(receiver);
+          }
+          ts.forEachChild(expression, collectReceiver);
+        };
+        collectReceiver(node.expression.expression);
       }
       if (kind) { add(node, kind); lexicalOwners.add(owner); }
       if (owner && ts.isIdentifier(node)) {
