@@ -6352,35 +6352,15 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     mappingBoundary = exactBoundary;
   }
   let workload: ReadWorkloadView | undefined = reusedReadWorkload ?? resumedReadWorkload;
+  let postReviewReplacement: Parameters<typeof generateModelReadWorkload>[0]["postReviewReplacement"];
   if (resumePastPlanning && resumeRead) {
-    const restored = await readReadWorkloadAnalysis({
-      projectRoot: input.projectRoot,
-      analysisId: resumeRead.analysis_id,
-      generatedBoundary: mappingBoundary,
-    });
-    if (restored.analysis_digest !== resumeRead.analysis_digest) {
-      throw new Error(
-        "BOUNDARY_AUTHORING_RESUME_CHANGED: the saved Read analysis no longer matches this authoring checkpoint.",
-      );
-    }
-    resumedReadWorkload = restored;
-    if (resumeRead.scope_question_id && !restored.review) {
-      // An analyzed scope can be saved before its grouped decision. Its Resume
-      // stage is not evidence that the disabled authority was installed.
-      const decision = await readScopeReview.review(resumeRead.scope_question_id);
-      if (decision.state !== "confirmed") return boundaryAssistResult(boundaryAssistBackNotice(
-        decision.state === "replace_requested"
-          ? "The Read scope remains declined. A replacement must complete ordinary mapping and review before it can be saved."
-          : "The complete analyzed Read scope remains pending; no disabled authority or activation was inferred."));
-      reusingExactRead = false;
-      resumingDisabledRead = false;
-    } else if (availableResume?.stage === "authority_review" || restored.review) {
-      reusingExactRead = true;
-      resumingDisabledRead = false;
-    } else {
-      resumingDisabledRead = true;
-    }
-    workload = restored;
+    const restored = await readScopeReview.restore(mappingBoundary);
+    if (restored.state === "pending") return boundaryAssistResult(boundaryAssistBackNotice(
+      "The complete analyzed Read scope remains pending; no disabled authority or activation was inferred."));
+    postReviewReplacement = restored.state === "replacement" ? restored.owner : undefined;
+    workload = resumedReadWorkload = restored.state === "restored" ? restored.workload : undefined;
+    reusingExactRead = restored.state === "restored" && restored.reuse;
+    resumingDisabledRead = restored.state === "restored" && restored.disabled;
   }
   let preparedWorkload: ReadWorkloadSet | undefined;
   // A resumed, exact Read + rule-derived Action has already restored the
@@ -7167,7 +7147,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         const current = await loadBoundaryReviewContext(input.projectRoot), scope = await typedReadContext(current.candidate, undefined, permit);
         return { ...scope, questions: operatorQuestions, handoffs: ownerHandoffs, generation: generationRecovery };
       },
-      readQuestions: () => operatorQuestions, readRecovery: () => generationRecovery,
+      readQuestions: () => operatorQuestions, readRecovery: () => generationRecovery, readPreparedRead: () => resumeRead,
       readConversation: () => authoringConversation, readReviewedRelationshipAnswer: () => reviewedRelationshipAnswer,
       install: update => {
         if (Object.prototype.hasOwnProperty.call(update, "checkpoint")) readAssistanceCheckpoint = update.checkpoint;
@@ -7286,7 +7266,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             structuredScope: { protocol: READ_SCOPE_PROTOCOL,
               current: () => typedReadContext(mappingBoundary, mappingAnswerIds),
               answer: request => readMeaningHost.answerScope(request),
-              resolveAnswer: readMeaningHost.resolveScopeAnswer },
+              resolveAnswer: readMeaningHost.resolveScopeAnswer,
+              replacementAnswer: readMeaningHost.answerScopeReplacement, resolveReplacementAnswer: readMeaningHost.resolveScopeReplacementAnswer },
+            ...(postReviewReplacement ? { postReviewReplacement } : {}),
             currentEvidenceRecords: () => ({ source: authoringConversation?.policySources,
               questions: operatorQuestions, handoffs: ownerHandoffs, history: resumeRead?.assistance_history,
               checkpoint: readAssistanceCheckpoint, workloads: meaningWorkloads, boundary: mappingBoundary }),

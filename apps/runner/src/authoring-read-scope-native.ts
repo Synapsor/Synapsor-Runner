@@ -11,7 +11,8 @@ import { createReadScopeQuestion, proposeReadScopeReview } from "./authoring-rea
 import { readScopeConsumption } from "./authoring-read-scope-binding.js";
 import { assertReadScopeProvenance, assessReadScopeRecordCurrentness, parseReadScopeRecord, type ReadScopeRecord } from "./read-structured-scope.js";
 import { loadBoundaryReviewContext } from "./boundary-review-context.js";
-import { readStoredReadWorkloadAnalysis } from "./read-workloads.js";
+import { readReadWorkloadAnalysis, type ReadWorkloadView, readStoredReadWorkloadAnalysis } from "./read-workloads.js";
+import type { ReadScopeReplacementOwner } from "./read-current-evidence.js";
 import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
 type Digest = `sha256:${string}`;
@@ -45,7 +46,7 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
   };
   const answerIds = () => {
     const { questions } = snapshot();
-    return questions.filter(q => q.read_scope?.mode === "missing_answer" && q.raw_answer?.text.trim() && !q.disposition
+    return questions.filter(q => (q.read_scope?.mode === "missing_answer" || q.read_scope?.mode === "replacement_answer") && q.raw_answer?.text.trim() && !q.disposition
       && !questions.some(next => next.read_scope?.predecessor_id === q.id)).map(q => q.id);
   };
   const project = (boundary: ExplorationBoundaryDraft, structuralReview: Awaited<ReturnType<typeof loadBoundaryReviewContext>>,
@@ -95,6 +96,38 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
       acknowledgeCompletedTurn: false, subject: "The no-Read scope proposal" }, permit);
     return question.id;
   });
+  // Resume chooses among existing owners from current native records. A declined
+  // mapped review keeps its consumed history; it is never an active dispatch.
+  const restore = async (boundary: ExplorationBoundaryDraft): Promise<
+    | { state: "pending" }
+    | { state: "restored"; workload: ReadWorkloadView; reuse: boolean; disabled: boolean }
+    | { state: "replacement"; owner: ReadScopeReplacementOwner }> => {
+    await input.ports.assertCurrent();
+    const saved = snapshot().read;
+    if (!saved) return unavailable("The exact saved Read analysis");
+    const workload = await readReadWorkloadAnalysis({ projectRoot: input.projectRoot,
+      analysisId: saved.analysis_id, generatedBoundary: boundary });
+    if (workload.analysis_digest !== saved.analysis_digest)
+      throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: the saved Read analysis no longer matches this authoring checkpoint.");
+    await input.ports.assertCurrent();
+    if (saved.scope_question_id && !workload.review) {
+      const decision = await host.review(saved.scope_question_id);
+      if (decision.state === "replace_requested") {
+        await input.ports.assertCurrent();
+        const current = snapshot();
+        if (current.read?.analysis_digest !== saved.analysis_digest
+          || current.read.scope_question_id !== saved.scope_question_id)
+          return unavailable("The exact declined Read mapping");
+        return { state: "replacement", owner: { read: current.read, questions: current.questions,
+          handoffs: current.handoffs, generation: current.generation,
+          question_id: saved.scope_question_id, analysis: workload.analysis } };
+      }
+      if (decision.state !== "confirmed") return { state: "pending" };
+      return { state: "restored", workload, reuse: false, disabled: false };
+    }
+    const reuse = snapshot().resume.stage === "authority_review" || Boolean(workload.review);
+    return { state: "restored", workload, reuse, disabled: !reuse };
+  };
   const principalRequirement = async (resources: readonly string[], proposed?: ReadScopeRecord) => {
     const roots = [...new Set(resources)].sort();
     const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot();
@@ -117,5 +150,5 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     }
     return { required, unresolved };
   };
-  return { context, answerIds, review: host.review, recordNoRead, principalRequirement };
+  return { context, answerIds, review: host.review, restore, recordNoRead, principalRequirement };
 }
