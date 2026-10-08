@@ -432,30 +432,21 @@
       "not_integrated_in_main": true
     },
     "current_resume_checkpoint": {
-      "base": "d6e201eb",
+      "base": "f18db95a",
       "status": "active; no usage pause; paid CLOSED",
-      "main": "Owned old-entry/typed Read projection and principal host; boundary 19619 vs 20204. Read Replace public review ongoing.",
-      "read_replace": {
-        "integrated_owner": "9b435e30",
-        "independent_producer": "8 PASS scoped d1709ef2",
-        "public_before": [
-          "1fa: native projection missing, raw NOT REACHED",
-          "927: original positive PASS; three Replace controls saved native question but prompt consumer rejected"
-        ],
-        "current_fix": "Exact parsed replacement_answer/read_revision_instruction/declined-review prompt binding; no blanket consumer admission",
-        "local": "7 PASS owned adapters (6 Action entry +1 native prompt binding)",
-        "next": "R1 unchanged public Replace/cancel/stale + real CAS wait"
+      "main": "Manual direct typed selection420 independently12PASS; boundary19417 (from20204). Existing protected Action question checkpoint projection now extracted; no public subject hookup yet.",
+      "read_replace": "Independent public81ff6PASS plus separate476 freshOS zero requests; producer8PASS. No-Read planning-origin replacement stillopen.",
+      "read_assistance": "Integrated3ed+70d+b188 atddd; R1independent19PASS scoped. Main47PASS7oldmissing-protocol relationship failures; owner808 ports25PASS sourceauditedaccepted awaitingintegration. Read allowance043 independent4PASS, fixtureports808/1da/edcdf/ca31 accepted awaitingintegration.",
+      "manual": "R1dd6before9P2F transientcancel/forbiddenreadback;420 unchanged11P+originalpublic1P, original18lifecycleassertions. MaintypesPASS. No installed/sourceeffect/coldmanualsavedreuse claim.",
+      "action": "Subjectae90 integrated2887, R2native25PASS/Main305PASS1paidoptinskip/types0. v2proofpendingdesign728 accepted, implementationowner underway; actualpublic/OS/wholeActionEnglishretirement open.",
+      "native_checkpoint_projection": {
+        "change": "Move existing ordinary/Version question projection from boundary to owned module; add exact native subject q/ref/fullhistory/real generation association inside existing protected save. Local/raw/direct/proof updates cannot reuse completion.",
+        "tests": "Action real decoded initial+vague/replacement/nativeCAS test now uses actual logical-turn budget and production projection;1PASS. SharedVersion6PASS. WiderVersion22oldmissingpin FAIL and freshOS17oldmissingpin FAIL retained; fixture ports assigned, not product passes.",
+        "types": "action-native-save-final-types.log exit0",
+        "limitations": "Readiness of public Action subject ports stillopen; controlled mutation permit test is not all publicCAS paths. Independent product review required."
       },
-      "action_entry": {
-        "before": "2 failed /1 passed; existing verb heuristic selected true",
-        "after": "6 component PASS; English reader and both callers deleted; missing typed plan refuses, manual default No",
-        "independent": "R2 source semantic adjudication on d6; only default4795 assertion changed, explicit Yes/other17 assertions unchanged",
-        "public": "NOT QUALIFIED: actual manual cards flow refuses missing native typed Read context; complete flow expectations retained; diagnostic probe only, not fixed-pin gate"
-      },
-      "fixtures": "Read owner ports5type sites+7checkpoint-host rows;8relationship revision ports independently sourceaccepted9b0a;10mapping assistance gaps actualtypedreachability reproduced, positives open",
-      "action": "R2 design9b63 ACCEPT; owner implementing subject codec/host with same open logical turn and genuine batch ACK; English constraints remain open",
       "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/",
-      "limits": "2 heavy /8workers; 8GiB floor; private backup only; T0/window unchanged"
+      "limits": "2heavy8workers,8GiBfloor,privatebackup; B64clockunchanged; separateB65plan"
     }
   }
 }

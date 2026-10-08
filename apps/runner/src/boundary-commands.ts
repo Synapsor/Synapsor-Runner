@@ -14,8 +14,9 @@ import { saveAuthoringRecoveryResume } from "./authoring-recovery-resume.js";
 import { createAuthoringRecoveryHost } from "./authoring-recovery-host.js";
 import { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
 export { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
-import { authoringConsumedTurnCheckpoint, type AuthoringQuestionCompletion, authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, authoringActionCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, authoringInterruptedRecoveryNeeded, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringConsumedTurnCheckpoint, type AuthoringQuestionCompletion, authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, authoringInterruptedRecoveryNeeded, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
+import { projectActionQuestionCheckpoint } from "./authoring-action-subject-save.js";
 import { type OperatorQuestion } from "./authoring-operator-question.js";
 import { operatorBusinessContext, operatorBusinessLabel, operatorBusinessReadback, presentOperatorClarification,
   type OperatorBusinessContext } from "./authoring-operator-presentation.js";
@@ -35,7 +36,7 @@ import { createReceiptRequirementHost, type ReceiptRequirementResult } from './a
 import { currentReceiptRequirement, receiptRequirementDependencies, receiptRequirementQuestionContext,
   receiptRequirementReviewTarget, receiptRequirementSourceBinding, receiptRequirementQuestionTarget, pendingReceiptRequirement } from './authoring-receipt-requirement.js';
 import { prepareReadBusinessStatementDecision } from "./authoring-business-statement-read-decision.js";
-import { actionRuleAuthoringCheckpoint, actionLogicalTurnMaterialDigest, assertActionLogicalTurnJournalAdvance,
+import { actionRuleAuthoringCheckpoint, actionLogicalTurnMaterialDigest,
   type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { sourceInputFidelity } from "./authoring-input-policy.js";
 import { AUTHORING_PROGRAM_CAPACITY, isAuthoringProgramResume, authoringProgramProgressLines } from "./authoring-program-capacity.js";
@@ -245,8 +246,6 @@ import {
   type BoundaryAuthoringResumeRead,
   type BoundaryAuthoringResumeStage,
   type BoundaryAuthoringResumeState,
-  actionVersionMaterialDigest,
-  assertActionVersionQuestionHandoff,
 } from "./boundary-authoring-resume.js";
 import { reviewPrivateActionSourceForModel } from "./action-rule-source-consent.js";
 import { prepareActionVersionField, reviewActionVersionField } from "./action-rule-version-review.js";
@@ -6441,40 +6440,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       }
     };
     const onCheckpoint: NonNullable<ModelActionRuleDraftInput["onCheckpoint"]> = async (next, metadata) => coordinated(async permit => {
-      const previous = settings.read();
-      if (metadata?.expected_checkpoint_digest && previous?.digest !== metadata.expected_checkpoint_digest) throw stale();
-      assertActionLogicalTurnJournalAdvance(previous, next);
-      if (metadata?.ordinary_completion) {
-        const closed = metadata.ordinary_completion;
-        if (next.pending_version || canonicalJsonDigest(next.logical_turns?.at(-1)?.completed ?? null) !== canonicalJsonDigest(closed)
-          || actionLogicalTurnMaterialDigest(next) !== closed.material_digest
-          || canonicalJsonDigest(authoringQuestionSequenceCompletion([closed.completion]) ?? null) !== canonicalJsonDigest(closed.completion)) throw stale();
-        if (closed.kind === "ordinary_clarification") {
-          if (!next.pending_question || canonicalJsonDigest(next.pending_question.completion ?? null) !== canonicalJsonDigest(closed.completion)) throw stale();
-          generationRecovery = authoringQuestionCheckpoint(generationRecovery, next);
-        } else {
-          if (next.pending_question || !generationRecovery) throw stale();
-          generationRecovery = authoringActionCheckpoint(generationRecovery, closed.completion,
-            { consumer: "action_rule_components", kind: "compiled_draft", material_digest: closed.material_digest });
-        }
-      } else if (next.pending_version) {
-        const q = operatorQuestions.find(q => q.id === next.pending_version!.question_id);
-        if (!q) throw stale();
-        if (metadata?.version_completion && (q.presentation || q.terminal_failure)) {
-          if (!generationRecovery) throw stale();
-          const phase = q.terminal_failure?.stage === "present" ? "present" : q.proposal || q.terminal_failure ? "answer-map" : "present";
-          generationRecovery = authoringActionCheckpoint(generationRecovery, metadata.version_completion,
-            { consumer: "action_rule_components", kind: "version_interpretation",
-              material_digest: actionVersionMaterialDigest(next, q, phase) });
-        }
-        assertActionVersionQuestionHandoff({ generation_recovery: generationRecovery,
-          owner_handoffs: ownerHandoffs, operator_questions: operatorQuestions }, next);
-      } else if (!previous?.pending_version) {
-        if (next.pending_question) {
-          if (!previous?.pending_question || canonicalJsonDigest(previous.pending_question) !== canonicalJsonDigest(next.pending_question))
-            generationRecovery = authoringQuestionCheckpoint(generationRecovery, next);
-        } else generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery, previous, next);
-      }
+      const projected = projectActionQuestionCheckpoint({ previous: settings.read(), next, metadata,
+        questions: operatorQuestions, handoffs: ownerHandoffs, generation: generationRecovery, stale });
+      operatorQuestions = projected.questions; generationRecovery = projected.generation;
       settings.write(next);
       await persistAuthoringResume(settings.stage, permit);
       if (resumePersistenceBlocked) throw checkpointSaveFailure("The checkpoint");
