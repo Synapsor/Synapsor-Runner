@@ -1403,73 +1403,84 @@ describe("model-assisted Read workload mapping", () => {
     expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({ resource: "public.tbl_7", field: "col_2" }));
   });
 
-  it.each(["valid", "wrong_revision", "foreign_answer", "wrong_target"])(
+  // Actual raw-answer provenance is not a confirmed semantic mapping. The old
+  // target-bound attributed_meaning fixture is preserved in Git; no fake Yes is
+  // carried into this typed counterpart (R2 RP01–04/RP08).
+  async function rawScopeReferenceFixture(raw: string) {
+    const answer = vi.fn(async () => raw);
+    const h = await typedReadAssistanceFixture("Read my order lifecycle", answer, "gpt-5.6-terra", {},
+      { resource: "public.tbl_7", field: "col_2", primaryKey: "id" });
+    const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
+      id: "lifecycle", intended_use: "Read my order lifecycle", references: ["job"], disposition: "include",
+      subjects: [{ root_resource: "public.tbl_7", mode: "trusted_principal" }], targets: [
+        { root_resource: "public.tbl_7", resource: "public.tbl_7", operation: "resource" },
+        { root_resource: "public.tbl_7", resource: "public.tbl_7", operation: "return", field: "col_2" },
+      ],
+    }] };
+    const missing = { ...proposal, requirements: [{ ...proposal.requirements[0], disposition: "unresolved", unresolved: "What does this order stage mean for your task?" }] };
+    const bodies: unknown[] = [];
+    const requestJson = vi.fn(async request => {
+      bodies.push(request.body);
+      return { status: 200, body: { output: [{ type: "function_call", call_id: `raw-${bodies.length}`, name: "runner__submit_read_workloads",
+        arguments: JSON.stringify(bodies.length === 1 ? { allowed: [], forbidden: [], read_scope: missing }
+          : { allowed: [{ id: "orders", description: "Read order lifecycle", plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }],
+            forbidden: [], read_scope: proposalWithVisibleAnswers(request, proposal) }) }] } };
+    });
+    const input = { name: "host_answer_reference", allowedQuestions: ["Read my order lifecycle"], provider: "openai" as const,
+      model: "gpt-5.6-terra", generatedBoundary: h.boundary, egressAcknowledged: true,
+      env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson } };
+    return { h, answer, bodies, requestJson, input };
+  }
+  it.each(["valid", "wrong_revision", "foreign_answer", "foreign_question", "wrong_target", "wrong_original_scope"])(
     "uses an exact host answer reference without asking the model to copy raw words (%s)", async variant => {
-      const boundary = opaqueGeneratedBoundary(); boundary.pack.resources[0]!.label = "Orders";
       const raw = "  Order lifecycle status — 😀 e\u0301. \t ";
-      let saved: OperatorQuestion | undefined;
-      const bodies: string[] = [];
-      const requestJson = vi.fn(async (request) => {
-        bodies.push(JSON.stringify(request.body));
-        const args = !saved ? { clarification_request: { resource: "public.tbl_7", field: "col_2",
-          reason: "Its task meaning is missing.", question: "What does this order stage mean for your task?" } }
-          : { allowed: [{ id: "orders", description: "Read order lifecycle",
-              plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
-            operator_meanings: [{ resource: "public.tbl_7", field: "col_2", answer_reference: {
-              question_id: saved.id, revision: variant === "wrong_revision" ? 2 : saved.revision,
-              answer_id: variant === "foreign_answer" ? randomUUID() : saved.raw_answer!.id } }] };
-        return { status: 200, body: { output: [{ type: "function_call", call_id: `local-${bodies.length}`,
-          name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } };
-      });
-      const clarificationHandler = vi.fn(async (request) => {
-        const q = createOperatorQuestion({ id: randomUUID(), revision: 1, handoff_id: randomUUID(),
-          kind: "attributed_meaning", scope_digest: canonicalJsonDigest("job"), context_digest: canonicalJsonDigest("current"),
-          target: { phase: "read_mapping", resource: request.resource,
-            field: variant === "wrong_target" ? "id" : request.field, outcomes: [] },
-          material: ["Only this task; no authority."], evidence: [], continuation: "read_mapping" });
-        const captured = captureOperatorAnswer(presentOperatorQuestion(q, request.question), raw);
-        saved = confirmOperatorAnswer(proposeOperatorAnswer(captured, { question_id: q.id, revision: 1,
-          answer_id: captured.raw_answer!.id, disposition: "proposed", value: { kind: "attributed_meaning" } }));
-        return { state: "answered" as const, answer: raw };
-      });
-      const input = { name: "host_answer_reference", allowedQuestions: ["Read my order lifecycle"], provider: "openai" as const,
-        model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
-        env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler,
-        operatorQuestions: () => saved ? [saved] : [] };
-      if (variant === "valid") {
-        const result = await generateModelReadWorkload(withDeclaredRoot(input, "public.tbl_7 means orders."));
-        expect(result.analysis.status).toBe("ready"); expect(requestJson).toHaveBeenCalledTimes(2);
-        expect(bodies[1]).toContain(saved!.raw_answer!.id);
-        expect(saved!.raw_answer!.text).toBe(raw);
-      } else await expect(generateModelReadWorkload(withDeclaredRoot(input, "public.tbl_7 means orders."))).rejects.toThrow();
-      expect(clarificationHandler).toHaveBeenCalledOnce();
+      const f = await rawScopeReferenceFixture(raw), before = structuredClone(f.h.boundary);
+      const native = f.h.structuredScope;
+      const adapter = { ...native, answer: async (request: Parameters<NonNullable<typeof native.answer>>[0]) => {
+        const ref = await native.answer!(request);
+        if (!ref) throw new Error("Expected actual captured raw answer");
+        return { ...ref, ...(variant === "wrong_revision" ? { revision: ref.revision + 1 } : {}),
+          ...(variant === "foreign_answer" ? { answer_id: randomUUID() } : {}),
+          ...(variant === "foreign_question" ? { question_id: randomUUID() } : {}) };
+      }, resolveAnswer: (ref: Parameters<typeof native.resolveAnswer>[0], request: Parameters<typeof native.resolveAnswer>[1]) =>
+        native.resolveAnswer(ref, variant === "wrong_target" ? { ...request, requirement_digest: canonicalJsonDigest("different exact requirement") }
+          : variant === "wrong_original_scope" ? { ...request, scope: { ...request.scope, digest: canonicalJsonDigest("different originating scope") } } : request) };
+      try {
+        if (variant === "valid") {
+          const result = await f.h.run(f.input, adapter);
+          expect(result.analysis.status).toBe("ready"); expect(f.requestJson).toHaveBeenCalledTimes(2);
+          const rawQuestion = f.h.state().operator_questions!.find(q => q.raw_answer)!;
+          expect(JSON.stringify(f.bodies[1])).toContain(rawQuestion.raw_answer!.id);
+          expect(result.authority_granted).toBe(false);
+          expect(f.h.state().operator_questions!.find(q => q.id === f.h.state().read?.scope_question_id)?.proposal).toBeDefined();
+        } else {
+          await expect(f.h.run(f.input, adapter)).rejects.toThrow("READ_SCOPE_ANSWER_STALE");
+          expect(f.requestJson).toHaveBeenCalledOnce();
+          expect(f.h.state().read?.analysis_digest).toBeUndefined();
+        }
+        expect(f.answer).toHaveBeenCalledOnce();
+        const cold = await f.h.coldState(); expect(cold.status).toBe("ready");
+        if (cold.status !== "ready") throw new Error("Expected actual saved native history");
+        expect(cold.value.operator_questions!.find(q => q.raw_answer)?.raw_answer?.text).toBe(raw);
+        expect(cold.value.operator_questions!.every(q => !q.confirmation)).toBe(true);
+        expect(f.h.boundary).toEqual(before);
+      } finally { await f.h.cleanup(); }
     });
 
   it.each(["col_2 means the order lifecycle status", "Order lifecycle status"])(
-    "accepts verbatim naming evidence from the answered clarification: %s", async (answer) => {
-      const boundary = opaqueGeneratedBoundary();
-      boundary.pack.resources[0]!.label = "Orders";
-      const before = structuredClone(boundary);
-      const requestJson = vi.fn().mockResolvedValueOnce({ status: 200, body: { output: [{
-        type: "function_call", call_id: "naming_question", name: "runner__submit_read_workloads",
-        arguments: JSON.stringify({ clarification_request: { resource: "public.tbl_7", field: "col_2",
-          reason: "Unknown coded field meaning", question: "What does the selected business detail represent?" } }),
-      }] } }).mockResolvedValue({ status: 200, body: { output: [{
-        type: "function_call", call_id: "answered_mapping", name: "runner__submit_read_workloads",
-        arguments: JSON.stringify({ allowed: [{ id: "orders", description: "Read order lifecycle",
-          plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
-          operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: answer }] }),
-      }] } });
-      const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer }));
-      const result = await generateModelReadWorkload(withDeclaredRoot({ name: "answered_meaning", allowedQuestions: ["Read my order lifecycle"],
-        provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
-        env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler }, "public.tbl_7 means orders."));
-      expect(clarificationHandler).toHaveBeenCalledOnce();
-      expect(requestJson).toHaveBeenCalledTimes(2);
-      expect(result.analysis.status).toBe("ready");
-      expect(boundary).toEqual(before);
-    },
-  );
+    "accepts verbatim naming evidence from the answered clarification: %s", async answer => {
+      const f = await rawScopeReferenceFixture(answer), before = structuredClone(f.h.boundary);
+      try {
+        const result = await f.h.run(f.input);
+        expect(f.answer).toHaveBeenCalledOnce(); expect(f.requestJson).toHaveBeenCalledTimes(2);
+        expect(result.analysis.status).toBe("ready"); expect(f.h.boundary).toEqual(before);
+        expect(result.authority_granted).toBe(false);
+        const state = f.h.state(), raw = state.operator_questions!.find(q => q.raw_answer)!;
+        expect(raw.raw_answer!.text).toBe(answer);
+        expect(state.operator_questions!.every(q => !q.confirmation)).toBe(true);
+        expect(state.operator_questions!.find(q => q.id === state.read?.scope_question_id)?.proposal).toBeDefined();
+      } finally { await f.h.cleanup(); }
+    });
 
   it.each(["model_question", "unanswered_field"])("does not manufacture naming evidence from %s", async (kind) => {
     const boundary = opaqueGeneratedBoundary();

@@ -9,7 +9,7 @@
 9. Full workload808 remains62PASS/88FAIL,0skip:76 direct missing pins,6 unresolved-fixture subjects,6 legacy provenance wrappers; raw report preserved.
 10. Six unresolved subject fixtures1da corrected (6PASS, assertions unchanged); six omission successors912 (MIG137–142)6PASS, actual native records/counts/events.
 11. Headless/long-job MIG143/192 now2PASS; shared existing description-limit guidance restored; b64-read-pending-two.json (independent review pending).
-12. Provenance counterparts require R2 plan: exact q/rev/raw refs prove provenance, not meaning; changed-target valid testimony must remain unconfirmed under real group review.
-13. Currentness pair now2PASS, original stale errors/callcounts unchanged (b64-read-currentness-two.json); next R2 provenance plan + remaining queue.
+12. R2 provenance plan consumed; RP01–04/RP08 now8PASS actual native/raw refs, no confirmed meaning (b64-read-provenance-eight.json); independent review pending.
+13. Currentness pair2PASS original stale/counts; next RP05–07 actual groupedhost changedtarget/readback/currentness and priorYes controls, no initial diff claim.
 14. Final local types show no owned-file errors;4 known other fixture migrations already fixed on Main. No full-suite or delivery acceptance claimed.
 15. Main owns integration/public checks; keep original failures and compact per-group records; no authority/Source/allowance bypasses.

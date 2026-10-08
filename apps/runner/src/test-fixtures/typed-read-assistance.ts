@@ -72,11 +72,11 @@ export async function typedReadAssistanceFixture(request: string, answer: (() =>
   const structuredScope = { protocol: READ_SCOPE_PROTOCOL, current: references,
     answer: answer ? meaning.answerScope : undefined, resolveAnswer: meaning.resolveScopeAnswer };
   return { boundary, structuredScope, state: () => state, coldState: () => readBoundaryAuthoringResumeState(root, input.binding),
-    run: (options: ModelReadWorkloadInput) => withAuthoringGenerationRecovery(async () => {
+    run: (options: ModelReadWorkloadInput, scopeAdapter = structuredScope) => withAuthoringGenerationRecovery(async () => {
       configureAuthoringGenerationRecovery({ available: () => true, read: () => state.generation_recovery,
         current: async () => contextDigest, progress: () => {},
         write: generationRecovery => persist(buildBoundaryAuthoringResumeState({ ...input, previous: state, generationRecovery })) });
-      return generateModelReadWorkload({ ...options, generatedBoundary: boundary, structuredScope,
+      return generateModelReadWorkload({ ...options, generatedBoundary: boundary, structuredScope: scopeAdapter,
         onCheckpoint: async (cp, current, result, completion) => { await checkpoint.persist(cp, current, result, completion);
           await options.onCheckpoint?.(cp, current, result, completion); } });
     }), cleanup: () => fs.rm(root, { recursive: true, force: true }) };

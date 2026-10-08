@@ -1,0 +1,16 @@
+{
+  "base": "3c944be9",
+  "review_contract": "reviewer2-read8/b64-1da9e70d-read-answer-provenance-fixture-adjudication-v1.json read once",
+  "status": "RP01-04/RP08 component8PASS; independent review pending",
+  "before": "Historical six wrappers and failures preserved at3c944be9/full808; old wrong_target fabricated confirmed attributed_meaning is intentionally not reused.",
+  "after": "typed-provenance-eight-after.log:8PASS144filtered",
+  "native": "Ordinary structural review + real producer completion + actual question/raw handoff save/CAS; fake reply selects only emitted refs. Strict wrongrevision/foreignanswer/foreignquestion/wrongrequirementscope controls wrap actual protected callback result, never fabricate stored answers.",
+  "assertions": "Original valid2calls1answer; negatives genuine READ_SCOPE_ANSWER_STALE after1call1answer, no analysis. Exact Unicode/whitespace/cold raw retained; all native q unconfirmed; final valid proposal no authority, candidate unchanged. Two old raw strings retain2calls1answer/ready/candidate assertions.",
+  "remaining": [
+    "RP05 changedtarget actual groupedhost readback/defaultNo/No-cancel/stale/saveACK",
+    "RP06 exact plan/scope privacy controls",
+    "RP07 previousconfirmed changedtarget/exclusion refusal; nooldYes",
+    "Initial before/aftertarget delta not present/not claimed"
+  ],
+  "types": "No owned errors;4 pre-existing external migration errors on isolated branch"
+}
