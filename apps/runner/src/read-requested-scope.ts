@@ -128,7 +128,10 @@ export function exactOnlyReadResourceIds(text: string, availableResourceIds: rea
 
 function readOrientedJobText(jobIntent: string): string {
   const fragments = unquotedRequest(jobIntent)
-    .split(/(?<=[.!?;])\s+|(?:,\s*|\s+)(?:and|but)\s+(?=(?:(?:do\s+not|don't|never|not)\s+)?(?:read|view|inspect|show|list|include)\b)/iu)
+    // Keep nominal Read authority and its explicit exception in the same
+    // clause: splitting "saved job and Read Boundary" loses preservation,
+    // while splitting "Read Boundary but include ..." loses the addition.
+    .split(/(?<=[.!?;])\s+|(?:,\s*|\s+)(?:and|but)\s+(?=(?:(?:do\s+not|don't|never|not)\s+)?(?:read(?!\s+(?:boundary|mapping|revision)\b)|view|inspect|show|list)\b)/iu)
     .flatMap((sentence) => {
       // "Keep the same Read Boundary" names preserved authority, not a
       // request to expose the private verification facts later in the clause.

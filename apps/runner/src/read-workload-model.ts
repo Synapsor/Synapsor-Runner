@@ -491,130 +491,136 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           },
         };
       }
-      // The complete operator request is retained independently of the bounded
-      // routing question. Check real allowed plans, including reviewed related
-      // paths; forbidden examples cannot satisfy a requested public workload.
-      const requestedResources = currentRequestedScope();
-      const requiredResources = requestedResources.required;
-      const allowedResources = new Set(workloadNamingEntries({ allowed: args.allowed }, catalog)
-        .flatMap(entry => isRecord(entry) && isRecord(entry.plan) && typeof entry.plan.resource === "string" ? [entry.plan.resource] : []));
-      const excludedResources = requestedResources.excluded.filter(resource => allowedResources.has(resource));
-      if (excludedResources.length) {
-        workloadValidationBlockers = [`READ_WORKLOAD_EXCLUDED_RESOURCE: Current operator/Source instructions exclude ${excludedResources.join(", ")}. Do not add that access or treat a routing summary as permission.`];
-        return { ok: false, error_code: "READ_WORKLOAD_EXCLUDED_RESOURCE", value: { blockers: workloadValidationBlockers,
-          authority_granted: false, source_query_executed: false, source_database_changed: false } };
-      }
-      const scopeQuestions = requestedScopeQuestions(requestedResources);
-      for (const { alternatives, reason, question } of scopeQuestions) {
-        const answered = activeClarifiedTargets().filter(answer => !answer.field && answer.reason === reason
-          && alternatives.includes(answer.resource) && !isUnknownReadMeaning(answer.answer));
-        const proposed = alternatives.filter(resource => allowedResources.has(resource));
-        if (!answered.length) {
-          if (proposed.length === 1 && readAnswerCount() < MAX_READ_CLARIFICATIONS && !clarificationRequest && !valueRequest) {
-            clarificationRequest = businessRequest({ resource: proposed[0]!, reason, question });
-            return { ok: true, value: { status: "clarification_required_before_mapping", resource: proposed[0],
+      const hostEvidence = hostMeaningsFor(args);
+      const misplacedRootFields = misplacedReadRootFieldIssues(args);
+      // Malformed control fields cannot supply a plan or trigger a business
+      // question. Diagnose their exact pointers through the existing bounded
+      // structural correction before interpreting scope or meaning.
+      if (!misplacedRootFields.length) {
+        // The complete operator request is retained independently of the bounded
+        // routing question. Check real allowed plans, including reviewed related
+        // paths; forbidden examples cannot satisfy a requested public workload.
+        const requestedResources = currentRequestedScope();
+        const requiredResources = requestedResources.required;
+        const allowedResources = new Set(workloadNamingEntries({ allowed: args.allowed }, catalog)
+          .flatMap(entry => isRecord(entry) && isRecord(entry.plan) && typeof entry.plan.resource === "string" ? [entry.plan.resource] : []));
+        const excludedResources = requestedResources.excluded.filter(resource => allowedResources.has(resource));
+        if (excludedResources.length) {
+          workloadValidationBlockers = [`READ_WORKLOAD_EXCLUDED_RESOURCE: Current operator/Source instructions exclude ${excludedResources.join(", ")}. Do not add that access or treat a routing summary as permission.`];
+          return { ok: false, error_code: "READ_WORKLOAD_EXCLUDED_RESOURCE", value: { blockers: workloadValidationBlockers,
+            authority_granted: false, source_query_executed: false, source_database_changed: false } };
+        }
+        const scopeQuestions = requestedScopeQuestions(requestedResources);
+        for (const { alternatives, reason, question } of scopeQuestions) {
+          const answered = activeClarifiedTargets().filter(answer => !answer.field && answer.reason === reason
+            && alternatives.includes(answer.resource) && !isUnknownReadMeaning(answer.answer));
+          const proposed = alternatives.filter(resource => allowedResources.has(resource));
+          if (!answered.length) {
+            if (proposed.length === 1 && readAnswerCount() < MAX_READ_CLARIFICATIONS && !clarificationRequest && !valueRequest) {
+              clarificationRequest = businessRequest({ resource: proposed[0]!, reason, question });
+              return { ok: true, value: { status: "clarification_required_before_mapping", resource: proposed[0],
+                authority_granted: false, source_query_executed: false, source_database_changed: false } };
+            }
+            workloadValidationBlockers = ["READ_WORKLOAD_SCOPE_AMBIGUOUS: The request does not select one inspected resource. Ask about the intended business records rather than guessing or accepting multiple sources."];
+            return { ok: false, error_code: "READ_WORKLOAD_SCOPE_AMBIGUOUS", value: { blockers: workloadValidationBlockers,
               authority_granted: false, source_query_executed: false, source_database_changed: false } };
           }
-          workloadValidationBlockers = ["READ_WORKLOAD_SCOPE_AMBIGUOUS: The request does not select one inspected resource. Ask about the intended business records rather than guessing or accepting multiple sources."];
-          return { ok: false, error_code: "READ_WORKLOAD_SCOPE_AMBIGUOUS", value: { blockers: workloadValidationBlockers,
+          if (!proposed.length || proposed.some(resource => !answered.some(answer => answer.resource === resource))) {
+            workloadValidationBlockers = ["READ_WORKLOAD_SCOPE_MAPPING_CHANGED: The mapping does not match the retained resource-specific business answer. Keep that answer and submit the matching mapping or ask a new exact question."];
+            return { ok: false, error_code: "READ_WORKLOAD_SCOPE_MAPPING_CHANGED", value: { blockers: workloadValidationBlockers,
+              authority_granted: false, source_query_executed: false, source_database_changed: false } };
+          }
+        }
+        const missingResources = requiredResources.filter(resource => !allowedResources.has(resource));
+        if (missingResources.length) {
+          workloadValidationBlockers = [`READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED: The retained operator request includes ${missingResources.join(", ")}; submit complete allowed workloads or retain the missing business access pending. A routing summary cannot withdraw it.`];
+          return { ok: false, error_code: "READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED", value: { blockers: workloadValidationBlockers,
             authority_granted: false, source_query_executed: false, source_database_changed: false } };
         }
-        if (!proposed.length || proposed.some(resource => !answered.some(answer => answer.resource === resource))) {
-          workloadValidationBlockers = ["READ_WORKLOAD_SCOPE_MAPPING_CHANGED: The mapping does not match the retained resource-specific business answer. Keep that answer and submit the matching mapping or ask a new exact question."];
-          return { ok: false, error_code: "READ_WORKLOAD_SCOPE_MAPPING_CHANGED", value: { blockers: workloadValidationBlockers,
+        const exactScope = exactOnlyReadResourceIds(originalNamingSources.join("\n"), catalog.resources.map(resource => resource.id));
+        const outsideScope = exactScope && [...allowedResources].filter(resource => !exactScope.includes(resource));
+        if (outsideScope?.length) {
+          workloadValidationBlockers = [`READ_WORKLOAD_UNREQUESTED_RESOURCE: The operator requested only ${exactScope!.join(", ")}; ${outsideScope.join(", ")} is outside that exact request. Routing prose cannot expand it.`];
+          return { ok: false, error_code: "READ_WORKLOAD_UNREQUESTED_RESOURCE", value: { blockers: workloadValidationBlockers,
             authority_granted: false, source_query_executed: false, source_database_changed: false } };
         }
-      }
-      const missingResources = requiredResources.filter(resource => !allowedResources.has(resource));
-      if (missingResources.length) {
-        workloadValidationBlockers = [`READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED: The retained operator request includes ${missingResources.join(", ")}; submit complete allowed workloads or retain the missing business access pending. A routing summary cannot withdraw it.`];
-        return { ok: false, error_code: "READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED", value: { blockers: workloadValidationBlockers,
-          authority_granted: false, source_query_executed: false, source_database_changed: false } };
-      }
-      const exactScope = exactOnlyReadResourceIds(originalNamingSources.join("\n"), catalog.resources.map(resource => resource.id));
-      const outsideScope = exactScope && [...allowedResources].filter(resource => !exactScope.includes(resource));
-      if (outsideScope?.length) {
-        workloadValidationBlockers = [`READ_WORKLOAD_UNREQUESTED_RESOURCE: The operator requested only ${exactScope!.join(", ")}; ${outsideScope.join(", ")} is outside that exact request. Routing prose cannot expand it.`];
-        return { ok: false, error_code: "READ_WORKLOAD_UNREQUESTED_RESOURCE", value: { blockers: workloadValidationBlockers,
-          authority_granted: false, source_query_executed: false, source_database_changed: false } };
-      }
-      const requestedTargets = explicitReadTaskTargets(originalNamingSources.join("\n"), catalog);
-      const actualDependencies = workloadNamingEntries(args, catalog).flatMap(entry => isRecord(entry) && isRecord(entry.plan)
-        ? workloadPlanFields(entry.plan).map(field => JSON.stringify({ resource: (entry.plan as Record<string, unknown>).resource, field })) : []);
-      const missingTarget = requestedTargets.find(target => !actualDependencies.includes(JSON.stringify(target)));
-      if (missingTarget) {
-        workloadValidationBlockers = [`READ_WORKLOAD_REQUIRED_TASK_FIELD_OMITTED: The operator explicitly requested ${missingTarget.resource}.${missingTarget.field}; the submitted plan omitted it. Preserve that requirement and submit a complete valid mapping or retain it pending.`];
-        return { ok: false, error_code: "READ_WORKLOAD_REQUIRED_TASK_FIELD_OMITTED", value: { blockers: workloadValidationBlockers,
-          authority_granted: false, source_query_executed: false, source_database_changed: false } };
-      }
-      const hostEvidence = hostMeaningsFor(args);
-      const conflictTarget = workloadNamingEntries(args, catalog).flatMap(entry => isRecord(entry) && isRecord(entry.plan) && typeof entry.plan.resource === "string"
-        ? [{ resource: entry.plan.resource }, ...workloadPlanFields(entry.plan).map(field => ({ resource: (entry.plan as Record<string, unknown>).resource as string, field }))] : [])
-        .find(target => meaningConflicts.has(JSON.stringify(target)));
-      if (conflictTarget) {
-        workloadValidationBlockers = ["READ_WORKLOAD_MEANING_CONFLICT: Current Source definitions disagree. Preserve both; no model claim establishes precedence."];
-        if (readAnswerCount() < MAX_READ_CLARIFICATIONS && !clarificationRequest && !valueRequest) {
-          clarificationRequest = { ...conflictTarget, reason: "Current policy statements give different meanings for this exact field; no reviewed precedence was established.",
-            question: "The current policy gives different meanings for this field. What should it represent for this task? Your answer will be recorded as a new interpretation; the original statements stay in history." };
-          return { ok: true, value: { status: "operator_interpretation_pending", finding: { kind: "conflicting_meaning", target: conflictTarget },
+        const requestedTargets = explicitReadTaskTargets(originalNamingSources.join("\n"), catalog);
+        const actualDependencies = workloadNamingEntries(args, catalog).flatMap(entry => isRecord(entry) && isRecord(entry.plan)
+          ? workloadPlanFields(entry.plan).map(field => JSON.stringify({ resource: (entry.plan as Record<string, unknown>).resource, field })) : []);
+        const missingTarget = requestedTargets.find(target => !actualDependencies.includes(JSON.stringify(target)));
+        if (missingTarget) {
+          workloadValidationBlockers = [`READ_WORKLOAD_REQUIRED_TASK_FIELD_OMITTED: The operator explicitly requested ${missingTarget.resource}.${missingTarget.field}; the submitted plan omitted it. Preserve that requirement and submit a complete valid mapping or retain it pending.`];
+          return { ok: false, error_code: "READ_WORKLOAD_REQUIRED_TASK_FIELD_OMITTED", value: { blockers: workloadValidationBlockers,
             authority_granted: false, source_query_executed: false, source_database_changed: false } };
         }
-        return { ok: false, error_code: "READ_WORKLOAD_MEANING_CONFLICT", value: { blockers: workloadValidationBlockers,
-          authority_granted: false, source_query_executed: false, source_database_changed: false } };
-      }
-      const effectiveMeanings = [...suppliedMeanings, ...hostEvidence.map(e => ({ resource: e.resource, ...(e.field ? { field: e.field } : {}), operator_quote: e.reference.text }))];
-      const unresolvedOpaque = opaqueWorkloadReferences(args, catalog, activeClarifiedTargets(), effectiveMeanings);
-      if (unresolvedOpaque.length) {
-        opaqueGuessBlockers = unresolvedOpaque;
-        const interceptedClarification = readAnswerCount() < MAX_READ_CLARIFICATIONS
-          ? opaqueWorkloadClarificationRequest(args, catalog, activeClarifiedTargets(), effectiveMeanings)
-          : undefined;
-        if (interceptedClarification && !clarificationRequest && !valueRequest) {
-          clarificationRequest = businessRequest(interceptedClarification);
+        const conflictTarget = workloadNamingEntries(args, catalog).flatMap(entry => isRecord(entry) && isRecord(entry.plan) && typeof entry.plan.resource === "string"
+          ? [{ resource: entry.plan.resource }, ...workloadPlanFields(entry.plan).map(field => ({ resource: (entry.plan as Record<string, unknown>).resource as string, field }))] : [])
+          .find(target => meaningConflicts.has(JSON.stringify(target)));
+        if (conflictTarget) {
+          workloadValidationBlockers = ["READ_WORKLOAD_MEANING_CONFLICT: Current Source definitions disagree. Preserve both; no model claim establishes precedence."];
+          if (readAnswerCount() < MAX_READ_CLARIFICATIONS && !clarificationRequest && !valueRequest) {
+            clarificationRequest = { ...conflictTarget, reason: "Current policy statements give different meanings for this exact field; no reviewed precedence was established.",
+              question: "The current policy gives different meanings for this field. What should it represent for this task? Your answer will be recorded as a new interpretation; the original statements stay in history." };
+            return { ok: true, value: { status: "operator_interpretation_pending", finding: { kind: "conflicting_meaning", target: conflictTarget },
+              authority_granted: false, source_query_executed: false, source_database_changed: false } };
+          }
+          return { ok: false, error_code: "READ_WORKLOAD_MEANING_CONFLICT", value: { blockers: workloadValidationBlockers,
+            authority_granted: false, source_query_executed: false, source_database_changed: false } };
+        }
+        const effectiveMeanings = [...suppliedMeanings, ...hostEvidence.map(e => ({ resource: e.resource, ...(e.field ? { field: e.field } : {}), operator_quote: e.reference.text }))];
+        const unresolvedOpaque = opaqueWorkloadReferences(args, catalog, activeClarifiedTargets(), effectiveMeanings);
+        if (unresolvedOpaque.length) {
+          opaqueGuessBlockers = unresolvedOpaque;
+          const interceptedClarification = readAnswerCount() < MAX_READ_CLARIFICATIONS
+            ? opaqueWorkloadClarificationRequest(args, catalog, activeClarifiedTargets(), effectiveMeanings)
+            : undefined;
+          if (interceptedClarification && !clarificationRequest && !valueRequest) {
+            clarificationRequest = businessRequest(interceptedClarification);
+            return {
+              ok: true,
+              value: {
+                status: "clarification_required_before_mapping",
+                resource: interceptedClarification.resource,
+                ...(interceptedClarification.field ? { field: interceptedClarification.field } : {}),
+                blockers: unresolvedOpaque,
+                source_query_executed: false,
+                authority_granted: false,
+                source_database_changed: false,
+              },
+            };
+          }
+          repeatedAssistanceRequest = clarificationResolved;
           return {
-            ok: true,
+            ok: false,
             value: {
-              status: "clarification_required_before_mapping",
-              resource: interceptedClarification.resource,
-              ...(interceptedClarification.field ? { field: interceptedClarification.field } : {}),
+              error_code: "READ_WORKLOAD_OPAQUE_METADATA_CLARIFICATION_REQUIRED",
+              message: "Runner refuses guessed business meaning for clearly opaque reviewed identifiers.",
               blockers: unresolvedOpaque,
-              source_query_executed: false,
               authority_granted: false,
+              source_query_executed: false,
               source_database_changed: false,
             },
+            error_code: "READ_WORKLOAD_OPAQUE_METADATA_CLARIFICATION_REQUIRED",
           };
         }
-        repeatedAssistanceRequest = clarificationResolved;
-        return {
-          ok: false,
-          value: {
-            error_code: "READ_WORKLOAD_OPAQUE_METADATA_CLARIFICATION_REQUIRED",
-            message: "Runner refuses guessed business meaning for clearly opaque reviewed identifiers.",
-            blockers: unresolvedOpaque,
-            authority_granted: false,
-            source_query_executed: false,
-            source_database_changed: false,
-          },
-          error_code: "READ_WORKLOAD_OPAQUE_METADATA_CLARIFICATION_REQUIRED",
-        };
-      }
-      opaqueGuessBlockers = [];
-      const approvedValueIssue = approvedValueContext
-        ? approvedValueContextIssue(args, approvedValueContext)
-        : undefined;
-      if (approvedValueIssue) {
-        workloadValidationBlockers = [approvedValueIssue];
-        return {
-          ok: false,
-          value: {
+        opaqueGuessBlockers = [];
+        const approvedValueIssue = approvedValueContext
+          ? approvedValueContextIssue(args, approvedValueContext)
+          : undefined;
+        if (approvedValueIssue) {
+          workloadValidationBlockers = [approvedValueIssue];
+          return {
+            ok: false,
+            value: {
+              error_code: "READ_WORKLOAD_APPROVED_VALUE_UNUSED",
+              message: approvedValueIssue,
+              authority_granted: false,
+              source_query_executed: false,
+              source_database_changed: false,
+            },
             error_code: "READ_WORKLOAD_APPROVED_VALUE_UNUSED",
-            message: approvedValueIssue,
-            authority_granted: false,
-            source_query_executed: false,
-            source_database_changed: false,
-          },
-          error_code: "READ_WORKLOAD_APPROVED_VALUE_UNUSED",
-        };
+          };
+        }
       }
       const candidateWorkload: ReadWorkloadSet = {
         schema_version: READ_WORKLOAD_SET_VERSION,
@@ -636,8 +642,9 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           generatedBoundary: mappingBoundary,
           now: candidateAnalysisClock,
         });
-        if (candidateAnalysis.status === "blocked") {
-          candidateAnalysis.blockers = [...misplacedReadRootFieldIssues(args), ...candidateAnalysis.blockers];
+        if (misplacedRootFields.length) {
+          candidateAnalysis.status = "blocked";
+          candidateAnalysis.blockers = [...misplacedRootFields, ...candidateAnalysis.blockers];
         }
         const relatedOnlyRoots = candidateWorkload.allowed.flatMap(entry =>
           catalog.resources.some(resource => resource.id === entry.plan.resource && resource.relationship_only)

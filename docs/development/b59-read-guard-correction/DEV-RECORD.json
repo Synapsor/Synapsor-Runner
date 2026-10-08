@@ -1,0 +1,42 @@
+{
+  "status": "TESTED_PENDING_INDEPENDENT_REVIEW",
+  "utc": "2026-10-08T00:56:07.082241+00:00",
+  "base": "284edb314d76bf1e77b0bbc606574a3856e7065d",
+  "branch": "codex/b59-read-guard-correction-20261008",
+  "test_fixture": "Existing unchanged boundary-job-read-preservation + read-workload-misplaced-guidance; controlled local responses from actual model-visible original wording/current metadata. New transparent scope unit controls; no independent private oracle.",
+  "cause_assignment": {
+    "B59_preservation": 2,
+    "B59_misplaced_structure": 2
+  },
+  "failing_before": "Original two files:4FAIL/15PASS, no skipped, read-guards-before.log; first practice full unchanged preserved separately.",
+  "commands": [
+    "isolatedHOME/TMP; vitest run boundary-job-read-preservation read-workload-misplaced-guidance read-requested-scope boundary-requested-read-scope maxWorkers=1/minWorkers=1 testTimeout=20000/hookTimeout=20000",
+    "corepack pnpm typecheck",
+    "vitest read-workload-model + boundary-job-model affected regressions same settings"
+  ],
+  "results": {
+    "focused": "67PASS/0FAIL/0SKIP",
+    "types": "exit0",
+    "broader": "198PASS/0FAIL/0SKIP in read-workload-model132 and boundary-job-model66"
+  },
+  "changes": [
+    "Preserve nominal Read Boundary/mapping/revision context when splitting conjunctions; keep explicit include/expose exception in same Read clause. Exact required resource guard remains a lower bound, not permission.",
+    "Misplaced root controls run existing strict blocked analysis before semantic scope/meaning; exact safe pointers in bounded correction, no value relocation/echo/question/accepted authority. Subsequent valid correction re-enters every scope/private/naming guard."
+  ],
+  "protected_contracts": [
+    "Original call-count/refusal/private-field/non-echo/state-preservation assertions unchanged.",
+    "Structural invalidity is never authority or accepted clarification.",
+    "Original full operator request/current Source definitions retained; short routing summary cannot narrow coverage.",
+    "No source writes/model network/activation/project mutation in this test group."
+  ],
+  "native_isolation": "/var/tmp/synapsor-main-b59-read1648-owned; owned0700 HOME/TMP, tmp/.git stop marker + decoy parent, private dependencies with distinct regular file inodes.",
+  "evidence_root": "/var/tmp/synapsor-main-b59-read1648-owned/evidence",
+  "independent": "B51 Independent Reviewer 2 pre-seals different-schema/wording and structural variants; NOT_RUN until tested immutable pin.",
+  "open": [
+    "Independent variants/static acceptance",
+    "Six original practice affected files on combined corrected preview",
+    "Shared lostCOMMIT impact and accepted necessary repair before composed runtime",
+    "Final combined settled gates and installed qualification"
+  ],
+  "paid": "CLOSED; zero provider/calls/reservations"
+}

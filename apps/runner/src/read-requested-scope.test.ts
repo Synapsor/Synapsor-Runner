@@ -70,3 +70,22 @@ describe("attributed business phrase versus one implicit basename", () => {
     expect(scope.required).toEqual(["archive.cases"]);
   });
 });
+
+// Clause boundaries must preserve the operator's distinction between keeping
+// reviewed authority and requesting additional access; neither grants access.
+describe("preserved authority and explicit Read additions", () => {
+  const resources = ["atelier.orders", "atelier.checks"];
+  it.each([
+    "Keep the same saved job and Read Boundary, private atelier.checks verification and every Action guard unchanged.",
+    "Retain the saved job and Read mapping with private atelier.checks checks unchanged.",
+  ])("does not turn nominal authority into requested access: %s", text => {
+    expect(requestedReadResourceIds(text, resources)).toEqual([]);
+  });
+  it.each([
+    "Keep the same Read Boundary but include atelier.checks.",
+    "Keep the saved job and Read mapping but also expose atelier.checks.",
+    "Keep the same Read Boundary and show atelier.checks.",
+  ])("retains a genuine explicit addition: %s", text => {
+    expect(requestedReadResourceIds(text, resources)).toEqual(["atelier.checks"]);
+  });
+});
