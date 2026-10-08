@@ -2107,6 +2107,8 @@ function parseReadValueRequest(
   value: Record<string, unknown>,
   catalog: ReturnType<typeof readWorkloadCatalog>,
 ): ModelReadValueRequest {
+  if (Object.keys(value).some(key => !["resource", "field", "reason", "question"].includes(key)))
+    throw new Error("value_request accepts only one exact resource, field, reason and question; model-supplied consent is invalid.");
   const resource = boundedText(value.resource, "value_request.resource", 256);
   const field = boundedText(value.field, "value_request.field", 256);
   const catalogResource = catalog.resources.find((candidate) => candidate.id === resource);

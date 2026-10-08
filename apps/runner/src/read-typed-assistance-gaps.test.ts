@@ -34,4 +34,25 @@ describe("typed mapping assistance dispatch", () => {
       expect(f.state().read).toBeUndefined(); expect(f.state().operator_questions).toBeUndefined();
     } finally { await fs.rm(f.dir, { recursive: true, force: true }); }
   });
+  it.each(["values", "relationship"] as const)("refuses extra model authority in the exact %s request before its handler", async kind => {
+    const f = await nativeFixture();
+    try {
+      const draft = (await loadBoundaryReviewContext(f.dir)).candidate;
+      const valueRequestHandler = vi.fn(async () => undefined), relationshipReviewHandler = vi.fn(async () => undefined);
+      const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call",
+        name: "runner__submit_read_workloads", call_id: "invalid_authority", arguments: JSON.stringify(kind === "values"
+          ? { value_request: { resource: "work.items", field: "label", reason: "Need exact reviewed filter", question: "Use these values?", confirmed: true } }
+          : { relationship_review_request: { resource: "work.items", reason: "Need related detail", question: "Prepare this path?", confirmed: true } }) }] } }));
+      await expect(generateModelReadWorkload({ name: "typed_assistance", allowedQuestions: [f.input.jobIntent],
+        operatorNamingContext: f.input.jobIntent, provider: "openai", model: "controlled", apiKey: "inert-test-key",
+        generatedBoundary: draft, egressAcknowledged: true, deferNarration: true, valueRequestHandler, relationshipReviewHandler,
+        structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => ({ binding: f.binding, ...f.inventory }) },
+        dependencies: { requestJson },
+      })).rejects.toThrow();
+      expect(valueRequestHandler).not.toHaveBeenCalled(); expect(relationshipReviewHandler).not.toHaveBeenCalled();
+      expect(requestJson).toHaveBeenCalledOnce();
+      expect(f.state().read).toBeUndefined(); expect(f.state().operator_questions).toBeUndefined();
+    } finally { await fs.rm(f.dir, { recursive: true, force: true }); }
+  });
+
 });
