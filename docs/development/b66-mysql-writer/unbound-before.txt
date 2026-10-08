@@ -1,0 +1,49 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b66-mysql-writer
+
+(node:1082044) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/writer-provisioning.test.ts (14 tests | 1 failed | 13 skipped) 12ms
+   ↓ dedicated writer provisioning handoff > records missing FORCE RLS and explains administrator review without changing it in grants
+   ↓ dedicated writer provisioning handoff > keeps reader DATABASE_URL separate from failed writer DATABASE_URL in the administrator recovery
+   ↓ dedicated writer provisioning handoff > keeps reader CUSTOM_READ_URL separate from failed writer CUSTOM_READ_URL in the administrator recovery
+   ↓ dedicated writer provisioning handoff > keeps reader SYNAPSOR_DATABASE_WRITE_URL separate from failed writer SYNAPSOR_DATABASE_WRITE_URL in the administrator recovery
+   ↓ dedicated writer provisioning handoff > keeps reader CUSTOM_READ_URL separate from failed writer CUSTOM_WRITE_URL in the administrator recovery
+   ↓ dedicated writer provisioning handoff > runs the explicitly selected telecom example separately from generic provisioning (consume=false)
+   ↓ dedicated writer provisioning handoff > runs the explicitly selected telecom example separately from generic provisioning (consume=true)
+   ↓ dedicated writer provisioning handoff > derives only the reviewed effect columns and private-lock identity from the posture assessment
+   ↓ dedicated writer provisioning handoff > quotes forged relation and column identifiers rather than interpolating executable SQL
+   ↓ dedicated writer provisioning handoff > creates a new NOLOGIN role without granting membership in or changing the shared writer
+   ↓ dedicated writer provisioning handoff > exports private unique handoffs without credentials or model content and preserves administrator edits
+   ↓ MySQL administrator handoff > exports exact effect UPDATE columns and the parent identity lock grant
+   × MySQL administrator handoff > refuses unbound MySQL effect UPDATE columns instead of emitting a broader grant 11ms
+     → expected [Function] to throw an error
+   ↓ MySQL administrator handoff > quotes exact MySQL identifiers and refuses incompatible RLS requirements
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/writer-provisioning.test.ts > MySQL administrator handoff > refuses unbound MySQL effect UPDATE columns instead of emitting a broader grant
+AssertionError: expected [Function] to throw an error
+
+- Expected: 
+null
+
++ Received: 
+undefined
+
+ ❯ apps/runner/src/writer-provisioning.test.ts:211:44
+    209|   it("refuses unbound MySQL effect UPDATE columns instead of emitting …
+    210|     const p = mysqlPlan(); p.relations[0]!.update_columns = [];
+    211|     expect(() => writerProvisioningSql(p)).toThrow("exact reviewed UPD…
+       |                                            ^
+    212|     p.relations[0]!.lock_column = undefined;
+    213|     expect(() => writerProvisioningSql(p)).toThrow("exact reviewed UPD…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 13 skipped (14)
+   Start at  13:19:44
+   Duration  1.77s (transform 925ms, setup 0ms, collect 1.57s, tests 12ms, environment 0ms, prepare 40ms)
+

@@ -1,11 +1,60 @@
 {
   "base": "38eb51dc67e0d7054414840995c6288dcf52625a",
+  "head": "e980b85450f1354a0d3af3de6a5c18dcd5c2979c",
+  "failing_before": "3639788f646ec3bee93cc1abd630170c746c8ed6",
   "branch": "codex/b66-mysql-writer-20261008",
-  "checkpoint": "failing-before; product unchanged",
-  "command": "B66_MYSQL_ADMIN_URL=<owned ephemeral credential> HOME=<owned home> TMPDIR=<owned tmp> node node_modules/vitest/vitest.mjs run apps/runner/src/worker-policy-mysql-lock.live.test.ts --maxWorkers=1 --minWorkers=1 --testTimeout=30000",
-  "results": "Native narrow customer_id UPDATE successfully locks c1; product then returns writer_excess_relation_privilege instead of accepting exact reviewed lock authority.",
-  "evidence": "native-before.log; private raw evidence and preserved own DB /var/tmp/synapsor-b66-owned-20261008",
-  "verdict": "FAIL reproduced before product patch; no public execution or business-invariant acceptance claimed",
-  "planned_inventory": ["packages/schema-inspector/src/index.ts", "packages/schema-inspector/src/index.test.ts", "packages/schema-inspector/src/mysql-column-privileges.test.ts", "apps/runner/src/writer-provisioning.ts", "apps/runner/src/writer-provisioning.test.ts", "apps/runner/src/worker-policy-mysql-lock.live.test.ts", "docs/development/b66-mysql-writer/*"],
-  "openitems": ["Exact MySQL column grant parser and posture", "MySQL narrow administrator export", "Native negative controls and PostgreSQL comparison", "Independent R2 review", "Main public UI integration and B65 tester rerun"]
+  "commands": {
+    "install": "corepack pnpm install --offline --frozen-lockfile",
+    "build": "HOME=<owned> TMPDIR=<owned> node node_modules/typescript/bin/tsc -b --pretty false",
+    "native": "B66_MYSQL_ADMIN_URL=<owned credential> B66_POSTGRES_ADMIN_URL=<owned credential> HOME=<owned> TMPDIR=<owned> node node_modules/vitest/vitest.mjs run apps/runner/src/worker-policy-mysql-lock.live.test.ts --maxWorkers=1 --minWorkers=1 --testTimeout=30000",
+    "focused": "node node_modules/vitest/vitest.mjs run packages/schema-inspector/src/index.test.ts packages/schema-inspector/src/mysql-column-privileges.test.ts apps/runner/src/writer-provisioning.test.ts apps/runner/src/worker-policy-insert-lock.test.ts apps/runner/src/atomic-review.test.ts --maxWorkers=1 --minWorkers=1",
+    "ui_generator": "NODE_OPTIONS=--require=<owned>/preserve.cjs HOME=<owned> TMPDIR=<owned> node node_modules/vitest/vitest.mjs run apps/runner/src/verified-action-execution-review.test.ts apps/runner/src/writer-provisioning.test.ts --maxWorkers=1 --minWorkers=1"
+  },
+  "servers": {
+    "mysql": "8.4.11",
+    "postgres": "17.11"
+  },
+  "results": {
+    "native_before": "FAIL: narrow column UPDATE executes native lock; assessor returns writer_excess_relation_privilege",
+    "native_after": "2 PASS, 0 FAIL, 0 SKIP; MySQL+PostgreSQL separate proof, generated MySQL SQL applied to fresh account then inspected and locked",
+    "negative_controls": "Missing lock privilege, table-wide parent UPDATE, extra column, unreviewed table refused in both engines. Malformed syntax/roles/wildcard-column/GRANT OPTION unit controls preserved.",
+    "focused": "73 PASS at first patch; source inspector unchanged since that run",
+    "ui_before": "1 FAIL, 24 filtered: MySQL screen incorrectly emitted NOLOGIN/RLS",
+    "unbound_before": "1 FAIL, 13 filtered: generator accepted missing effect UPDATE columns",
+    "ui_generator_final": "40 PASS, 0 FAIL, 0 SKIP after both corrections",
+    "typecheck": "exit 0; full tsc -b",
+    "diff_check": "exit 0"
+  },
+  "design": "Use existing RelationRolePosture.column_privileges; preserve case/exact field unions, never mark a column UPDATE as relation UPDATE. Existing semantic assessor admits only reviewed effect fields and lock identity. No worker-policy or RLS relaxation. MySQL admin export creates a locked exact-host account, prints exact narrow grants on actual recovery screen, preserves separate activation and live verification.",
+  "receipt_contract": "Only the exact selected receipt_setup relation with the existing SELECT/INSERT/UPDATE contract and no effect/lock/row-scope fields may retain relation UPDATE. No business UPDATE is inferred from empty columns, even with a lock key. Source contract is worker-policy.ts source_db/precreated requirements. Unknown/unbound business columns throw.",
+  "inventory": [
+    "apps/runner/src/verified-action-execution-review.test.ts",
+    "apps/runner/src/verified-action-review.ts",
+    "apps/runner/src/worker-policy-mysql-lock.live.test.ts",
+    "apps/runner/src/writer-provisioning.test.ts",
+    "apps/runner/src/writer-provisioning.ts",
+    "packages/schema-inspector/src/index.test.ts",
+    "packages/schema-inspector/src/index.ts",
+    "packages/schema-inspector/src/mysql-column-privileges.test.ts"
+  ],
+  "private_runtime": "/var/tmp/synapsor-b66-owned-20261008; mode 0700 HOME/TMP, own Docker ports/data. Native DBs and raw evidence retained. Initial ordinary unit tests used their existing teardown; subsequent UI/generator temp fixtures retained with scoped preservation preload.",
+  "resources": "Dedicated slot 4, max 1 worker; available RAM 18-19 GiB and disk 73-74 GiB before runs. Native containers stopped after finite checks; storage retained.",
+  "verdict": "IMPLEMENTER CHECKS PASS; PENDING INDEPENDENT R2. No public execution, MySQL 30/40 race, or business invariant acceptance claimed.",
+  "openitems": [
+    "R2 independent presealed review at stable product pin",
+    "Main integration including any boundary-commands hook adoption",
+    "B65 Tester public MySQL setup and 30/40 race on reviewed composition; no Tester resources modified"
+  ],
+  "manifest": {
+    "native-before.txt": "b53533ca7aed2adada3dc8a0f8293ee288021461bf2fc0b5f415836b24c3055c",
+    "native-after-v1.txt": "d92e1f174c22798eb2fc08a98b77935c36f6807aa364c631a4cdb3137dd17315",
+    "native-after-v2.txt": "04f873ffd09b8f6c158a638d3d838076f43f573ef801283026d392d3a7ff41e9",
+    "native-final.txt": "5458848603973fea055ae6c8624389ea4acb2c361f2f72496184be66018665da",
+    "focused-v1.txt": "cf2edaec88f2dc16db511f2cf540460911eaebd1caf0deb989609acccb0476f2",
+    "ui-before.txt": "6d29b4e3d13638282c51dd961f175e75639e108db38687b780de10d1505d9374",
+    "unbound-before.txt": "3fe485a2a4e26316fe04d567497ffcdc7f3c4541ebc4cbb86e58986aca9c485b",
+    "ui-generator-after.txt": "5fb4df1565410ad59bbc45839247e55c13fac3f6ff73a78a6a0b881e5aa42524",
+    "ui-generator-final.txt": "4fc94149e8944b5d3f35aa48acd8c28de18031c4a2437e82eede66df26a3ee41",
+    "typecheck-final-v3.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
 }

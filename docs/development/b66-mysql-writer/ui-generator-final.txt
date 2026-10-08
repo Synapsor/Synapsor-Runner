@@ -1,0 +1,15 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b66-mysql-writer
+
+(node:1084744) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/writer-provisioning.test.ts (15 tests) 356ms
+(node:1084916) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/verified-action-execution-review.test.ts (25 tests) 56ms
+
+ Test Files  2 passed (2)
+      Tests  40 passed (40)
+   Start at  13:21:22
+   Duration  5.59s (transform 2.85s, setup 0ms, collect 4.83s, tests 412ms, environment 1ms, prepare 82ms)
+

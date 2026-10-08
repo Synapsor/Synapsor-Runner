@@ -1,0 +1,13 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b66-mysql-writer
+
+(node:1083491) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/worker-policy-mysql-lock.live.test.ts (2 tests) 794ms
+   ✓ B66 native MySQL exact lock-column writer authority > admits reviewed lock UPDATE and rejects table-wide, extra-column and extra-table authority  556ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  13:20:40
+   Duration  3.16s (transform 1.33s, setup 0ms, collect 2.19s, tests 794ms, environment 0ms, prepare 38ms)
+

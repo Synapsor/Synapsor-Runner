@@ -1,0 +1,65 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b66-mysql-writer
+
+(node:1081478) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/verified-action-execution-review.test.ts (25 tests | 1 failed | 24 skipped) 17ms
+   ↓ guided execution recovery > asks for an explicit writer name when the generic reference is absent, without choosing another credential
+   ↓ guided execution recovery > defers without a credential check, failed-check record or activation when no default is selected ({"answer":""})
+   ↓ guided execution recovery > defers without a credential check, failed-check record or activation when no default is selected ({"generic":"","answer":"  "})
+   ↓ guided execution recovery > defers without a credential check, failed-check record or activation when no default is selected ({"generic":"   ","answer":""})
+   ↓ guided execution recovery > defers without a credential check, failed-check record or activation when no default is selected ({})
+   ↓ guided execution recovery > retains the configured generic reference on Enter and still checks credentials before consent
+   ↓ guided execution recovery > offers the action-specific repaired connection before a historical shared default, without authorizing it
+   ↓ guided execution recovery > does not offer execution consent when repaired RLS has made the saved Read contract stale
+   ↓ guided execution recovery > keeps a rejected reader selection visible and offers dedicated writer repair without consent
+   ↓ guided execution recovery > uses only the outcome's saved writer and identity as reverified defaults (retained_worker)
+   ↓ guided execution recovery > uses only the outcome's saved writer and identity as reverified defaults (unpinned_worker)
+   ↓ guided execution recovery > uses only the outcome's saved writer and identity as reverified defaults (missing_environment)
+   ↓ guided execution recovery > does not bypass a saved custom writer's missing-credential check on Enter
+   ↓ guided execution recovery > does not guess a connection when saved review defaults cannot be validated
+   ↓ guided execution recovery > rechecks a corrected writer in the same conversation, retaining separate execution consent
+   ↓ guided execution recovery > does not require an unrelated revoked Read to review execution for a current outcome
+   ↓ guided execution recovery > keeps a failed prerequisite inspectable and pauses without activating or retrying implicitly
+   ↓ guided execution recovery > uses the configured writer without retyping its variable; checking is separate from enabling
+   ↓ guided execution recovery > names each pending outcome when moving between writer reviews without enabling either
+   ↓ guided execution recovery > shows a short verified cause, complete grouped requirements, and no implicit retry on pause
+   ↓ guided execution recovery > exports an administrator plan and returns to the same failed review without a writer recheck (posture)
+   ↓ guided execution recovery > exports an administrator plan and returns to the same failed review without a writer recheck (connection_unavailable)
+   × guided execution recovery > shows engine-correct MySQL administrator instructions with the exact narrow lock grant 15ms
+     → expected 'Administrator handoff: /var/tmp/synap…' not to match /NOLOGIN|RLS/
+   ↓ guided execution recovery > exports complete administrator instructions before a writer exists, then resumes the same decision (new)
+   ↓ guided execution recovery > exports complete administrator instructions before a writer exists, then resumes the same decision (saved_missing)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/verified-action-execution-review.test.ts > guided execution recovery > shows engine-correct MySQL administrator instructions with the exact narrow lock grant
+AssertionError: expected 'Administrator handoff: /var/tmp/synap…' not to match /NOLOGIN|RLS/
+
+- Expected: 
+/NOLOGIN|RLS/
+
++ Received: 
+"Administrator handoff: /var/tmp/synapsor-b66-owned-20261008/tmp/synapsor-execution-review-8Wobsj/.synapsor/writer-handoffs/review-HNL1Km
+Review README.md, requirements.json and grants.sql with your database administrator.
+Review grants.sql for the exact dedicated MySQL account and column grants. Live writer verification is still required.
+Keep the saved read connection unchanged; configure the dedicated writer in MYSQL_WRITER. Never replace the reader with the restricted writer.
+The new role starts NOLOGIN. Scoped policies and helper access still need review; do not reuse or revoke the shared writer.
+If RLS changes, resume the same start command through the reader with --rescan and revalidate the saved Read/Action job. Otherwise recheck the separate writer here. This export changes no authority or database."
+
+ ❯ apps/runner/src/verified-action-execution-review.test.ts:339:34
+    337|     await reviewSemanticSupervisedExecution(input);
+    338|     const lines = vi.mocked(input.session.showReviewDetails!).mock.cal…
+    339|     expect(lines.join("\n")).not.toMatch(/NOLOGIN|RLS/);
+       |                                  ^
+    340|     expect(lines.join("\n")).toContain("locked MySQL account");
+    341|     expect(lines.join("\n")).toContain("GRANT UPDATE (`budget_id`) ON …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 24 skipped (25)
+   Start at  13:19:21
+   Duration  4.23s (transform 2.59s, setup 0ms, collect 4.01s, tests 17ms, environment 0ms, prepare 40ms)
+
