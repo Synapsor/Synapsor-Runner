@@ -1,0 +1,119 @@
+{
+  "schema": "B64-CHAT-NEW9-PRESEAL-v1",
+  "assignment_sha256": "1cf2117dfe7fbed0c119d1bbcb93f77dfe876066c0705d021f3414785951ce12",
+  "assignment_pins": {
+    "audit": "a6f16baa",
+    "Main_docs": "46c40f65",
+    "audited_source": "49798f15c44f5492f81e09f1629680fdc56833ff"
+  },
+  "before_product_pin": "267d39e1a02fab47fd78a17d61046d1e857d65f0",
+  "old_scope": "Original Chat29typed+1delete and acceptedCP05/06/08 remain separate historical scopes.",
+  "new_scope": {
+    "typed_total": 9,
+    "delete_total": 0,
+    "typed_remaining": 9,
+    "delete_remaining": 0
+  },
+  "entries": [
+    {
+      "id": "I03543",
+      "file": "apps/runner/src/local-ui.ts",
+      "product_sha256": "23fc50f637e9fc6257a18a28888edbd529bd88d710f7c44296e626f8bdd8623d",
+      "audited_sha256": "3ef010c334db35132fd7d14de05a5a363a08844c87f573bbb88d94d728ac41cf",
+      "status": "FAILURE_FIXTURE_PRESEALED_ALL_NOTRUN"
+    },
+    {
+      "id": "I03544",
+      "file": "apps/runner/src/local-ui.ts",
+      "product_sha256": "23fc50f637e9fc6257a18a28888edbd529bd88d710f7c44296e626f8bdd8623d",
+      "audited_sha256": "3ef010c334db35132fd7d14de05a5a363a08844c87f573bbb88d94d728ac41cf",
+      "status": "FAILURE_FIXTURE_PRESEALED_ALL_NOTRUN"
+    },
+    {
+      "id": "I03550",
+      "file": "apps/runner/src/runtime-doctor.ts",
+      "product_sha256": "c73183ef27d32c7e19f3540123a288c031a0ab75b36a9f4a92a16399aae7b869",
+      "audited_sha256": "c73183ef27d32c7e19f3540123a288c031a0ab75b36a9f4a92a16399aae7b869",
+      "status": "FAILURE_FIXTURE_PRESEALED_ALL_NOTRUN"
+    },
+    {
+      "id": "I03553",
+      "file": "apps/runner/src/notifications.ts",
+      "product_sha256": "e08cc8bbceab22413ac203a2971ad8eca594a105d4eb2f23d68cf450c1e8856d",
+      "audited_sha256": "e08cc8bbceab22413ac203a2971ad8eca594a105d4eb2f23d68cf450c1e8856d",
+      "status": "FAILURE_FIXTURE_PRESEALED_ALL_NOTRUN"
+    },
+    {
+      "id": "I03556",
+      "file": "apps/runner/src/cli-logging.ts",
+      "product_sha256": "46c2792fe2e417d7ddfcb09f2fc311b005b93264f335c8de179962d0d23835a4",
+      "audited_sha256": "46c2792fe2e417d7ddfcb09f2fc311b005b93264f335c8de179962d0d23835a4",
+      "status": "FAILURE_FIXTURE_PRESEALED_ALL_NOTRUN"
+    },
+    {
+      "id": "I03569",
+      "file": "apps/runner/src/graduated-trust.ts",
+      "product_sha256": "99b8625419423e1a736ee71b9744ea449c04793a8c843811a6cd441fe881b3d1",
+      "audited_sha256": "99b8625419423e1a736ee71b9744ea449c04793a8c843811a6cd441fe881b3d1",
+      "status": "FAILURE_FIXTURE_PRESEALED_ALL_NOTRUN"
+    },
+    {
+      "id": "I03573",
+      "file": "apps/runner/src/first-run-doctor.ts",
+      "product_sha256": "3de2c17c08bb4c96d8a4ab55338fcbb8f5b0256b742128a1cd5edc8e7162a815",
+      "audited_sha256": "3de2c17c08bb4c96d8a4ab55338fcbb8f5b0256b742128a1cd5edc8e7162a815",
+      "status": "FAILURE_FIXTURE_PRESEALED_ALL_NOTRUN"
+    },
+    {
+      "id": "I03574",
+      "file": "apps/runner/src/mcp-audit.ts",
+      "product_sha256": "c788cfec1f3f7595a2bc2cdbeb893449250c40fccb541bf82cbd1250e2b2f924",
+      "audited_sha256": "c788cfec1f3f7595a2bc2cdbeb893449250c40fccb541bf82cbd1250e2b2f924",
+      "status": "FAILURE_FIXTURE_PRESEALED_ALL_NOTRUN"
+    },
+    {
+      "id": "I03575",
+      "file": "apps/runner/src/hosted-provider-models.ts",
+      "product_sha256": "f03ef84d891389bb844f1f9246cc0ce60ce0a1652fd18b8aaa82eadaaa3b640a",
+      "audited_sha256": "f03ef84d891389bb844f1f9246cc0ce60ce0a1652fd18b8aaa82eadaaa3b640a",
+      "status": "FAILURE_FIXTURE_PRESEALED_ALL_NOTRUN"
+    }
+  ],
+  "tests": [
+    {
+      "file": "apps/runner/src/runtime-doctor.test.ts",
+      "sha256": "fc11902cb1a2e265079cc5de8f19cfd891b9acfeeb35946d2ecd14d0956683c4"
+    },
+    {
+      "file": "apps/runner/src/mcp-audit.test.ts",
+      "sha256": "21d67bdd23690e76eed25d38767e65f9c6fd4a33f5fc4d46b2961db600888079"
+    },
+    {
+      "file": "apps/runner/src/hosted-provider-models.test.ts",
+      "sha256": "d956af093cd608382dcc28f6035ed712631d873538f2a4d005ee6685982528b8"
+    },
+    {
+      "file": "apps/runner/src/first-run-doctor-new9-retirement.test.ts",
+      "sha256": "310ea0c5d7ba50aa8dcc82e22cad05752d302c252717729c66b098a14cd5c535"
+    },
+    {
+      "file": "apps/runner/src/b64-chat-new9-retirement.test.ts",
+      "sha256": "8e47bb67ea59b49e43b9d5ab905408d33e31cac7c036b4463611761e2880f425"
+    },
+    {
+      "file": "apps/runner/src/local-ui-new9-retirement.test.ts",
+      "sha256": "2196223b315af6aae9ba871d471bb294a817b49ad42fe2f2a685fcbdcecfdfb1"
+    },
+    {
+      "file": "apps/runner/src/graduated-trust.test.ts",
+      "sha256": "e7b0ba0f10857d3c582dcdea3e2159464f808ba77dfbb675edab2ead222eb322"
+    }
+  ],
+  "planned_cases": 30,
+  "runtime": "ALL_NOTRUN. Product files unpatched. Main allocated slot4;1worker/offline0700 HOME/TMP; memory/disk>=8GiB verified at actual launch. No provider/sourceDB/native launch.",
+  "Main_local_ui_delta": "Only two accepted question_to_plan_checked:false projections differ from Chat source at267d (Main46c near1779/3972). Preserve Main hunks during integration; never overwrite wholefile.",
+  "Main_cli_hook": "cli.ts373 must pass original Error to typed formatCliErrorHint consumer, preserve accepted CP05 recovery. Main owns caller patch.",
+  "provider_contract": "OpenRouter typed supported_parameters plus architecture modalities are actual positive metadata. OpenAI/Anthropic listed ID strings and two terminal default constants do not establish tool/modality capabilities; missing facts remain unknown. No guessed capability catalog.",
+  "oracle_scope": "Actual localUI HTTP with fake typed store, actual mocked RLS probe/public first-run subprocess checks, actual notification dispatch and graduated metric projection using stub histories, structured CLI/launcher formatter facts and controlled child handshake, hosted discovery fake HTTP responses only. No approval/source effects or full public qualification claim.",
+  "review": "B66 independent review through parent/Main required after finite before->typedreplacement->after; no selfapproval."
+}

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { ProposalStore, type OperatorIdentityProof, type PolicyRecommendation } from "@synapsor-runner/proposal-store";
+import { ProposalStore, type OperatorIdentityProof, type PolicyRecommendation, type StoredProposal } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { normalizeContract, type SynapsorContract } from "@synapsor/spec";
 import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
@@ -11,11 +11,28 @@ import {
   evaluateGraduatedTrust,
   markGraduatedTrustArtifactExported,
   prepareGraduatedTrustArtifact,
+  type GraduatedTrustStore,
 } from "./graduated-trust.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 describe("graduated trust", () => {
+  it.each(["compensation_proposal_created", "revert_refused", "compensation_failed"])(
+    "B64 NEW9 I03569 does not count an ordinary proposal as reverted from event fragment %s", async kind => {
+      const contract = fixtureContract();
+      const digest = canonicalJsonDigest(contract);
+      const proposal = { proposal_id: "new9-ordinary", proposal_hash: canonicalJsonDigest("new9-ordinary"), proposal_version: 1,
+        state: "approved", change_set: { schema_version: "synapsor.change-set.v1", contract: {
+          digest, version: contract.metadata?.version ?? contract.spec_version } } } as unknown as StoredProposal;
+      const store = { listProposals: async () => [proposal], approvals: async () => [{ approver: "human", status: "approved",
+        proposal_hash: proposal.proposal_hash, proposal_version: 1 }], receipts: async () => [],
+        events: async () => [{ kind }], createPolicyRecommendation: async () => { throw new Error("No recommendation admitted"); },
+        listPolicyRecommendations: async () => [] } as unknown as GraduatedTrustStore;
+      const result = await evaluateGraduatedTrust({ config: config(true), contract, store, tenant: "acme",
+        capability: capabilityName, policy: policyName, now });
+      expect(result).toMatchObject({ ok: false, code: "INSUFFICIENT_HUMAN_REVIEWS", metrics: { human_reviewed: 1, reverts: 0, revert_rate: 0 } });
+      expect(result.recommendation).toBeUndefined();
+    });
   it("is disabled by default and requires the reviewed human sample", async () => {
     const contract = fixtureContract();
     const store = new ProposalStore();

@@ -97,6 +97,22 @@ describe("runtime doctor RLS denied-identity canary", () => {
     expect(check.message).not.toContain("private unexpected");
     expect(probe.bindings).toHaveLength(2);
   });
+
+  it.each([
+    { error: new Error("permission denied authentication timeout unknown database private text"), reason: "database probe failed" },
+    { error: Object.assign(new Error("opaque 漢字"), { code: "42501" }), reason: "permission denied" },
+    { error: Object.assign(new Error("opaque 漢字"), { code: "28P01" }), reason: "authentication failed" },
+    { error: Object.assign(new Error("opaque 漢字"), { code: "ETIMEDOUT" }), reason: "timeout" },
+    { error: Object.assign(new Error("opaque 漢字"), { code: "ECONNREFUSED" }), reason: "connection failed" },
+    { error: Object.assign(new Error("opaque 漢字"), { code: "42P01" }), reason: "configured object not found" },
+  ])("B64 NEW9 I03550 uses structured probe facts and keeps unknown prose generic ($reason)", async ({ error, reason }) => {
+    const probe = canaryProbe({ deniedError: error });
+    const check = (await probe.run()).at(-1)!;
+    expect(check).toMatchObject({ ok: false, level: "fail" });
+    expect(check.message).toContain(`(${reason})`);
+    expect(check.message).not.toContain(error.message);
+    expect(probe.bindings).toHaveLength(2);
+  });
 });
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;

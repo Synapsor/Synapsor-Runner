@@ -2,6 +2,25 @@ import { describe, expect, it, vi } from "vitest";
 import { discoverHostedProviderModels } from "./hosted-provider-models.js";
 
 describe("hosted provider model discovery", () => {
+  it.each(["openai", "anthropic"] as const)("B64 NEW9 I03575 leaves %s model-ID capability unknown without provider facts", async provider => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ data: [
+      { id: "gpt-text-tools", created: 1 }, { id: "claude-text-tools", created: 2 },
+    ] }), { status: 200 }));
+    expect(await discoverHostedProviderModels({ provider, apiKey: "inert-fixture", fetchImpl: fetchImpl as typeof fetch })).toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("B64 NEW9 I03575 uses actual OpenRouter modalities and tool parameters rather than ID fragments", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ data: [
+      { id: "vendor/audio-image-name", created: 2, supported_parameters: ["tools", "tool_choice", "max_tokens"],
+        architecture: { input_modalities: ["text"], output_modalities: ["text"] } },
+      { id: "openai/gpt-text-tools", created: 3 },
+      { id: "vendor/plain", created: 4, supported_parameters: ["max_tokens"],
+        architecture: { input_modalities: ["text"], output_modalities: ["text"] } },
+    ] }), { status: 200 }));
+    expect(await discoverHostedProviderModels({ provider: "openrouter", apiKey: "inert-fixture", fetchImpl: fetchImpl as typeof fetch }))
+      .toEqual(["vendor/audio-image-name"]);
+  });
   it("sorts compatible OpenAI text models newest first and excludes non-chat surfaces", async () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => new Response(JSON.stringify({
       data: [

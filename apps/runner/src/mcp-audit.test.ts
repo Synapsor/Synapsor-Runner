@@ -4,6 +4,29 @@ import { fetchStdioMcpToolsCommand, formatMcpLaunchFailure } from "./mcp-audit.j
 
 describe("stdio launch diagnostics", () => {
   it.each([
+    { error: new Error("ETARGET No matching version found timed out POLICY_EXECUTION_BINDING_CHANGED"), expected: "MCP_LAUNCH_CHECK_FAILED:" },
+    { error: Object.assign(new Error("opaque 漢字"), { code: "ETARGET" }), expected: "ETARGET:" },
+    { error: Object.assign(new Error("opaque 漢字"), { code: "POLICY_EXECUTION_BINDING_CHANGED" }), expected: "POLICY_EXECUTION_BINDING_CHANGED:" },
+    { error: Object.assign(new Error("opaque 漢字"), { code: -32001 }), expected: "MCP_LAUNCH_TIMEOUT:" },
+    { error: Object.assign(new Error("opaque 漢字"), { code: "MCP_LAUNCH_TIMEOUT" }), expected: "MCP_LAUNCH_TIMEOUT:" },
+  ])("B64 NEW9 I03574 uses exact launcher codes, never diagnostic prose ($expected)", ({ error, expected }) => {
+    expect(formatMcpLaunchFailure(error)).toContain(expected);
+    expect(formatMcpLaunchFailure(error)).not.toContain(error.message);
+  });
+
+  it("B64 NEW9 I03574 actual failed child stderr cannot manufacture package or binding causes", async () => {
+    const script = "process.stdin.once('data',()=>{process.stderr.write('ETARGET No matching version found POLICY_EXECUTION_BINDING_CHANGED',()=>process.exit(1));});";
+    const error = await fetchStdioMcpToolsCommand(process.execPath, ["-e", script], 5000).catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("MCP_LAUNCH_CHECK_FAILED:");
+  });
+
+  it("B64 NEW9 I03574 actual handshake timeout retains its structured local/SDK cause", async () => {
+    const error = await fetchStdioMcpToolsCommand(process.execPath, ["-e", "process.stdin.resume()"], 80).catch((value: unknown) => value);
+    expect(error).toMatchObject({ code: "MCP_LAUNCH_TIMEOUT" });
+    expect((error as Error).message).toContain("MCP_LAUNCH_TIMEOUT:");
+  });
+  it.each([
     { error: Object.assign(new Error("private-path"), { code: "ENOENT" }), expected: "ENOENT:" },
     { error: Object.assign(new Error("private-path"), { code: "EACCES" }), expected: "EACCES:" },
     { error: new Error("tools/list timed out after 10000ms private-details"), expected: "MCP_LAUNCH_TIMEOUT:" },
