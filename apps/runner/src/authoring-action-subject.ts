@@ -23,9 +23,11 @@ function view(binding: ActionSubjectBinding, entries: ActionSubjectEntry[], prop
         ...(entry.state === "proposed" ? { suggestion: { value: { kind: "choice" as const, value: entry.scope_reference },
           origin: entry.support.kind === "operator_choice" ? "operator_edit" as const : "model_proposal" as const } } : {}) };
     }),
-    normalized_lines: entries.map((entry, index) => entry.state === "proposed"
+    normalized_lines: binding.material.targets.map((target, index) => {
+      const entry = entries.find(e => e.target_digest === target.target_digest)!;
+      return entry.state === "proposed"
       ? `Record group ${index + 1}: ${binding.material.targets.find(t => t.target_digest === entry.target_digest)!.options.find(o => o.reference === entry.scope_reference)!.kind === "principal" ? "only the signed-in person's records" : "the selected reviewed scope"}.`
-      : `Record group ${index + 1}: scope remains pending.`),
+      : `Record group ${index + 1}: scope remains pending.`; }),
     change_lines: [], technical_lines: binding.material.targets.map(t => `${t.target.kind}: ${t.target.resource}; identity ${t.target_digest}`),
     unresolved: entries.filter(e => e.state !== "proposed").map(e => e.state === "unresolved" ? e.question : "Choose the applicable record scope before confirming."),
   };

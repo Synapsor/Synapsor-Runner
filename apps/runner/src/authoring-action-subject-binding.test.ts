@@ -168,3 +168,21 @@ describe("Action subject local host adapters", () => {
     expect(() => proposeActionSubjectAnswer(q, [{ ...entries[0]!, support: { ...support, answer_digest: hash("invented") } }], completion)).toThrow();
   });
 });
+it("renders business readbacks by the same target order as fields and details", () => {
+  const secondTarget = { kind: "atomic_effect" as const, resource: "service.archive", binding: "archive", index: 0 };
+  const secondDigest = hash(secondTarget);
+  const host = { ...material, targets: [...material.targets, { target: secondTarget, target_digest: secondDigest,
+    options: [{ reference: hash("archive-org-scope"), target_digest: secondDigest, kind: "tenant" as const, dependencies_digest: hash("archive-deps") }] }] };
+  const entries = [{ state: "awaiting" as const, target_digest: secondDigest }, { state: "proposed" as const, target_digest: targetDigest,
+    meaning: "trusted_principal" as const, scope_reference: material.targets[0]!.options[0]!.reference,
+    support: { kind: "operator_answer" as const, question_id: "10101010-1010-4010-8010-101010101010", question_revision: 1,
+      answer_id: "20202020-2020-4020-8020-202020202020", answer_digest: hash("raw"), context_digest: hash("context") } }];
+  const b = { ...binding(), material: host, origin: { completion, material_digest: actionSubjectOriginDigest(host, entries) } };
+  const q = createActionSubjectQuestion({ binding: b, entries, scope_digest: hash("scope"), context_digest: hash("context") });
+  if (q.proposal?.value?.kind !== "action_subject") throw Error("missing");
+  const v = q.proposal.value.record.view;
+  expect(v.fields.map(f => f.target_digest)).toEqual([targetDigest, secondDigest]);
+  expect(v.normalized_lines[0]).toContain("signed-in person's records");
+  expect(v.normalized_lines[1]).toContain("pending");
+  expect(v.technical_lines![0]).toContain(targetDigest);
+});
