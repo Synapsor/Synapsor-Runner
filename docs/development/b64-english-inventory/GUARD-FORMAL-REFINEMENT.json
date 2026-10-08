@@ -1,0 +1,23 @@
+{
+  "base": "49c0f2f7",
+  "policy_review": "0c526ea1 docs/development/b64-guard-practical-independent/POLICY.json",
+  "changes": [
+    "Strict typeof exact JavaScript primitive tags only; descendants remain scanned",
+    "Erased TypeScript syntax excluded; runtime class heritage expressions explicitly retained",
+    "Import declarations are alias resolution, not runtime predicate consumers; real value/import alias consumers remain bound"
+  ],
+  "before": {
+    "formal_controls": "1PASS2FAIL on d322 core",
+    "heritage_control": "3PASS1FAIL against initial local type-node refinement; preserved before fix"
+  },
+  "after": {
+    "command": "node --test scripts/authoring-language-guard/*.test.mjs",
+    "pass": 25,
+    "fail": 0,
+    "skip": 0
+  },
+  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/language-guard-formal-*.txt",
+  "independent_status": "PENDING exact successor review",
+  "allowances": "No new or removed allowances. Original365 and141 audit retained; repository scan/explicit stale formal allowance removal pending",
+  "b64_remaining_counts": "Unchanged by tooling refinement; not a product retirement claim"
+}

@@ -36,3 +36,8 @@ test('imports and type-only references are not standalone consumers; actual valu
     review: { reviewer: 'test-fixture', evidence: 'fixture-only', verdict: 'accepted' } })) };
   assert.ok(evaluate(scanSources(make('grant')), allowances).errors.some(e => e.kind === 'unreviewed_candidate'));
 });
+
+test('class heritage retains runtime decisions even though TypeScript also classifies it as a type node', () => {
+  assert.ok(evaluate(scan('export class Example extends (/permit/.test(answer) ? Approved : Refused) {}'), empty)
+    .errors.some(error => error.kind === 'unreviewed_candidate'));
+});

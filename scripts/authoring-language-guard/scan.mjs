@@ -15,6 +15,18 @@ const sha = value => createHash('sha256').update(value).digest('hex');
 const printer = ts.createPrinter({ removeComments: true });
 const print = (node, source) => printer.printNode(ts.EmitHint.Unspecified, node, source);
 const textLiteral = node => ts.isStringLiteralLike(node) || ts.isTemplateExpression(node);
+// These exact tags are JavaScript grammar, not interpretations of operator text.
+// Inspect descendants even when the outer type check itself needs no allowance.
+const primitiveTypeTags = new Set(['undefined', 'object', 'boolean', 'number',
+  'bigint', 'string', 'symbol', 'function']);
+function formalTypeofComparison(node) {
+  if (!ts.isBinaryExpression(node) || ![ts.SyntaxKind.EqualsEqualsEqualsToken,
+    ts.SyntaxKind.ExclamationEqualsEqualsToken].includes(node.operatorToken.kind)) return false;
+  return [[node.left, node.right], [node.right, node.left]].some(([operand, tag]) =>
+    ts.isTypeOfExpression(operand) && ts.isStringLiteralLike(tag) && primitiveTypeTags.has(tag.text));
+}
+const erasedOrImportDeclaration = node => (ts.isTypeNode(node) && !ts.isExpressionWithTypeArguments(node)) || ts.isInterfaceDeclaration(node)
+  || ts.isTypeAliasDeclaration(node) || ts.isImportDeclaration(node) || ts.isImportEqualsDeclaration(node);
 
 function kindOf(node) {
   if (ts.isRegularExpressionLiteral(node)) return 'regex';
@@ -104,8 +116,12 @@ export function scanSources(texts) {
   };
   for (const source of sources.values()) {
     function visit(node) {
+      // Type annotations/declarations and import syntax are not runtime consumers.
+      // Runtime identifiers below still resolve their original imported symbols
+      // through the checker, so value aliases and changed callers remain bound.
+      if (erasedOrImportDeclaration(node)) return;
       const owner = outer(node);
-      let kind = kindOf(node);
+      let kind = formalTypeofComparison(node) ? undefined : kindOf(node);
       if (kind === 'indexed_lookup') {
         // Numeric array positions are not word vocabularies. A free-text or
         // unknown lookup is reviewed with its actual dictionary declaration.
@@ -117,7 +133,7 @@ export function scanSources(texts) {
           for (const declaration of target?.declarations ?? []) {
             if (!names.has(declaration.getSourceFile().fileName)) continue;
             const dictionary = outer(declaration);
-            if (dictionary) lookupOwners.add(dictionary);
+            if (dictionary && !erasedOrImportDeclaration(dictionary)) lookupOwners.add(dictionary);
           }
         }
       }
@@ -130,7 +146,7 @@ export function scanSources(texts) {
           for (const declaration of symbol?.declarations ?? []) {
             if (!names.has(declaration.getSourceFile().fileName)) continue;
             const receiver = outer(declaration);
-            if (receiver) lookupOwners.add(receiver);
+            if (receiver && !erasedOrImportDeclaration(receiver)) lookupOwners.add(receiver);
           }
           ts.forEachChild(expression, collectReceiver);
         };
@@ -143,7 +159,7 @@ export function scanSources(texts) {
         for (const declaration of symbol?.declarations ?? []) {
           if (!names.has(declaration.getSourceFile().fileName)) continue;
           const target = outer(declaration);
-          if (target && target !== owner) {
+          if (target && target !== owner && !erasedOrImportDeclaration(target)) {
             if (!consumers.has(target)) consumers.set(target, new Set());
             consumers.get(target).add(owner);
           }
