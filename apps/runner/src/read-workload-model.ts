@@ -513,6 +513,76 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       }
       const hostEvidence = hostMeaningsFor(args);
       const misplacedRootFields = misplacedReadRootFieldIssues(args);
+      const candidateWorkload: ReadWorkloadSet = {
+        schema_version: READ_WORKLOAD_SET_VERSION,
+        name,
+        allowed: Array.isArray(args.allowed) ? args.allowed as ReadWorkloadSet["allowed"] : [],
+        forbidden: Array.isArray(args.forbidden) ? args.forbidden as ReadWorkloadSet["forbidden"] : [],
+        source: {
+          kind: "model",
+          provider: input.provider,
+          model: input.model,
+          ...(hostEvidence.length ? { meaning_evidence: hostEvidence } : {}),
+          ...(unresolvedAnswers.length ? { meaning_attempts: structuredClone(unresolvedAnswers) } : {}),
+        },
+      };
+      const candidateAnalysisClock = Date.now();
+      let candidateAnalysis: ReadWorkloadAnalysis;
+      try {
+        candidateAnalysis = analyzeReadWorkloadSet({
+          workload: candidateWorkload,
+          generatedBoundary: mappingBoundary,
+          now: candidateAnalysisClock,
+        });
+        if (misplacedRootFields.length) {
+          candidateAnalysis.status = "blocked";
+          candidateAnalysis.blockers = [...misplacedRootFields, ...candidateAnalysis.blockers];
+        }
+        const relatedOnlyRoots = candidateWorkload.allowed.flatMap(entry =>
+          catalog.resources.some(resource => resource.id === entry.plan.resource && resource.relationship_only)
+            ? [entry.plan.resource] : []);
+        if (relatedOnlyRoots.length) {
+          throw new Error(`READ_WORKLOAD_OWN_RECORD_ROOT_REQUIRED: ${[...new Set(relatedOnlyRoots)].join(", ")} cannot be independent reads for this job. Include requested related information through listed rows.related paths from an owned-record root. Keep private Action verification separate. Preserve every requested business read; if no listed path covers it, ask about the missing business access instead of inventing ownership or dropping it.`);
+        }
+      } catch (error) {
+        workload = undefined;
+        analysis = undefined;
+        workloadValidationBlockers = [error instanceof Error ? error.message : String(error)];
+        return {
+          ok: false,
+          value: {
+            error_code: "READ_WORKLOAD_BLOCKED",
+            blockers: workloadValidationBlockers,
+            authority_granted: false,
+            source_query_executed: false,
+            source_database_changed: false,
+          },
+          error_code: "READ_WORKLOAD_BLOCKED",
+        };
+      }
+      const recordCandidateAnalysis = () => {
+        workload = candidateWorkload;
+        analysis = candidateAnalysis;
+        analysisClock = candidateAnalysisClock;
+        workloadValidationBlockers = [];
+      return {
+        ok: candidateAnalysis.status === "ready",
+        value: {
+          status: candidateAnalysis.status,
+          coverage: candidateAnalysis.coverage,
+          blockers: candidateAnalysis.blockers,
+          authority_granted: false,
+          source_query_executed: false,
+          explore_budget_consumed: false,
+          source_database_changed: false,
+        },
+        ...(candidateAnalysis.status === "blocked" ? { error_code: "READ_WORKLOAD_BLOCKED" } : {}),
+      };
+      };
+      // Structural blockers and invalid independent roots cannot be repaired by
+      // a business answer. Keep native diagnostics/correction; a ready analysis
+      // still passes every scope, meaning and approved-value check below.
+      if (candidateAnalysis.status === "blocked") return recordCandidateAnalysis();
       // Malformed control fields cannot supply a plan or trigger a business
       // question. Diagnose their exact pointers through the existing bounded
       // structural correction before interpreting scope or meaning.
@@ -647,69 +717,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           };
         }
       }
-      const candidateWorkload: ReadWorkloadSet = {
-        schema_version: READ_WORKLOAD_SET_VERSION,
-        name,
-        allowed: Array.isArray(args.allowed) ? args.allowed as ReadWorkloadSet["allowed"] : [],
-        forbidden: Array.isArray(args.forbidden) ? args.forbidden as ReadWorkloadSet["forbidden"] : [],
-        source: {
-          kind: "model",
-          provider: input.provider,
-          model: input.model,
-          ...(hostEvidence.length ? { meaning_evidence: hostEvidence } : {}),
-          ...(unresolvedAnswers.length ? { meaning_attempts: structuredClone(unresolvedAnswers) } : {}),
-        },
-      };
-      try {
-        const candidateAnalysisClock = Date.now();
-        const candidateAnalysis = analyzeReadWorkloadSet({
-          workload: candidateWorkload,
-          generatedBoundary: mappingBoundary,
-          now: candidateAnalysisClock,
-        });
-        if (misplacedRootFields.length) {
-          candidateAnalysis.status = "blocked";
-          candidateAnalysis.blockers = [...misplacedRootFields, ...candidateAnalysis.blockers];
-        }
-        const relatedOnlyRoots = candidateWorkload.allowed.flatMap(entry =>
-          catalog.resources.some(resource => resource.id === entry.plan.resource && resource.relationship_only)
-            ? [entry.plan.resource] : []);
-        if (relatedOnlyRoots.length) {
-          throw new Error(`READ_WORKLOAD_OWN_RECORD_ROOT_REQUIRED: ${[...new Set(relatedOnlyRoots)].join(", ")} cannot be independent reads for this job. Include requested related information through listed rows.related paths from an owned-record root. Keep private Action verification separate. Preserve every requested business read; if no listed path covers it, ask about the missing business access instead of inventing ownership or dropping it.`);
-        }
-        workload = candidateWorkload;
-        analysis = candidateAnalysis;
-        analysisClock = candidateAnalysisClock;
-        workloadValidationBlockers = [];
-      } catch (error) {
-        workload = undefined;
-        analysis = undefined;
-        workloadValidationBlockers = [error instanceof Error ? error.message : String(error)];
-        return {
-          ok: false,
-          value: {
-            error_code: "READ_WORKLOAD_BLOCKED",
-            blockers: workloadValidationBlockers,
-            authority_granted: false,
-            source_query_executed: false,
-            source_database_changed: false,
-          },
-          error_code: "READ_WORKLOAD_BLOCKED",
-        };
-      }
-      return {
-        ok: analysis.status === "ready",
-        value: {
-          status: analysis.status,
-          coverage: analysis.coverage,
-          blockers: analysis.blockers,
-          authority_granted: false,
-          source_query_executed: false,
-          explore_budget_consumed: false,
-          source_database_changed: false,
-        },
-        ...(analysis.status === "blocked" ? { error_code: "READ_WORKLOAD_BLOCKED" } : {}),
-      };
+      return recordCandidateAnalysis();
     },
     async close() {},
   };

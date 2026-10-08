@@ -764,6 +764,9 @@ describe("model-assisted Read workload mapping", () => {
         related: [{ relationship: link.constraint_name, select: ["amount"] }] }));
     const clarificationHandler = vi.fn();
     const result = await generateModelReadWorkload({ name: "my_purchases", allowedQuestions: ["Show my purchases with product details"],
+      // Additional declared root facts; the relationship proof still governs
+      // products access. Neither a name nor this statement grants a root read.
+      operatorNamingContext: "Show my purchases with product details\npublic.orders means purchases. public.products means product details.",
       provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, principalScopedRootResources: [orders.id],
       egressAcknowledged: true, env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
     expect(result.analysis.status).toBe("ready");
