@@ -1,0 +1,47 @@
+{
+  "verdict": "ACCEPT_SCOPED",
+  "sites": [
+    "I02087",
+    "I02100"
+  ],
+  "owner_pin": "6159e5ea21f2802765fce05c352ef80c03ba46fb",
+  "before_pin": "ea7ba567",
+  "independent_fixture": "029b1181",
+  "tested_composition": "3c0b1f09",
+  "results": {
+    "before": {
+      "path": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/runtime-independent-before.log",
+      "sha256": "32c47ad64eb3d36e2a2bbab3ce43f339691623394e379f8a1a6a42a0850d97ed",
+      "pass": 3,
+      "fail": 11,
+      "skip": 0
+    },
+    "after": {
+      "path": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/runtime-independent-after.log",
+      "sha256": "53e11e38982e2b58bbd259754f3460a4463bca0d35f9e8bf37cc75003e455174",
+      "pass": 31,
+      "fail": 0,
+      "skip": 0
+    },
+    "ports": {
+      "path": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/runtime-independent-ports.log",
+      "sha256": "fec19087e109e90ddaa1e6521b5dc0f2ccd9c24bd6e405f62bbec38e8d0fe4f0",
+      "pass": 2,
+      "fail": 0,
+      "filtered": 107
+    }
+  },
+  "independent_count": "14 independent controls unchanged: before3P11F\u2192after14P; after group additionally executed17 owner controls. Two exact affected public runtime tests pass;107 filtered intentionally.",
+  "contract_judgment": "Unknown English messages are not structured driver facts or retry authorization. Existing exact driver code/errno facts and bounded causes remain; SQLSTATE08 class requires full5-character grammar. Existing safeToolError policy refusal precedence and retry cap stay. Freshness unsupported is exact owned host code, not substring or model prose.",
+  "fixture_adjudication": {
+    "changed": 2,
+    "basis": "Both original tests throw new Error(\"connect ECONNREFUSED 127.0.0.1:5433\") with no code/cause. Their old temporarily-unavailable result depended only on retired English interpretation. New INTERNAL/nonretryable matches controlled decision; raw error suppression, source_database_changed:false, safe structured logging and duplicate-log suppression assertions remain unchanged.",
+    "other_typed_driver_cases": "Five owner fixtures unchanged by exact diff; not counted as independent runtime execution here."
+  },
+  "limits": [
+    "This closes exact two language decision sites and finite regression scope only. No release/full-suite/liveDB/model qualification claim.",
+    "No additional runtime semantics/authority altered, no provider or Source DB call made.",
+    "Owner full126/type0 evidence is reported separately; no independent whole-repo typecheck repeated."
+  ],
+  "private_backup_only": true
+}

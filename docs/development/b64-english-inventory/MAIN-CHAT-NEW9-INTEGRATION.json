@@ -1,0 +1,20 @@
+{
+  "source": "85af6451",
+  "Main_source_integration": "7a4c3c51",
+  "independent": "d9114dda CHAT-NEW9-INDEPENDENT-RESULT.json scoped40PASS/types0",
+  "local_ui": "Two accepted question_to_plan_checked:false projections preserved; remaining8productsource matches reviewedpacket",
+  "cli_hook": {
+    "before": "3b09fa66 actualpublicCLI4PASS1FAIL, loststructuredTLSfact",
+    "fix": "runCliProcess passes original error to formatCliErrorHint(error); single line, CP05 preserved",
+    "independent": "pendingB66 exactcallerreview"
+  },
+  "after": {
+    "command": "9 affected files plus publicCLIbinding through offline bwrap, max/minWorkers1 test/hook20000",
+    "pass": 80,
+    "fail": 0,
+    "skip": 0,
+    "types": "tsc -b --pretty false exit0"
+  },
+  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/chat-*",
+  "scope": "No provider/nativeSource/fullgate claim"
+}

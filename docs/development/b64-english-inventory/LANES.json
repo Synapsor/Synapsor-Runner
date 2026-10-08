@@ -38,10 +38,10 @@
     }
   },
   "heavy_slots": {
-    "1": "Action finite controls (announce start/end)",
-    "2": "B65 runtime returned; native namespace lifetime remains OPEN",
-    "3": "Privacy seven failing-before finished; no current runtime",
-    "4": "B66 independent Chat NEW9 finite controls authorized max1"
+    "1": "R1 runtime14 completed; released",
+    "2": "B65 native namespace/receipt finite controls",
+    "3": "Privacy scope7 before/fix/after finite",
+    "4": "Main Chat integration80/types completed; B66 CLIhook review next"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -1229,11 +1229,11 @@
     },
     "chat_presentation": {
       "pin": "85af6451",
-      "branch_typed": 9,
+      "branch_typed": 0,
       "branch_delete": 0,
-      "main_pending_typed": 9,
+      "main_pending_typed": 1,
       "main_pending_delete": 0,
-      "source": "Original29typed/1delete accepted/integrated. New9 implemented85af6451, independent pending9/Main pending9. Original30 before3P27F\u2192after30P; final31P, affected74P,extra2P overlap; types0. Exact packet8e1cc439 assignedB66review.",
+      "source": "Allnew9 source-scopedindependent ACCEPT d9114dda40PASS/types0; exactMainintegration80PASS/types0. I03556 originalError CLIhook independentreviewpending; other8integrated. Original29typed/1delete closed.",
       "audit_reclassified_ids": [
         "I03543",
         "I03544",
@@ -1277,7 +1277,7 @@
       "pin": "d565098e",
       "typed": 30,
       "delete": 0,
-      "source": "Original30typed/0delete remain; eight reclassified sites. Other audited sites explicitly assigned existing Ask/Chat/Action/Privacy owners, not dropped.",
+      "source": "Original30typed/0delete +six audit sites remain. I02087/I02100 independently accepted e52adbf1 on6159e5ea; owner126PASS/types0. No message-derived retry/freshness.",
       "reclassified_provisional": [],
       "audit_reclassified_ids": [
         "I02087",
@@ -1290,9 +1290,13 @@
         "I03594"
       ],
       "with_reclassifications": {
-        "typed": 38,
+        "typed": 36,
         "delete": 0
-      }
+      },
+      "audit_closed_ids": [
+        "I02087",
+        "I02100"
+      ]
     }
   },
   "exit_criterion": "Zero remaining English decision sites. All original250typed+66delete and independently reclassified sites must close; no deferral. Syntactic regex/candidate counts are not this metric.",
@@ -1344,9 +1348,9 @@
     "note": "Privacy requests deletion disposition for I00054/55 because the typed metadata replacement removes both predicates; original audit retained. I00371 owner implementation829 exists but is not Main integrated."
   },
   "ci_guard": {
-    "core": "d3226538",
-    "verdict": "d169d640 scopedACCEPT21PASS",
-    "allowlist": "69c08271 exact365 accepted, no blanket exemptions",
-    "repository_gate": "NOT_PASS, practical candidate/allowance coverage open"
+    "core": "6605bd2a",
+    "verdict": "Original21 controls+d322 scoped; formal35337a8d10PASS andstale d71e689e3PASS; Main26PASS",
+    "allowlist": "363exact; onlytwo approvedtypeof records removed827fe693",
+    "repository_gate": "NOT_PASS; lastscan36804syntaxcandidates/36441unreviewed; no baselineEnglish exemption"
   }
 }

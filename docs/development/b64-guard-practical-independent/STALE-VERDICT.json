@@ -1,0 +1,32 @@
+{
+  "verdict": "ACCEPT_SCOPED",
+  "source_after": "6605bd2a",
+  "independent_fixture": "827fe693",
+  "logs": {
+    "before": {
+      "path": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/stale-independent-before.log",
+      "sha256": "9cf345b3879fdb41af1e1c8f4233584bf38be2dd9d8e7cd58d90ecff94aabeb4",
+      "passed": 1,
+      "failed": 2,
+      "skipped": 0
+    },
+    "after": {
+      "path": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/stale-independent-after.log",
+      "sha256": "85e6941ef7b6487d07156c77345c8e17dc8821dc4c283cbff3b5af1a84b62ac9",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "allowance_diff": {
+    "old": 365,
+    "new": 363,
+    "removed": [
+      "26d40e99ea0a24a68b19b38e063bc537b356fe6fd62e5f74d3b49edf9533f07e",
+      "e82aa45a5ebdb2cdc85b8da6fb4b7b971df4f24a65b5160e7440b19786e9af73"
+    ],
+    "added": [],
+    "changed": []
+  },
+  "scope": "Reporting precedence only; stale still rejects, current exact entry still accepts. No broad CI scan acceptance."
+}

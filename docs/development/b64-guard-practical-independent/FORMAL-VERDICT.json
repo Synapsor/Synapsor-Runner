@@ -1,0 +1,36 @@
+{
+  "verdict": "ACCEPT_SCOPED",
+  "reviewer": "R1 /root/early_full_triage",
+  "product_before": "49c0f2f7f86505c1685e51335cd475580a6e4a3a",
+  "product_after": "6b233881844285914cf62697eef3a3d79f4c9bf9",
+  "independent_fixture": "0fb9db05",
+  "results": {
+    "before": {
+      "path": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/formal-independent-before.log",
+      "sha256": "6b83d3610fa31dad6586b159165c69f86db8f87dd53f42b4008770f68865c9fc",
+      "pass": 8,
+      "fail": 2,
+      "skip": 0
+    },
+    "after": {
+      "path": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/formal-independent-after.log",
+      "sha256": "87dbf9e67f56291c899615306e3978a2793ea79e9fe7a190cda6145d4f933b07",
+      "pass": 10,
+      "fail": 0,
+      "skip": 0
+    }
+  },
+  "accepted_scope": [
+    "Only strict typeof-vs-exact-JavaScript-tag comparison nodes excluded; descendants remain scanned.",
+    "Erased type syntax omitted from runtime dependency graph; assertions and executable heritage/decorator/enum expressions retained.",
+    "Import declarations no longer emitted as runtime predicate owners, while real value alias/re-export consumers remain bound."
+  ],
+  "independent_controls": "Ten unchanged before/after controls; original failure PF01 and PF04 preserved. PF03/09 remain preservation controls, not newly demonstrated before failures.",
+  "source_inspection": "No indexed-write/output-vocabulary allowance added. Lookup/mutable receiver graph still exists; exact caller-owner fingerprints unchanged. Type assertions are not trusted semantic provenance. ExpressionWithTypeArguments remains visited to retain executable class extends.",
+  "limitations": [
+    "No whole-repository scan/CI exit acceptance; remaining unmatched syntax requires further bounded refinements/review.",
+    "No additional exact allowances granted or stale entries removed. Stale allowance cleanup must prove each removed expression is an approved formal exclusion or explicitly retired source; not a blanket prune.",
+    "No product authoring/public runtime/model/DB test claimed. Owner 25 controls reported separately, not counted as independent execution."
+  ],
+  "next": "Main may integrate exact scanner refinement; provide exact stale-allowance list with old source/fingerprint and current AST disposition for review of necessary cleanup."
+}

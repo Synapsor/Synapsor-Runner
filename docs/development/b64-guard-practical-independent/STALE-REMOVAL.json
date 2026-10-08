@@ -1,0 +1,30 @@
+{
+  "source_pin": "6b233881",
+  "old_source_pin": "934ad542",
+  "input_sha256": "cce4bfc25988bbbcad0532961e057a31e04399a73d1356633fa1fa871c25d82b",
+  "verdict": "ACCEPT_EXACT_TWO_REMOVALS_ONLY",
+  "rows": [
+    {
+      "fingerprint": "e82aa45a5ebdb2cdc85b8da6fb4b7b971df4f24a65b5160e7440b19786e9af73",
+      "annotation_id": "I02062",
+      "file": "apps/runner/src/authoring-operator-presentation.ts",
+      "expression": "typeof value !== \"string\"",
+      "owner": "plainLabel",
+      "verdict": "REMOVE_EXACT_STALE_ALLOWANCE",
+      "reason": "Exact accepted strict typeof primitive-tag comparison is no longer a scanner candidate. Product file byte-identical since original allowance source; no deletion or semantic change. Other expression/owner allowances remain unchanged.",
+      "file_sha256": "ecd647de0ebee844e6d463f51182f3bfaaa99f099eb1d00fe3e045913c1a5d80"
+    },
+    {
+      "fingerprint": "26d40e99ea0a24a68b19b38e063bc537b356fe6fd62e5f74d3b49edf9533f07e",
+      "annotation_id": "I02088",
+      "file": "packages/mcp-server/src/model-output-policy.ts",
+      "expression": "typeof value === \"object\"",
+      "owner": "isRecord",
+      "verdict": "REMOVE_EXACT_STALE_ALLOWANCE",
+      "reason": "Exact accepted strict typeof primitive-tag comparison is no longer a scanner candidate. Product file byte-identical since original allowance source; no deletion or semantic change. Other expression/owner allowances remain unchanged.",
+      "file_sha256": "eef1ad385803981eb80935f6b5576be710d7b93146879286daa8c35e5afd3a40"
+    }
+  ],
+  "remaining_allowances": 363,
+  "limits": "No product code or allowance file changed by reviewer. Reporting-label fix separately pending independent after result."
+}

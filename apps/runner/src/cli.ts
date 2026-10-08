@@ -370,7 +370,7 @@ export async function runCliProcess(argv: string[]): Promise<number> {
         },
       }, null, 2)}\n`);
     }
-    process.stderr.write(`${message}${formatCliErrorHint(message)}\n`);
+    process.stderr.write(`${message}${formatCliErrorHint(error)}\n`);
     return 1;
   }
 }

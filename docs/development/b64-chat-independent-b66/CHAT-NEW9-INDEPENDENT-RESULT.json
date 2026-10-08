@@ -1,0 +1,210 @@
+{
+  "schema": "B64-CHAT-NEW9-INDEPENDENT-RESULT-v1",
+  "candidate_product": "85af6451aae488601a638f749aa1c113b1d89735",
+  "packet": "8e1cc439a8ef73a1613999129f575faaea88dd19",
+  "independent_preseal": "e1ec6a46",
+  "independent_composition_pin": "94003c9d",
+  "verdict": "SOURCE_SCOPED_NEW9_ACCEPTED; actual finite operational projections accepted in controlled local/mock scope; Main/publichooks separately pending",
+  "canonical": {
+    "new_typed": 9,
+    "new_delete": 0,
+    "independent_source_accepted": 9,
+    "independent_source_remaining": 0,
+    "Main_integrated_new9": 0,
+    "Main_pending_new9": 9,
+    "original_scope": "29typed+1delete andCP05/06/08c9 remain historicalaccepted, no repeat"
+  },
+  "entries": [
+    {
+      "id": "I03543",
+      "file": "apps/runner/src/local-ui.ts",
+      "review": "SOURCE_SCOPED_ACCEPTED",
+      "after_sha256": "d7126fec8e54aa735adc5afd1a7fb8c6cba0b79e4669d79b6c8b1f22f34fcf03",
+      "matches_candidate_blob": false,
+      "note": "local-ui differs only by2 retained Main49798false projections"
+    },
+    {
+      "id": "I03544",
+      "file": "apps/runner/src/local-ui.ts",
+      "review": "SOURCE_SCOPED_ACCEPTED",
+      "after_sha256": "d7126fec8e54aa735adc5afd1a7fb8c6cba0b79e4669d79b6c8b1f22f34fcf03",
+      "matches_candidate_blob": false,
+      "note": "local-ui differs only by2 retained Main49798false projections"
+    },
+    {
+      "id": "I03550",
+      "file": "apps/runner/src/runtime-doctor.ts",
+      "review": "SOURCE_SCOPED_ACCEPTED",
+      "after_sha256": "500fb963fe166e15c881b9b7d97447b177f96875049392db5e4a91e2d675a4df",
+      "matches_candidate_blob": true,
+      "note": "Exact85afblob"
+    },
+    {
+      "id": "I03553",
+      "file": "apps/runner/src/notifications.ts",
+      "review": "SOURCE_SCOPED_ACCEPTED",
+      "after_sha256": "852b33f9b832d290f3ac5b2ecbfb7816fd58900c6058ab635bc95a65a89e1dd3",
+      "matches_candidate_blob": true,
+      "note": "Exact85afblob"
+    },
+    {
+      "id": "I03556",
+      "file": "apps/runner/src/cli-logging.ts",
+      "review": "SOURCE_SCOPED_ACCEPTED",
+      "after_sha256": "6f30fceb2b3b8ee0eec7f7a94058105c263a71289a1dd31780d8c196463acb8f",
+      "matches_candidate_blob": true,
+      "note": "Exact85afblob"
+    },
+    {
+      "id": "I03569",
+      "file": "apps/runner/src/graduated-trust.ts",
+      "review": "SOURCE_SCOPED_ACCEPTED",
+      "after_sha256": "11e2cba3e93eda79637d1295752821dd9cd6781b968aacc5696ea4843fe254d4",
+      "matches_candidate_blob": true,
+      "note": "Exact85afblob"
+    },
+    {
+      "id": "I03573",
+      "file": "apps/runner/src/first-run-doctor.ts",
+      "review": "SOURCE_SCOPED_ACCEPTED",
+      "after_sha256": "91fdf6eb7423a04f397eccf1c9371c755385f206d4602e692b7db5d7c6f644a0",
+      "matches_candidate_blob": true,
+      "note": "Exact85afblob"
+    },
+    {
+      "id": "I03574",
+      "file": "apps/runner/src/mcp-audit.ts",
+      "review": "SOURCE_SCOPED_ACCEPTED",
+      "after_sha256": "3761913b83838620a92df52815ddae50d7ba55d84daead1fae997b891e61805c",
+      "matches_candidate_blob": true,
+      "note": "Exact85afblob"
+    },
+    {
+      "id": "I03575",
+      "file": "apps/runner/src/hosted-provider-models.ts",
+      "review": "SOURCE_SCOPED_ACCEPTED",
+      "after_sha256": "8d56dbfce57c1335e82212741ef719b0ead621a52bf12105fb5609f235fd37de",
+      "matches_candidate_blob": true,
+      "note": "Exact85afblob"
+    }
+  ],
+  "before": {
+    "passed": 4,
+    "failed": 27,
+    "outside_selected": 41,
+    "scope": "Same owner31focused with final validjsonl fixture; no asserted-behavior alteration; extra supplementalno-coercion pass distinguishes4P27F from originalowner30baseline3P27F"
+  },
+  "after": {
+    "passed": 40,
+    "failed": 0,
+    "outside_selected": 32,
+    "owner31_passed": 31,
+    "new_independent_passed": 9,
+    "scope": "Seven actualUI approval/event/hash/version/actor absence/staleness and humanpositive cases, plus2 actual NotificationDeliveryError producer cases. No provider/Source/Docker calls."
+  },
+  "types": {
+    "exit": 0,
+    "diagnostics": 0,
+    "scope": "apps/runner/tsconfig.json finitebuild, networkisolated"
+  },
+  "actual_scope": [
+    "I03543 token-protected actuallocalUI summary/tools reportunverified irrespectiveconfigurednames; renderedUIhasunknownlabel.",
+    "I03544 actualworkerAPI requires exact proposal_approved policyactor/payload and current approvedhash/version; parent7extras confirm event/recordabsence, hash/version/actor mismatch, stale matchingpair and humanpositive.",
+    "I03550 actualdoctorprobe catch uses exactdrivercode, genericunknown and non-stringcodewithoutcoercion; failures/redactionretained.",
+    "I03553 actualdispatch failure recording uses explicit transportcode or existing typed NotificationDeliveryError; parent2production DNS/URL producer cases preserve true/false retryability without network.",
+    "I03556 formatter source uses TLSerrorcode and retains certificateverification; Main CLIcallercurrentlypassesstring so publichint propagation remains pending.",
+    "I03569 actualgraduatedtrust metrics ignore arbitrary eventfragments and retaincompensationschemaversion branch; no recommendation falsely admitted.",
+    "I03573 actualfirst-run doctor with controlledspawn error uses executableEACCES or genericfailedDockercheck, no socket/group/daemoncause fromstderr.",
+    "I03574 actualcontrolledMCPchild stderrcannotmanufacturepackage/bindingcause; actualSDK/localtimeoutcode survives catch, fixeddiagnostics donotexposechilddetails.",
+    "I03575 actualmodeldiscovery with controlledfetch uses OpenRouter modalities/toolparameters; OpenAI/Anthropic ID-only catalogs stayunknown, no defaults-as-capability proof."
+  ],
+  "Main_required_hooks": [
+    {
+      "file": "apps/runner/src/cli.ts",
+      "line": 373,
+      "hook": "Pass original caught error to formatCliErrorHint(error), preserve acceptedCP05recoveryfields; currentlyformatCliErrorHint(message) loses structuredTLScode",
+      "status": "pendingMainownership, parentdidnotedit"
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "hook": "Selective85afproductpatch only; retain both exactquestion_to_plan_checked:false fields fromMain49798. Parentcomparison against85af differs only those2hunks.",
+      "status": "preservedinindependentreviewcomposition"
+    }
+  ],
+  "source_audit": "Eightproductfile exact85af hunks applied on isolatedexistingreviewbranch; no new productimplementation or Actionselfreview. No known semantic reclassification is granted CIallowance.",
+  "owner_raw_hash_check": [
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/after-affected.json",
+      "matches": true
+    },
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/after-affected.txt",
+      "matches": true
+    },
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/after-final-oracles.json",
+      "matches": true
+    },
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/after-final-oracles.txt",
+      "matches": true
+    },
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/after-oracles.json",
+      "matches": true
+    },
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/after-oracles.txt",
+      "matches": true
+    },
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/after-ui-control.json",
+      "matches": true
+    },
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/after-ui-control.txt",
+      "matches": true
+    },
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/before.json",
+      "matches": true
+    },
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/before.txt",
+      "matches": true
+    },
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/types-final.txt",
+      "matches": true
+    },
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/types-first.txt",
+      "matches": true
+    }
+  ],
+  "independent_raw": [
+    {
+      "path": "/var/tmp/synapsor-b64-chat-independent-b66-20261008/evidence/new9/before.json",
+      "sha256": "b768fefa6312ce4451a2038af1a4ce84ec6f5617a9cc7c375b9551aa2a3249f9"
+    },
+    {
+      "path": "/var/tmp/synapsor-b64-chat-independent-b66-20261008/evidence/new9/before.txt",
+      "sha256": "37db4385fbef5360090d672fc2360a0a5a3eb9dacb3a390e5e4182030fe69518"
+    },
+    {
+      "path": "/var/tmp/synapsor-b64-chat-independent-b66-20261008/evidence/new9/after.json",
+      "sha256": "0a33ea8c08be65d163cf1a9a072e20c9089737f33e325e24020203721f4a2768"
+    },
+    {
+      "path": "/var/tmp/synapsor-b64-chat-independent-b66-20261008/evidence/new9/after.txt",
+      "sha256": "49b3222bcd1e12f90249ab524922f9cb6b820361cec9e4ae445da90b47b93352"
+    },
+    {
+      "path": "/var/tmp/synapsor-b64-chat-independent-b66-20261008/evidence/new9/types.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "storage": "Allraw/evidence/stores retainedlocally; rawlogs notcommitted orpublished. Privatebackup forsource/docs only, no origin/force.",
+  "allocation": "Mainauthorizedslot4 max1. BoundedSTARTbeforethenafterthenfinite types; ENDED, slot4returned. No332/74broadsuite repeat, no heavyparentprocess.",
+  "limits": "No broadpublic/providercompatibility/nativeSourcequalification. Mainintegration/runtimeproof/publicCLIhook remains separate; no Actionindependentacceptance claimed."
+}
