@@ -1,14 +1,14 @@
-ACTIVE B64: exit only at zero canonical250typed+66delete plus reclassified decision sites; no deferral; paid CLOSED.
-B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z unchanged; candidate3/history/holds untouched.
-Main codex/b64-authoring-protocol-20261008 @3d2e5f29; [counts/owners](docs/development/b64-english-inventory/LANES.json); boundary19147lines.
-Read a174 original57 closed R2scoped178PASS/build0; last6 awaitMainintegration; native93220PASS/assess47 source only; Main Readhooks11/public/activeports NEXT.
-Ask original49 integrated/70PASS/types0; new3audit f4b R1ACCEPT24PASS/types0 andexactMainintegration; remaining0/0; no English plan engine callers.
-Independentall141audit a6f:101legitimate/25typedreclassifications/15retired; [per-ID verdict](docs/development/b64-legitimate-independent/VERDICT.json), everynewsiteassigned.
-Privacy23typed/2delete pendingcoherentqualification (scope2PASS/vocab21PASS); I00371implemented829notMainintegrated. Main38typed/0delete incl8newaudit sites.
-Chat originalsource/CP05/06/08accepted integrated768; new9typed/0delete operationalpresentation sites assignedsameChatowner, implemented85af6451, B66independentreviewpending; [record](docs/development/b64-chat-integration.json).
-Action43typed/5delete incl2newaudit sites, ownerTUI79/guided28/renamed1PASS types0; independent/publicwholeSource hooks open. Sameowner wires B65 public designation.
-B66 integrated518b9c21 independently accepted native/public both30/40orders; deciding loser check dependency stale, not hardlimit; [proof](docs/development/b66-mysql-writer/MAIN-PUBLIC-RESULT.json).
-B65 fresh30then25=55 historicalFAIL; runtime native namespace replacement stillCOMMIT55 OPEN; receipt75af3PASS/87PASS separate; R2 presealed; old fixture unsupported shapes kept separate from proposed minimal Source.
-Slots1Action/2returned/3Privacy7beforefinished/4B66Chatreview;4heavy max8workers/run;8GiBfloors;keepallstorage. CIcore d322 independently21PASS; exact365allowances accepted; repositorygate43226unmatchedsyntaxnodes; practicalcoverageOPEN.
-Evidence [checkpoint](docs/development/b64-english-inventory/PARALLEL-CHECKPOINT.json), [origin](docs/development/b64-read-review-origin.json); no release/fullpublic PASS claimed.
-No paid operation; Luna35total/liabilities15.27063125 inclhold1.2693125/remain19.72936875 preserved; commit/privatepush each checkpoint.
+ACTIVE B64 — zero English decision sites required; paid CLOSED. Main codex/b64-authoring-protocol-20261008 @2eb7531a; private backup only.
+T0 2026-10-08T06:32:23Z; end 2026-10-13T06:32:23Z unchanged. Frozen candidate3/history/holds untouched; boundary-commands19147 lines.
+Independent audit of141:101legitimate,25typed reclassifications,15already retired; [per-ID evidence](docs/development/b64-legitimate-independent/VERDICT.json).
+Remaining lane decision sites typed/delete: Ask0/0,Read0/0,Chat0/0,Privacy23/2,Action43/5,Main36/0; [exact status](docs/development/b64-english-inventory/LANES.json). Branch closure differs from Main/public integration.
+Ask original49+new3 integrated; independent24PASS and Main13PASS/types0; no English plan engine callers. Main I02087/I02100 accepted e52adbf1;126affectedPASS/types0.
+Chat new9 accepted d91140PASS/types0, integrated80PASS/types0; Main CLI original-error hook2eb after5PASS awaits B66 independent check; old CP05/06/08 preserved.
+CI guard wired permanently; core/formal/stale controls accepted, Main26PASS;363exact allowances. Repository practical coverage remains OPEN (36441unmatched syntax candidates, not decision counts).
+Read accepted a174 last6 +932 persistence +47native assess await coherent Main integration; successor16f native ACK6PASS source-scoped R2accepted; [ordered plan](../b57-fixture-prep/docs/development/b64-read-integration-plan.json).
+NEXT Main: integrate selective Privacy typed protocol + Read packets, then actual public confirmations/activation/active serializers; no whole dependency snapshots, no fabricated scope/origins.
+Privacy23/2: native vocabulary ports and full Source inventory binding pending;9ffd adapter scope defects now finite producer repair, R2review/strict compatibility pending; no global guard weakening.
+Action43/5: same owner owns typed Source producer/public hard_limit8e339; Main renderer + review label hooks pending; runtime approval.shared_limits locator567d ready.
+B65 namespace replacement COMMIT55 remains preserved; current narrow writer hard capability unsupported until proven; receipt8-column9464 positive separate. Runtime/R2 finite namespace/duplicate controls active; no public support inferred.
+Slots1returned/2B65runtime/3Privacyfinite/4B66CLIreview;4heavy max8workers/run,8GiB free floors,isolated0700 resources; keep all storage, revisit below30GB.
+Luna35total/liabilities15.27063125 inclhold1.2693125/remain19.72936875; no paid/model calls. Commit+private-push every checkpoint; no freeze or overall B64 PASS.
