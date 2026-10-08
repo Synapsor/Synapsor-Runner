@@ -2178,7 +2178,7 @@ function conversationalPhaseTool(phase: PhaseName, compatible: boolean, revision
 /** The exact strict provider grammar, composed into the external structured
  * draft shape. This is presentation only; compileActionRuleModelDraft remains
  * the sole semantic validator and authority compiler. */
-export function actionRuleModelDraftJsonSchema(): Record<string, unknown> {
+export function actionRuleModelDraftJsonSchema(options?: { purpose: "compiled_checkpoint" }): Record<string, unknown> {
   const schemas = new Map(ACTION_RULE_PHASES.map((phase) => [
     phase,
     phaseTool(phase, false, false).input_schema as Record<string, unknown>,
@@ -2196,7 +2196,7 @@ export function actionRuleModelDraftJsonSchema(): Record<string, unknown> {
   };
   const rule = withoutStatus(drafts("rule")[0]!);
   const definitions = Object.assign({}, ...[...schemas.values()].map((schema) => schema.$defs ?? {}));
-  return {
+  const result: Record<string, unknown> = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     ...rule,
     required: ["schema_version", ...rule.required, "verification", "effect", "approval"],
@@ -2209,6 +2209,17 @@ export function actionRuleModelDraftJsonSchema(): Record<string, unknown> {
     },
     ...(Object.keys(definitions).length ? { $defs: definitions } : {}),
   };
+  if (options?.purpose === "compiled_checkpoint") {
+    // The provider must supply explanatory examples, while already compiled
+    // manual/saved drafts follow the compiler's array contract. Only this
+    // record-purpose projection differs; provider grammar remains unchanged.
+    const properties = result.properties as Record<string, Record<string, unknown>>;
+    const review = properties.review!;
+    const reviewProperties = review.properties as Record<string, Record<string, unknown>>;
+    properties.review = { ...review, properties: { ...reviewProperties,
+      examples: { ...reviewProperties.examples, minItems: 0 } } };
+  }
+  return result;
 }
 
 function phaseTool(

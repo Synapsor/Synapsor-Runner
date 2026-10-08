@@ -1,5 +1,5 @@
 {
-  "status": "WIP_NOT_ACCEPTED",
+  "status": "INDEPENDENT_REVIEW_PENDING",
   "base": "1b73e230",
   "types": 0,
   "first_characterization": "missing module before implementation, not old product defect",
@@ -12,9 +12,22 @@
   "ownership": "Sole delegated authoring-operator-question.ts plus typed parameter binding/host; Main Resume/boundary untouched",
   "contract": "Existing question/proposal/history, immutable origin/baseline refs, no new store/completion/allowance; full candidate replay compile before native CAS port; pending fields derived from events",
   "open": [
-    "Complete focused validation after codec-purpose compatibility resolution",
     "Independent NF variants",
-    "Main actual Resume/current-record resolver/public wiring; current protected ports synthetic"
+    "Main actual Resume/current-record resolver/public wiring; current protected mutation/resolve ports synthetic"
   ],
-  "usage": "28% used latest Main checkpoint; controlling stop >=95% used"
+  "usage": "28% used latest Main checkpoint; controlling stop >=95% used",
+  "after": {
+    "pass": 51,
+    "fail": 0,
+    "skip": 0,
+    "files": 4
+  },
+  "shape_contract": "Provider grammar default >=2 examples unchanged; explicit compiled_checkpoint purpose uses compiler min0, both reject unknown authority keys. Original existing fixture unchanged.",
+  "formatting": "New module TypeScript-printer formatting only; emitted JavaScript scanner tokens identical before/after (binding emitted bytes identical). Independent review reruns final immutable source.",
+  "final_native": {
+    "pass": 6,
+    "fail": 0,
+    "skip": 0
+  },
+  "types_final": 0
 }

@@ -1,4 +1,4 @@
-import { parseTypedParameterBinding, parseTypedParameterRecord, assertTypedParameterSequence, assertTypedParameterGeneration, type TypedParameterBinding, type TypedParameterRecord } from "./authoring-typed-parameter-binding.js";
+import { parseTypedParameterBinding, parseTypedParameterRecord, assertTypedParameterSequence, assertTypedParameterGeneration, typedParameterPendingFields, type TypedParameterBinding, type TypedParameterRecord } from "./authoring-typed-parameter-binding.js";
 import { parseReadScopeQuestionBinding, readScopeConsumption, type ReadScopeQuestionBinding } from "./authoring-read-scope-binding.js";
 import { assertAuthoringReadCheckpoint } from "./authoring-generation-recovery.js";
 import { randomUUID } from "node:crypto";
@@ -174,7 +174,11 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     if (!Array.isArray(value.proposal_history) || value.proposal_history.length > 16) invalid("Invalid proposed interpretation history.");
     for (const previous of value.proposal_history) validateProposal(value as OperatorQuestion, previous);
   }
-  if (value.kind === "typed_parameters") assertTypedParameterSequence(parseTypedParameterBinding(value.typed_parameters), [...((value.proposal_history as OperatorQuestion["proposal_history"]) ?? []), ...(value.proposal ? [value.proposal as NonNullable<OperatorQuestion["proposal"]>] : [])]);
+  if (value.kind === "typed_parameters") {
+    const records = assertTypedParameterSequence(parseTypedParameterBinding(value.typed_parameters), [...((value.proposal_history as OperatorQuestion["proposal_history"]) ?? []), ...(value.proposal ? [value.proposal as NonNullable<OperatorQuestion["proposal"]>] : [])]);
+    if (value.confirmation !== undefined && typedParameterPendingFields(records).length)
+      invalid("Retained pending events cannot be confirmed by changing their display.");
+  }
   if (value.confirmation !== undefined && (!value.proposal || !object(value.confirmation)
     || !exact(value.confirmation, ["actor", "recorded_at", "proposal_digest", "decision"])
     || value.confirmation.actor !== "local_installation_operator" || !date(value.confirmation.recorded_at)
