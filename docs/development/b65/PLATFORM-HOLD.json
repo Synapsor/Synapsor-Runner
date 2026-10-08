@@ -1,0 +1,10 @@
+{
+  "thread": "01a117fd-4600-76a3-baf7-e404eb16d0d3",
+  "turn": "01a11cb6-3174-7283-a3a8-1dac992ca508",
+  "status": "systemError",
+  "reported_reason": "Possible cybersecurity risk; platform message requires Advanced Account Security with compatible hardware security key for indicated access",
+  "last_completed": "G3 both winner orders public Source parent lock wait and stale refusal",
+  "next": "G4 preseal4fcb1a46: fresh30then25 and prior-state30/10, NOT RUN",
+  "containment": "Read-only /proc inspection found0 owned processes; all5 B65 tester PG containers Exited; no G4 owned runtime directory. No database effects replayed and no alternative execution route opened.",
+  "safe_work": "B64 and independently authorized offline compiler/transport review continue; paid CLOSED; retain everything per owner storage decision"
+}
