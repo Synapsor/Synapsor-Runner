@@ -18,13 +18,15 @@ import * as resumePersistence from "./boundary-authoring-resume.js";
 import { generateModelReadWorkload } from "./read-workload-model.js";
 import type { AskProviderDependencies } from "./model-ask.js";
 
+import { newPolicySourceSession, policyTextSnapshot, savePolicySources, authoringDestination } from "./authoring-policy-source.js";
+
 const roots: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true });
 });
 
-async function fixture(renamed = false, ambiguous = false) {
+async function fixture(renamed = false, ambiguous = false, declaredRootMeaning = true) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-read-relationship-host-"));
   roots.push(root);
   const schema = renamed ? "catalog" : "editorial";
@@ -75,6 +77,14 @@ async function fixture(renamed = false, ambiguous = false) {
     actor: "synthetic-reviewer", reason: "Leave inspected relationships pending for a later explicit review." }, async () => inspection);
   await mutations.commitBoundaryResourceReviewMutation(root, removed);
   const before = await loadBoundaryReviewContext(root);
+  if (declaredRootMeaning) {
+    // Sealed owner fact visible to the actual model. FK consent below is only structural.
+    const source = newPolicySourceSession();
+    source.snapshots = [policyTextSnapshot(Buffer.from(`${from} contains business references.`), "declared-reference-meaning.txt")];
+    source.active = 1;
+    source.approvals = [{ digest: source.snapshots[0]!.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
+    await savePolicySources(root, source);
+  }
   expect(before.candidate.pack.resources.find(r => r.id === from)!.relationships).toEqual([]);
   return { root, from, tenant, inspection, before };
 }
@@ -186,6 +196,16 @@ async function resumeState(f: Fixture) {
 }
 
 describe("public host Read relationship preparation", () => {
+  it("keeps business root association unresolved when only exact structural paths were reviewed", async () => {
+    const f = await fixture(false, false, false);
+    const run = await runHost(f);
+    await expect(run.operation).resolves.toBe(0);
+    expect(run.failures.join("\n")).toContain("READ_WORKLOAD_SCOPE_AMBIGUOUS");
+    expect((await loadBoundaryReviewContext(f.root)).candidate.pack.resources.find(r => r.id === f.from)!.relationships).toHaveLength(2);
+    expect(run.snapshots.map(s => s.candidate.pack.resources.find(r => r.id === f.from)!.relationships.length)).toEqual([0, 1, 2]);
+    await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
   it("retains an unavailable structural request and checks it locally on restart without another model call", async () => {
     const f = await fixture();
     f.from = "editorial.final_reviews"; // Included, but has no outgoing FK; never invent an inverse.

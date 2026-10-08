@@ -18384,8 +18384,8 @@ describe("public saved-job connection recovery control", () => {
       }
     } finally { await f.dispose(); }
   });
-  it.each(["native-legacy-association", "native-unconfirmed-association", "native-literal-retention", "native-no-confirm", "native-cancel-confirm", "native-source-cas", "native-answer-too-large", "native-remap-failed", "native-history-full", "native-index-save-failed", "native-meaning-retention", "native-source-drift", "native-competing", "native-decline", "native-blank-cancel", "native-replace-yes", "native-blank", "native-replace-no", "pause", "answer", "decline", "blank", "blank-cancel", "replace-no", "replace-yes", "replace-source-drift", "replace-competing", "decline-source-drift", "decline-competing", "source-drift", "competing", "registered-refusal", "diagnostic-refusal", "checkpoint-failed", "checkpoint-noop", "read-ack-race", "resume-ack-race"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async rawMode => {
-    const mode = ["native-meaning-retention", "native-literal-retention"].includes(rawMode) ? "answer" : rawMode.replace(/^native-/u, "");
+  it.each(["missing-root-fact", "native-legacy-association", "native-unconfirmed-association", "native-literal-retention", "native-no-confirm", "native-cancel-confirm", "native-source-cas", "native-answer-too-large", "native-remap-failed", "native-history-full", "native-index-save-failed", "native-meaning-retention", "native-source-drift", "native-competing", "native-decline", "native-blank-cancel", "native-replace-yes", "native-blank", "native-replace-no", "pause", "answer", "decline", "blank", "blank-cancel", "replace-no", "replace-yes", "replace-source-drift", "replace-competing", "decline-source-drift", "decline-competing", "source-drift", "competing", "registered-refusal", "diagnostic-refusal", "checkpoint-failed", "checkpoint-noop", "read-ack-race", "resume-ack-race"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async rawMode => {
+    const mode = ["missing-root-fact", "native-meaning-retention", "native-literal-retention"].includes(rawMode) ? "answer" : rawMode.replace(/^native-/u, "");
     const native = rawMode.startsWith("native-");
     const expectedMeaning = rawMode === "native-literal-retention"
       ? "  The scheduled or completed stage of the selected visit. 🧭  " : "The scheduled or completed stage of the selected visit.";
@@ -18395,7 +18395,8 @@ describe("public saved-job connection recovery control", () => {
     try {
       const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
       const source = newPolicySourceSession();
-      source.snapshots = [policyTextSnapshot(Buffer.from("The visit status describes the selected visit's current stage."), "visit-stages.txt")];
+      source.snapshots = [policyTextSnapshot(Buffer.from("The visit status describes the selected visit's current stage."
+        + (rawMode === "missing-root-fact" ? "" : "\npublic.service_visits contains selected visits.")), "visit-stages.txt")];
       source.active = 1; source.approvals = [{ digest: source.snapshots[0]!.digest,
         destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
       if (mode === "history-full") source.operator_messages = Array.from({ length: 64 }, (_, i) => `Existing statement ${i}.`);
@@ -18620,6 +18621,18 @@ describe("public saved-job connection recovery control", () => {
         return;
       }
       expect(final.status).toBe("ready"); if (final.status !== "ready") return;
+      if (rawMode === "missing-root-fact") {
+        // A confirmed field explanation cannot invent a resource-root association.
+        // Preserve the original pre-B59 failure as a substantive pending control.
+        expect(sawAnswer).toBe(true); expect(requestJson).toHaveBeenCalledTimes(2);
+        expect(final.value.read_assistance).toMatchObject({ stage: "waiting",
+          pending_question: { kind: "clarification", request: { resource: "public.service_visits",
+            reason_binding: { kind: "requested_read_scope" } } },
+          state: { clarified_targets: [{ resource: "public.service_visits", field: "status", answer: expectedMeaning }] } });
+        expect(final.value.read).toBeUndefined(); expect(noAction).not.toHaveBeenCalled();
+        expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
+        return;
+      }
       if (mode.endsWith("-association")) {
         expect((await loadPolicySources(f.root, source.id)).operator_messages ?? []).toEqual([]);
         expect(requestJson).toHaveBeenCalledTimes(2);
