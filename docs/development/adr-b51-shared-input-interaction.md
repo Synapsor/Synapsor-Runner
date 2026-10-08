@@ -502,3 +502,76 @@ This direction supersedes historical demo-date cutoffs, instance-only delivery d
 - B61 remains separately accepted within native source_db atomic receipt/reconciliation scope. Actual runner_ledger uncertainty remains truthful. No effect replay, receipt-mode switch, grant or recovery-right expansion. Prefer existing-record projections; any genuinely new record/digest migration needs an explicit compatibility decision.
 
 Existing scope close is 2026-10-09T21:51:08Z and final delivery is 2026-10-10T21:51:08Z. ONE additional 48-hour OFFLINE completion window is pre-authorized only if needed for these named checks; it has not been activated. If activated once, record it against that final deadline (2026-10-12T21:51:08Z). It does not extend paid permission, add samples, money or frozen candidates. Candidate3 is preserved. Candidate4 freezes only after foundation, composed workflow, settled gates and independent installed acceptance; then the existing focused paid edit, one full paid rehearsal and owner rehearsal sequence applies. Luna total remains35USD with historical liabilities/holds. Paid remains CLOSED. Demo date is movable and is not a reason to defer necessary ownership.
+
+
+## B64 controlling structured authoring protocol and editable readbacks
+
+Owner resumed work under B64 plus the direct typed-input addendum. T0 is
+2026-10-08T06:32:23Z (October 7, 23:32:23 PDT), recorded once. The 120-hour
+window ends 2026-10-13T06:32:23Z; implementation targets the first 96 hours,
+with the final 24 hours reserved for integration, acceptance and closeout.
+This replaces earlier candidate-4 product cutoffs for B64 only. The prior
+48-hour extension was not activated and does not stack. Earlier requirements
+to expand B59 English semantic classifiers are historical for migrated paths.
+Preserve candidate3, held jobs and all financial/recovery history.
+
+Main owns this contract, integration, protocol/field/domain interfaces and shared
+boundary wiring. Read owner reuses the evidence resolver and adds reviewed
+structured scope. Presentation owner extends the B51 presenter/B48 adapter;
+Main owns Action typed edit/clarification/completion until a separate existing
+owner is assigned. Independent Read reviewer and Reviewer2 adjudicate separate
+boundaries; implementers cannot self-approve. One editor per hotspot.
+
+| Boundary | Model proposal / validator owner | Operator decision | Protected save / view | Entry routes |
+| --- | --- | --- | --- | --- |
+| Read scope | boundary-job-model/read-workload-model plus read-boundary-revision-model; exact catalog and host-resolved request/Source refs; read-current-evidence derives confirmed evidence | Existing Read question/review host confirms exact inclusions/exclusions/intended use, never whole-resource access from FK/field meaning | Source/OperatorQuestion/Resume and saved workload owners; normalized scope card distinct from activation | setup, mapping/correction, saved Review, edit, Resume/Replace |
+| Action edit | action-rule-model bounded components and action-rule-draft compiler; selected exact baseline and actual canonical delta | Existing shared business host and grouped policy review; extra changes visible and reviewed, no preserved:all trust | Existing draft/checkpoint/Resume writers, whole-policy validation, disabled save then separate activation | setup, selected baseline edit, Review, Resume/cancel/Replace |
+| Clarification/completion | Existing typed tool decoders validate target/missing value/evidence; host chooses inspected mechanics vs business host | Trusted adapter captures raw answer or typed field event; model only proposes interpretation | Existing consumed-producer handoff and acknowledged protected saves; prose/finished cannot establish completion | Read and Action ordinary/public/restart paths |
+| Typed field review | Domain adapter exposes fixed integer/money/choice fields, exact target/dependencies and full proposal/diff; no model form or JSON setter | Enter keeps exact displayed suggestion in unconfirmed proposal; strict literal replaces, unresolved remains pending; one explicit default-No grouped confirmation | Versioned extension in existing question/Resume/draft owners, no keystroke Source writes or new form store; B51 presenter/B48 shared adapter | grouped/edit/missing/sequential/correction/pause, restart and ordinary public CLI |
+| Consent/details | Existing egress, activation and recovery owners; decision kind/purpose/payload/prior grant explicit | Separate appropriate existing decisions; no duplicate count-based suppression | Native Source/Resume and audit records; paged authorized projection, no second journal or provider calls to view | all consequential entries, /details and /exact |
+
+`authoring-typed-review.ts` defines the first host-only field/event/view contract.
+Meaning/applicability/operation/proposal/view identities remain distinct. Domain
+handlers must re-resolve field IDs, reparse raw literals, recheck currentness and
+save using existing CAS owners. The renderer grants no authority. Origin is
+saved-confirmed, saved-unconfirmed, model-proposal or operator-edit. Decimal
+money uses an explicit domain currency/scale and exact minor-unit arithmetic;
+no floating point rounding, partial parsing or runtime counter expansion.
+A typed field proposal cannot hide noneditable rules: the complete normalized
+proposal and calculated diff accompany the fields and final confirmation.
+
+Actual reachable semantic sites inventoried initially: action-rule-model's
+revision focus on only/keep/reviewer, punctuation/progress fallback to questions,
+explicit approval requirement extraction and diagnostic phase inference;
+action-execution-intent mode/negation inference; authoring-counting-requirements
+clause/outcome association; read-requested-scope and Read meaning classifiers.
+Each retired guard requires an explicit typed/domain replacement. Exact reference,
+identifier/line/digest syntax, redaction and terminal escaping stay. No blanket
+regex deletion. Receipt host/effects/currentness and B61 runtime machinery stay
+with existing owners; pending preconsent admission and original failed controls
+remain open. Current duplicate coverage consent is not solved by a new field view.
+
+Protocol mode/version must be pinned in the existing job boundary with explicit
+legacy handling and independent old-reader compatibility. Model-facing arguments
+cannot set actor, accepted/verified status, authoritative revisions or recovery
+rights. New protocol records may not silently fall back to prose inference.
+The narrow Owner permission for versioned proposal/confirmation/input/inspection
+records does not silently approve the old pending shared grant design.
+
+Development proof proceeds from encoder/decoder and production-handler controls
+to native save/restart and small public CLI flows. Preserve original regression
+failures and map any protocol fixture changes independently. Required cases:
+prose invariance, wrong value/target/ref, exact correction fidelity, blank/missing
+and partial literal handling, Enter != Yes, zero inference for local edits,
+stale/concurrent/late submissions, dependencies, restart/Replace/cancel, extra
+changes and interrupted saves. Refund semantics remain a pending/unsupported
+synthetic case where capability is absent; separate supported threshold/quorum
+fixtures establish positive flow, not substituted refund behavior.
+
+No freeze until integrated foundation and complete applicable full/type/live-DB/
+offline/package gates plus independent installed acceptance. Primary candidate4
+plus one conditional replacement only. Luna remains35USD total including all
+holds; only existing focused edit and final rehearsal slots. Paid admission is
+currently CLOSED. Early immutable DEV focused edit requires independent protocol,
+privacy, consent, save/recovery and admission acceptance; final rehearsal requires
+accepted installed successor. Tester alone may operate paid calls; no new samples.
