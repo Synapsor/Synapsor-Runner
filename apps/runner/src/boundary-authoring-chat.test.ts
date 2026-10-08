@@ -886,7 +886,7 @@ describe("Boundary authoring chat", () => {
       { value: "activate", label: "Activate this exact proposal-only action" },
       { value: "advanced", label: "Open draft details" },
       { value: "back", label: "Leave disabled" },
-    ], ["Proposal authority is currently disabled."])).resolves.toBe("back");
+    ], ["Proposal authority is currently disabled."], "back", { decisionKind: "activation", activationView: proposalActivationView() })).resolves.toBe("back");
 
     expect(memory.choices).toEqual([
       expect.objectContaining({
@@ -903,7 +903,7 @@ describe("Boundary authoring chat", () => {
         initialValue: "no",
       }),
       expect.objectContaining({
-        title: "PERMISSION REQUIRED",
+        title: "REVIEW CHANGE REQUESTS",
         initialValue: "back",
       }),
     ]);

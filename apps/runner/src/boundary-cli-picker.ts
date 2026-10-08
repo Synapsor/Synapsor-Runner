@@ -2812,11 +2812,8 @@ function boundaryResourceMapLines(
       : availableDerivedTenantScopeLines(view, theme, commandName);
     const selectedIdentity = view.row_identity.selected;
     const identityCandidate = view.row_identity.candidates[0];
-    const relevantBlockers = view.organization_scope
-      ? view.blockers.filter((value) => !/^trusted tenant scope is unresolved/iu.test(value))
-      : view.blockers;
     const blocker = (
-      relevantBlockers.join("; ") || "record identity is unresolved"
+      view.blockers.join("; ") || "record identity is unresolved"
     ).replace(/[.]+$/, "");
     return [
       theme.title(`TABLE ACCESS MAP - ${safeTerminalText(view.resource_id)}`),
@@ -3997,24 +3994,11 @@ function blockedBoundaryTableLines(
   const blockers = resource.blockers.length ? resource.blockers : ["review blocked"];
   for (const blocker of blockers) {
     const normalized = compactMapReferenceText(resource.resource_id, blocker);
-    const tenantScope = /^trusted tenant scope is unresolved(?:;\s*(.+))?\.?$/iu.exec(normalized);
-    if (tenantScope) {
-      if (resource.organization_scope) continue;
-      lines.push("Tenant scope: UNRESOLVED");
-      if (tenantScope[1]) {
-        lines.push(`Review: ${tenantScope[1].replace(/^review\s+/iu, "")}`);
-      }
-      continue;
-    }
     lines.push(`Blocked: ${normalized}`);
   }
 
   for (const reason of resource.scope_resolution_guidance?.why ?? []) {
-    const presentation = blockedScopeReasonPresentation(reason);
-    lines.push(
-      `${titleCaseMapLabel(presentation.label)}: ` +
-      compactMapReferenceText(resource.resource_id, presentation.message),
-    );
+    lines.push(`Why: ${compactMapReferenceText(resource.resource_id, reason)}`);
   }
   for (const [index, remediation] of (
     resource.scope_resolution_guidance?.remediation.slice(0, 2) ?? []
@@ -4024,26 +4008,6 @@ function blockedBoundaryTableLines(
     );
   }
   return lines;
-}
-
-function blockedScopeReasonPresentation(value: string): { label: string; message: string } {
-  const match = /^(Direct tenant scope|Derived tenant scope|Shared reference) unavailable:\s*(.+)$/iu.exec(
-    value.trim(),
-  );
-  if (!match) return { label: "why", message: value };
-  const labels: Record<string, string> = {
-    "direct tenant scope": "direct",
-    "derived tenant scope": "derived",
-    "shared reference": "shared",
-  };
-  return {
-    label: labels[match[1]!.toLowerCase()] ?? "why",
-    message: match[2]!,
-  };
-}
-
-function titleCaseMapLabel(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function compactMapReferenceText(resourceId: string, value: string): string {
@@ -4298,46 +4262,6 @@ function reviewItemPresentation(
   decision: string,
 ): { label: string; detail: string } {
   const original = reviewItemLabel(resourceId, decision);
-  const normalized = original.toLowerCase();
-  if (normalized.includes("visible and kept-out")) {
-    return {
-      label: "Column access",
-      detail: "Which fields are model-visible, Runner-output-only, or kept out.",
-    };
-  }
-  if (normalized.includes("field permissions")) {
-    return {
-      label: "Allowed operations",
-      detail: "What the agent may filter, sort, group, count, or measure.",
-    };
-  }
-  if (normalized.includes("minimum cohort")) {
-    return {
-      label: "Privacy limits",
-      detail: "Minimum group size plus extraction and differencing limits.",
-    };
-  }
-  if (normalized.includes("principal scope")) {
-    const field = original.match(/principal scope\s+([^\s]+)/i)?.[1];
-    return {
-      label: `User row scope${field ? `: ${field}` : ""}`,
-      detail: "Runner supplies the trusted user value outside AI requests.",
-    };
-  }
-  if (normalized.includes("tenant key")) {
-    const field = original.match(/tenant key\s+([^\s]+)/i)?.[1];
-    return {
-      label: `Customer row scope${field ? `: ${field}` : ""}`,
-      detail: "Runner supplies the trusted customer value outside AI requests.",
-    };
-  }
-  if (normalized.includes("relationship")) {
-    const target = original.match(/\son\s+([^\s]+)/i)?.[1];
-    return {
-      label: `Related-table path${target ? `: ${target}` : ""}`,
-      detail: "Which proven relationship is allowed and how row fan-out is bounded.",
-    };
-  }
   return {
     label: original,
     detail: "Review this exact table setting before signing off the table.",

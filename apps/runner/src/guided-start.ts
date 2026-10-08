@@ -19,6 +19,7 @@ import {
   compareGenerationLock,
   explorationBoundaryCandidateDigest,
   generationLockRemediation,
+  hasReviewedPrincipalScope,
   generationLockRemediationCommand,
   loadActivatedExplorationBoundary,
   loadActivatedExplorationBoundaries,
@@ -955,9 +956,9 @@ export function formatGuidedBoundaryReady(
     : candidate.trusted_context.database_role_tenant
       ? "tenant fixed by the read-only database login"
       : "tenant from your application";
-  const scope = first.principal_scope.startsWith("not required")
-    ? tenantScope
-    : `${tenantScope}; principal from your application`;
+  const scope = hasReviewedPrincipalScope(resource)
+    ? `${tenantScope}; principal from your application`
+    : tenantScope;
   return [
     ...lines,
     "Safe starting boundary",

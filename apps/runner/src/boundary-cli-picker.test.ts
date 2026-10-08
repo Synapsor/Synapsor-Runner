@@ -1488,12 +1488,10 @@ describe("boundary review terminal picker", () => {
     expect(renderedPlain).toContain(
       "not separate prompts.",
     );
-    expect(renderedPlain).toContain("1. Allowed operations");
-    expect(renderedPlain).toContain("2. Privacy limits");
-    expect(renderedPlain).toContain("3. User row scope: assigned_agent_id");
-    expect(renderedPlain).toContain("4. Customer row scope: organization_id");
-    expect(renderedPlain).toContain("5. Column access");
-    expect(renderedPlain).toContain("6. Related-table path: public.locations");
+    for (const [index, decision] of candidate.pending_decisions.entries()) {
+      const exact = decision.slice("public.check_ins: ".length);
+      expect(renderedPlain.replace(/\s+/gu, " ")).toContain(`${index + 1}. ${exact.charAt(0).toUpperCase()}${exact.slice(1)}`);
+    }
     expect(renderedPlain).toContain(
       "One S sign-off records all 6 exact decisions above.",
     );
@@ -2008,11 +2006,11 @@ describe("boundary review terminal picker", () => {
       expect(asciiTableColumnText(exhaustive, 0)).toContain("librarydb.transfer_requests");
       expect(asciiTableColumnText(exhaustive, 1)).toContain("BLOCKED");
       const review = asciiTableColumnText(exhaustive, 3);
-      expect(review).toContain("Tenant scope: UNRESOLVED");
-      expect(review).toContain("Direct: no trusted tenant column was found");
-      expect(review).toContain("Derived: loan_id -> loans.id is nullable");
+      expect(review).toContain("Blocked: trusted tenant scope is unresolved");
+      expect(review).toContain("Why: Direct tenant scope unavailable: no trusted tenant column was found");
+      expect(review).toContain("Why: Derived tenant scope unavailable: loan_id -> loans.id is nullable");
       expect(review).toContain(
-        "Shared: relationship transfer_loan_fk reaches tenant-scoped resource loans",
+        "Why: Shared reference unavailable: relationship transfer_loan_fk reaches tenant-scoped resource loans",
       );
       expect(review).toContain(
         "Next 1: Add and populate a trusted tenant column on transfer_requests",
@@ -2045,7 +2043,7 @@ describe("boundary review terminal picker", () => {
       const session = createBoundaryReviewInteractiveSession(input, output);
       const selected = session.chooseResource([blocked]);
       await send(input, "m");
-      for (let index = 0; index < 12; index += 1) {
+      for (let index = 0; index < 24; index += 1) {
         await emitKey(input, { name: "down", sequence: "\u001b[B" });
       }
       await emitKey(input, { name: "q", sequence: "Q" });
@@ -2055,7 +2053,7 @@ describe("boundary review terminal picker", () => {
       expect(rendered).toContain("WHOLE BOUNDARY MAP");
       expect(rendered).toMatch(/\+-+\+-+\+-+\+/u);
       const renderedReview = asciiTableColumnText(rendered, 2);
-      expect(renderedReview).toContain("Tenant scope: UNRESOLVED");
+      expect(renderedReview).toContain("Blocked: trusted tenant scope is unresolved");
       expect(renderedReview).toContain("some rows can have no owning tenant");
       expect(renderedReview).toContain("make transfer_requests.loan_id NOT NULL");
     }
@@ -2071,7 +2069,7 @@ describe("boundary review terminal picker", () => {
       { exhaustive: true },
     );
     expect(asciiTableColumnText(sharedReferenceMap, 3)).toContain(
-      "Review: Shared reference only if this table has no per-tenant rows",
+      "Blocked: trusted tenant scope is unresolved; review Shared reference only if this table has no per-tenant rows",
     );
     expect(sharedReferenceMap).not.toContain("Review: review Shared reference");
   });
@@ -2984,7 +2982,8 @@ describe("boundary review terminal picker", () => {
       .replace(/\s+/g, " ");
     expect(overview).toContain("Whole organization:");
     expect(overview).toContain("university-ir-dev");
-    expect(overview).not.toContain("Tenant scope: UNRESOLVED");
+    expect(asciiTableColumnText(formatBoundaryOverviewMap([resource], { exhaustive: true }), 3))
+      .toContain("Blocked: trusted tenant scope is unresolved");
     expect(overview).not.toContain("trusted tenant column");
   });
 

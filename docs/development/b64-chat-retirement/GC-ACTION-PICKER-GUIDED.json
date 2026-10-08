@@ -1,0 +1,13 @@
+{
+  "before_pin": "c97806c0",
+  "fixture_pins": ["f0317455", "2f5f2e73", "b9177bf7"],
+  "before": {"failed": 8, "skipped": 159, "files": 3},
+  "after": {"passed": 12, "skipped": 241, "files": 4},
+  "scope": {
+    "Action": "Explicit fifth argument decisionKind/activationView selects permission. Initial value preserved exactly; missing, absent or disabled default remains unresolved before guide/picker. Actual owner activation caller supplies back and proposal view (Main reviewed 6264e47c, adopted 49118191).",
+    "picker": "Untyped blocker and required-decision strings are shown without inferring scope kind, target, explanation or suppressing blockers. Generic Why label, existing schema-reference compaction, terminal escaping and wrapping retained as surface presentation. Preserved wording takes more lines; scroll fixture covers full diagnostic.",
+    "guided": "Existing hasReviewedPrincipalScope over reviewed resource controls principal summary, including PostgreSQL RLS setting; no first-query prose parsing."
+  },
+  "isolation": "Borrowed slot4, bwrap --unshare-net, owned0700 HOME/TMP, max/min workers1, available RAM19831708KiB and disk77873012KiB at launch",
+  "limits": "Focused regression cases only; full files, typecheck and independent acceptance pending. Existing fixture wording/defaults changed only to reviewed new port or preserved diagnostics."
+}

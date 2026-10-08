@@ -1103,28 +1103,28 @@ export function createBoundaryAuthoringChat(input: {
 
   const actionPrompter: ActionControlPrompter = {
     rememberDetails,
-    choose: async (title, choices, context, initialValue) => {
-      const permission = /^(?:ACTIVATE|APPROVE|APPLY)\b/iu.test(title.trim());
-      const actionActivation = /^ACTIVATE PROPOSAL ACTION$/iu.test(title.trim());
+    choose: async (title, choices, context, initialValue, metadata) => {
+      const permission = metadata?.decisionKind
+        ? metadata.decisionKind !== "business_review"
+        : Boolean(metadata?.activationView);
+      const actionActivation = metadata?.activationView?.kind === "proposal";
+      // Permission defaults belong to the caller's reviewed decision. Never
+      // infer a declining option from its label or silently select an alternative.
+      if (permission && !choices.some(option => !option.disabled && option.value === initialValue)) return undefined;
       if (permission && !actionActivation) {
         rememberDetails("PERMISSION REQUEST", [...meaningfulContext(context), title]);
       } else if (context?.length) {
         if (!actionActivation) rememberDetails(title, context);
       }
-      const safePermissionChoice = permission
-        ? choices.find((choice) => !choice.disabled && /^(?:back|no|cancel|decline|disabled|leave)$/iu.test(choice.value))
-        : undefined;
       const choice = {
         title: permission ? "PERMISSION REQUIRED" : title,
         message: permission
           ? permissionQuestion(title)
           : "Review the exact choices, then select one.",
         options: choices,
-        ...(safePermissionChoice
-          ? { initialValue: safePermissionChoice.value }
-          : initialValue
-            ? { initialValue }
-            : {}),
+        ...(initialValue !== undefined ? { initialValue } : {}),
+        ...(metadata?.decisionKind ? { decisionKind: metadata.decisionKind } : {}),
+        ...(metadata?.activationView ? { activationView: metadata.activationView } : {}),
       } satisfies ChoiceInput;
       return permission
         ? choosePermission(
