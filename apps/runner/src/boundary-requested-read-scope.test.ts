@@ -84,7 +84,7 @@ describe("original requested Read scope versus routing summary", () => {
     const response = { allowed: ["studio.accounts", "studio.payments"].map((resource, index) => ({ id: `extra_${index}`,
       description: `Read ${resource} status`, plan: { kind: "rows", resource, select: ["status"] } })), forbidden: [] };
     const requestJson = vi.fn(async (wire: { body: unknown }) => {
-      expect(JSON.stringify(wire.body)).toContain(request);
+      expect(JSON.stringify(wire.body)).toContain(JSON.stringify(request).slice(1, -1));
       return { status: 200, body: { output: [{ type: "function_call", call_id: "unrequested",
         name: "runner__submit_read_workloads", arguments: JSON.stringify(response) }] } };
     });
