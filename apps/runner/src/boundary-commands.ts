@@ -174,11 +174,9 @@ import {
   updateModelAuthorityMetadataMode,
 } from "./model-output-config.js";
 import {
-  askIntentCheckModeForBoundary,
   askIntentCheckModesForBoundaries,
   deleteAskIntentCheckPreference,
   renameAskIntentCheckPreference,
-  setAskIntentCheckMode,
 } from "./ask-intent-preferences.js";
 import { disableScopedExplore } from "./protect-query.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
@@ -2241,54 +2239,6 @@ async function interactiveBoundaryReviewLoop(input: {
               "Read-boundary review and active authority are unchanged.",
               "New action revisions remain disabled until their own rehearsal and activation.",
             ],
-          };
-      continue;
-    }
-    if (selected.action === "intent_check") {
-      const currentMode = await askIntentCheckModeForBoundary(
-        input.projectRoot,
-        selected.boundary_name,
-      );
-      const nextMode = currentMode === "balanced" ? "boundary_only" : "balanced";
-      if (nextMode === "boundary_only") {
-        const accepted = await input.session.confirm(
-          "Turn off the English question-to-plan check for local Ask on this boundary? A model may execute a valid reviewed plan even when it does not answer the wording of the question. Reviewed fields, operations, scope, suppression, drift, read-only compilation, and budgets remain enforced.",
-          { defaultValue: false },
-        );
-        if (!accepted) {
-          accessNotice = {
-            tone: "success",
-            title: "Local Ask remains in Balanced mode.",
-            lines: [
-              "Runner still compares the English question with the model's proposed reviewed plan before execution.",
-            ],
-          };
-          continue;
-        }
-      }
-      await setAskIntentCheckMode({
-        projectRoot: input.projectRoot,
-        boundaryName: selected.boundary_name,
-        mode: nextMode,
-      });
-      accessNotice = nextMode === "boundary_only"
-        ? {
-            tone: "warning",
-            title: `Local Ask for ${selected.boundary_name} now uses Boundary-only mode.`,
-            lines: [
-              "The English question-to-plan comparison is off for this boundary.",
-              "Every plan still passes the same reviewed Explore validator and compiler; no data authority changed.",
-              "Press T again to restore Balanced mode.",
-            ],
-            footer: "No review or activation is required for this local Ask preference.",
-          }
-        : {
-            tone: "success",
-            title: `Local Ask for ${selected.boundary_name} now uses Balanced mode.`,
-            lines: [
-              "Runner will refuse a model plan that contradicts the English question before Explore execution.",
-            ],
-            footer: "Reviewed data authority and source data were unchanged.",
           };
       continue;
     }

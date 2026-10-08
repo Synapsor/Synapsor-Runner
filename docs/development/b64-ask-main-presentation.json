@@ -1,0 +1,24 @@
+{
+  "owner_contract": "Model submits typed ExplorePlan; Runner validates reviewed catalog/boundary and renders readback, no English acceptance or synthesized plan",
+  "before_pin": "64cef4d5",
+  "before": "2FAIL in actual terminal picker and Workbench native route",
+  "after": "3PASS606filtered, types exit0; executable Workbench check pending final result",
+  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/ask-presentation-after.json",
+  "changes": [
+    "Remove obsolete local English-comparison toggle from CLI and Workbench; keep formal reviewed authority text",
+    "Stored preference API remains wire-compatible but reports question_to_plan_checked false for either value; values grant no new authority",
+    "Preserve defaultNo, consent scopes, actual model-output control and same authority/Source bytes"
+  ],
+  "test_disposition": [
+    {
+      "test": "boundary-cli old intent_check toggle case",
+      "reason": "Owner explicitly retired this behavior; no fake intent_check command path retained. Closing access still asserts identical generation lock/draft/no activation/no consent."
+    },
+    {
+      "test": "terminal T toggle case",
+      "reason": "Replaced by actual T-ignored/Q-close test with correct reviewed-validation display; model-output control assertions retained"
+    }
+  ],
+  "independent": "R1 review requested with98350 engine; not yet accepted",
+  "removed_boundary_lines": 50
+}

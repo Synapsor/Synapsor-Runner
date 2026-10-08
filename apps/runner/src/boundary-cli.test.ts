@@ -13737,7 +13737,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("toggles the selected boundary's local Ask plan check without changing authority", async () => {
+  it("leaves reviewed authority unchanged when closing access without a semantic-check toggle", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-ask-intent-"));
     const inspection = boundaryInspection();
     const build = buildAutoBoundary({
@@ -13752,13 +13752,9 @@ describe("boundary operator-plane CLI", () => {
       sourceEnv: "DATABASE_URL",
       inspectedSchema: "public",
     });
-    const choices = [{
-      action: "intent_check" as const,
-      boundary_name: build.exploration_boundary.pack.name,
-    }, undefined];
     const confirmations: string[] = [];
     const session: BoundaryReviewInteractiveSession = {
-      chooseResource: async () => choices.shift(),
+      chooseResource: async () => undefined,
       editFieldTiers: async () => undefined,
       promptText: async () => undefined,
       confirm: async (prompt) => {
@@ -13786,7 +13782,7 @@ describe("boundary operator-plane CLI", () => {
       await expect(askIntentCheckModeForBoundary(
         root,
         build.exploration_boundary.pack.name,
-      )).resolves.toBe("boundary_only");
+      )).resolves.toBe("balanced");
       expect(await fs.readFile(path.join(root, ".synapsor/generation-lock.json"), "utf8"))
         .toBe(lockBefore);
       expect(await fs.readFile(
@@ -13795,7 +13791,7 @@ describe("boundary operator-plane CLI", () => {
       )).toBe(draftBefore);
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundaries.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
-      expect(confirmations[0]).toContain("Turn off the English question-to-plan check");
+      expect(confirmations).toEqual([]);
       expect(output).toContain("Access editor closed");
     } finally {
       await fs.rm(root, { recursive: true, force: true });

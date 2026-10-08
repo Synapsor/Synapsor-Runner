@@ -1827,8 +1827,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 			      const shapeInputs=shapeFields.map(field=>'<label>'+esc(field.label)+'<input id="boundary-shape-'+esc(field.key)+'" type="number" min="'+esc(field.min)+'" max="'+esc(field.max??reviewedBudgetCeilings[field.key])+'" value="'+esc(field.value??candidate.budgets[field.key])+'" aria-describedby="boundary-shape-help"><small>'+esc(field.unit)+'</small></label>').join('');
 		      const shapeSettings='<details class="boundary-options"><summary>Result shape, timeout, and path depth</summary><div class="boundary-name-editor"><p><strong>Reviewed execution controls</strong> bound one result and the proven relationship paths Runner may compile. Three-hop traversal is opt-in and can be materially slower than direct tenant columns.</p>'+shapeInputs+'<button id="save-boundary-shape" class="secondary" type="button">Save reviewed controls</button><span id="boundary-shape-status" class="status-message" aria-live="polite"></span><small id="boundary-shape-help">Every value is digest-bound and hard-capped. Depth three still requires the exact catalog-proven path to be reviewed. Small-group suppression, rolling extracted-cell accounting, and differencing protection are unchanged.</small></div></details>';
 			      const modelOutputSettings='<details class="boundary-options" '+(modelAuthorityMetadataMode==="exact"?'open':'')+'><summary>Model response details · '+(modelAuthorityMetadataMode==="semantic"?'[SEMANTIC] exact hashes stay operator-only':'[EXACT] diagnostic hashes are visible to models')+'</summary><div class="boundary-name-editor"><p><strong>Semantic</strong> gives models reviewed names, results, privacy outcomes, and evidence handles while keeping internal digests and fingerprints in operator evidence. <strong>Exact diagnostics</strong> also sends those internal values to the model.</p><label>Model-facing authority metadata<select id="boundary-model-output-mode"><option value="semantic" '+(modelAuthorityMetadataMode==="semantic"?'selected':'')+'>Semantic — keep hashes operator-only</option><option value="exact" '+(modelAuthorityMetadataMode==="exact"?'selected':'')+'>Exact diagnostics — include hashes</option></select></label><button id="save-boundary-model-output" class="secondary" type="button">Save global presentation</button><span id="boundary-model-output-status" class="status-message" aria-live="polite"></span><small>Operator details, evidence, query audit, and internal drift checks always stay exact. This global presentation setting changes no reviewed data authority and needs no activation. Restart external MCP servers after changing it; Workbench Ask refreshes before its next question.</small></div></details>';
-			      const askIntentMode=selectedEntry?.ask_intent_check_mode||"balanced";
-			      const askIntentSettings='<details class="boundary-options" '+(askIntentMode==="boundary_only"?'open':'')+'><summary>Local Ask plan check · '+(askIntentMode==="balanced"?'Balanced':'Boundary only')+'</summary><div class="boundary-name-editor"><p><strong>Balanced</strong> refuses a valid reviewed model plan when it contradicts the English question. <strong>Boundary only</strong> removes that comparison and executes the model&apos;s plan through the same local Explore validator.</p><label>Local Ask behavior<select id="boundary-ask-intent-mode"><option value="balanced" '+(askIntentMode==="balanced"?'selected':'')+'>Balanced — compare question and plan</option><option value="boundary_only" '+(askIntentMode==="boundary_only"?'selected':'')+'>Boundary only — trust the model&apos;s reviewed plan</option></select></label><button id="save-boundary-ask-intent" class="secondary" type="button">Save local Ask preference</button><span id="boundary-ask-intent-status" class="status-message" aria-live="polite"></span><small>This setting does not widen data access and needs no activation. Resources, fields, operations, tenant/principal scope, suppression, drift, read-only SQL compilation, and budgets remain enforced. It affects only Runner&apos;s local CLI and Workbench Ask; MCP Explore and production HTTP are unchanged.</small></div></details>';
+			      const askIntentSettings='<p class="muted">Local Ask validates the model&apos;s typed plan against reviewed fields, operations, scope, privacy controls and limits. Runner renders the plan readback; it does not interpret the question to accept or invent a plan.</p>';
 			      const cohortValues=[...new Set(candidate.pack.resources.map(resource=>resource.minimum_cohort_size))];
 			      const cohortCurrent=cohortValues.length===1?cohortValues[0]:5;
 			      const cohortSettings='<details class="boundary-options"><summary>Privacy for all tables'+(cohortValues.length===1?' · minimum group size '+esc(cohortCurrent):' · mixed group sizes')+'</summary><div class="boundary-name-editor"><label>Minimum group size for every included table<select id="boundary-cohort-all"><option value="5" '+(cohortCurrent===5?'selected':'')+'>5 — default; hide groups with 1–4 rows</option><option value="4" '+(cohortCurrent===4?'selected':'')+'>4 — hide groups with 1–3 rows</option><option value="3" '+(cohortCurrent===3?'selected':'')+'>3 — hide groups with 1–2 rows</option><option value="2" '+(cohortCurrent===2?'selected':'')+'>2 — hide groups with 1 row</option><option value="1" '+(cohortCurrent===1?'selected':'')+'>1 — show every non-empty group; suppression off</option></select></label><label>Human reviewer<input id="boundary-cohort-actor" type="text" maxlength="128" value="'+esc(byId("actor").value.trim())+'"></label><label>Reason for this privacy setting<textarea id="boundary-cohort-reason" maxlength="500" rows="2" placeholder="Explain why this minimum group size is appropriate for every table in this boundary."></textarea></label><button id="save-boundary-cohort" class="secondary" type="button" '+(candidate.pack.resources.length?'':'disabled')+'>Save for all '+esc(candidate.pack.resources.length)+' table'+(candidate.pack.resources.length===1?'':'s')+'</button><span id="boundary-cohort-status" class="status-message" aria-live="polite"></span><small>Runner hides aggregate groups with fewer rows than this number. Choosing 1 turns small-group suppression off and may reveal a group containing one person or record. Saving creates one disabled boundary change; Review and activate remains separate.</small></div></details>';
@@ -1992,32 +1991,6 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		          saved.textContent=mode==="semantic"
 		            ?"Semantic responses are active. Exact authority metadata remains in operator evidence."
 		            :"Exact diagnostic metadata is model-visible. Restart external MCP servers; Workbench Ask refreshes automatically.";
-		        }catch(error){status.className="status-message error";status.textContent=error.message;}
-		      };
-		      byId("save-boundary-ask-intent").onclick=async()=>{
-		        const status=byId("boundary-ask-intent-status");
-		        const mode=byId("boundary-ask-intent-mode").value;
-		        status.className="status-message";
-		        if(mode!=="balanced"&&mode!=="boundary_only"){
-		          status.className="status-message error";
-		          status.textContent="Choose Balanced or Boundary only.";
-		          return;
-		        }
-		        if(mode===askIntentMode){status.textContent="This local Ask preference is already active.";return;}
-		        if(mode==="boundary_only"&&!window.confirm("Turn off the English question-to-plan comparison for local Ask on "+selectedEntry.name+"? A valid but unrelated reviewed plan may execute. The reviewed Explore validator, scope, suppression, drift, read-only compiler, and budgets remain enforced.")){
-		          byId("boundary-ask-intent-mode").value=askIntentMode;
-		          status.textContent="No local Ask preference changed.";
-		          return;
-		        }
-		        try{
-		          status.textContent="Saving the local Ask preference...";
-		          await post("/api/boundary/ask-intent-check",{name:selectedEntry.name,mode});
-		          await load();
-		          const saved=byId("boundary-ask-intent-status");
-		          saved.className=mode==="boundary_only"?"status-message warn":"status-message";
-		          saved.textContent=mode==="boundary_only"
-		            ?"Boundary-only mode is active. Question-to-plan comparison is off; reviewed Explore validation is unchanged."
-		            :"Balanced mode is active. Runner will refuse a contradictory model plan before Explore execution.";
 		        }catch(error){status.className="status-message error";status.textContent=error.message;}
 		      };
 		      const rankedSave=byId("save-ranked-groups");
@@ -4422,10 +4395,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const boundaryBadge=scopedExplore
         ?'<span class="badge">Boundary set '+esc(String(askStatus.active_boundary_set_digest||askStatus.active_boundary_digest).slice(0,18))+'…</span>'
         :'';
-      const boundaryOnlyChecks=(askStatus.ask_intent_checks||[]).filter(item=>item.mode==="boundary_only");
-      const askIntentNotice=boundaryOnlyChecks.length
-        ?'<div class="band notice"><strong>Boundary-only local Ask is active</strong><p>Question-to-plan comparison is off for '+esc(boundaryOnlyChecks.map(item=>item.boundary_name).join(", "))+'. Model plans still pass the full reviewed Explore validator, scope, suppression, drift, read-only compiler, and budgets.</p></div>'
-        :'<p class="muted">Local Ask plan check: Balanced. Runner compares the question with each proposed Explore plan before execution.</p>';
+      const askIntentNotice='<p class="muted">Local Ask validates typed model plans against reviewed authority and shows Runner readbacks. Runner does not compare the question wording with the plan.</p>';
       authority.className="";
       authority.innerHTML=scopedExplore
         ?'<div class="active-scope-line"><span class="scope-dot" aria-hidden="true"></span><strong>'+esc(activeLabel)+'</strong><span>scoped · read-only</span></div><p>The model receives reviewed tools and model-visible values, not SQL, credentials, tenant choice, model-withheld values, kept-out fields, or write authority. Activation, approval, and apply stay operator-only.</p>'+askIntentNotice+'<details><summary>Advanced: inspect exact tools and authority</summary><div class="badges">'+boundaryBadge+'<span class="badge">Ask authority '+esc(String(askStatus.authority_digest).slice(0,18))+'…</span></div><ul>'+tools.map(tool=>'<li><code>'+esc(tool.name)+'</code> · '+esc(tool.description||"Reviewed Synapsor tool")+'</li>').join("")+'</ul></details>'
@@ -5273,7 +5243,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       try{
         const payload=await post("/api/ask/run",{question});
 	        const calls=payload.tool_calls||[];
-	        const boundaryOnlyCall=calls.find(call=>call.tool==="app.explore_data"&&call.ask_intent_check_mode==="boundary_only");
+	        const typedExploreCall=calls.find(call=>call.tool==="app.explore_data");
 	        const modelWithheldValues=calls.some(call=>call.model_withheld_values===true);
 	        const proposals=calls.map(call=>proposalIdFromAskResult(call.result)).filter(Boolean);
 	          const protectableRefs=[...new Set(calls.map(call=>call.result?.protect?.query_ref).filter(Boolean))];
@@ -5308,7 +5278,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	              ?'<section class="ask-refused"><span class="instant-kicker">'+(refusedSourceExecuted?'Result not released':'Nothing ran')+'</span><h3>'+esc(payload.access_guidance?.title||"That question needs data outside this boundary.")+'</h3><p>'+(refusedSourceExecuted?'Runner executed a read-only aggregate, then discarded the result because releasing it would cross the reviewed privacy boundary.':'Runner stopped every attempted plan before it could return source data.')+'</p>'+analyses+accessGuidance+'<div class="actions">'+(askStarterPrompts[0]?'<button class="secondary" data-ask-alternative type="button">Ask instead: '+esc(askStarterPrompts[0])+'</button>':'')+(payload.access_guidance?.kind==="review_candidate"?'':'<button class="quiet" data-review-another-question'+askReviewTargetAttributes(refusedReviewTarget)+' type="button">Review or expand access</button>')+'</div></section>'
               :'<div class="notice"><strong>No Runner data query was executed for this answer.</strong></div>'+accessGuidance;
 	          const modelPanel='<section class="ask-model-panel"><span class="ask-model-label">'+esc(answerLabel)+'</span>'
-	            +(boundaryOnlyCall?'<div class="notice"><strong>Boundary-only Ask plan check</strong><p>Runner did not compare this English question with the model plan'+(boundaryOnlyCall.boundary_name?' for '+esc(boundaryOnlyCall.boundary_name):'')+'. The plan still passed reviewed Explore validation before execution.</p></div>':"")
+	            +(typedExploreCall?'<div class="notice"><strong>Typed Explore plan</strong><p>Runner validates reviewed authority. Inspect the plan and its actual result below; question wording is not a semantic proof.</p></div>':"")
             +(modelWithheldValues?'<div class="notice"><strong>Some values were shown only to you.</strong><p>Runner withheld them from the model, so its summary cannot name them. The verified result still applies the reviewed scope, suppression, and budgets.</p></div>':"")
             +askAnswerHtml(payload)+suppressedShareWarning+'</section>';
 	        const protectAction=protectableRefs.length===1

@@ -134,10 +134,6 @@ export type BoundaryResourceSelection =
       exact_metadata_confirmed?: true;
     }
   | {
-      action: "intent_check";
-      boundary_name: string;
-    }
-  | {
       action: "switch" | "delete" | "disable";
       boundary_name: string;
     };
@@ -1281,14 +1277,8 @@ async function chooseResource(
             )),
             ...linkedActionBoundaryLines(overview, highlightedBoundary, theme, boundaryRowLayout),
             "",
-            highlightedBoundary.ask_intent_check_mode === "boundary_only"
-              ? theme.warning("Local Ask plan check: BOUNDARY ONLY")
-              : theme.success("Local Ask plan check: BALANCED"),
-            theme.dim(
-              highlightedBoundary.ask_intent_check_mode === "boundary_only"
-                ? "English question-to-plan comparison is off. Reviewed Explore validation still applies."
-                : "Runner refuses a valid but contradictory model plan before Explore execution.",
-            ),
+            theme.success("Local Ask: reviewed Explore validation"),
+            theme.dim("The model proposes the plan; Runner checks reviewed authority."),
             modelOutputStatus,
             ...modelGuidedSetupHint(theme),
             "",
@@ -1307,7 +1297,6 @@ async function chooseResource(
                 highlightedActionAvailable,
                 highlightedBoundary.proposal_action_active_count,
               )}`,
-              `${theme.key("T")} Ask plan check`,
               `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
               `${theme.key("M")} Map`,
               `${theme.key("N")} Rename`,
@@ -1364,9 +1353,6 @@ async function chooseResource(
             actionNotice = "Finish the read review first. Proposal drafting can begin before read activation, but only from a fully reviewed exact revision.";
             continue;
           }
-          if (key.name === "t") {
-            return { action: "intent_check", boundary_name: candidateBoundaryName };
-          }
           if (key.name === "o") {
             if (modelOutputMode === "semantic") {
               confirmExactModelOutput = true;
@@ -1419,18 +1405,8 @@ async function chooseResource(
           ...discoveryReadinessLines(overview, theme),
           ...linkedActionBoundaryLines(overview, highlightedBoundary, theme, boundaryRowLayout),
           "",
-          highlightedBoundary.ask_intent_check_mode === "boundary_only"
-            ? theme.warning(
-              `Local Ask plan check for ${safeTerminalText(highlightedBoundary.name)}: BOUNDARY ONLY`,
-            )
-            : theme.success(
-              `Local Ask plan check for ${safeTerminalText(highlightedBoundary.name)}: BALANCED`,
-            ),
-          theme.dim(
-            highlightedBoundary.ask_intent_check_mode === "boundary_only"
-              ? "English question-to-plan comparison is off. Reviewed Explore validation still applies."
-              : "Runner refuses a valid but contradictory model plan before Explore execution.",
-          ),
+          theme.success("Local Ask: reviewed Explore validation"),
+          theme.dim("The model proposes the plan; Runner checks reviewed authority."),
           modelOutputStatus,
           ...modelGuidedSetupHint(theme),
           ...(options?.notice
@@ -1469,7 +1445,6 @@ async function chooseResource(
               highlightedActionAvailable,
               highlightedBoundary.proposal_action_active_count,
             )}`,
-            `${theme.key("T")} Ask plan check`,
             `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
             `${theme.key("M")} Map`,
             `${theme.key("N")} Rename`,
@@ -1528,9 +1503,6 @@ async function chooseResource(
             ? "Finish this exact read review first. Read activation is not required for proposal drafting."
             : "Open this boundary first. Pending proposal drafts bind only to the selected fully reviewed read revision.";
           continue;
-        }
-        if (key.name === "t") {
-          return { action: "intent_check", boundary_name: highlightedBoundary.name };
         }
         if (key.name === "o") {
           if (modelOutputMode === "semantic") {
@@ -1697,7 +1669,6 @@ async function chooseResource(
           candidateActionAvailable,
           overview?.boundaries?.find((entry) => entry.selected)?.proposal_action_active_count,
         )}`,
-        `${theme.key("T")} Ask plan check`,
         `${theme.key("O")} Model output [${modelOutputActionStatus}]`,
         `${theme.key("C")} ${overview?.discovery_concerns?.length ? "Inspect activation blocker" : focusedAccess ? "Review + activate" : "Complete review"}`,
         `${theme.key("Q")} Quit`,
@@ -1712,16 +1683,8 @@ async function chooseResource(
           `${plural(includedCount, "table", "tables")}  ${displayedReviewLeft}`,
         ...discoveryReadinessLines(overview, theme),
         ...(selectedCompatibility ? [selectedCompatibility] : []),
-        ...(() => {
-          const boundaryName = highlighted.candidate_boundary_name;
-          const mode = overview?.boundaries?.find((entry) => entry.name === boundaryName)
-            ?.ask_intent_check_mode ?? "balanced";
-          return mode === "boundary_only"
-            ? [theme.warning("Local Ask plan check: BOUNDARY ONLY"), theme.dim(
-              "Question-to-plan comparison is off; reviewed Explore validation remains active.",
-            )]
-            : [theme.success("Local Ask plan check: BALANCED")];
-        })(),
+        theme.success("Local Ask: reviewed Explore validation"),
+        theme.dim("The model proposes the plan; Runner checks reviewed authority."),
         modelOutputStatus,
         ...modelGuidedSetupHint(theme),
         ...(candidateHasPendingChange
@@ -1921,9 +1884,6 @@ async function chooseResource(
         }
         actionNotice = "Finish this exact read review first. Proposal drafting can begin before read activation.";
         continue;
-      }
-      if (key.name === "t") {
-        return { action: "intent_check", boundary_name: highlighted.candidate_boundary_name };
       }
       if (key.name === "o") {
         if (modelOutputMode === "semantic") {

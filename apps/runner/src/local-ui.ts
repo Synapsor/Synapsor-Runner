@@ -1776,7 +1776,7 @@ async function handleRequest(input: {
       ok: true,
       boundary_name: name,
       ask_intent_check_mode: mode,
-      question_to_plan_checked: mode === "balanced",
+      question_to_plan_checked: false,
       boundary_library: await withAskIntentCheckModes(projectRoot, library),
       authority_changed: false,
       activation_required: false,
@@ -3969,8 +3969,7 @@ async function handleRequest(input: {
         ask_intent_checks: activeBoundaries.map((boundary) => ({
           boundary_name: boundary.pack.name,
           mode: askIntentCheckModes[boundary.pack.name] ?? "balanced",
-          question_to_plan_checked:
-            (askIntentCheckModes[boundary.pack.name] ?? "balanced") === "balanced",
+          question_to_plan_checked: false,
         })),
         boundary_catalog: boundaryCatalog,
         boundary_mermaid: renderBoundaryCatalogMermaid(boundaryCatalog),
