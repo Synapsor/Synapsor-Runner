@@ -18,8 +18,6 @@ import * as resumePersistence from "./boundary-authoring-resume.js";
 import { generateModelReadWorkload } from "./read-workload-model.js";
 import type { AskProviderDependencies } from "./model-ask.js";
 
-import { newPolicySourceSession, policyTextSnapshot, savePolicySources, authoringDestination } from "./authoring-policy-source.js";
-
 const roots: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -77,21 +75,14 @@ async function fixture(renamed = false, ambiguous = false, declaredRootMeaning =
     actor: "synthetic-reviewer", reason: "Leave inspected relationships pending for a later explicit review." }, async () => inspection);
   await mutations.commitBoundaryResourceReviewMutation(root, removed);
   const before = await loadBoundaryReviewContext(root);
-  if (declaredRootMeaning) {
-    // Sealed owner fact visible to the actual model. FK consent below is only structural.
-    const source = newPolicySourceSession();
-    source.snapshots = [policyTextSnapshot(Buffer.from(`${from} contains business references.`), "declared-reference-meaning.txt")];
-    source.active = 1;
-    source.approvals = [{ digest: source.snapshots[0]!.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
-    await savePolicySources(root, source);
-  }
   expect(before.candidate.pack.resources.find(r => r.id === from)!.relationships).toEqual([]);
-  return { root, from, tenant, inspection, before };
+  return { root, from, tenant, inspection, before, declaredRootMeaning, declaredRootStatement: `${from} contains business references.` };
 }
 
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 type Choose = NonNullable<BoundaryReviewInteractiveSession["chooseOption"]>;
 const job = "Read business references with the two selected related business references.";
+const operatorJob = (f: Fixture) => job + (f.declaredRootMeaning ? ` ${f.declaredRootStatement}` : "");
 
 function response(value: unknown) {
   return { status: 200, body: { output: [{ type: "function_call", call_id: "read_mapping",
@@ -115,6 +106,7 @@ async function runHost(f: Fixture, options: {
     snapshots.push(current);
     const links = current.candidate.pack.resources.find(r => r.id === f.from)!.relationships;
     const text = JSON.stringify(request.body);
+    if (f.declaredRootMeaning) expect(text).toContain(f.declaredRootStatement);
     const catalogStart = text.lastIndexOf("Structural catalog:");
     expect(catalogStart).toBeGreaterThanOrEqual(0);
     for (const privateField of [f.tenant, "selected_1_id", "selected_2_id"]) {
@@ -137,7 +129,7 @@ async function runHost(f: Fixture, options: {
     },
     editFieldTiers: async () => undefined,
     promptText: async prompt => {
-      if (prompt === "What job are you giving this agent?") return job;
+      if (prompt === "What job are you giving this agent?") return operatorJob(f);
       throw new Error(`Unexpected host text prompt: ${prompt}`);
     },
     chooseOption: async (title, items, config) => {
@@ -215,7 +207,7 @@ describe("public host Read relationship preparation", () => {
     expect(first.failures.join("\n")).toContain("Read root: editorial.final_reviews");
     expect(first.failures.join("\n")).toContain("no generated outgoing path");
     expect(first.failures.join("\n")).toContain("private verification facts");
-    expect(await resumeState(f)).toMatchObject({status:"ready",value:{pending_read_relationship:{resource:f.from},job_intent:job,stage:"read_mapping"}});
+    expect(await resumeState(f)).toMatchObject({status:"ready",value:{pending_read_relationship:{resource:f.from},job_intent:operatorJob(f),stage:"read_mapping"}});
     const retained = await resumeState(f);
     if (retained.status !== "ready") throw new Error("Missing acknowledged relationship checkpoint.");
     const restarted = await runHost(f);
@@ -268,7 +260,7 @@ describe("public host Read relationship preparation", () => {
       expect(resource.tenant_key).toBe(before.tenant_key);
     }
     await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({ code: "ENOENT" });
-    expect(await resumeState(f)).toMatchObject({ status: "ready", value: { job_intent: job } });
+    expect(await resumeState(f)).toMatchObject({ status: "ready", value: { job_intent: operatorJob(f) } });
   }, 30_000);
 
   it.each(["pending", undefined])("keeps declined/cancelled paths pending without a second provider turn (%s)", async choice => {
@@ -280,7 +272,7 @@ describe("public host Read relationship preparation", () => {
     expect(run.requestJson).toHaveBeenCalledOnce();
     expect(save).not.toHaveBeenCalled();
     expect((await loadBoundaryReviewContext(f.root)).candidate).toEqual(f.before.candidate);
-    expect(await resumeState(f)).toMatchObject({ status: "ready", value: { job_intent: job, stage: "read_mapping" } });
+    expect(await resumeState(f)).toMatchObject({ status: "ready", value: { job_intent: operatorJob(f), stage: "read_mapping" } });
     await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({ code: "ENOENT" });
   }, 30_000);
 
@@ -350,7 +342,7 @@ describe("public host Read relationship preparation", () => {
     expect(run.requestJson).toHaveBeenCalledOnce();
     expect(save).toHaveBeenCalledOnce();
     expect((await loadBoundaryReviewContext(f.root)).candidate).toEqual(f.before.candidate);
-    expect(await resumeState(f)).toMatchObject({ status: "ready", value: { stage: "read_mapping", job_intent: job } });
+    expect(await resumeState(f)).toMatchObject({ status: "ready", value: { stage: "read_mapping", job_intent: operatorJob(f) } });
     await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({ code: "ENOENT" });
   }, 30_000);
 
@@ -393,7 +385,7 @@ describe("public host Read relationship preparation", () => {
     expect(run.requestJson).toHaveBeenCalledOnce();
     const current = await loadBoundaryReviewContext(f.root);
     expect(current.candidate.pack.resources.find(r => r.id === f.from)!.relationships).toHaveLength(1);
-    expect(await resumeState(f)).toMatchObject({ status: "ready", value: { stage: "read_mapping", job_intent: job } });
+    expect(await resumeState(f)).toMatchObject({ status: "ready", value: { stage: "read_mapping", job_intent: operatorJob(f) } });
     await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({ code: "ENOENT" });
   }, 30_000);
 
@@ -410,7 +402,7 @@ describe("public host Read relationship preparation", () => {
     const paused = await loadBoundaryReviewContext(f.root);
     const accepted = paused.candidate.pack.resources.find(r => r.id === f.from)!.relationships;
     expect(accepted).toHaveLength(1);
-    expect(await resumeState(f)).toMatchObject({ status: "ready", value: { stage: "read_mapping", job_intent: job } });
+    expect(await resumeState(f)).toMatchObject({ status: "ready", value: { stage: "read_mapping", job_intent: operatorJob(f) } });
     const saved = await resumeState(f);
     expect(saved).toMatchObject({ status: "ready", value: { generation_recovery: { operations: expect.arrayContaining([
       expect.objectContaining({ state: "partial" }),

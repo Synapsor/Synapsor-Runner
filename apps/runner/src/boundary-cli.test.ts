@@ -18396,7 +18396,7 @@ describe("public saved-job connection recovery control", () => {
       const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
       const source = newPolicySourceSession();
       source.snapshots = [policyTextSnapshot(Buffer.from("The visit status describes the selected visit's current stage."
-        + (rawMode === "missing-root-fact" ? "" : "\npublic.service_visits contains selected visits.")), "visit-stages.txt")];
+        + (rawMode === "missing-root-fact" ? "" : " public.service_visits contains selected visits.")), "visit-stages.txt")];
       source.active = 1; source.approvals = [{ digest: source.snapshots[0]!.digest,
         destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
       if (mode === "history-full") source.operator_messages = Array.from({ length: 64 }, (_, i) => `Existing statement ${i}.`);
@@ -18412,6 +18412,7 @@ describe("public saved-job connection recovery control", () => {
       const replacing = mode.startsWith("replace");
       let reopened = false, sawWaiting = 0, sawAnswer = false, answerAfterBlank = false, declinePrompts = 0, replaceConfirmed = false, replacePrompts = 0;
       const requestJson = vi.fn(async (wire: { body: Record<string, unknown> }) => {
+        if (rawMode !== "missing-root-fact") expect(JSON.stringify(wire.body)).toContain("public.service_visits contains selected visits.");
         if (requestJson.mock.calls.length > (replacing ? 3 : 2)) throw new AskError("ASK_CANCELLED", "End this owned mapping control before a separate review", 499);
         const saved = await readBoundaryAuthoringResumeState(f.root, binding);
         if (requestJson.mock.calls.length === 2) {

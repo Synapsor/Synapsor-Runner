@@ -1,0 +1,26 @@
+{
+  "reviewer": "independent early_full_triage lane",
+  "attribution": {
+    "before": "6720b172 + unchanged B61",
+    "after": "56dac6fb",
+    "native_representatives": "3P before,3F after; records linked in ../early-full-triage1652"
+  },
+  "field_answer_original": {
+    "facts": "Source explains visit status; operator confirms exact public.service_visits.status meaning for this task",
+    "missing": "No root-resource definition or current reviewed request identity for the task",
+    "verdict": "Field meaning does not by itself establish business root mapping; original positive completion assumption is insufficient under B59 structural contract",
+    "successor": "Declare public.service_visits contains selected visits in actual attached Source; same job, answer, assertions and provider counts",
+    "negative": "Original facts retained in missing-root-fact case: two calls, field answer retained, root association pending, no mapped Read or Action authority"
+  },
+  "relationship_original": {
+    "facts": "Auto-generated structural catalog; explicit default-pending exact FK path selection",
+    "native_consent_scope": "Stages path only; screen explicitly denies independent access/resource addition",
+    "missing": "No business meaning for root or exact current saved whole-task workload",
+    "verdict": "FK consent cannot silently become root business mapping",
+    "successor": "Declare actual fixture root contains business references in approved native Source; preserve job, FK steps, responses and original assertions",
+    "negative": "No-fact case retains two reviewed paths but refuses unassociated business mapping; activation absent"
+  },
+  "not_authorized": "No product exemption for fields, relationships, resource names or fixture identity",
+  "new_hidden_finding": "V9 of presealed9 fails: quoted business literal removed before exact request match; helper b1bc correction pending independent test",
+  "run_scope": "These are scoped DEV proofs; final full and public ownership acceptance remain required"
+}
