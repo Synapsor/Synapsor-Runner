@@ -1,0 +1,46 @@
+{
+  "source_pin": "41221081",
+  "scope": "B66 narrow writer permission/public execution and database-lock race, not B65 hard-limit compiler acceptance",
+  "method": "Main read/check of independent Tester immutable native captures; no new request or database effect",
+  "cases": [
+    {
+      "order": "forward",
+      "winner": 30,
+      "loser": 40,
+      "database_wait": [
+        {
+          "blocked_connection": 122,
+          "blocker_connection": 119,
+          "blocked_transaction": 2310,
+          "blocker_transaction": 2309
+        }
+      ],
+      "only_winner_changed": true,
+      "source_receipts": 1,
+      "refusal": "SEMANTIC_AUTHORITY_STALE",
+      "deciding_comparison": "dependency_set_equals_proof=false",
+      "evidence": "/var/tmp/synapsor-b65-b66-review-20261008-owned/g5-forward-owned/evidence/race/record.json",
+      "comparison": "/var/tmp/synapsor-b65-b66-review-20261008-owned/g5-forward-owned/evidence/deciding-comparison.json"
+    },
+    {
+      "order": "reverse",
+      "winner": 40,
+      "loser": 30,
+      "database_wait": [
+        {
+          "blocked_connection": 61,
+          "blocker_connection": 58,
+          "blocked_transaction": 1978,
+          "blocker_transaction": 1975
+        }
+      ],
+      "only_winner_changed": true,
+      "source_receipts": 1,
+      "refusal": "SEMANTIC_AUTHORITY_STALE",
+      "deciding_comparison": "dependency_set_equals_proof=false",
+      "evidence": "/var/tmp/synapsor-b65-b66-review-20261008-owned/g5-reverse-owned/evidence/race/record.json",
+      "comparison": "/var/tmp/synapsor-b65-b66-review-20261008-owned/g5-reverse-owned/evidence/deciding-comparison.json"
+    }
+  ],
+  "limitation": "Original pre-change aggregate rule remains eligible after winner; refusal is changed dependency proof, not a post-change hard-limit check. B65 fresh30+25 gap remains open."
+}

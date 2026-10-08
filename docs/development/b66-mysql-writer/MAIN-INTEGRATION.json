@@ -12,11 +12,12 @@
     "regressions": "100PASS0FAIL0SKIP",
     "types": "exit0",
     "product_identity": "three changed production files byte-identical to reviewed ddf0e8d5",
-    "native": "Tester successor controls/public races pending; no inherited MySQL public acceptance"
+    "native": "Tester corrected412 public grant review and both30/40 races PASS; Main independently checked captured lock waits, oneeffect/receipt and exact deciding comparison"
   },
   "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/b66-integrated.json",
   "open": [
-    "Tester fixed-pin independent MySQL controls and both public30/40 race orders",
+    "B65 hard-invariant compiler/Source qualification remains independent OPEN scope; race refusal is dependency staleness",
     "Database-wide patterned schema grants conservatively unverified without verified server setting; exact-table grants supported"
-  ]
+  ],
+  "public_evidence": "MAIN-PUBLIC-RESULT.json"
 }

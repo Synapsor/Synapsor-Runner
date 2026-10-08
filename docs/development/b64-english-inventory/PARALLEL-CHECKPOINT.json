@@ -1,6 +1,6 @@
 {
-  "recorded_at": "2026-10-08T20:38:31.648772+00:00",
-  "main_pin": "518b9c21",
+  "recorded_at": "2026-10-08T20:52:42.531971+00:00",
+  "main_pin": "150f6c10",
   "owner_map": "LANES.json",
   "paid": "CLOSED",
   "main_hooks": {
@@ -20,7 +20,7 @@
     "independent_acceptance": "Scoped Read19e5161c / Main binding93603e62",
     "integration": "a5502d42",
     "main_checks": "41PASS; types0; public instrumentation remains open",
-    "public_revision": "768c3a76 actual public READ_SCOPE_PROTOCOL_REQUIRED preserved; e8c99c58 actual retained workload/preview adapters23PASS/types0, independent R1 review now; Main native hook OPEN"
+    "public_revision": "Original768 failure preserved. Adapter227 actualpostcommitbinding R1accepted9b037809 (before1F\u219224PASS/types0), integrated32a3281f; thinMainwrapper150f6c10 Main24PASS/types0. Pending mapping typed admission API in Readownerdev/R1preseal; MainpublichookOPEN."
   },
   "privacy": {
     "pin": "583c0738",
@@ -57,7 +57,7 @@
       "successor": "e94f8a03 complete exact actual claim/receipt repair independent21PASS0FAIL0SKIP scoped native helper acceptance ac2f0847; prior failed draft remains historical"
     },
     "native_resume": "MySQL public still blocked exact excess grant; stricter actual public apply refuses ACTION_RULE_AUTHORITY_STALE before Source; signed-human reviewed approval+separate executor1effect/receipt. No product patch, no PG transfer.",
-    "source_qualification": "9db88792 native1PASS1FAIL: opaque trigger actual55 vs projected25; synthetic contract fixture, no public claim. R2 bounded Source/lifetime design review pending; no patch."
+    "source_qualification": "Original9db1P1F preserved; firstc66native setupfailed0P6SKIP temporarypostmasterconfirmed; reviewedreadiness025 corrected6PASS mechanics-only, no productqualification/repairaccepted. R2actualresultreviewpending."
   },
   "limits": {
     "heavy_jobs": 4,
@@ -79,13 +79,13 @@
     "native_before": "Tester49233/G5 evidence kept; implementer new native regression",
     "scope": "Exact MySQL column grants, minimal reviewed lock-key purpose, generated narrow administrator grant; refuse real excess; checkPG",
     "independent": "R2 preseal/review; nativeTester publicMySQLrace afterward",
-    "status": "INTEGRATED FOR DEV, public/native qualification OPEN",
+    "status": "SCOPED DEV ACCEPTED AND INTEGRATED",
     "source_pin": "41221081",
     "integration_pin": "518b9c21",
     "reviewer": "67af2bb5 scoped SOURCE/PARSER ACCEPT; unchanged independent3 + owner21 =24PASS0FAIL0SKIP",
     "main_affected": "100PASS0FAIL0SKIP; tsc -b exit0; diff-check exit0",
-    "native": "Tester exact e980 independent native narrow grant/public handoff/generated account controls PASS; database-pattern grant omission reproduced as pre-existing and preserved. Corrected41221081 native verification and public30/40 races pending.",
+    "native": "Tester corrected412 exactpublicgrant review and both30/40 publicraces PASS with actualMySQLrecordwait/oneeffect/oneSource receipt; Main rawrecordcheck PASS. Loser dependency stale, nothardlimit",
     "limitation": "Database-pattern scope without verified server setting refuses. Exact-table narrowing for owned fixture separately sealed; no broader grants.",
-    "evidence": "../b66-mysql-writer/DEV-RECORD.json"
+    "evidence": "../b66-mysql-writer/MAIN-PUBLIC-RESULT.json"
   }
 }
