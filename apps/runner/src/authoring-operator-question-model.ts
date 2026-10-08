@@ -1,3 +1,5 @@
+import { actionSubjectSubmissionSchema, decodeActionSubjectSubmission } from "./authoring-action-subject-model.js";
+import type { ActionSubjectEntry } from "./authoring-action-subject-binding.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionModelSuggestionSession } from "./action-tui.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -13,12 +15,16 @@ const TOOL = "runner.propose_operator_decision";
 type Stage = "present" | "source-review" | "answer-map";
 type Proposal = NonNullable<OperatorQuestion["proposal"]>;
 type Completion = ReturnType<typeof completedAuthoringQuestionSequence>;
-type StagedDecision = { state: "question"; question: string }
+type OrdinaryDecision = { state: "question"; question: string }
   | { state: "pending" | "proposed"; proposal: Proposal };
-export type OperatorQuestionModelResult = StagedDecision & {
+type SubjectDecision = { state: "subject_interpretation"; entries: ActionSubjectEntry[] };
+type StagedDecision = OrdinaryDecision | SubjectDecision;
+type ResultMetadata = {
     correction_used: boolean; completion?: Completion;
     authority_granted: false; source_database_changed: false;
   };
+export type OperatorQuestionModelResult = OrdinaryDecision & ResultMetadata;
+export type ActionSubjectQuestionModelResult = SubjectDecision & ResultMetadata;
 type ConsumedInputFailure = { question_digest: `sha256:${string}`; stage: Stage;
   completion: NonNullable<Completion> };
 // Object identity is minted only after this producer consumes a complete known
@@ -38,7 +44,7 @@ export function consumedOperatorInputFailure(error: unknown, question: OperatorQ
 
 /** A small normal authoring producer. The controller owns consent, currentness,
  * the existing durable allowance, UI, persistence and explicit adoption. */
-export async function runOperatorQuestionModel(input: {
+export type OperatorQuestionModelInput = {
   question: OperatorQuestion;
   stage: Stage;
   session: ActionModelSuggestionSession;
@@ -62,13 +68,30 @@ export async function runOperatorQuestionModel(input: {
   env?: NodeJS.ProcessEnv;
   egressAcknowledged: boolean;
   signal?: AbortSignal;
-}): Promise<OperatorQuestionModelResult> {
+};
+export async function runOperatorQuestionModel(input: OperatorQuestionModelInput): Promise<OperatorQuestionModelResult> {
+  if (input.question.kind === "action_subject") throw new Error("ACTION_SUBJECT_MODEL_ROUTE_REQUIRED");
+  const result = await runQuestionModel(input);
+  if (result.state === "subject_interpretation") throw new Error("OPERATOR_QUESTION_KIND_CHANGED");
+  return result;
+}
+/** Same producer engine and exact existing Action allowance, with a bounded
+ * subject result. Native records are constructed only after actual completion. */
+export async function runActionSubjectQuestionModel(input: OperatorQuestionModelInput): Promise<ActionSubjectQuestionModelResult> {
+  if (input.question.kind !== "action_subject" || input.stage !== "answer-map") throw new Error("ACTION_SUBJECT_MODEL_ROUTE_REQUIRED");
+  if (!input.actionLogicalTurnBudget || input.episodeBudget) throw new Error("ACTION_SUBJECT_OWNING_TURN_REQUIRED");
+  if (!input.question.raw_answer?.text.trim()) throw new Error("ACTION_SUBJECT_ANSWER_PENDING");
+  const result = await runQuestionModel(input);
+  if (result.state !== "subject_interpretation") throw new Error("ACTION_SUBJECT_MODEL_RESULT_INVALID");
+  return result;
+}
+async function runQuestionModel(input: OperatorQuestionModelInput): Promise<StagedDecision & ResultMetadata> {
   const q = parseOperatorQuestion(input.question);
   if (input.inputContext && (q.kind !== "input_bounds" || input.stage !== "answer-map" || q.source_binding)) {
     throw new AskError("OPERATOR_QUESTION_CONTEXT_INVALID", "Use only the current Input question's naming context. No Source context was sent to another decision.", 409);
   }
   if ((!input.episodeBudget && !input.actionLogicalTurnBudget) || (input.episodeBudget && input.actionLogicalTurnBudget)
-    || (input.actionLogicalTurnBudget && (q.kind !== "writer_maintenance" || q.budget || q.budget_owner_id || q.source_binding))) {
+    || (input.actionLogicalTurnBudget && (!["writer_maintenance", "action_subject"].includes(q.kind) || q.budget || q.budget_owner_id || q.source_binding))) {
     throw new AskError("OPERATOR_QUESTION_BUDGET_INVALID", "Use the exact owning allowance for this question; no request or allowance change was admitted.", 409);
   }
   if (q.confirmation || q.disposition || q.terminal_failure || !["present", "source-review", "answer-map"].includes(input.stage)) {
@@ -107,7 +130,7 @@ export async function runOperatorQuestionModel(input: {
   let safeIssue = "Use the supplied question_id, revision and exact evidence reference with only this stage's declared fields and value shape. No statement was adopted and no authority changed.";
   const target = { ...(q.target.resource ? { resource: q.target.resource } : {}), ...(q.target.field ? { field: q.target.field } : {}) };
   const wording = operatorClarificationGate({ stage: q.kind === "writer_maintenance" ? "version"
-    : q.kind === "input_bounds" ? "input" : "read", context: input.businessContext,
+    : q.kind === "input_bounds" ? "input" : q.kind === "action_subject" ? "action" : "read", context: input.businessContext,
     ...(Object.keys(target).length ? { target } : {}),
     ...(q.wording_state?.stage === input.stage ? { resumeState: q.wording_state.gate } : {}) });
   let savedWording = q.wording_state && canonicalJsonDigest(q.wording_state);
@@ -132,7 +155,17 @@ export async function runOperatorQuestionModel(input: {
           if (presented.state === "rephrase" && !consumed.length) { safeIssue = presented.guidance; throw new Error("business wording required"); }
           staged = { state: "question", question: presented.state === "question" ? presented.question
             : presentOperatorClarification(args.question.trim(), { stage: q.kind === "writer_maintenance" ? "version"
-              : q.kind === "input_bounds" ? "input" : "read", context: input.businessContext, target: q.target }) };
+              : q.kind === "input_bounds" ? "input" : q.kind === "action_subject" ? "action" : "read", context: input.businessContext, target: q.target }) };
+        } else if (q.kind === "action_subject") {
+          if (input.stage !== "answer-map" || args.status !== "subject_interpretation" || args.answer_id !== q.raw_answer?.id
+            || !onlyKeys(args, ["question_id", "revision", "status", "answer_id", "entries"])) throw new Error("invalid subject interpretation");
+          const entries = decodeActionSubjectSubmission(q, args.entries);
+          for (const entry of entries) if (entry.state === "unresolved") {
+            const presented = wording(entry.question);
+            if (presented.state === "rephrase" && !consumed.length) { safeIssue = presented.guidance; throw new Error("business wording required"); }
+            entry.question = presented.state === "question" ? presented.question : presentOperatorClarification(entry.question, { stage: "action", context: input.businessContext });
+          }
+          staged = { state: "subject_interpretation", entries };
         } else {
           if (input.stage === "present" || args.status !== "proposal" || !onlyKeys(args,
             ["question_id", "revision", "status", "answer_id", "source_reference", "disposition", "value"])) throw new Error("invalid proposal");
@@ -159,6 +192,10 @@ export async function runOperatorQuestionModel(input: {
     "For free-form Read meaning, the only proposed value is its kind; Runner keeps the exact raw words. For writer maintenance, propose all_writers_increment only when that statement is established; unknown stays pending. Input ranges must use exact current outcome/input identities. Other Source duties remain subject to their normal review.",
     ...(q.kind !== "receipt_requirement" ? [] : [
       "For receipt meaning, propose applied_change_receipt and pending_or_approved only when the captured answer establishes both the trusted completion evidence and the distinction from unapplied requests. Unknown stays pending. Do not select or infer a receipt location or transaction guarantee from these words; Runner separately supplies current configuration for an explicit applicability readback.",
+    ]),
+    ...(q.kind !== "action_subject" ? [] : [
+      "For Action subject scope, submit every exact target once. Map only the actual answer to an advertised option. Keep unrelated established entries unchanged. Vague/unknown words require an unresolved entry with one narrower plain business follow-up; never guess principal, tenant or global scope. A typed choice is not activation or a write grant.",
+      `Current exact subject targets/options and retained typed entries: ${JSON.stringify({ material: q.action_subject!.material, entries: q.proposal?.value?.kind === "action_subject" ? q.proposal.value.record.entries : [] })}`,
     ]),
     ...(q.kind !== "input_bounds" ? [] : [q.source_binding
       ? "For Source-review input ranges, valid exact Source line start/end are required as policy provenance."
@@ -225,6 +262,10 @@ function decisionTool(q: OperatorQuestion, stage: Stage): AskToolDefinition {
   const branches: unknown[] = [];
   if (stage !== "answer-map") branches.push(branch({ status: { type: "string", enum: ["needs_information"] },
     question: { type: "string", minLength: 1, maxLength: 4_000, description: "One plain question for missing business meaning, without technical forms or private values." } }));
+  if (q.kind === "action_subject" && stage === "answer-map") {
+    branches.push(branch({ status: { const: "subject_interpretation" }, entries: actionSubjectSubmissionSchema(q) }));
+    return { name: TOOL, title: "Propose the current Action subject interpretation", description: "Typed answer mapping only; no provenance, save or authority may be supplied.", input_schema: { type: "object", oneOf: branches } };
+  }
   if (stage !== "present") {
     branches.push(branch({ status: { type: "string", enum: ["proposal"] }, disposition: { type: "string", enum: ["pending"] } }));
     const value = q.kind === "attributed_meaning" ? { type: "object", additionalProperties: false, properties: { kind: { enum: [q.kind] } }, required: ["kind"] }

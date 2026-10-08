@@ -76,5 +76,11 @@
     "scope": "Read.v2 existing current evidence resolver; only exact public verification_subject, no effect/write/private reuse; pending/changed/replaced Read stays pending",
     "types": "5 existing Read fixture subjects omissions in read-structured-scope.test.ts/read-workload-model.test.ts; no Action type errors",
     "remaining": "Main protected native/public hook, freshprocess and R2 acceptance; exact Source interpreted support unavailable until owning typed record exists"
+  },
+  "subject_model_adapter_wip": {
+    "tests": "64 PASS (shared question model40 unchanged +subject24)",
+    "producer": "same required structured tool engine, same Action logical turn budget; one actual request/tool for plain typed mapping; vague answer yields typed narrower unresolved follow-up",
+    "records": "model cannot supply native provenance, full view, confirmation or Scope authority; host binds actual captured answer",
+    "remaining": "owned review loop, exact native persistence/freshprocess/R2 public acceptance"
   }
 }

@@ -186,3 +186,34 @@ it("renders business readbacks by the same target order as fields and details", 
   expect(v.normalized_lines[1]).toContain("pending");
   expect(v.technical_lines![0]).toContain(targetDigest);
 });
+
+import { runActionSubjectQuestionModel } from "./authoring-operator-question-model.js";
+describe("Action subject uses the shared question-model producer", () => {
+  it.each(["some people, I guess", "Only the signed-in person's records"])('maps declared raw answer without English parsing in Runner: %s', async raw => {
+    const q = captureOperatorAnswer(presentOperatorQuestion(question(), "Which records may this action affect?"), raw);
+    let calls = 0, iterations = 0, tools = 0;
+    const result = await runActionSubjectQuestionModel({ question: q, stage: "answer-map",
+      actionLogicalTurnBudget: { admitIteration: async () => { iterations++; }, reserveToolBatch: async n => { tools += n; } },
+      reserveCorrection: async () => false, authorityGuard: expected => expected, egressAcknowledged: true, env: {},
+      session: { provider: "openai", model: "scripted-subject", apiKey: "inert-scripted-key", dependencies: { requestJson: async request => {
+        calls++;
+        const lines: string[] = [];
+        const walk = (value: unknown): void => { if (typeof value === "string") lines.push(...value.split("\n")); else if (value && typeof value === "object") Object.values(value).forEach(walk); };
+        walk(request.body);
+        const read = (prefix: string) => JSON.parse(lines.find(line => line.startsWith(prefix))!.slice(prefix.length));
+        const actual = read("Current question: "), context = read("Current exact subject targets/options and retained typed entries: ");
+        const entries = context.material.targets.map((t: { target_digest: string; options: Array<{ reference: string; kind: string }> }) =>
+          actual.raw_answer === "Only the signed-in person's records" ? { state: "proposed", target_digest: t.target_digest, meaning: "trusted_principal",
+            scope_reference: t.options.find(o => o.kind === "principal")!.reference }
+            : { state: "unresolved", target_digest: t.target_digest, question: "Do you mean only the signed-in person's records, or the organization's records?" });
+        return { status: 200, body: { output: [{ type: "function_call", call_id: "actual-scripted-subject", name: "runner__propose_operator_decision",
+          arguments: JSON.stringify({ question_id: actual.question_id, revision: actual.revision, answer_id: actual.answer_id,
+            status: "subject_interpretation", entries }) }] } };
+      } } } });
+    expect(calls).toBe(1); expect(iterations).toBe(1); expect(tools).toBe(1); expect(result.correction_used).toBe(false);
+    expect(result.state).toBe("subject_interpretation");
+    if (result.state !== "subject_interpretation") throw Error("wrong result");
+    expect(result.entries[0]!.state).toBe(raw.startsWith("Only") ? "proposed" : "unresolved");
+    expect(q.confirmation).toBeUndefined(); expect(q.raw_answer?.text).toBe(raw);
+  });
+});
