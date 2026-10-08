@@ -1,6 +1,6 @@
 {
   "base": "38eb51dc",
-  "status": "PUBLIC_REPLACE_COMPONENT_PASS_INDEPENDENT_REVIEW_PENDING",
+  "status": "PUBLIC_REPLACE_PASS_REVISION_WIRING_FAILURE_PRESERVED",
   "fixture_origin": "2d906e04:apps/runner/src/b64-public-replace-independent.test.ts",
   "change": "Prepared test responses, operator facts and original assertions unchanged; nine retired language owner exports instrumented to throw and assert zero calls.",
   "result": {
@@ -20,5 +20,25 @@
   "remaining": [
     "actual public Read revision typed fixture/instrumentation",
     "remaining migration ledger rows, no whole-family claim"
-  ]
+  ],
+  "public_revision": {
+    "status": "FAIL_BEFORE_PRODUCT_ROUTE_WIRING",
+    "base": "38eb51dc",
+    "operator_instruction": "Name the parcel register Customer parcels. Keep every existing Read field, scope and restriction unchanged.",
+    "actual": "ordinary onboard + exact structural review + typed planning1/mapping1 + grouped scope Yes + Read review revise_model + raw instruction -> READ_SCOPE_PROTOCOL_REQUIRED before revision provider call",
+    "calls": {
+      "planning": 1,
+      "mapping": 1,
+      "revision": 0
+    },
+    "evidence": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/revision-after1.json",
+    "capture": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/revision-first/PUBLIC-READ-revision.json",
+    "assertions": "Final candidate label/same selectable field/tenant+principal, no authority/source effects, one revision call and cold no-replay remain unchanged for after; no expectation relaxation.",
+    "main_owned_hooks": [
+      "boundary-commands.ts:9129 actual generateModelReadBoundaryRevision call omits structuredScope; reuse existing native read context/currentness projection",
+      "boundary-commands.ts:9166 validateRevision currently stores preview but returns void; typed producer requires real preview scope and optional reanalyzed saved workload (never fake analysis)",
+      "boundary-commands.ts:8924 revision checkpoint access lacks scopePreview/readQuestions; real final completion and exact protected scope resolution required before final native question",
+      "Actual group/native proposal review and saved-revision applicability must remain separate from metadata preview and disabled save; no implicit Yes"
+    ]
+  }
 }

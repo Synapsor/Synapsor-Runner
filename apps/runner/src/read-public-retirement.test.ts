@@ -24,8 +24,9 @@ afterEach(() => { expect(retiredCalls).toEqual([]); retiredCalls.splice(0); });
 const job="Show the signed-in customer's parcel labels under the attached policy. No Actions.";
 const source="Customers may read only their own parcel label. studio.parcels is the parcel register; label is the customer-visible parcel name. All other fields remain private. No Actions are requested.";
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
-type Mode='no_read_yes'|'read_no'|'replace'|'replace_cancel'|'replace_stale'|'no_read_no'|'stale'|'review';
+type Mode='revision'|'no_read_yes'|'read_no'|'replace'|'replace_cancel'|'replace_stale'|'no_read_no'|'stale'|'review';
 async function runVariant(mode:Mode, continueAfterCancel=false, firstBlank=false){
+ let revisionStarted=false, revisionGiven=false, revisionCalls=0; const revisionInstruction="Name the parcel register Customer parcels. Keep every existing Read field, scope and restriction unchanged.";
  let rawPrompts=0;const correction="Show at most one parcel label at a time; keep the same signed-in customer's scope and all other restrictions.";
  let winningAmendment:any;const amendment='Also keep parcel availability private; review this change before continuing.';
  const noRead=mode.startsWith('no_read');
@@ -36,7 +37,7 @@ async function runVariant(mode:Mode, continueAfterCancel=false, firstBlank=false
  const resume=async()=>fs.readFile(resumeFile,'utf8').then(t=>JSON.parse(t)).catch(()=>undefined);
  const menus:any[]=[],requests:any[]=[],failures:any[]=[],reads:string[]=[],decisions:any[]=[];let transcript='',attached=false,jobGiven=false,cold=false,sourceConsent=0,planning=0,mapping=0,planningDetails=false;
  const write=(text:string)=>{transcript+=text;};
- const read=async()=>{if(cold){
+ const read=async()=>{if(revisionStarted&&!revisionGiven){revisionGiven=true;return revisionInstruction;}if(cold){
     const current=await resume(),rawQuestion=current?.operator_questions?.at(-1);
     if(rawQuestion?.read_scope?.mode==='replacement_answer'&&!rawQuestion.raw_answer){
       rawPrompts++;expect(rawPrompts).toBe(continueAfterCancel&&rawPrompts>1?2:1);
@@ -64,12 +65,13 @@ async function runVariant(mode:Mode, continueAfterCancel=false, firstBlank=false
    else if(choice.message==='Run a new bounded model review?'){expect(choice.initialValue).toBe('no');selected='no';}
    else if(choice.message==='Confirm this complete Read scope and analyzed plan?' && values.includes('yes') && saved?.operator_questions?.at(-1)?.kind==='read_scope'){
     const q=saved.operator_questions.at(-1);expect(choice.initialValue).toBe('no');expect(q.confirmation).toBeUndefined();expect(q.read_scope.mode).toBe('review');
-    decisions.push({question:q,menu:choice});selected=mode==='no_read_yes'||mode==='stale'||((mode==='review'||mode==='replace'||continueAfterCancel)&&cold)?'yes':'no';
+    decisions.push({question:q,menu:choice});selected=mode==='revision'||mode==='no_read_yes'||mode==='stale'||((mode==='review'||mode==='replace'||continueAfterCancel)&&cold)?'yes':'no';
     if(mode==='stale'){
      winningAmendment=buildBoundaryAuthoringResumeState({binding:saved.binding,stage:saved.stage,jobIntent:saved.job_intent,provider:saved.model.provider,model:saved.model.name,previous:saved,conversation:saved.conversation,policySourceSession:saved.policy_source_session,read:saved.read,readIntent:saved.read_intent,intendedClient:saved.intended_client,pendingJobRevision:amendment,privateReadMetadataDigest:saved.private_read_metadata_digest,metadataDestinationDigest:saved.metadata_destination_digest});
      await writeBoundaryAuthoringResumeState(root,winningAmendment,{expectedRevisionDigest:saved.revision_digest});
     }
    }
+   else if(mode==='revision'&&values.includes('revise_model')&&!revisionStarted){revisionStarted=true;selected='revise_model';}
    else if(values.includes('finish'))selected='finish';
    else if(choice.title==='SETUP NEEDS ATTENTION'||values.includes('pause'))selected='pause';
    menus.push({...choice,selected,native_stage:saved?.stage});return selected&&values.includes(selected)?selected:undefined;
@@ -85,6 +87,13 @@ async function runVariant(mode:Mode, continueAfterCancel=false, firstBlank=false
   if(requests.length>=12)throw Error('PUBLIC_B64_FINITE_RESPONDER_LIMIT');const body=request.body,text=modelVisibleUserText(body),names=(body.tools??[]).map((t:any)=>t.name??t.function?.name);let name:string|undefined,args:any,narration:string|undefined;
   if(names.includes('runner__plan_boundary_job')){planning++;name='runner__plan_boundary_job';const visible=modelVisibleJsonLine<any>(body,'Host Read context');args={status:'planned',read_mode:noRead?'none':'create',...(noRead?{}:{read_intent:job}),action_mode:'none',summary:noRead?'No Read or Action authority is requested.':'Prepare own parcel labels only; no Action.',read_scope:typedProposal(visible.references,visible.catalog)};}
   else if(names.includes('runner__submit_read_workloads')){expect(noRead,'No-Read planning must not enter mapping').toBe(false);mapping++;name='runner__submit_read_workloads';const refs=modelVisibleJsonLine<ReadScopeReference[]>(body,'Host scope reference inventory'),catalog=modelVisibleJsonLine<any>(body,'Structural catalog');args={allowed:[{id:'own_parcel_labels',description:'Show signed-in customer parcel labels.',plan:{kind:'rows',resource:'studio.parcels',select:['label'],...(refs.some(r=>r.kind==='answer')?{limit:1}:{})}}],forbidden:[],read_scope:typedProposal(refs,catalog)};}
+  else if(names.includes('runner__submit_read_boundary_revision')){
+    revisionCalls++; expect(mode).toBe('revision'); expect(text).toContain(revisionInstruction);
+    const visible=modelVisibleJsonLine<any>(body,'Host scope inventory');
+    expect(visible.catalog.resources.some((r:any)=>r.id==='studio.parcels')).toBe(true);
+    name='runner__submit_read_boundary_revision';args={read_scope:typedProposal(visible.references,visible.catalog),
+      resource_changes:[{resource:'studio.parcels',settings:{metadata:{label:'Customer parcels'}}}]};
+  }
   else if(names.includes('runner__propose_operator_decision')){name='runner__propose_operator_decision';const q=modelVisibleJsonLine<any>(body,'Current question');expect(q.kind).toBe('input_bounds');expect(modelVisibleJsonLine<string>(body,'Complete saved Source text (no truncation)')).toBe(source);args={question_id:q.question_id,revision:q.revision,source_reference:q.source_reference,status:'proposal',disposition:'proposed',value:{kind:'input_bounds',requirements:[]}};}
   else if(names.includes('runner__review_policy_coverage')){name='runner__review_policy_coverage';expect(text).toContain(source);const refs=modelVisibleJsonLine<string[]>(body,'Exact coverage references (select, do not invent paths)');expect(refs).toContain('/read');const current=modelVisibleJsonLine<any>(body,'Current draft (JSON pointer root)'),access=current.runner_evidence.read_access['studio.parcels'];expect(access.customer_scoped_access).toBe(true);expect(access.trusted_principal_field).toBe('principal_id');args={passages:[{start:1,end:1,disposition:'implemented',interpretation:'The current emitted Read access evidence establishes person scope and only parcel labels are selected; all other fields remain private and no Actions exist.',draft_paths:['/runner_evidence/read_access/studio.parcels','/read','/actions']}]};}
   else if(!names.length){const question=text.split('\n').find(line=>line.startsWith('Exact next question: '));narration=question?JSON.parse(question.slice('Exact next question: '.length)):'The proposed Read remains disabled until the operator reviews it.';}
@@ -102,11 +111,20 @@ async function runVariant(mode:Mode, continueAfterCancel=false, firstBlank=false
   await boundaryReviewCommand(['--project-root',root,'--confirm','--actor','declared parcel operator','--output',path.join(root,'reviewed-structural-context.json')],inspect,{presentationMode:'conversation',promptText:async()=>undefined,confirm:async(_message,options)=>{expect(options?.context?.length).toBeGreaterThan(0);return true;},chooseResource:async()=>undefined,editFieldTiers:async()=>undefined});
   expect((await loadBoundaryReviewContext(root)).candidate.activation).not.toBe('active');
   await start(['--project-root',root,'--from-env','B64_PUBLIC_READ_URL','--schema','studio','--cli'],{interactive:true,schemaInspector:inspect,runBoundaryReview:(args,inspection)=>boundaryReviewCommand(args,inspection,outer,undefined,options)});
-  beforeCold=await resume();expect(sourceConsent).toBe(1);expect(planning).toBe(1);expect(mapping).toBe(noRead?0:1);expect(decisions).toHaveLength(1);
+  beforeCold=await resume();expect(sourceConsent).toBe(1);expect(planning).toBe(1);expect(mapping).toBe(noRead?0:1);if(mode!=='revision')expect(decisions).toHaveLength(1);
   const scope=beforeCold.operator_questions.find((q:any)=>q.kind==='read_scope');expect(scope).toBeDefined();
   expect(scope.read_scope.record.proposal.applicability).toBe(noRead?'no_read_requested':'read_requested');
   expect(beforeCold.authority_granted).toBe(false);expect(beforeCold.source_database_changed).toBe(false);
-  if(mode==='no_read_yes'){expect(scope.confirmation).toBeDefined();expect(scope.read_scope.record.analysis_digest).toBeUndefined();expect(beforeCold.read).toBeUndefined();}
+  if(mode==='revision'){
+    expect(revisionStarted,JSON.stringify({menus,failures,transcript})).toBe(true);expect(revisionGiven).toBe(true);expect(revisionCalls).toBe(1);
+    const saved=await loadBoundaryReviewContext(root),resource=saved.candidate.pack.resources.find((r:any)=>r.id==='studio.parcels');
+    expect(resource?.label).toBe('Customer parcels');expect(resource?.selectable_fields).toEqual(['label']);
+    expect(resource?.principal_key).toBe('principal_id');expect(resource?.tenant_key).toBe('tenant_id');
+    expect(beforeCold.authority_granted).toBe(false);expect(beforeCold.source_database_changed).toBe(false);
+    cold=true;const count=requests.length;await boundaryReviewCommand(['--project-root',root,'--access','--job-first'],inspect,outer,undefined,options);
+    expect(requests).toHaveLength(count);expect((await loadBoundaryReviewContext(root)).candidate.pack.resources.find((r:any)=>r.id==='studio.parcels')?.label).toBe('Customer parcels');
+  }
+  else if(mode==='no_read_yes'){expect(scope.confirmation).toBeDefined();expect(scope.read_scope.record.analysis_digest).toBeUndefined();expect(beforeCold.read).toBeUndefined();}
   else if(mode==='stale'){
    expect(scope.confirmation).toBeUndefined();expect(winningAmendment).toBeDefined();expect(beforeCold.revision_digest).toBe(winningAmendment.revision_digest);expect(beforeCold.pending_job_revision).toBe(amendment);
    expect(beforeCold.operator_questions).toEqual(winningAmendment.operator_questions);expect(beforeCold.generation_recovery).toEqual(winningAmendment.generation_recovery);
@@ -154,7 +172,7 @@ async function runVariant(mode:Mode, continueAfterCancel=false, firstBlank=false
    }
   }
  }finally{
-  const capture=process.env.B51_READ_PROCESS_CAPTURE_DIR;if(capture){await fs.mkdir(capture,{recursive:true});await fs.writeFile(path.join(capture,`PUBLIC-READ-${mode}${continueAfterCancel?"-resumed":""}${firstBlank?"-blank":""}.json`),JSON.stringify({root,job:selectedJob,source:selectedSource,mode,transcript,menus,requests,failures,reads,decisions,sourceConsent,planning,mapping,rawPrompts,correction,beforeCold,afterCold,finalResume:await resume(),stdout:stdout.mock.calls.map(x=>String(x[0])).join(''),limits:'Actual public command+B48 IO; supplied synthetic schema metadata. No DB query, model provider egress, activation or public PASS unless complete assertions pass.'},null,2));}
+  const capture=process.env.B51_READ_PROCESS_CAPTURE_DIR;if(capture){await fs.mkdir(capture,{recursive:true});await fs.writeFile(path.join(capture,`PUBLIC-READ-${mode}${continueAfterCancel?"-resumed":""}${firstBlank?"-blank":""}.json`),JSON.stringify({root,job:selectedJob,source:selectedSource,mode,transcript,menus,requests,failures,reads,decisions,sourceConsent,planning,mapping,revisionCalls,revisionStarted,revisionGiven,rawPrompts,correction,beforeCold,afterCold,finalResume:await resume(),stdout:stdout.mock.calls.map(x=>String(x[0])).join(''),limits:'Actual public command+B48 IO; supplied synthetic schema metadata. No DB query, model provider egress, activation or public PASS unless complete assertions pass.'},null,2));}
  }
 }
 it.each<Mode>(['replace','replace_cancel','replace_stale'])('public B64 %s retains exact scope without retired English calls',runVariant,30000);
@@ -162,3 +180,5 @@ it.each<Mode>(['replace','replace_cancel','replace_stale'])('public B64 %s retai
 it('independent public cancelled correction resumes to a real answer and separate review',()=>runVariant('replace_cancel',true),30000);
 
 it('independent public blank correction resumes without losing original raw history',()=>runVariant('replace_cancel',true,true),30000);
+
+it('public typed Read revision and cold Resume never call retired English owners',()=>runVariant('revision'),30000);
