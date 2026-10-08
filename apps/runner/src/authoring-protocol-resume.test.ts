@@ -13,7 +13,7 @@ const digest = canonicalJsonDigest("owned protocol fixture");
 const base = { binding: { boundary_name: "owned", generation_lock_fingerprint: digest,
   schema_fingerprint: digest, role_posture_fingerprint: digest }, stage: "planning" as const,
   jobIntent: "Review the declared business task.", provider: "openai" as const, model: "offline-scripted" };
-const protocol = { version: "synapsor.structured-authoring.v1" as const };
+const protocol = { version: "synapsor.structured-authoring.v2" as const };
 const structured = () => buildBoundaryAuthoringResumeState({ ...base, authoringProtocol: protocol } as Parameters<typeof buildBoundaryAuthoringResumeState>[0]);
 const seal = (v: Record<string, unknown>) => { const { revision_digest: _, ...core } = v; return { ...core, revision_digest: canonicalJsonDigest(core) }; };
 

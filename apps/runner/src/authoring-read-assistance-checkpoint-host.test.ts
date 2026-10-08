@@ -270,7 +270,7 @@ describe("B64 full scope review handoff", () => {
       const nativeBinding = { boundary_name: "owned_assistance", generation_lock_fingerprint: canonicalJsonDigest("lock"),
         schema_fingerprint: canonicalJsonDigest("schema"), role_posture_fingerprint: canonicalJsonDigest("reader") };
       const state = buildBoundaryAuthoringResumeState({ binding: nativeBinding, stage: "read_mapping", jobIntent: original,
-        provider: "openai", model: "owned-local-fixture", authoringProtocol: { version: "synapsor.structured-authoring.v1" },
+        provider: "openai", model: "owned-local-fixture", authoringProtocol: { version: "synapsor.structured-authoring.v2" },
         generationRecovery: h.state().recovery, operatorQuestions: h.state().questions, ownerHandoffs: h.state().handoffs,
         read: h.state().read });
       expect(state.read!.analysis_digest).not.toBe(q.read_scope!.record.analysis_digest);

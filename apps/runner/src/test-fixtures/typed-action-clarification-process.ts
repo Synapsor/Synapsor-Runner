@@ -15,7 +15,7 @@ const intent = "Prepare proposal-only changes to the reorder threshold of enable
 const base = {binding,stage:"action_drafting" as const,jobIntent:intent,provider:"openai" as const,model:"controlled-clarification-process"};
 let state: BoundaryAuthoringResumeState;
 if (mode === "create") {
-  state=buildBoundaryAuthoringResumeState({...base,authoringProtocol:{version:"synapsor.structured-authoring.v1"}});
+  state=buildBoundaryAuthoringResumeState({...base,authoringProtocol:{version:"synapsor.structured-authoring.v2"}});
   await writeBoundaryAuthoringResumeState(root,state,{expectedRevisionDigest:null});
 } else {
   const loaded=await readBoundaryAuthoringResumeState(root,binding);
@@ -31,7 +31,7 @@ try { await withAuthoringGenerationRecovery(async()=>{
   configureAuthoringGenerationRecovery({available:()=>true,read:()=>state.generation_recovery,current:async()=>digest("whole-current-Action-process-context"),progress:()=>{},
     write:recovery=>persist(buildBoundaryAuthoringResumeState({...base,previous:state,generationRecovery:recovery}))});
   await generateModelActionRuleDraft({builtCatalog:catalog(),readBoundary:boundary(),readBoundaryDigest:mode==="stale"?digest("different current Read"):readDigest,
-    intent,checkpoint,authoringProtocol:{version:"synapsor.structured-authoring.v1"},egressAcknowledged:true,
+    intent,checkpoint,authoringProtocol:{version:"synapsor.structured-authoring.v2"},egressAcknowledged:true,
     session:{provider:"openai",model:base.model,apiKey:"inert-local-only",dependencies:{requestJson:async request=>{
       if(mode!=="create" || ++requests>1)throw new Error("No provider replay allowed");
       const line=strings(request.body).flatMap(value=>value.split("\n")).find(value=>value.startsWith("Current disabled draft: "))!;

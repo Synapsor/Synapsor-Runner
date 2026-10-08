@@ -246,7 +246,7 @@ describe("B33 pending-question atomic resume persistence", () => {
       const result=await runAskProviderTurn({configuration,question:"DERIVED",history:[],tools,authorityDigest,signal:new AbortController().signal,
         gateway:{mode:"authoring",listTools:()=>tools,close:async()=>{},callTool:async()=>{throw new Error("No callback allowed");}},
         dependencies:{requestJson:async()=>({status:200,body:{status:"completed",output:[{type:"message",content:[{type:"output_text",text:"Which reviewed role handles exceptions?"}]}]}})}});
-      const cp=actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" },intent_digest:canonicalJsonDigest(current.action!.intent),context_digest:canonicalJsonDigest(binding),components:{},
+      const cp=actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" },intent_digest:canonicalJsonDigest(current.action!.intent),context_digest:canonicalJsonDigest(binding),components:{},
         pending_question:{question:result.answer,operator_message:current.action!.intent,completion:completedAuthoringQuestion(result)}});
       const next=build(authoringQuestionCheckpoint(current.generation_recovery,cp)!,cp);
       return {root,base:current,next,cp};
@@ -267,7 +267,7 @@ describe("B33 pending-question atomic resume persistence", () => {
   it.each([false,true])("lost answer acknowledgement preserves exact committed-or-unanswered state (rename %s)",async committed=>{
     const {root,base,next,cp}=await questionPair();
     await writeBoundaryAuthoringResumeState(root,next,{expectedRevisionDigest:base.revision_digest});
-    const answered=actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" },intent_digest:cp.intent_digest,context_digest:cp.context_digest,components:cp.components,operator_messages:["One scoped reviewer."]});
+    const answered=actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" },intent_digest:cp.intent_digest,context_digest:cp.context_digest,components:cp.components,operator_messages:["One scoped reviewer."]});
     const successor=buildBoundaryAuthoringResumeState({binding,stage:"action_drafting",jobIntent:next.job_intent,provider:"openai",model:"test",previous:next,
       action:{...next.action!,checkpoint:answered},generationRecovery:authoringQuestionAnswerCheckpoint(next.generation_recovery,cp,answered)});
     const rename=fs.rename;
@@ -281,7 +281,7 @@ describe("B33 pending-question atomic resume persistence", () => {
     await writeBoundaryAuthoringResumeState(root,next,{expectedRevisionDigest:base.revision_digest});
     const answers=["One scoped reviewer.","Two scoped reviewers."];
     const successors=answers.map(answer=>{
-      const answered=actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" },intent_digest:cp.intent_digest,context_digest:cp.context_digest,components:cp.components,operator_messages:[answer]});
+      const answered=actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" },intent_digest:cp.intent_digest,context_digest:cp.context_digest,components:cp.components,operator_messages:[answer]});
       return buildBoundaryAuthoringResumeState({binding,stage:"action_drafting",jobIntent:next.job_intent,provider:"openai",model:"test",previous:next,
         action:{...next.action!,checkpoint:answered},generationRecovery:authoringQuestionAnswerCheckpoint(next.generation_recovery,cp,answered)});
     });

@@ -1,7 +1,7 @@
 /** Native job protocol identity, selected before dispatch. Old authoring jobs
  * are refused rather than interpreted or migrated. */
 export const STRUCTURED_AUTHORING_RESUME_VERSION = "synapsor.boundary-authoring-resume.v3" as const;
-export const STRUCTURED_AUTHORING_PROTOCOL_VERSION = "synapsor.structured-authoring.v1" as const;
+export const STRUCTURED_AUTHORING_PROTOCOL_VERSION = "synapsor.structured-authoring.v2" as const;
 export type StructuredAuthoringProtocol = { version: typeof STRUCTURED_AUTHORING_PROTOCOL_VERSION };
 
 export function parseStructuredAuthoringProtocol(value: unknown): StructuredAuthoringProtocol {
@@ -26,8 +26,14 @@ export const OLDER_AUTHORING_SETUP_MESSAGE = "This setup was saved by an older v
 /** Recognize only the envelope tag. Never inspect old transcript/meaning or
  * migrate its records into the current protocol. Historical files stay intact. */
 export function assertCurrentAuthoringEnvelope(value: unknown): void {
-  if (value && typeof value === "object" && !Array.isArray(value)
-    && ["synapsor.boundary-authoring-resume.v1", "synapsor.boundary-authoring-resume.v2"]
-      .includes((value as { schema_version?: string }).schema_version ?? ""))
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const envelope = value as { schema_version?: unknown; authoring_protocol?: unknown };
+  const pin = envelope.authoring_protocol;
+  const olderStructured = envelope.schema_version === STRUCTURED_AUTHORING_RESUME_VERSION
+    && pin !== null && typeof pin === "object" && !Array.isArray(pin)
+    && (pin as { version?: unknown }).version === "synapsor.structured-authoring.v1";
+  if (["synapsor.boundary-authoring-resume.v1", "synapsor.boundary-authoring-resume.v2"]
+    .includes(typeof envelope.schema_version === "string" ? envelope.schema_version : "") || olderStructured)
     throw Object.assign(new Error(OLDER_AUTHORING_SETUP_MESSAGE), { code: "AUTHORING_SETUP_OLDER_VERSION" });
+  if (envelope.schema_version === STRUCTURED_AUTHORING_RESUME_VERSION) parseStructuredAuthoringProtocol(pin);
 }

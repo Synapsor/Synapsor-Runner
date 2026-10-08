@@ -7,7 +7,7 @@ import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoin
 import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState, assertBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 
 const digest = canonicalJsonDigest("R2 owned retained Action mode fixture");
-const protocol = { version: "synapsor.structured-authoring.v1" as const };
+const protocol = { version: "synapsor.structured-authoring.v2" as const };
 const intent = "Retain the unfinished declared business action.";
 const base = { binding: { boundary_name: "r2_retained", generation_lock_fingerprint: digest, schema_fingerprint: digest, role_posture_fingerprint: digest },
   stage: "planning" as const, jobIntent: "Review the declared synthetic task.", provider: "openai" as const, model: "offline-only" };

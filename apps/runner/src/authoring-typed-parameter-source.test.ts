@@ -46,7 +46,7 @@ describe("typed parameter actual source resolution",()=>{
  });
  it("reloads an actual Action producer compiled checkpoint from native Resume with exact consumed operation",async()=>{
   const f=await fixture(),input={binding:nativeBinding,stage:"action_drafting" as const,jobIntent:intent,provider:"openai" as const,model:"controlled-native-action"};
-  let state=buildBoundaryAuthoringResumeState({...input,authoringProtocol:{version:"synapsor.structured-authoring.v1"}});
+  let state=buildBoundaryAuthoringResumeState({...input,authoringProtocol:{version:"synapsor.structured-authoring.v2"}});
   await writeBoundaryAuthoringResumeState(f.root,state,{expectedRevisionDigest:null});
   const persist=async(next:BoundaryAuthoringResumeState)=>{await writeBoundaryAuthoringResumeState(f.root,next,{expectedRevisionDigest:state.revision_digest});state=next;};
   let checkpoint:ActionRuleAuthoringCheckpoint|undefined;let calls=0;
@@ -54,7 +54,7 @@ describe("typed parameter actual source resolution",()=>{
   const steps=[{name:"runner__submit_verification_boundary_draft",args:{status:"draft",...verification}},{name:"runner__submit_effect_envelope_draft",args:{status:"draft",...effect}},{name:"runner__submit_action_rule_draft",args:{status:"draft",...rule}},{name:"runner__submit_approval_policy_draft",args:{status:"draft",...approval}},{name:"runner__validate_action_draft",args:{}}];
   const result=await withAuthoringGenerationRecovery(async()=>{
    configureAuthoringGenerationRecovery({available:()=>true,read:()=>state.generation_recovery,current:async()=>digest("same-protected-source-context"),progress:()=>{},write:recovery=>persist(buildBoundaryAuthoringResumeState({...input,previous:state,generationRecovery:recovery}))});
-   return generateModelActionRuleDraft({...f.context,intent,authoringProtocol:{version:"synapsor.structured-authoring.v1"},egressAcknowledged:true,expectedOutcome:f.declared.outcome,
+   return generateModelActionRuleDraft({...f.context,intent,authoringProtocol:{version:"synapsor.structured-authoring.v2"},egressAcknowledged:true,expectedOutcome:f.declared.outcome,
     session:{provider:"openai",model:input.model,apiKey:"inert-local-only",dependencies:{requestJson:async request=>{
      const next=steps.shift();if(!next)throw new Error("Declared finite responder exhausted");
      const body=JSON.stringify(request.body);expect(body).toContain(next.name);expect(body).toContain("warehouse.items");calls++;

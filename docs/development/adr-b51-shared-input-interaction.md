@@ -609,3 +609,21 @@ and log remain /var/tmp/synapsor-b64-main-owned/evidence/english-scope-*; deleti
 and fail-closed typed routing now replace defensive legacy gating.
 
 Public Read host assembly (in progress): `projectAuthoringReadScopeContext` derives original-request, exact active Source, catalog and saved-job applicability from native records. Meaning identity excludes transient Resume/generation bookkeeping; operation identity binds the actual Read baseline and structural binding. It grants no interpretation/consent. The caller must reload coherent records and check egress/currentness; source/analysis/save ownership remains unchanged. Five focused controls and types pass; the first local Source test omitted the fixture's active snapshot selector (4P/1F preserved, then5P). Public producer/review wiring, edit-delta binding and public cold continuation are still pending, so this component is not public-flow acceptance.
+
+B64 typed subject compatibility decision (Main, independently reviewed by R1
+fe5843fe): the remaining principal-scope English heuristic must become an explicit
+per-root subject proposal. Canonical Read scope advances to v2 and the authoring
+pin to synapsor.structured-authoring.v2; native Resume envelope v3 is unchanged.
+This extends the existing typed scope record, not a second evidence store or a
+migration. Known native v3/authoring.v1 setups refuse before interpreting records,
+with the Owner's exact older-setup message. Unknown pins remain unsupported.
+Historical jobs/confirmations are never default-filled, upgraded or rewritten.
+Current fixtures initialize the new pin explicitly; old snapshots are refusal
+fixtures. A subject kind is not permission: actual acknowledged structural scope,
+exact root/configuration/Source bindings, analyzed plans and default-No grouped
+meaning review remain distinct. Missing subjects never mean unrestricted scope.
+R1 presealed PS01–12 and PC01–06; full schema/public migration is still open.
+Main protocol gate before1FAIL (continued past envelope into unavailable draft),
+after106PASS/types0; evidence subject-protocol-{before,after,types}.log in the
+existing Main evidence directory. Existing fresh fixture pins change; assertions
+and all prior failure captures remain intact.

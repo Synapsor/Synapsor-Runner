@@ -378,7 +378,7 @@ describe("Boundary authoring resume state", () => {
     const request = { outcome: "work.finish", instruction: "Review the existing effect.", baseline_digest: canonicalJsonDigest("exact draft") };
     const generated = { ...request, coverage_repair: { source_digest: canonicalJsonDigest("source"),
       report_digest: canonicalJsonDigest("coverage"), source_ranges: [{ start: 1, end: 1 }] },
-      checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" }, intent_digest: canonicalJsonDigest("intent"), context_digest: canonicalJsonDigest("context"), components: {} }) };
+      checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: canonicalJsonDigest("intent"), context_digest: canonicalJsonDigest("context"), components: {} }) };
     expect(prepareBoundaryActionRevision({ ...request, coverage_repair: generated.coverage_repair }, generated)).toEqual(generated);
     const owner = prepareBoundaryActionRevision(request, generated);
     expect(owner).toEqual(request);
@@ -394,7 +394,7 @@ describe("Boundary authoring resume state", () => {
       const records = [{ decision_id: canonicalJsonDigest("host exact scope"), applicability_digest: canonicalJsonDigest("host relevant meaning and fields"),
         question: "For this workflow, is the reviewed register authoritative?", answer: "The operator confirms its business ownership." }];
       const action = { intent: "Schedule follow-up; automatic limit remains unanswered.", intents: ["Close a visit.", "Schedule follow-up; automatic limit remains unanswered."],
-        completed_outcomes: ["operations.close_visit"], checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" }, intent_digest: canonicalJsonDigest("unfinished intent"),
+        completed_outcomes: ["operations.close_visit"], checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: canonicalJsonDigest("unfinished intent"),
           context_digest: canonicalJsonDigest("old proof"), components: {}, operator_messages: ["Business limit remains unanswered."] }) };
       const original = buildBoundaryAuthoringResumeState({ ...input, readPrerequisiteDecisions: records, action,
         privateReadMetadataDigest: canonicalJsonDigest("old consent") });
@@ -441,7 +441,7 @@ describe("Boundary authoring resume state", () => {
         provider: "openai" as const, model: "gpt-test" };
       const reviews = ["operations.assignments", "operations.offers"].map((resource, i) => ({ resource, field: "counter",
         maintenance: "all_writers_increment" as const, proof_digest: `sha256:${String(i + 4).repeat(64)}` as const }));
-      const checkpoint = actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" }, intent_digest: `sha256:${"6".repeat(64)}`,
+      const checkpoint = actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: `sha256:${"6".repeat(64)}`,
         context_digest: `sha256:${"7".repeat(64)}`, components: {}, reviewed_version_fields: reviews });
       const old = buildBoundaryAuthoringResumeState({ ...input, pendingActionRevision: { outcome: "operations.exchange",
         instruction: "Confirm the existing operating prerequisites.", baseline_digest: `sha256:${"8".repeat(64)}`, checkpoint } });
@@ -473,7 +473,7 @@ describe("Boundary authoring resume state", () => {
     const latest = { ...older, field: "v2", proof_digest: `sha256:${"b".repeat(64)}` as const };
     const input = { binding, stage: "authority_review" as const, jobIntent: "Change a record.", provider: "openai" as const, model: "gpt-test" };
     const state = buildBoundaryAuthoringResumeState({ ...input, reviewedVersionFields: [latest], action: { intent: input.jobIntent,
-      checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" }, intent_digest: `sha256:${"c".repeat(64)}`, context_digest: `sha256:${"d".repeat(64)}`,
+      checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: `sha256:${"c".repeat(64)}`, context_digest: `sha256:${"d".repeat(64)}`,
         components: {}, reviewed_version_fields: [older] }) } });
     expect(boundaryAuthoringVersionReviews(state)).toEqual([latest]);
     const records = Array.from({ length: 32 }, (_, i) => ({ ...latest, resource: `operations.record_${i}` }));
@@ -488,7 +488,7 @@ describe("Boundary authoring resume state", () => {
         provider: "openai" as const, model: "gpt-test" };
       const action = { intent: "Inspect an asset.", intents: ["Inspect an asset.", "Close a visit.", "Schedule a follow-up; automatic limits remain unanswered."],
         outcome: "operations.close_visit", completed_outcomes: ["operations.inspect_asset", "operations.close_visit"], strategy: "rule_derived" as const,
-        ...(components ? { checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" }, intent_digest: `sha256:${"4".repeat(64)}`,
+        ...(components ? { checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: `sha256:${"4".repeat(64)}`,
           context_digest: `sha256:${"5".repeat(64)}`, components: { verification: { name: "private_facts", resources: [] } },
           operator_messages: ["The business owner has not supplied the automatic limit. Keep it pending."] }) } : {}),
       };
@@ -560,7 +560,7 @@ describe("Boundary authoring resume state", () => {
     try {
       const pendingActionRevision = { outcome: "university.accept_offer", instruction: "Require current admission without changing the other rules.",
         baseline_digest: `sha256:${"4".repeat(64)}` as const,
-        checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" }, intent_digest: `sha256:${"5".repeat(64)}`,
+        checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: `sha256:${"5".repeat(64)}`,
           context_digest: `sha256:${"6".repeat(64)}`, components: {}, operator_messages: ["Save pending"] }),
       };
       const input = { binding, stage: "authority_review" as const, jobIntent: "Help students with registration.", provider: "openai" as const, model: "gpt-5.6-terra" };
@@ -605,7 +605,7 @@ describe("Boundary authoring resume state", () => {
       const revision = { outcome: "gym.freeze", instruction: "Generated repair diagnostic.",
         operator_statements: ["Original policy:\n\nKeep the cap per organization.\n", "Keep the existing reviewer."],
         baseline_digest: `sha256:${"4".repeat(64)}` as const,
-        checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" }, intent_digest: `sha256:${"5".repeat(64)}`,
+        checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: `sha256:${"5".repeat(64)}`,
           context_digest: `sha256:${"6".repeat(64)}`, components: {}, operator_messages: [] }),
       };
       const input = { binding, stage: "authority_review" as const, jobIntent: "Apply the original policy.", provider: "openai" as const, model: "gpt-test" };
@@ -669,7 +669,7 @@ describe("Boundary authoring resume state", () => {
         intent: "Reschedule visits.", outcome: "clinic.reschedule", strategy: "rule_derived",
         intents: ["Reschedule visits.", "Notify the clinic."],
         completed_outcomes: ["clinic.reschedule"],
-        checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" },
+        checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" },
           intent_digest: `sha256:${"7".repeat(64)}`,
           context_digest: `sha256:${"8".repeat(64)}`,
           components: { verification: { name: "clinic.verify_notification", resources: [] } },
@@ -962,7 +962,7 @@ describe("Boundary authoring resume state", () => {
         conversation: [...initial.conversation, { question: "Describe the saved policy.", answer }],
         pendingActionRevision: { outcome: "operations.review", instruction: "Retain the original quotas.",
           baseline_digest: canonicalJsonDigest("baseline"), operator_statements: [initial.conversation[0]!.answer],
-          checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" }, intent_digest: canonicalJsonDigest("intent"),
+          checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: canonicalJsonDigest("intent"),
             context_digest: canonicalJsonDigest("context"), components: {}, operator_messages: [answer] }) } });
       await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: initial.revision_digest });
       expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: next });
@@ -988,7 +988,7 @@ describe("Boundary authoring resume state", () => {
       const state = buildBoundaryAuthoringResumeState({ binding, stage: "action_drafting",
         jobIntent: "Let people collect eligible holds.", provider: "openai", model: "gpt-test",
         conversation: [{ question: "What do the identity bindings mean?", answer, kind: "clarification" }],
-        action: { intent: "Collect an eligible hold.", checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" },
+        action: { intent: "Collect an eligible hold.", checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" },
           intent_digest: `sha256:${"4".repeat(64)}`, context_digest: `sha256:${"5".repeat(64)}`, components: {},
           operator_messages: [answer],
         }) },

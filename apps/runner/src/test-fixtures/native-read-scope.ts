@@ -44,7 +44,7 @@ export async function nativeFixture(noRead = false, withoutAnalysis = false) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owned-native-scope-"));
   const nativeBinding = { boundary_name: "work", generation_lock_fingerprint: d("lock"), schema_fingerprint: d("schema"), role_posture_fingerprint: d("roles") };
   const input = { binding: nativeBinding, stage: "read_mapping" as const, jobIntent: "Show items", provider: "openai" as const, model: "controlled" };
-  let state = buildBoundaryAuthoringResumeState({ ...input, authoringProtocol: { version: "synapsor.structured-authoring.v1" } });
+  let state = buildBoundaryAuthoringResumeState({ ...input, authoringProtocol: { version: "synapsor.structured-authoring.v2" } });
   await writeBoundaryAuthoringResumeState(dir, state, { expectedRevisionDigest: null });
   const persist = async (next: BoundaryAuthoringResumeState) => {
     await writeBoundaryAuthoringResumeState(dir, next, { expectedRevisionDigest: state.revision_digest }); state = next;

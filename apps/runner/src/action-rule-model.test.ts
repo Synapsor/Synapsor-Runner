@@ -1636,7 +1636,7 @@ describe("conversational Action authoring tools", () => {
       requests.push(JSON.stringify(request.body));
       if (!steps.length) throw new Error("R2_B64_UNDECLARED_ADDITIONAL_MODEL_REQUEST");
       return steps.shift()!;
-    }), askClarification, authoringProtocol: { version: "synapsor.structured-authoring.v1" } } as Parameters<typeof converseActionRuleDraft>[0]);
+    }), askClarification, authoringProtocol: { version: "synapsor.structured-authoring.v2" } } as Parameters<typeof converseActionRuleDraft>[0]);
     expect(askClarification).not.toHaveBeenCalled();
     expect(result.state).toBe("ready");
     expect(result.clarification_count).toBe(0);
@@ -1668,7 +1668,7 @@ describe("conversational Action authoring tools", () => {
     });
     const askClarification = vi.fn(async received => { expect(received).toBe(question); return undefined; });
     await expect(converseActionRuleDraft({ ...requestInput(requestJson),
-      authoringProtocol: { version: "synapsor.structured-authoring.v1" },
+      authoringProtocol: { version: "synapsor.structured-authoring.v2" },
       onCheckpoint: async value => { checkpoint = structuredClone(value); }, askClarification,
     })).rejects.toThrow("CANCELLED");
     expect(requestJson).toHaveBeenCalledOnce();
@@ -1679,7 +1679,7 @@ describe("conversational Action authoring tools", () => {
     const before = structuredClone(checkpoint);
     const resumedProvider = vi.fn(async () => { throw new Error("B64_SAVED_QUESTION_MUST_NOT_REPLAY"); });
     await expect(converseActionRuleDraft({ ...requestInput(resumedProvider), checkpoint,
-      authoringProtocol: { version: "synapsor.structured-authoring.v1" },
+      authoringProtocol: { version: "synapsor.structured-authoring.v2" },
       askClarification: async received => { expect(received).toBe(question); return undefined; },
       onCheckpoint: async () => { throw new Error("B64_REDISPLAY_MUST_NOT_REWRITE"); },
     })).rejects.toThrow("CANCELLED");
@@ -1711,7 +1711,7 @@ describe("conversational Action authoring tools", () => {
     const askClarification = vi.fn(async () => undefined);
     const saved: ActionRuleAuthoringCheckpoint[] = [];
     await expect(converseActionRuleDraft({ ...requestInput(requestJson),
-      authoringProtocol: { version: "synapsor.structured-authoring.v1" },
+      authoringProtocol: { version: "synapsor.structured-authoring.v2" },
       onCheckpoint: async value => { saved.push(structuredClone(value)); }, askClarification,
     })).rejects.toThrow("CANCELLED");
     expect(requestJson).toHaveBeenCalledTimes(2);
@@ -1736,7 +1736,7 @@ describe("conversational Action authoring tools", () => {
       ]}};
     });
     const askClarification=vi.fn(async()=>undefined);
-    await expect(converseActionRuleDraft({...requestInput(requestJson),authoringProtocol:{version:"synapsor.structured-authoring.v1"},
+    await expect(converseActionRuleDraft({...requestInput(requestJson),authoringProtocol:{version:"synapsor.structured-authoring.v2"},
       onCheckpoint:async value=>{checkpoint=structuredClone(value);},askClarification})).rejects.toThrow("CANCELLED");
     expect(requestJson).toHaveBeenCalledOnce();expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
     expect(checkpoint?.components).toEqual({});expect(checkpoint?.pending_question?.question).toBe(question);
@@ -1752,7 +1752,7 @@ describe("conversational Action authoring tools", () => {
       requests.push(JSON.stringify(request.body));
       if (!steps.length) throw new Error("UNDECLARED_REQUEST");
       return steps.shift()!;
-    }), authoringProtocol: { version: "synapsor.structured-authoring.v1" } } as Parameters<typeof converseActionRuleDraft>[0]);
+    }), authoringProtocol: { version: "synapsor.structured-authoring.v2" } } as Parameters<typeof converseActionRuleDraft>[0]);
     expect(requests.join("\n")).toContain("ASK_TOOL_ARGUMENTS_INVALID");
     expect(result.authority_granted).toBe(false);
     expect(result.compiled.draft).not.toHaveProperty("actor");
