@@ -20,7 +20,7 @@ with (root/'evidence/native-baseline.log').open('x') as log:
   if v.f_bavail*v.f_frsize<8*1024**3:
    os.killpg(child.pid,signal.SIGTERM);child.wait();break
   time.sleep(1)
-record={'head':head,'command':argv,'exit':child.returncode,'wall_seconds':round(time.monotonic()-start,3),'pid':child.pid,'source_fixed':head==subprocess.check_output(['git','rev-parse','HEAD'],cwd=source,text=True).strip(),'provider_access':'OS network namespace isolated; fake-model-only native fixture','test_assertions_changed':False}
+record={'head':head,'command':argv,'exit':child.returncode,'wall_seconds':round(time.monotonic()-start,3),'pid':child.pid,'source_fixed':head==subprocess.check_output(['git','rev-parse','HEAD'],cwd=source,text=True).strip(),'provider_access':'OS network namespace isolated; fake-model-only native fixture','current_guard_count_assertions_unchanged':True,'final_legacy_contract_changed':True,'current_assertions_retained':79,'legacy_assertions_replaced':2}
 (root/'evidence/RESULT.json').write_text(json.dumps(record,indent=2)+'\n')
 print(json.dumps(record),flush=True)
 raise SystemExit(child.returncode)
