@@ -1,0 +1,11 @@
+{
+  "base": "38eb51dc67e0d7054414840995c6288dcf52625a",
+  "branch": "codex/b66-mysql-writer-20261008",
+  "checkpoint": "failing-before; product unchanged",
+  "command": "B66_MYSQL_ADMIN_URL=<owned ephemeral credential> HOME=<owned home> TMPDIR=<owned tmp> node node_modules/vitest/vitest.mjs run apps/runner/src/worker-policy-mysql-lock.live.test.ts --maxWorkers=1 --minWorkers=1 --testTimeout=30000",
+  "results": "Native narrow customer_id UPDATE successfully locks c1; product then returns writer_excess_relation_privilege instead of accepting exact reviewed lock authority.",
+  "evidence": "native-before.log; private raw evidence and preserved own DB /var/tmp/synapsor-b66-owned-20261008",
+  "verdict": "FAIL reproduced before product patch; no public execution or business-invariant acceptance claimed",
+  "planned_inventory": ["packages/schema-inspector/src/index.ts", "packages/schema-inspector/src/index.test.ts", "packages/schema-inspector/src/mysql-column-privileges.test.ts", "apps/runner/src/writer-provisioning.ts", "apps/runner/src/writer-provisioning.test.ts", "apps/runner/src/worker-policy-mysql-lock.live.test.ts", "docs/development/b66-mysql-writer/*"],
+  "openitems": ["Exact MySQL column grant parser and posture", "MySQL narrow administrator export", "Native negative controls and PostgreSQL comparison", "Independent R2 review", "Main public UI integration and B65 tester rerun"]
+}
