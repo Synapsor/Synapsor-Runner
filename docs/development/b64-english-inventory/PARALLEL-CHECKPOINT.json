@@ -1,0 +1,50 @@
+{
+  "recorded_at": "2026-10-08T19:32:23.924746+00:00",
+  "main_pin": "3366b2c0",
+  "owner_map": "LANES.json",
+  "paid": "CLOSED",
+  "main_hooks": {
+    "files": [
+      "boundary-commands.ts",
+      "boundary-workbench.ts",
+      "schemas/schema-candidate-review.schema.json"
+    ],
+    "typecheck": "exit0 before enum-only JSON change",
+    "json_parse": "exit0",
+    "independent_privacy_acceptance": "PENDING"
+  },
+  "read": {
+    "pin": "f1a74e84",
+    "owner_report": "78 PASS; types0 at97d; audit/native6PASS atf1",
+    "independent_acceptance": "PENDING"
+  },
+  "privacy": {
+    "pin": "583c0738",
+    "owner_report": "284 PASS affected suites plus3 catalog-role/protocol controls; before failures retained",
+    "independent_acceptance": "PENDING"
+  },
+  "chat": {
+    "pin": "9a7f1c7e",
+    "owner_report": "chat92PASS; picker103PASS; GC5FAIL1PASS and exactcandidate1FAIL before",
+    "independent_acceptance": "PENDING"
+  },
+  "ask": {
+    "before_pin": "546830b3",
+    "before": "17 controls:7PASS10FAIL",
+    "held_contract": "Default Balanced currently promises contradiction refusal, and explicit confirmation to opt out. AT02/03/05 would permit wrong-resource/changed-constraint/accidental reads with false semantic-proof flag. Owner decision requested; no approval inferred.",
+    "continue": "Typed suppression, truthful result display, catalog tokens, metadata guidance; existing safety checks unchanged."
+  },
+  "b65": {
+    "native_pin": "be941b72",
+    "pg": "Native cases recorded; fresh30then25 fails intended50 limit, fresh30then10 passes; existing approved10 refuses stale. Qualified fresh Source URL reconcile twice passes separately from retained unknown history.",
+    "mysql": "14 native component PASS; public writer admission blocked by contradictory parent UPDATE privilege checks. No public race or PG transfer.",
+    "runtime_before": "96ed4b7b actual native SQLite receipt boundary1PASS1FAIL; independent receipt-only repair review pending"
+  },
+  "limits": {
+    "heavy_jobs": 4,
+    "workers_per_run_max": 8,
+    "memory_disk_floor_gib": 8,
+    "private_backup_only": true,
+    "storage": "KEEP ALL; revisit below30GB"
+  }
+}
