@@ -4,10 +4,13 @@ import { answerOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff 
 import { authoringQuestionAnswerCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, leaveOperatorQuestionPending,
   operatorQuestionReadback, presentOperatorQuestion, proposeOperatorAnswer, reopenOperatorQuestion,
-  type OperatorQuestion } from "./authoring-operator-question.js";
+  parseOperatorQuestions, type OperatorQuestion } from "./authoring-operator-question.js";
 import { PolicySourceChangedError } from "./authoring-policy-source.js";
 import { isUnknownReadMeaning } from "./read-meaning-evidence.js";
-import { readWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
+import { readWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceCheckpoint,
+  type ReadScopeAssistanceRequest, type ReadScopeAnswerReference } from "./read-workload-assistance-checkpoint.js";
+import { createReadScopeQuestion } from "./authoring-read-scope-question.js";
+import type { ReadScopeReference } from "./read-structured-scope.js";
 import { rememberModelAuthoringTurn } from "./model-authoring-conversation.js";
 import type { AskHistoryTurn } from "./model-ask.js";
 import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
@@ -61,12 +64,12 @@ export function createReadMeaningHost(input: {
     if (!cp) throw access.checkpointFailure("The exact saved Read question");
     return readMeaningInteractionBinding(readQuestion(), access.readHandoffs().at(-1)!, cp);
   };
-  const exchange = async (view: ReadMeaningInteraction) => {
-    await assertCurrent();
-    const response = await input.interact(structuredClone(view), () => assertCurrent());
+  const exchange = async (view: ReadMeaningInteraction, controls = { assertCurrent: () => assertCurrent(), binding }) => {
+    await controls.assertCurrent();
+    const response = await input.interact(structuredClone(view), controls.assertCurrent);
     assertReadMeaningInteractionResponse(view, response);
-    await assertCurrent();
-    if (canonicalJsonDigest(binding()) !== canonicalJsonDigest(view.binding)) throw new PolicySourceChangedError();
+    await controls.assertCurrent();
+    if (canonicalJsonDigest(controls.binding()) !== canonicalJsonDigest(view.binding)) throw new PolicySourceChangedError();
     return response;
   };
   const saveQuestion = (next: OperatorQuestion, expected: Digest) => access.mutate(async permit => {
@@ -176,5 +179,106 @@ export function createReadMeaningHost(input: {
     if (confirmed) await acceptQuestion(readQuestion());
     return confirmed;
   };
-  return { clarify, confirmReplacement };
+  const scopeQuestion = (request: ReadScopeAssistanceRequest) => {
+    const cp = access.readCheckpoint();
+    if (!cp || cp.pending_question?.kind !== "scope" || canonicalJsonDigest(cp.pending_question.request) !== canonicalJsonDigest(request))
+      throw access.checkpointFailure("The exact saved scope question");
+    const questions = parseOperatorQuestions(access.readQuestions(), access.readHandoffs(), access.readRecovery());
+    const h = access.readHandoffs().at(-1);
+    const q = [...questions].reverse().find(q => q.handoff_id === h?.id && q.kind === "read_scope" && q.read_scope?.mode === "missing_answer");
+    if (!q || !h || q.presentation?.text !== request.question || q.read_scope!.record.digest !== request.scope.digest
+      || q.read_scope!.record.requirement_bindings.find(r => r.id === q.read_scope!.requirement_id)?.digest !== request.requirement_digest)
+      throw access.checkpointFailure("The exact saved scope question");
+    return { q, h, cp };
+  };
+  const assertScopeCurrent = async (request: ReadScopeAssistanceRequest, permit?: ProjectAuthorityMutationPermit) => {
+    await access.assertFresh(permit);
+    const { q } = scopeQuestion(request);
+    if (q.context_digest !== await access.contextDigest(permit) || q.scope_digest !== access.scopeDigest()) throw new PolicySourceChangedError();
+  };
+  const scopeBinding = (request: ReadScopeAssistanceRequest) => {
+    const { q, h, cp } = scopeQuestion(request); return readMeaningInteractionBinding(q, h, cp);
+  };
+  const saveScopeQuestion = (request: ReadScopeAssistanceRequest, next: OperatorQuestion, expected: Digest) => access.mutate(async permit => {
+    await assertScopeCurrent(request, permit);
+    const { q } = scopeQuestion(request);
+    if (q.digest !== expected) throw new PolicySourceChangedError();
+    access.install({ questions: next.id === q.id ? access.readQuestions().map(item => item.id === q.id ? next : item)
+      : [...access.readQuestions(), next] });
+    await access.save(permit, "The captured scope-answer evidence");
+  });
+  const answerScope = async (request: ReadScopeAssistanceRequest): Promise<ReadScopeAnswerReference | undefined> => {
+    await assertScopeCurrent(request);
+    let { q, h, cp } = scopeQuestion(request);
+    if (h.state === "answered" && cp.stage === "decided" && cp.pending_question.kind === "scope") {
+      const reference = cp.pending_question.decision?.answer_reference;
+      if (!reference || !q.raw_answer || reference.question_id !== q.id || reference.revision !== q.revision
+        || reference.answer_id !== q.raw_answer.id || q.disposition || !q.raw_answer.text.trim())
+        throw access.checkpointFailure("The exact saved raw scope answer");
+      return reference;
+    }
+    if (h.state !== "waiting") throw access.checkpointFailure("The waiting scope question");
+    const controls = { assertCurrent: () => assertScopeCurrent(request), binding: () => scopeBinding(request) };
+    if (q.raw_answer && q.disposition) {
+      let replace = !q.raw_answer.text.trim();
+      if (!replace) {
+        const response = await exchange({ kind: "pending", binding: controls.binding(), canReplace: true, defaultValue: "keep",
+          material: [request.question, `Earlier response: ${q.raw_answer.text}`, "Words are retained as testimony; scope meaning is not yet confirmed."] }, controls);
+        if (response.kind !== "pending" || response.choice === "keep") return undefined;
+        replace = response.choice === "replace";
+      }
+      if (replace) {
+        const next = presentOperatorQuestion(createReadScopeQuestion({ id: randomUUID(), revision: q.revision + 1,
+          handoff_id: q.handoff_id, scope_digest: q.scope_digest, context_digest: q.context_digest,
+          read_scope: { ...q.read_scope!, predecessor_id: q.id } }), request.question);
+        await saveScopeQuestion(request, next, q.digest); q = next;
+      }
+    }
+    if (q.disposition) { const next = reopenOperatorQuestion(q); await saveScopeQuestion(request, next, q.digest); q = next; }
+    let answer = q.raw_answer?.text;
+    if (answer === undefined) {
+      const response = await exchange({ kind: "question", binding: controls.binding(), text: request.question,
+        material: ["Your exact answer will be mapped, then reviewed separately. No meaning or permission is confirmed here."],
+        preserveWhitespace: true, recordPolicyAnswer: false, scope_request: request }, controls);
+      answer = response.kind === "answer" ? response.raw ?? undefined : undefined;
+    }
+    if (answer === undefined) { await saveScopeQuestion(request, leaveOperatorQuestionPending(q, "cancelled"), q.digest); return undefined; }
+    if (!answer.trim() || answer.length > 1_000) {
+      const captured = q.raw_answer ? q : captureOperatorAnswer(q, answer);
+      await saveScopeQuestion(request, leaveOperatorQuestionPending(captured, "unknown"), q.digest);
+      if (answer.length > 1_000) input.answerTooLarge();
+      return undefined;
+    }
+    const raw = answer, shown = q;
+    return access.mutate(async permit => {
+      await assertScopeCurrent(request, permit);
+      const current = scopeQuestion(request);
+      if (current.q.digest !== shown.digest || current.h.state !== "waiting" || current.cp.stage !== "waiting"
+        || current.cp.pending_question.kind !== "scope") throw new PolicySourceChangedError();
+      const captured = current.q.raw_answer ? current.q : captureOperatorAnswer(current.q, raw);
+      const answered = answerOwnerHandoff(current.h, raw, await access.contextDigest(permit));
+      const reference = { question_id: captured.id, revision: captured.revision, answer_id: captured.raw_answer!.id };
+      const { digest: _old, schema_version: _version, ...body } = current.cp;
+      const update: ReadMeaningRecordUpdate = { questions: access.readQuestions().map(item => item.id === captured.id ? captured : item),
+        handoffs: access.readHandoffs().map(item => item.id === answered.id ? answered : item),
+        checkpoint: readWorkloadAssistanceCheckpoint({ ...body, stage: "decided", pending_question: { ...current.cp.pending_question,
+          decision: { state: "answered", answer_reference: reference } } }) };
+      if (current.h.completion) update.recovery = authoringQuestionAnswerCheckpoint(access.readRecovery(), ownerHandoffCheckpoint(current.h),
+        { digest: canonicalJsonDigest(answered), operator_messages: [raw] });
+      access.install(update); await access.save(permit, "The unconfirmed raw scope answer"); return reference;
+    });
+  };
+  const resolveScopeAnswer = (reference: ReadScopeAnswerReference, request: ReadScopeAssistanceRequest): ReadScopeReference | undefined => {
+    const questions = parseOperatorQuestions(access.readQuestions(), access.readHandoffs(), access.readRecovery());
+    const q = questions.find(q => q.id === reference.question_id), h = q && access.readHandoffs().find(h => h.id === q.handoff_id);
+    if (!q || q.kind !== "read_scope" || q.read_scope?.mode !== "missing_answer" || q.disposition || q.confirmation
+      || q.revision !== reference.revision || q.raw_answer?.id !== reference.answer_id || !q.raw_answer.text.trim()
+      || q.read_scope.record.digest !== request.scope.digest || q.scope_digest !== access.scopeDigest()
+      || h?.state !== "answered" || h.answer !== q.raw_answer.text
+      || q.read_scope.record.requirement_bindings.find(r => r.id === q.read_scope!.requirement_id)?.digest !== request.requirement_digest
+      || questions.some(item => item.read_scope?.predecessor_id === q.id)) return undefined;
+    return { kind: "answer", id: `answer:${q.id}:${q.revision}:${q.raw_answer.id}`, digest: canonicalJsonDigest(q.raw_answer),
+      question_id: q.id, question_revision: q.revision, answer_id: q.raw_answer.id, text: q.raw_answer.text };
+  };
+  return { clarify, confirmReplacement, answerScope, resolveScopeAnswer };
 }

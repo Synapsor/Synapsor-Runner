@@ -104,7 +104,9 @@ describe("B64 structured Read producer adapter", () => {
       const planned = planModelBoundaryJob({ session: { provider: "openai", model: "local-scripted", apiKey: "test-key",
         dependencies: { requestJson: planSend } }, jobIntent: original, egressAcknowledged: true,
         currentState: { read: { boundary_name: "reviewed_staging", authority: "disabled", fully_reviewed: true,
-          resource_ids: ["public.orders"], exact_reusable_revision_count: 1 }, actions: [] },
+          resource_ids: ["public.orders"], exact_reusable_revision_count: 1 }, actions: [],
+          control_plane: { trusted_scope: "runner_injected", approval_history: "runner_proposal_ledger",
+            model_may_supply_scope_values: false, model_may_supply_approval_history: false } },
         structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => ({ ...first.context, reusable: { questions: [saved!],
           handoffs: [], generation: state, question_id: saved!.id, analysis: initial.analysis } }) } });
       if (mode === "planning_wrong_scope") {

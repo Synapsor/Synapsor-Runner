@@ -2,7 +2,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { PolicySourceChangedError } from "./authoring-policy-source.js";
 import type { AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import type { OperatorQuestion } from "./authoring-operator-question.js";
-import type { ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
+import type { ReadWorkloadAssistanceCheckpoint, ReadScopeAssistanceRequest } from "./read-workload-assistance-checkpoint.js";
 import type { ModelReadClarificationRequest } from "./read-authoring-contract-types.js";
 import type { AuthoringQuestionInteraction, AuthoringQuestionResponse } from "./authoring-question-interaction.js";
 
@@ -15,7 +15,8 @@ export type ReadMeaningInteractionBinding = {
 };
 type View = AuthoringQuestionInteraction<ReadMeaningInteractionBinding>;
 export type ReadMeaningInteraction =
-  | (Extract<View, { kind: "question" }> & { request: ModelReadClarificationRequest; previous?: PreviousReadMeaning })
+  | (Extract<View, { kind: "question" }> & { request: ModelReadClarificationRequest; previous?: PreviousReadMeaning; scope_request?: never })
+  | (Extract<View, { kind: "question" }> & { scope_request: ReadScopeAssistanceRequest; request?: never; previous?: never })
   | (Extract<View, { kind: "readback" }> & { purpose: "meaning" | "decline" | "replacement" })
   | (Omit<Extract<View, { kind: "pending" }>, "canAnswer"> & { canReplace: boolean });
 export type ReadMeaningInteractionResponse =
