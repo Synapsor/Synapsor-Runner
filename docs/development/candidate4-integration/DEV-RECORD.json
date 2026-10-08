@@ -155,5 +155,23 @@
     },
     "paid": "CLOSED; Luna35total, upperledger15.27063125 incl1.2693125hold; no newsample/candidate",
     "estimate": "Provisional Oct8lateafternoon/eveningPDT, refine after first resolver/consentproofs; no architecture deferral fordate"
+  },
+  "foundation_current": {
+    "branch": "codex/b59-foundation-integration-20261008",
+    "native_ports_pin": "7a2b3d6e",
+    "owner_pin": "c01b3c3e",
+    "receipt_product": "3dbb2267",
+    "status": "WIP_NOT_INDEPENDENTLY_ACCEPTED_OR_FROZEN",
+    "checks": "types0/211focusedPASS; receipt41focused+6savedroutes+3studio+1priorcontextPASS; independent receiptrole actualpublic beforeFAIL/afterPASS",
+    "independent_receipt": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b60-3dbb2267-independent-public-role-currentness-review.json",
+    "remaining": [
+      "Shared Read requested-use/meaning binding follow-up",
+      "Native evidence presentation for current Review",
+      "Actual composed retention/edit/Review and currentness controls",
+      "Cold coverage Source/ResumeACK controls",
+      "Consent d032c34e revised explicit Owner format decision; legacycompatdb7FAIL preserved",
+      "Settled integrated gates/installed/composed qualification"
+    ],
+    "paid": "CLOSED"
   }
 }
