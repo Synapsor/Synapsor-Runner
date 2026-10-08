@@ -1406,9 +1406,9 @@ describe("model-assisted Read workload mapping", () => {
   // Actual raw-answer provenance is not a confirmed semantic mapping. The old
   // target-bound attributed_meaning fixture is preserved in Git; no fake Yes is
   // carried into this typed counterpart (R2 RP01–04/RP08).
-  async function rawScopeReferenceFixture(raw: string) {
+  async function rawScopeReferenceFixture(raw: string, mappedField = "col_2", planField = mappedField) {
     const answer = vi.fn(async () => raw);
-    const h = await typedReadAssistanceFixture("Read my order lifecycle", answer, "gpt-5.6-terra", {},
+    const h = await typedReadAssistanceFixture("Read my order lifecycle", answer, "gpt-5.6-terra", { display_stage: { type: "text" } },
       { resource: "public.tbl_7", field: "col_2", primaryKey: "id" });
     const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
       id: "lifecycle", intended_use: "Read my order lifecycle", references: ["job"], disposition: "include",
@@ -1423,8 +1423,9 @@ describe("model-assisted Read workload mapping", () => {
       bodies.push(request.body);
       return { status: 200, body: { output: [{ type: "function_call", call_id: `raw-${bodies.length}`, name: "runner__submit_read_workloads",
         arguments: JSON.stringify(bodies.length === 1 ? { allowed: [], forbidden: [], read_scope: missing }
-          : { allowed: [{ id: "orders", description: "Read order lifecycle", plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }],
-            forbidden: [], read_scope: proposalWithVisibleAnswers(request, proposal) }) }] } };
+          : { allowed: [{ id: "orders", description: "Read order lifecycle", plan: { kind: "rows", resource: "public.tbl_7", select: [planField] } }],
+            forbidden: [], read_scope: proposalWithVisibleAnswers(request, { ...proposal, requirements: proposal.requirements.map(r => ({ ...r,
+              targets: r.targets.map(t => t.operation === "return" ? { ...t, field: mappedField } : t) })) }) }) }] } };
     });
     const input = { name: "host_answer_reference", allowedQuestions: ["Read my order lifecycle"], provider: "openai" as const,
       model: "gpt-5.6-terra", generatedBoundary: h.boundary, egressAcknowledged: true,
@@ -1481,6 +1482,76 @@ describe("model-assisted Read workload mapping", () => {
         expect(state.operator_questions!.find(q => q.id === state.read?.scope_question_id)?.proposal).toBeDefined();
       } finally { await f.h.cleanup(); }
     });
+
+  it.each(["no", "cancel", "source_drift", "save_failure"] as const)(
+    "keeps a changed-target proposal unconfirmed through actual grouped review (%s)", async mode => {
+      const f = await rawScopeReferenceFixture("Order lifecycle status", "display_stage");
+      try {
+        const result = await f.h.run(f.input); expect(result.analysis.status).toBe("ready");
+        const state = f.h.state(), original = state.operator_questions!.find(q => q.read_scope?.mode === "missing_answer")!,
+          proposed = state.operator_questions!.find(q => q.id === state.read?.scope_question_id)!;
+        expect(original.read_scope!.record.proposal.requirements[0]!.targets.some(t => t.field === "col_2")).toBe(true);
+        expect(proposed.read_scope!.record.proposal.requirements[0]!.targets.some(t => t.field === "display_stage")).toBe(true);
+        expect(proposed.read_scope!.record.requirement_bindings[0]!.digest).not.toBe(original.read_scope!.record.requirement_bindings[0]!.digest);
+        expect(state.operator_questions!.every(q => !q.confirmation)).toBe(true);
+        const controls: { failSave?: boolean; changedSource?: boolean } = {};
+        let shown = 0;
+        const reviewed = f.h.reviewScope(async view => {
+          expect(view.kind).toBe("readback"); if (view.kind !== "readback") throw new Error("Expected exact full target/plan readback");
+          shown++; expect(view.defaultValue).toBe(false);
+          expect(view.lines.join("\n")).toContain("display_stage");
+          expect(view.lines.join("\n")).toContain("Exact analyzed allowed and forbidden plans");
+          expect(view.lines.join("\n")).toContain('"select":["display_stage"]');
+          if (mode === "source_drift") controls.changedSource = true;
+          if (mode === "save_failure") controls.failSave = true;
+          return { kind: "decision", binding: view.binding, accepted: mode === "no" ? false : mode === "cancel" ? null : true };
+        }, controls);
+        if (mode === "source_drift") await expect(reviewed).rejects.toThrow("READ_SCOPE_REVIEW_CHANGED");
+        else if (mode === "save_failure") await expect(reviewed).rejects.toThrow("NATIVE_REVIEW_SAVE_FAILED");
+        else expect((await reviewed).state).toBe("pending");
+        expect(shown).toBe(1); expect(f.requestJson).toHaveBeenCalledTimes(2); expect(f.answer).toHaveBeenCalledOnce();
+        const cold = await f.h.coldState(); expect(cold.status).toBe("ready");
+        if (cold.status !== "ready") throw new Error("Expected retained native history");
+        expect(cold.value.operator_questions!.every(q => !q.confirmation)).toBe(true);
+        expect(cold.value.operator_questions!.find(q => q.id === original.id)?.raw_answer).toEqual(original.raw_answer);
+      } finally { await f.h.cleanup(); }
+    });
+
+  it.each(["plan_mismatch", "unavailable_field"] as const)("keeps exact target/privacy guards after a valid raw reference (%s)", async mode => {
+    const f = await rawScopeReferenceFixture("Order lifecycle status", mode === "unavailable_field" ? "secret_note" : "col_2",
+      mode === "unavailable_field" ? "secret_note" : "display_stage");
+    try {
+      await expect(f.h.run(f.input)).rejects.toThrow(mode === "plan_mismatch" ? "READ_SCOPE_DELTA_REQUIRED" : "READ_SCOPE_TARGET_INVALID");
+      expect(f.answer).toHaveBeenCalledOnce(); expect(f.requestJson).toHaveBeenCalledTimes(3);
+      expect(f.h.state().read?.analysis_digest).toBeUndefined();
+      expect(f.h.state().operator_questions!.every(q => !q.confirmation)).toBe(true);
+    } finally { await f.h.cleanup(); }
+  });
+  it.each(["target", "exclusion"] as const)("does not reuse a native confirmed Yes for a changed scope (%s)", async change => {
+    const f = await rawScopeReferenceFixture("Order lifecycle status");
+    try {
+      await f.h.run(f.input);
+      expect((await f.h.reviewScope(async view => {
+        if (view.kind !== "readback") throw new Error("Expected real grouped review");
+        expect(view.defaultValue).toBe(false);
+        return { kind: "decision", binding: view.binding, accepted: true };
+      })).state).toBe("confirmed");
+      const confirmed = structuredClone(f.h.state().operator_questions!.find(q => q.id === f.h.state().read?.scope_question_id)!);
+      expect(confirmed.confirmation).toBeDefined();
+      const changed = structuredClone(confirmed.read_scope!.record.proposal);
+      if (change === "target") changed.requirements[0]!.targets = changed.requirements[0]!.targets.map(t => t.operation === "return" ? { ...t, field: "display_stage" } : t);
+      else changed.requirements.push({ id: "excluded-stage", intended_use: "Do not expose the alternate display detail", disposition: "exclude",
+        references: ["job"], subjects: [], targets: [{ root_resource: "public.tbl_7", resource: "public.tbl_7", operation: "return", field: "display_stage" }] });
+      const send = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "changed-confirmed", name: "runner__submit_read_workloads",
+        arguments: JSON.stringify({ allowed: [{ id: "orders", description: "Read order lifecycle", plan: { kind: "rows", resource: "public.tbl_7",
+          select: [change === "target" ? "display_stage" : "col_2"] } }], forbidden: [], read_scope: changed }) }] } }));
+      await expect(f.h.run({ ...f.input, dependencies: { requestJson: send } },
+        { ...f.h.structuredScope, current: f.h.currentReview })).rejects.toThrow("READ_SCOPE_REVIEWED_DELTA_REQUIRED");
+      expect(send).toHaveBeenCalledTimes(2); expect(f.answer).toHaveBeenCalledOnce();
+      expect(f.h.state().operator_questions!.find(q => q.id === confirmed.id)).toEqual(confirmed);
+      expect(f.h.state().operator_questions!.filter(q => q.confirmation)).toHaveLength(1);
+    } finally { await f.h.cleanup(); }
+  });
 
   it.each(["model_question", "unanswered_field"])("does not manufacture naming evidence from %s", async (kind) => {
     const boundary = opaqueGeneratedBoundary();

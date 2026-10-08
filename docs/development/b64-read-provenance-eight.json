@@ -7,10 +7,19 @@
   "native": "Ordinary structural review + real producer completion + actual question/raw handoff save/CAS; fake reply selects only emitted refs. Strict wrongrevision/foreignanswer/foreignquestion/wrongrequirementscope controls wrap actual protected callback result, never fabricate stored answers.",
   "assertions": "Original valid2calls1answer; negatives genuine READ_SCOPE_ANSWER_STALE after1call1answer, no analysis. Exact Unicode/whitespace/cold raw retained; all native q unconfirmed; final valid proposal no authority, candidate unchanged. Two old raw strings retain2calls1answer/ready/candidate assertions.",
   "remaining": [
-    "RP05 changedtarget actual groupedhost readback/defaultNo/No-cancel/stale/saveACK",
-    "RP06 exact plan/scope privacy controls",
-    "RP07 previousconfirmed changedtarget/exclusion refusal; nooldYes",
-    "Initial before/aftertarget delta not present/not claimed"
+    "Independent R2 source/runtime verdict",
+    "Initial before/aftertarget delta presentation open; no standalone helper claim",
+    "Public installed acceptance not established by component fixture"
   ],
-  "types": "No owned errors;4 pre-existing external migration errors on isolated branch"
+  "types": "No owned errors;4 known external migration errors retained on branch",
+  "successor": "RP01-08 finite16PASS; independent reviewer acceptance pending",
+  "successor_log": "/var/tmp/synapsor-b64-read-owned/evidence/typed-provenance-sixteen-after.log (16PASS144filtered)",
+  "RP05": "Actual scope host loads coherent cold native records + immutable analysis, displays exact new target/compiled plan/defaultNo; No/cancel/source drift/saveACK failure preserve raw and no confirmation. No initial before/after diff claimed.",
+  "RP06": "Valid raw ref cannot make compiled plan target differ from typed scope, nor admit unavailable field; actual producer refuses after one bounded correction (3calls1answer).",
+  "RP07": "Real host Yes recorded through nativeCAS first; same actual testimony + changedtarget/addedexclusion rejected READ_SCOPE_REVIEWED_DELTA_REQUIRED after2calls; original exact confirmed question unchanged, no new Yes.",
+  "fixture_incidents": [
+    "New grouped fixture save initially omitted existing read pointer, so No/cancel post-save reload refused; preserve actual read/q/h on native writes corrected without product edits.",
+    "New remap fixture generation save also omitted existing read pointer; preserved actual records through generation write corrected before provider reached delta guard.",
+    "New unavailablefield oracle used nonexistent TARGET_UNKNOWN; actual canonical refusal TARGET_INVALID retained as exact expected code; assertion remains strict, before log preserved."
+  ]
 }

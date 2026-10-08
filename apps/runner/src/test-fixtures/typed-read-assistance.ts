@@ -11,7 +11,8 @@ import { createReadAssistanceCheckpointHost, type ReadAssistanceCheckpointUpdate
 import { createReadMeaningHost, type ReadMeaningRecordUpdate } from "../authoring-read-meaning-host.js";
 import { generateModelReadWorkload, readWorkloadCatalog, type ModelReadWorkloadInput } from "../read-workload-model.js";
 import { configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery } from "../authoring-generation-recovery.js";
-import { storeReadWorkloadAnalysis } from "../read-workloads.js";
+import { createReadScopeHost, type ReadScopeInteraction, type ReadScopeInteractionResponse } from "../authoring-read-scope-host.js";
+import { storeReadWorkloadAnalysis, readStoredReadWorkloadAnalysis } from "../read-workloads.js";
 import { READ_SCOPE_PROTOCOL } from "../read-structured-scope.js";
 
 /** Ordinary declared structural preparation, actual producer completion, native
@@ -71,11 +72,42 @@ export async function typedReadAssistanceFixture(request: string, answer: (() =>
     } });
   const structuredScope = { protocol: READ_SCOPE_PROTOCOL, current: references,
     answer: answer ? meaning.answerScope : undefined, resolveAnswer: meaning.resolveScopeAnswer };
-  return { boundary, structuredScope, state: () => state, coldState: () => readBoundaryAuthoringResumeState(root, input.binding),
-    run: (options: ModelReadWorkloadInput, scopeAdapter = structuredScope) => withAuthoringGenerationRecovery(async () => {
+  const currentReview = async () => {
+    const disk = await readBoundaryAuthoringResumeState(root, input.binding);
+    if (disk.status !== "ready" || !disk.value.read?.scope_question_id) throw new Error("Actual native review is missing");
+    const saved = disk.value, question = saved.operator_questions!.find(q => q.id === saved.read!.scope_question_id)!;
+    const stored = await readStoredReadWorkloadAnalysis({ projectRoot: root, analysisId: saved.read!.analysis_id });
+    const inventory = references();
+    return { ...inventory, native: { questions: saved.operator_questions!, handoffs: saved.owner_handoffs ?? [],
+      generation: saved.generation_recovery, question_id: question.id, analysis: stored.analysis },
+      resume_revision_digest: saved.revision_digest, context_digest: question.context_digest, scope_digest: question.scope_digest };
+  };
+  const reviewScope = (interact: (view: ReadScopeInteraction) => Promise<ReadScopeInteractionResponse>,
+    controls: { failSave?: boolean; changedSource?: boolean } = {}) => {
+    const host = createReadScopeHost({ access: { mutate,
+      load: async questionId => {
+        const current = await currentReview();
+        if (current.native.question_id !== questionId) throw new Error("Wrong actual scope question");
+        return { ...current.native, references: current.references, catalog: current.catalog,
+          expectedBinding: { ...current.binding, ...(controls.changedSource ? { source_digest: d("unacknowledged Source change") } : {}) },
+          resume_revision_digest: current.resume_revision_digest, context_digest: current.context_digest, scope_digest: current.scope_digest };
+      },
+      save: async (question, { expected }) => {
+        if (!locked || state.revision_digest !== expected.resume_revision_digest) throw new Error("Unacknowledged native revision");
+        if (controls.failSave) throw new Error("NATIVE_REVIEW_SAVE_FAILED");
+        await persist(buildBoundaryAuthoringResumeState({ ...input, previous: state, read: state.read,
+          generationRecovery: state.generation_recovery, ownerHandoffs: state.owner_handoffs,
+          operatorQuestions: state.operator_questions!.map(q => q.id === question.id ? question : q) }));
+      },
+    }, interact: async view => { if (locked) throw new Error("Lease over human wait"); return interact(view); } });
+    return host.review(state.read!.scope_question_id!);
+  };
+  return { boundary, structuredScope, currentReview, reviewScope, state: () => state, coldState: () => readBoundaryAuthoringResumeState(root, input.binding),
+    run: (options: ModelReadWorkloadInput, scopeAdapter: NonNullable<ModelReadWorkloadInput["structuredScope"]> = structuredScope) => withAuthoringGenerationRecovery(async () => {
       configureAuthoringGenerationRecovery({ available: () => true, read: () => state.generation_recovery,
         current: async () => contextDigest, progress: () => {},
-        write: generationRecovery => persist(buildBoundaryAuthoringResumeState({ ...input, previous: state, generationRecovery })) });
+        write: generationRecovery => persist(buildBoundaryAuthoringResumeState({ ...input, previous: state, generationRecovery, read: state.read,
+          operatorQuestions: state.operator_questions, ownerHandoffs: state.owner_handoffs })) });
       return generateModelReadWorkload({ ...options, generatedBoundary: boundary, structuredScope: scopeAdapter,
         onCheckpoint: async (cp, current, result, completion) => { await checkpoint.persist(cp, current, result, completion);
           await options.onCheckpoint?.(cp, current, result, completion); } });
