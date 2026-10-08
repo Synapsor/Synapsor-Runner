@@ -1,15 +1,15 @@
-1. ACTIVE bounded B59/B60 repair + parallel B61; Owner pauses explicitly; paid CLOSED until candidate4 frozen/independently accepted.
-2. T0=2026-10-07T21:51:08Z; scope closes Oct9T21:51:08Z, end cap Oct10T21:51:08Z; finish earlier when done.
-3. Candidate3 d9f86355/bundle3905a2d1 and older frozen artifacts, paid jobs/history/holds remain untouched; DEMO-CANDIDATE3-READ-CLOCK-FREEZE1634.json.
-4. Main codex/b60-owner-requirement-20261007 product5168db4e, base d9f86355; sole hotspot owner; native-context8707 + shared saved-Review adapter; no second engine.
-5. Native-context176PASS/1paid-optin skip; adapter212PASS/29PG env-gated skip, types0; independent20/20 native controls; whole public CLI proof in progress.
-6. B60 shared question/raw/map/exact default-No/readback/save/Resume retains meaning/configuration/capability/performed-completion distinctions; docs/development/b60-receipt-requirement-DEV.json.
-7. B59 coherent9312a520/docs284edb31:293PASS/types0; Reviewer2 scoped Source-definition ACCEPT +7 native continuation controls; no blanket UX/full-flow verdict.
-8. Ask strictly necessary governed-Read dependency28e724e4:30PASS/types0 and scoped static review; no legacy fallback for bound empty/revoked store, no new authority.
-9. B61 eb608c27 separate: first INSERT/retry/duplicate/scope controls; actual lost-COMMIT Source applied/local pending/worker crash preserved, stopped; MAIN-B61-LOST-COMMIT-REVIEW1647.json.
-10. b57 independent20 +6 sealed route controls; Reviewer2 static; b48 SAME-root ordinary CLI; gate helper prepared final-pin harness; private oracles never supplied to responder.
-11. Serial integration only after independent verdict; ONE final full/type/liveDB/offline/package + composed Luna/studio edit-restart exact final pin; candidate4 B59/B60+strict dependencies only.
-12. All44 live-DB manifest rows retained; Four119/120 and Fifty1159/1400 cap-limited/held, no reset or transferred pass; eligible42 final-pin checks, explicit per-file skip reasons.
-13. Sole Tester Replacement01a117fd; Luna total≤$35, held upper15.27063125 inclunknown1.2693125, available19.72936875; ledger542 unchanged/no paid/count/reservation.
-14. Real setup/effect/receipt scopedPASS; real edit/NEWsession NOTREACHED. MAIN-LUNA-FRESH2-CLARIFY-STOP1645.json; candidate4 needs independent exact installed acceptance.
-15. Max2heavy/8workers, isolated resources/0700 runtime; free≥8GiB/plain floor only; backup-only all WIP/reviewer/harness commits; E/MAIN-ACTIVE-HANDOFF-B60-20261007.md.
+1. ACTIVE B59/B60 + necessary shared lost-COMMIT recovery; Owner pauses explicitly; paid CLOSED; no usage monitoring.
+2. T0=2026-10-07T21:51:08Z; scope closes Oct9T21:51Z/end Oct10T21:51Z; finish earlier; newest amendment66a1 read once.
+3. Candidate3 d9f86355/bundle3905a2d1 and all frozen artifacts/jobs/holds untouched; no same-connection live-edit work.
+4. Main codex/b60-owner-requirement-20261007: deb13 + tested Source-repair routing/inventory correction; sole boundary hotspot owner.
+5. B60 native176P/1paid opt-in; shared212P/29PG now covered DBgate; cancelled75P; stableReuse38P; SourceRepair6P/inventory107P/types0.
+6. B59 bounded public/independent aggregate COMPLETE c8eb/3af5410f; original limits retained. New read-guard regression branch codex/b59-read-guard-correction-20261008: before4F15P,after67P; review/types ongoing.
+7. Ask strict28e dependency owner-only repair07815025: original beforeFAIL,after21P/types0; Reviewer2 sealed variants pending; normal Read remains strict.
+8. Practice f14d4db5 CLOSED9381P20F576S: B59=17/B60=2/Ask=1; preserve firstfailure; six unchanged affectedfiles rerun on corrected preview next.
+9. DB42 CLOSED1167P0F4documented skips; Four119/120,Fifty1159/1400 held unchangedcaps. Offline/package PASS,size12PASS prospectively derived gold/minmargin115236B.
+10. b48 implements lostCOMMIT impact INSERT/UPDATE/actualLuna; Reviewer2 independently reviews. Actual Luna runner_ledger differs from source_atomic; runtime admission awaits impact/accepted necessaryrepair.
+11. Recovery: handle async errors/truthful unknown; exact atomicSource receipt+scope only; separate reconcile authority, no replay/secondwrite/requeue; legacy missingproof staysunknown.
+12. action_gap_prepare streamC B54/B55→B57→B56→B53; b57 streamD B45/contracts/docs, no subjectless-create code; skip completed; compact DEV records.
+13. Sole Tester01a117fd; Luna total≤35USD,ledgerupper15.27063125 inclunknown1.2693125,available19.72936875; no paid/count/reservation; runbook copy linked DEV.
+14. Next: independent corrections→serialaccepted integration→sixaffectedfiles/refreshedpackage/composedLuna→ONE final settledgates/freeze/independent installed→authorized paid lanes.
+15. Max2heavy/8workers; isolated owned0700 HOME/TMP/DB; free≥8GiB plainfloor; checkpoint+push ALL backup-only; details docs/development/b60-receipt-requirement-DEV.json.

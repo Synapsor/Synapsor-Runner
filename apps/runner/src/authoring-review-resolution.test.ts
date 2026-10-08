@@ -14,6 +14,7 @@ import { reviewUnestablishedCounting } from './authoring-counting-decision-revie
 import { createCoverageRepairScope } from './authoring-scoped-correction.js';
 import { inspectPolicyReviewSource } from './authoring-policy-evidence.js';
 import { SourceInputFidelityError } from './authoring-input-policy.js';
+import { createBusinessStatementHost } from './authoring-business-statement-host.js';
 
 const finding=(error:unknown,component='/passages/0')=>coverageFinding(error,component,{start:1,end:1});
 const feedback=(findings:CoverageFinding[],limited=false):CoverageFeedback=>({
@@ -124,6 +125,7 @@ describe('shared saved-review refusal resolution',()=>{
     const actual={source_transaction_review:localSourceTransactionReview,
       source_transaction_scope_review:localSourceTransactionScopeReview,
       scoped_disclosure_review:localScopedDisclosureReview,counting_review:reviewUnestablishedCounting,
+      receipt_requirement_review:createBusinessStatementHost,
       scoped_correction:createCoverageRepairScope,reinspection:inspectPolicyReviewSource};
     expect(Object.keys(REVIEW_RESOLUTION_HANDLERS).sort()).toEqual(Object.keys(actual).sort());
     expect(Object.values(actual).every(handler=>typeof handler==='function')).toBe(true);
@@ -243,7 +245,7 @@ describe('finite durable authoring refusal inventory',()=>{
     expect(codes.length).toBeGreaterThan(20);
     expect(codes.filter(code=>!isRegisteredAuthoringRefusalCode(code))).toEqual([]);
     expect(Object.keys(REVIEW_RESOLUTION_HANDLERS).sort()).toEqual(['source_transaction_review','source_transaction_scope_review',
-      'scoped_disclosure_review','counting_review','scoped_correction','reinspection'].sort());
+      'scoped_disclosure_review','counting_review','receipt_requirement_review','scoped_correction','reinspection'].sort());
   });
 
   it('excludes a loader-field declaration without hiding an uninventoried diagnostic',()=>{

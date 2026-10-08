@@ -1,5 +1,5 @@
 {
-  "status": "WIP_NOT_ACCEPTED",
+  "status": "TESTED_PENDING_INDEPENDENT_CORRECTIONS_AND_FINAL_GATES",
   "base": "d9f8635509a32093ae952314175f21116ef2faa9",
   "branch": "codex/b60-owner-requirement-20261007",
   "T0": "2026-10-07T21:51:08Z",
@@ -11,7 +11,9 @@
     "native_context": "native-source-context-before-v2.log: 2 pass / 1 fail on1cd096d4; actual producer nested Source+draft+messages identity rejected by bare-draft caller; prior manually declared identity tests were insufficient",
     "saved_review_adapter": "Public v6 on8707: 0 pass / 1 fail; callback0, native Source+Resume unchanged, receipt_requirement_review notice only; independent helper204be90f and reviewer1316cbbe",
     "cancelled_unanswered": "public cold Replace\u2192cancel on5168 then005/006 onlyKeep (independent b57); Main shared-host initial +replacement cancel tests0P2F, cancel-unanswered-before.log",
-    "saved_review_reuse": "Practice f14d4db5 native boundary-cli443:11 failures (10 expected validated_reuse got provider; saved post-edit Resume expected1 call got2); first native full run continuing/preserved. pending review-only item removed on completion and absent routing summary inconsistent with normal Resume fallback."
+    "saved_review_reuse": "Practice f14d4db5 native boundary-cli443:11 failures (10 expected validated_reuse got provider; saved post-edit Resume expected1 call got2); first native full run continuing/preserved. pending review-only item removed on completion and absent routing summary inconsistent with normal Resume fallback.",
+    "saved_review_prior_classification": "342 initial affected rerun37P/1F; current-context renewal retained exact native prior review-only item, but new request correctly did not complete old context; history-based agenda classification must remain review-only. review-scope-after.log preserved.",
+    "source_repair": "practice native2fail: Action-only scoped repair replaced Read routing aid, unlike cold continuation; exact first full preserved"
   },
   "checks": {
     "focused_wip8": "244 pass / 0 fail / 1 skip (live model admission opt-in; paid closed)",
@@ -28,14 +30,15 @@
     "saved_review_adapter": "212 pass / 0 fail / 29 PostgreSQL env-gated skips in8 affected files; new pending route regression included; types exit0",
     "test_isolation_correction": "initial structured attempt found parent decoy due missing test-root .git stop; added owned .git directory per existing full1378 isolation; assertions/customer discovery unchanged; initial failure preserved",
     "cancelled_unanswered": "75 pass / 0 fail / 0 skip in6 shared host/presenter/receipt files; types exit0; independent different-stage variants presealedNOT_RUN until thispin",
-    "saved_review_reuse_types": "exit0; review-scope-types.log",
-    "saved_review_reuse_focused": "NOT_RUN_WAITING_SHARED_PROOF_SLOT"
+    "saved_review_reuse_types": "exit0; review-scope-types-v2.log",
+    "saved_review_reuse_focused": "38 pass / 0 fail;405 filtered by declared two-table selection (not coverage passes). review-scope-after-v2.log,17.54s; original call-count/currentness assertions unchanged.",
+    "source_repair_and_inventory": "6 public Source-repair PASS +107 finite inventory PASS,0fail/skip; types exit0; unchanged old assertions; source-repair-after.log,source-repair-inventory-after.log,source-repair-inventory-types.log"
   },
   "open": [
-    "independent two sealed different-stage cancellation variants + original cancelled-root cold public continuation on981; compact six-route verdict",
-    "remaining B59 ordinary PUBLIC continuation checks; native controls already qualified; pretarget responder exception preserved as harness failure",
-    "unofficial practice full6/liveDB42 serial1 running on f14d4db5/fda97d09; offline/package/composed Luna pending, no credit toward ONE final gate",
-    "serial accepted integration + final exact-pin gates/composed Luna/studio and independent installed acceptance"
+    "Reviewer2 B59 guard and Ask dependency independent variants",
+    "Main six original affected files on refreshed coherent preview",
+    "actual lost-COMMIT anchored INSERT/ordinary UPDATE/Luna atomic UPDATE impact; accepted narrow shared recovery prerequisite if affected",
+    "refreshed package/composed scripted Luna after impact prerequisite; ONE final settled gates/freeze/installed acceptance"
   ],
   "paid": "CLOSED; no calls/reservations/ledger change",
   "changes_wip9": [
@@ -43,7 +46,7 @@
     "finish only missing Source projection from an acknowledged native confirmation, under currentness/CAS, no replay/remap/reconfirmation",
     "original job + actual saved workload restored for final and saved Review consumers; routing summary is not authority"
   ],
-  "product_pin": "981f0f9de6217d00fd071eb7a3a82f0df3f6757c",
+  "product_pin": "deb13b48e95f893f8463dac9992f8115c93edee2",
   "independent_native_review": {
     "reviewer": "codex/b60-independent-review-20261007",
     "checkpoint": "1316cbbe77a4fec315d9679b00d165547b734c73",
@@ -82,8 +85,15 @@
     "currentness": "Exact native Source reattachment and competing Resume writer refuse POLICY_SOURCE_CHANGED/BOUNDARY_AUTHORING_RESUME_CHANGED with history retained; native-writer seam scope, not whole concurrent public-user test"
   },
   "owner_parallel_items": {
-    "B59_public": "ACTIVE b48 independent helper; one shared proof worker",
-    "practice": "ACTIVE unofficial preview f14d4db5 plus DB overlay fda97d09, bundle prefix298bd6d5; full6+DB1. Evidence E/candidate4-practice1645/DEV-RECORD.json; no final credit",
+    "B59_public": {
+      "status": "COMPLETE_SCOPED_PUBLIC_CONTINUATION",
+      "checkpoint": "c8ebc63433db3db40544efebc857b1eb8421daf2",
+      "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review/docs/development/b59-public-read-review/DEV-RECORD.json",
+      "sha256": "07ada632b714d2f7e289868d8500516cb7374d5dac2f0ccc424142211536b653",
+      "result": "one native final-consumer pass,19 read-only immutable-capture observations; actual declared raw/defaultNo decline/fresh-process ReviewYes/native saved workload/further ordinary bounded review final consumer reached",
+      "limits": "Bounded aggregate complete per Reviewer2 3af5410f; route/public limitations retained, four newly reproduced Read guard regressions require correction acceptance."
+    },
+    "practice": "CLOSED immutable f14d4db5 full9381PASS/20FAIL/576skip; DB42=1167PASS/0FAIL/4explicit SQLite-only skips; offline/package PASS; prospective20/50/64 size12PASS minimum115236B margin, original gold unchanged. First failures preserved; refreshed affected files/final combinedpin still needed.",
     "runbook": {
       "status": "DONE_DOCUMENTATION_ONLY",
       "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-07/luna-independent-tester-replacement-20261007/outputs/LUNA-DEMO-REHEARSAL-RUNBOOK-CANDIDATE3-EVIDENCE.md",
@@ -95,19 +105,41 @@
       "status": "DONE_WRITTEN_ONLY",
       "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/B61-LOST-COMMIT-ACK-RECOVERY-DESIGN.txt",
       "sha256": "b560ff2186e57645dfe79fc0b204d75889ed11ec6597ec4395bba54b0bf64225",
-      "limitations": "Source receipt proves applied effect only with exact trusted binding; existing no-Runner-ledger-intent/legacy partial hash unresolved; proposed recovery requires future authorization, no code/replay"
+      "limitations": "Design now authorized narrow implementation, b48 database implementer + independent Reviewer2; old uncertainty preserved/no replay. Actual Luna runner_ledger impact separately from atomic source_db receipt proof; no legacy eligibility assumed."
     }
   },
   "changes_saved_review_reuse": [
     "saved Review uses same original-job routing fallback as normal Resume when no saved read_intent; full original request and actual immutable workload retained",
     "only exact native operator review-only classification excludes its superseded mistaken edit item from pending business-change evidence; independent edits remain in full key and history",
-    "complete key formula/source/metadata/workload/authority/currentness unchanged; original provider call-count and validated_reuse assertions unchanged; request-level meaning assertions added"
+    "complete key formula/source/metadata/workload/authority/currentness unchanged; original provider call-count and validated_reuse assertions unchanged; request-level meaning assertions added",
+    "exact prior-context native review-only agenda classification stays non-business scope; old context/request still retained, never reused as PASS or cleared by current-context review"
   ],
   "independent_cancel_runtime": {
     "checkpoint": "feca1d67c5e7e0ceb57a66ace307aea96160c5a0",
     "head": "981f0f9de6217d00fd071eb7a3a82f0df3f6757c",
-    "result": "two sealed native Action-stage controls + original cancelled receipt-root public cold Replace/map/default-No decline satisfied their stated scopes",
+    "result": "COMPLETE stated scopes; compact reviewed by Reviewer2, native Action cancelled/noRaw + original cold receipt-root Replace/map/default-No decline; no broad product acceptance claim",
     "limitations": "not physical TTY/effect, cumulative receipt budget1/1->2/2, all history retained; unrelated R06 later narration callback retained"
   },
-  "saved_review_reuse_review": "Reviewer2 presealed finite2cases/6observations, public seal b59-saved-review-reuse-public-seal-v1.json; NOT_RUN while sole shared proof slot occupied; private oracle withheld."
+  "saved_review_reuse_review": "Reviewer2 static342 ACCEPT; exactdeb13 finite2cases/6observations now authorized sole serial worker, private oracle unchanged/withheld; runtime pending.",
+  "practice_reported_failures": {
+    "total": 20,
+    "B59": 17,
+    "B60": 2,
+    "Ask_dependency": 1,
+    "status": "FIRST_NATIVE_FULL_CLOSED_FAILED_PRESERVED",
+    "response": "11 stable reuse38P;2SourceRepair6P;2finiteinventory107P;4Readguards67P separatebranch;1Ask21P separatedependency; independent variants/final6affectedfiles pending"
+  },
+  "changes_source_repair": [
+    "Keep saved Read routing aid while planner reuses Read; Action repair wording cannot replace retained Read request; cold/live Source scopes and competing writer checks unchanged."
+  ],
+  "inventory": "Add existing B60 receipt_requirement_review to strict finite expected inventory and verify actual shared business-host constructor; no missing code hidden/no runtime registry expansion.",
+  "shared_runtime": {
+    "implementer": "/root/b48_independent_review",
+    "reviewer": "B51 Independent Reviewer 2 /01a114f6-d7b7-7103-951e-59bd5959837a",
+    "state": "IMPLEMENTING_IMPACT_BENCH",
+    "prerequisite": "Before any candidate4 runtime/paid use; exact Luna runner_ledger compoundUPDATE, source_db supplemental separate. Receipt-backed reconcile only with exact atomic Source proof; no second Source write/requeue.",
+    "evidence": "MAIN-B61-LOST-COMMIT-REVIEW1647.json; Tester outputs/LUNA-ACTUAL-UPDATE-STRUCTURAL-REFS.json; reviewer b61-shared-recovery-independent-controls-v1.json",
+    "authorization": "Owner 66a1be83-... amendment read once; no clock reset"
+  },
+  "updated_utc": "2026-10-08T00:55:03.275766+00:00"
 }
