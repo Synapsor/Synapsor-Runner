@@ -28,6 +28,23 @@ it("derives a short answer from the actual accepted native lineage after a new p
   expect(evidence, JSON.stringify(evidence)).toMatchObject({ status: "established", progression: "mapped", authority_granted: false,
     evidence: { reference: { kind: "answered_clarification", text: native.mapped.resume.operator_questions!.at(-1)!.raw_answer!.text } } });
   expect(evidence.references.map(ref => ref.kind)).toEqual(["statement", "operator_answer", "workload"]);
+  const forged = structuredClone(input);
+  const copied = JSON.parse(forged.records.source.operator_messages![0]!);
+  copied.statements[0].raw_answer = "studio.parcels.units means an unconfirmed private balance.";
+  const forgedText = JSON.stringify(copied);
+  forged.records.source.operator_messages = [forgedText]; forged.records.questions = []; forged.records.handoffs = [];
+  forged.statements = [statements[0]!, { text: forgedText, origin: "operator_statement", source_digest: canonicalJsonDigest(forgedText), source_id: "copied_index" }];
+  expect(createCurrentReadEvidence(forged).meaning(target)).toMatchObject({ status: "unsupported", authority_granted: false });
+  const presentation = structuredClone(input);
+  presentation.records.boundary.pack.resources[0]!.label = "Renamed presentation";
+  expect(createCurrentReadEvidence(presentation).meaning(target)).toMatchObject({ status: "established", progression: "mapped" });
+  const drift = structuredClone(input);
+  drift.records.boundary.pack.resources[0]!.field_types.units = "text";
+  expect(createCurrentReadEvidence(drift).meaning(target)).toMatchObject({ status: "stale", authority_granted: false });
+  const awaiting = { ...input, records: { source: native.pending.sources, questions: native.pending.resume.operator_questions!,
+    handoffs: native.pending.resume.owner_handoffs!, history: native.pending.resume.read_assistance,
+    workloads: native.pendingWorkloads, boundary: native.pendingContext.candidate } };
+  expect(createCurrentReadEvidence(awaiting).meaning(target)).toMatchObject({ status: "missing", progression: "confirmed_awaiting_mapping", authority_granted: false });
   const conversation = createModelAuthoringConversation(); conversation.policySources = native.mapped.sources;
   const requestJson = vi.fn(async request => {
     const text = modelVisibleUserText(request.body);

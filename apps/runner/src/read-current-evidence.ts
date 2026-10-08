@@ -57,7 +57,7 @@ export function createCurrentReadEvidence(input: CurrentReadEvidenceInput) {
     const currentAnswers = input.answers.filter(answer => sameTarget(answer, target));
     const answers = currentAnswers.length ? input.answers : [...input.answers, ...(retained.answer ? [retained.answer] : [])];
     try {
-      const evidence = findReadMeaningEvidence({ target, catalog: input.catalog, statements: input.statements, answers,
+      const evidence = findReadMeaningEvidence({ target, catalog: input.catalog, statements: input.statements.filter(statement => !isConfirmedMeaningIndex(statement)), answers,
         context_digest: input.context_digest, requested_use_digest: input.requested_use_digest });
       if (evidence) return result("established", { evidence,
         references: [{ kind: "statement", evidence }, ...(retained.answer && !currentAnswers.length ? retained.references : [])],
@@ -69,7 +69,22 @@ export function createCurrentReadEvidence(input: CurrentReadEvidenceInput) {
     return result(retained.status ?? "missing", { references: retained.references,
       ...(retained.progression ? { progression: retained.progression } : {}), ...(retained.reason ? { reason: retained.reason } : {}) });
   };
-  return { meaning };
+  const confirmedAnswers = (): Answer[] => {
+    const answers = [...input.answers];
+    for (const question of input.records?.questions ?? []) {
+      if (!question.target.resource || answers.some(answer => sameTarget(answer, question.target as ReadMeaningTarget))) continue;
+      const target = { resource: question.target.resource, ...(question.target.field ? { field: question.target.field } : {}) };
+      const resolved = meaning(target);
+      if (resolved.status !== "established" || resolved.progression !== "mapped" || !resolved.evidence) continue;
+      const reference = resolved.references.find(reference => reference.kind === "operator_answer");
+      if (reference?.kind !== "operator_answer") continue;
+      const current = input.records!.questions.find(q => q.id === reference.question_id && q.revision === reference.revision);
+      if (current?.presentation && current.raw_answer) answers.push({ ...target, question: current.presentation.text, answer: current.raw_answer.text });
+    }
+    return structuredClone(answers);
+  };
+  const statementMeaning = (target: ReadMeaningTarget) => createCurrentReadEvidence({ ...input, answers: [], records: undefined }).meaning(target);
+  return { meaning, confirmedAnswers, statementMeaning };
 }
 
 function sameTarget(left: ReadMeaningTarget, right: ReadMeaningTarget): boolean {
@@ -185,4 +200,12 @@ export function currentReadRequestBindings(input: {
         ? [] : [{ description: entry.description, resource_ids: roots }];
     });
   });
+}
+
+/** Structured saved indexes are never free-text testimony. A copied index with
+ * an explicit identifier in raw_answer must not bypass native lineage checks. */
+function isConfirmedMeaningIndex(statement: ReadMeaningStatement): boolean {
+  if (statement.origin !== "operator_statement") return false;
+  try { const value: unknown = JSON.parse(statement.text); return object(value) && value.kind === "confirmed_read_meaning"; }
+  catch { return false; }
 }

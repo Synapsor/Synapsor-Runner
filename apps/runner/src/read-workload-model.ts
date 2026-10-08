@@ -1,5 +1,6 @@
+import { createCurrentReadEvidence, type CurrentReadEvidenceRecords } from "./read-current-evidence.js";
 import { exactOnlyReadResourceIds, resolveRequestedReadScope } from "./read-requested-scope.js";
-import { findReadMeaningEvidence, readResourceDefinitionPhrases, isExplicitReadMeaningStatement, explicitReadTaskTargets, ReadMeaningConflictError, isUnknownReadMeaning, type ReadMeaningAttempt, type ReadMeaningEvidence, type ReadMeaningStatement } from "./read-meaning-evidence.js";
+import { readResourceDefinitionPhrases, isExplicitReadMeaningStatement, explicitReadTaskTargets, isUnknownReadMeaning, type ReadMeaningAttempt, type ReadMeaningEvidence, type ReadMeaningStatement } from "./read-meaning-evidence.js";
 import type { ReadScopeReasonBinding, ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 export type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 import { isAuthoringGenerationStop, assertAuthoringGenerationAdmission, authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
@@ -102,6 +103,8 @@ export type ModelReadWorkloadInput = {
   /** Trusted host records only. The model receives current reference metadata,
    * never authority to create or confirm the operator's actual answer. */
   operatorQuestions?: () => readonly OperatorQuestion[];
+  /** Existing native records only; the shared resolver derives current applicability. */
+  currentEvidenceRecords?: () => CurrentReadEvidenceRecords;
   /** Local operator review, never a model decision. The proposed response is
    * checkpointed before this default-No review and is not yet current meaning. */
   clarificationReplacementHandler?: (input: {
@@ -202,19 +205,16 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   const meaningBinding = () => canonicalJsonDigest({ meaning: expectedMeaningContext, boundary: expectedBoundaryDigest, catalog: catalog.digest });
   const meaningConflicts = new Map<string, ReadMeaningEvidence[]>();
   const readAnswerCount = () => clarifiedTargets.length + unresolvedAnswers.length;
+  const currentEvidence = () => createCurrentReadEvidence({ catalog, statements: activeMeaningStatements(), answers: activeClarifiedTargets(),
+    requested_use_digest: requestedUseDigest, context_digest: meaningBinding(), records: input.currentEvidenceRecords?.() });
   const currentMeaning = (target: { resource: string; field?: string }) => {
-    try {
-      const evidence = findReadMeaningEvidence({ target, catalog, statements: activeMeaningStatements(), answers: activeClarifiedTargets(),
-        requested_use_digest: requestedUseDigest, context_digest: meaningBinding() });
-      meaningConflicts.delete(JSON.stringify(target));
-      return evidence;
-    }
-    catch (error) {
-      if (!(error instanceof ReadMeaningConflictError)) throw error;
-      meaningConflicts.set(JSON.stringify(target), error.evidence);
-      return undefined;
-    }
+    const resolved = currentEvidence().meaning(target);
+    if (resolved.status === "conflicting") meaningConflicts.set(JSON.stringify(target), resolved.references.flatMap(reference =>
+      reference.kind === "statement" ? [reference.evidence] : []));
+    else meaningConflicts.delete(JSON.stringify(target));
+    return resolved.status === "established" ? resolved.evidence : undefined;
   };
+  const currentAnswerTargets = () => currentEvidence().confirmedAnswers();
   const hostMeaningsFor = (args: Record<string, unknown>): ReadMeaningEvidence[] => {
     const found = new Map<string, ReadMeaningEvidence>();
     for (const entry of workloadNamingEntries(args, catalog)) {
@@ -238,9 +238,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       // scope question below separately selects the resource. An explicit new
       // definition still takes precedence through currentMeaning.
       if (!phrases.length && evidence.reference.kind === "answered_clarification") {
-        const definition = findReadMeaningEvidence({ target: { resource: resource.id }, catalog,
-          statements: activeMeaningStatements(), answers: [], requested_use_digest: requestedUseDigest, context_digest: meaningBinding() });
-        if (definition) phrases = readResourceDefinitionPhrases(definition, catalog);
+        const definition = currentEvidence().statementMeaning({ resource: resource.id });
+        if (definition.status === "established" && definition.evidence) phrases = readResourceDefinitionPhrases(definition.evidence, catalog);
       }
       return [{ resource: resource.id, phrases }];
     }), statements: activeMeaningStatements().map(statement => statement.text) });
@@ -320,7 +319,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         } };
       }
       try {
-        suppliedMeanings = parseOperatorReadMeanings(args.operator_meanings, activeNamingSources(), catalog, activeClarifiedTargets(), input.operatorQuestions?.());
+        suppliedMeanings = parseOperatorReadMeanings(args.operator_meanings, activeNamingSources(), catalog, currentAnswerTargets(), input.operatorQuestions?.());
         for (const meaning of suppliedMeanings) {
           const target = { resource: meaning.resource, ...(meaning.field ? { field: meaning.field } : {}) };
           currentMeaning(target);
@@ -801,7 +800,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           ? `Historical response ${index}, superseded by an explicit operator review; not current meaning: ${line}` : line), question,
           ...(input.operatorQuestions ? [
             "Runner-confirmed answer references: " + JSON.stringify(input.operatorQuestions().map(parseOperatorQuestion)
-              .filter(q => q.kind === "attributed_meaning" && q.confirmation && activeClarifiedTargets().some(target =>
+              .filter(q => q.kind === "attributed_meaning" && q.confirmation && currentAnswerTargets().some(target =>
                 target.resource === q.target.resource && target.field === q.target.field && target.answer === q.raw_answer?.text))
               .map(q => ({ resource: q.target.resource, ...(q.target.field ? { field: q.target.field } : {}),
                 answer_reference: { question_id: q.id, revision: q.revision, answer_id: q.raw_answer!.id } }))),
@@ -1691,7 +1690,7 @@ function parseOperatorReadMeanings(
   value: unknown,
   sources: readonly string[],
   catalog: ReturnType<typeof readWorkloadCatalog>,
-  clarifications: readonly (ModelReadClarificationRequest & { answer: string })[],
+  clarifications: readonly (Pick<ModelReadClarificationRequest, "resource" | "field" | "question"> & { answer: string })[],
   questions: readonly OperatorQuestion[] = [],
 ): OperatorReadMeaning[] {
   if (value === undefined) return [];
