@@ -17,7 +17,10 @@ import { withProjectAuthorityMutation } from '../../../apps/runner/dist/project-
 const [root, operation, fault = 'none', declaredAnswer = 'Use the trusted worker completion receipt. Unapplied requests stay pending or approved.'] = process.argv.slice(2);
 const manifestFile = path.join(root, 'declared-fixture.json');
 const callsFile = path.join(root, 'model-calls.jsonl');
-const resultFile = path.join(root, 'last-result.json');
+const invocation = process.env.RECEIPT_PROOF_INVOCATION;
+if (!invocation || !/^[0-9a-f-]{36}$/u.test(invocation)) throw new Error('A fresh proof invocation ID is required');
+const resultFile = path.join(root, `result-${invocation}.json`);
+const invocationRecord = { invocation, operation, fault, pid: process.pid };
 const binding = { boundary_name: 'studio_receipt_variant', generation_lock_fingerprint: canonicalJsonDigest('declared lock'),
   schema_fingerprint: canonicalJsonDigest('declared metadata'), role_posture_fingerprint: canonicalJsonDigest('declared role') };
 const store = canonicalJsonDigest('declared exact local receipt store');
@@ -47,7 +50,7 @@ if (operation === 'init') {
   const initial = buildBoundaryAuthoringResumeState({ binding, stage: 'authority_review', jobIntent: 'Complete only from the trusted receipt',
     provider: 'openai', model: 'declared-offline-model', policySourceSession: sources.id });
   await writeBoundaryAuthoringResumeState(root, initial, {expectedRevisionDigest: null});
-  await fs.writeFile(resultFile, JSON.stringify({pid: process.pid, initialized: true}), {mode: 0o600});
+  await fs.writeFile(resultFile, JSON.stringify({...invocationRecord, initialized: true}), {mode: 0o600});
   process.exit(0);
 }
 const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8'));
@@ -122,6 +125,6 @@ const host = createReceiptRequirementHost({projectRoot: root, modelSession: sess
 });
 let result, error;
 try { result = await host.review(); } catch (caught) { error = caught.message; }
-await fs.writeFile(resultFile, JSON.stringify({pid: process.pid, result, error, prompts, decisions,
+await fs.writeFile(resultFile, JSON.stringify({...invocationRecord, result, error, prompts, decisions,
   native_revision: resume.revision_digest, questions: state.questions, source_reviews: sources.receipt_requirement_reviews ?? []}), {mode: 0o600});
 if (error) process.exitCode = 78;
