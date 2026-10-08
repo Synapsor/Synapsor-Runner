@@ -1,0 +1,25 @@
+{
+  "pin": "98350f91d2aae30217152fca08f8ff6d24f0c299",
+  "exit": 1,
+  "elapsed_seconds": 3.676,
+  "memory_available_bytes": 20700762112,
+  "disk_available_bytes": 70144040960,
+  "slot": 2,
+  "workers": 1,
+  "runtime": "/var/tmp/synapsor-b64-ask-owned/owner-step1-after-v1",
+  "test_sha256": {
+    "apps/runner/src/model-ask-typed-retirement.test.ts": "f823dc781b55200d817776545eba118babe9d0629a491d660964b2675e7bdff1",
+    "apps/runner/src/model-ask-typed-plan.test.ts": "bf3be5adfdeb0914138d673fe3f0a4894e04d0a3eb4aea864c9b64c1b3eb69e7"
+  },
+  "numTotalTests": 27,
+  "numPassedTests": 26,
+  "numFailedTests": 1,
+  "numPendingTests": 0,
+  "failures": [
+    {
+      "file": "model-ask-typed-plan.test.ts",
+      "name": "B64 Ask existing typed plan contract AT01 exposes the same tool schemas and passes exact typed model arguments without a semantic-proof claim",
+      "message": "TypeError: Cannot read properties of undefined (reading 'name')\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b64-ask-typed/apps/runner/src/model-ask-typed-plan.test.ts:47:86\n    at Array.map (<anonymous>)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b64-ask-typed/apps/runner/src/model-ask-typed-plan.test.ts:47:51\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    }
+  ]
+}

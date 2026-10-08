@@ -1,0 +1,12 @@
+{
+  "source_pin": "98350f91d2aae30217152fca08f8ff6d24f0c299",
+  "original_after": "owner-step1-after-v1-result.json",
+  "original_after_counts": "26 PASS / 1 FAIL",
+  "migration": "Original AT01 asserts Chat tool.function layout while configured OpenAI uses Responses flat tool.name/parameters. Original assertions/file retained unchanged. Single AT01R changes only exposure shape reading, preserves exact tool/schema identities and all gateway/no-metadata/call/flag/privacy assertions. This is fixture correction after actual failure, not a claimed pre-product failing witness.",
+  "guard_reason": "Engine deletion crosses both provider loops; unchanged actual syntax recovery suite checks exact resubmission, changed literal/filter refusal, formal typed errors, cancellation and currentness. No widening guard.",
+  "sha256": {
+    "apps/runner/src/model-ask-schema-successor.test.ts": "0b25722c906ab4b774df442bc8a2eeb4f68cd46d07144550874e7422e486463f",
+    "apps/runner/src/model-ask-typed-plan.test.ts": "bf3be5adfdeb0914138d673fe3f0a4894e04d0a3eb4aea864c9b64c1b3eb69e7",
+    "apps/runner/src/ask-plan-recovery.test.ts": "d668f7a7b494a684b184a937fe25aa302eb047a19c006bfb6a1106dc0626cb97"
+  }
+}
