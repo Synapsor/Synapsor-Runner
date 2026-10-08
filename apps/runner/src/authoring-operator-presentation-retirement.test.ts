@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { operatorBusinessContext, operatorClarificationGate } from "./authoring-operator-presentation.js";
+import { operatorBusinessContext, operatorBusinessReadback, operatorClarificationGate } from "./authoring-operator-presentation.js";
 
 const context = operatorBusinessContext([{ id: "billing.cases", label: "billing cases",
   field_types: { private_note: "text" }, field_metadata: { private_note: { label: "registrar note" } } }]);
@@ -26,5 +26,20 @@ describe("B64 GP01 wording cannot establish semantic equivalence", () => {
     expect(resumed("Should registrar note contain at least 200 characters?")).toEqual({
       state: "question", fallback: true, question: "Should registrar note contain at most 200 characters?" });
     expect(() => resumed(original, { ...target, field: "other_note" })).toThrow("STATE_STALE");
+  });
+});
+
+describe("B64 GP02 untyped evidence is never rewritten by English labels", () => {
+  it.each([
+    ["Captured operator statement:", '"billing.cases.private_note" is the exact term.'],
+    ["Tus palabras:", "  billing.cases.private_note sigue siendo el nombre.\t"],
+    ["Record your exact words about billing.cases.private_note", "This whole first line is also an operator quotation."],
+    ["Basis: your captured answer billing.cases.private_note", "No presentation label establishes provenance."],
+  ])("preserves the complete evidence array beginning %s", (...lines) => {
+    const before = structuredClone(lines);
+    const displayed = operatorBusinessReadback(lines, context);
+    expect(displayed).toEqual(before);
+    expect(lines).toEqual(before);
+    expect(displayed).not.toBe(lines);
   });
 });
