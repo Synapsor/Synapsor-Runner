@@ -485,6 +485,13 @@ export function createBoundaryAuthoringChat(input: {
       lines: facts,
     };
   };
+  const rememberExactDecisionDetails = (details: NonNullable<ChoiceInput["exactDetails"]>) => {
+    // An explicit empty record still replaces the previous decision's display.
+    latestDetails = {
+      title: transcriptText(details.title),
+      lines: details.lines.map(transcriptText),
+    };
+  };
   const renderedDetails = (record: { title: string; lines: string[] }, wrap = true) => {
     const detailLines = record.lines.map((line) => {
       const safe = transcriptText(line);
@@ -1007,10 +1014,11 @@ export function createBoundaryAuthoringChat(input: {
       title: prompt,
       lines: decisionContext.length ? decisionContext : [`Decision: ${prompt}`],
     };
-    if (permission) {
-      if (options.exactDetails) rememberDetails(options.exactDetails.title, options.exactDetails.lines);
-      else rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options.context), prompt]);
-    } else await writeContext(options.context);
+    // Supplied exact details belong to this decision even if the operator
+    // declines or never opens Details. Compact context is not its replacement.
+    if (options.exactDetails) rememberExactDecisionDetails(options.exactDetails);
+    else if (permission) rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options.context), prompt]);
+    if (!permission) await writeContext(options.context);
     const yesLabel = permission ? "Allow this exact step" : "Yes, continue";
     const noLabel = permission ? "Not now; keep authority unchanged" : "No; go back";
     const permissionContext = meaningfulContext(options.context);
@@ -1064,9 +1072,10 @@ export function createBoundaryAuthoringChat(input: {
       const permission = options?.decisionKind
         ? options.decisionKind !== "business_review"
         : Boolean(options?.activationView);
-      if (permission) {
-        if (options?.exactDetails) rememberDetails(options.exactDetails.title, options.exactDetails.lines);
-        else rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options?.context), title]);
+      if (options?.exactDetails) {
+        rememberExactDecisionDetails(options.exactDetails);
+      } else if (permission) {
+        rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options?.context), title]);
       } else if (options?.context?.length) {
         rememberDetails(title, options.context);
       }
