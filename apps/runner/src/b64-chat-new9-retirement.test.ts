@@ -11,8 +11,7 @@ describe("B64 NEW9 typed operational projections", () => {
 
   it("I03556 uses an actual TLS error code without asserting database reachability or no-verify", () => {
     const error = Object.assign(new Error("opaque 漢字"), { code: "DEPTH_ZERO_SELF_SIGNED_CERT" });
-    // The cast preserves the current public signature until the typed consumer is implemented.
-    const hint = formatCliErrorHint(error as unknown as string);
+    const hint = formatCliErrorHint(error);
     expect(hint).toContain("TLS certificate verification failed");
     expect(hint).not.toMatch(/database is reachable|no-verify/iu);
   });
@@ -35,7 +34,7 @@ describe("B64 NEW9 typed operational projections", () => {
     const store = { claimNotificationDeliveries: async () => [delivery], listAttentionItems: async () => [],
       getAttentionEvent: async () => event, failNotificationDelivery: fail, completeNotificationDelivery: complete } as unknown as NotificationStore;
     const result = await dispatchNotificationDeliveries({ store, owner: "new9", now: event.occurred_at,
-      config: { enabled: true, sinks: [{ id: "operations", type: "console" }] },
+      config: { enabled: true, sinks: [{ id: "operations", type: "jsonl" }] },
       deliver: async () => { throw error; }, output: () => {} });
     expect(fail).toHaveBeenCalledOnce();
     expect(fail.mock.calls[0]![0]).toMatchObject({ retryable, error_code: code });

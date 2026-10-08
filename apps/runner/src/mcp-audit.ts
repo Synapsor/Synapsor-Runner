@@ -11,6 +11,7 @@ import {
 } from "@synapsor-runner/worker-core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -665,19 +666,25 @@ async function fetchStdioMcpTools(commandText: string, timeoutMs: number): Promi
 
 
 export function formatMcpLaunchFailure(error: unknown): string {
-  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
-  // Classify before truncation and expose only fixed diagnostics, never child stderr or environment values.
-  if (code === "ETARGET" || /\bETARGET\b|No matching version found/i.test(message)) {
+  const code = mcpLaunchFailureCode(error);
+  // Only producer codes establish causes; child prose never does.
+  if (code === "ETARGET") {
     return "ETARGET: The configured package version is unavailable from the registry. Check the configured launcher and package version before retrying.";
   }
-  if (code === "POLICY_EXECUTION_BINDING_CHANGED" || /\bPOLICY_EXECUTION_BINDING_CHANGED\b/.test(message)) {
+  if (code === "POLICY_EXECUTION_BINDING_CHANGED") {
     return "POLICY_EXECUTION_BINDING_CHANGED: Runner refused changed execution bindings. Use the operator's reviewed connection setup; do not edit stored authority or bypass this guard.";
   }
   if (code === "ENOENT") return "ENOENT: The configured launcher executable or working directory was not found. Check the saved command and project location.";
   if (code === "EACCES") return "EACCES: The configured launcher could not be executed. Check its executable and directory permissions.";
-  if (/timed out/i.test(message)) return "MCP_LAUNCH_TIMEOUT: The configured command did not finish the MCP handshake and tool catalog check before the timeout.";
+  if (code === "MCP_LAUNCH_TIMEOUT") return "MCP_LAUNCH_TIMEOUT: The configured command did not finish the MCP handshake and tool catalog check before the timeout.";
   return "MCP_LAUNCH_CHECK_FAILED: The configured command did not complete the reviewed MCP handshake and tool catalog check. Inspect the saved client entry and retry its launch check.";
+}
+
+function mcpLaunchFailureCode(error: unknown): string {
+  const code = isRecord(error) ? error.code : undefined;
+  if (code === ErrorCode.RequestTimeout || code === "MCP_LAUNCH_TIMEOUT") return "MCP_LAUNCH_TIMEOUT";
+  return typeof code === "string" && ["ETARGET", "POLICY_EXECUTION_BINDING_CHANGED", "ENOENT", "EACCES"].includes(code)
+    ? code : "MCP_LAUNCH_CHECK_FAILED";
 }
 
 export async function fetchStdioMcpToolsCommand(command: string, commandArgs: string[], timeoutMs: number, cwd?: string): Promise<unknown> {
@@ -685,20 +692,19 @@ export async function fetchStdioMcpToolsCommand(command: string, commandArgs: st
   const transport = new StdioClientTransport({ command, args: commandArgs, cwd, stderr: "pipe",
     env: Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
   });
-  let stderr = "";
-  transport.stderr?.on("data", (chunk) => { stderr = (stderr + String(chunk)).slice(-16_384); });
+  // Drain the pipe without interpreting or exposing child diagnostics.
+  transport.stderr?.on("data", () => {});
   const deadline = Date.now() + timeoutMs;
   try {
     // The SDK waits for initialize and sends notifications/initialized before
     // tools/list. Discovery never calls a data or action tool.
     await client.connect(transport, { timeout: timeoutMs });
     const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new Error("MCP handshake timed out");
+    if (remaining <= 0) throw Object.assign(new Error("MCP handshake timed out"), { code: "MCP_LAUNCH_TIMEOUT" });
     const result = await client.listTools({}, { timeout: remaining });
     return { jsonrpc: "2.0", id: 2, result };
   } catch (error) {
-    const diagnostic = formatMcpLaunchFailure(stderr);
-    throw new Error(diagnostic.startsWith("MCP_LAUNCH_CHECK_FAILED:") ? formatMcpLaunchFailure(error) : diagnostic);
+    throw Object.assign(new Error(formatMcpLaunchFailure(error)), { code: mcpLaunchFailureCode(error) });
   } finally {
     await transport.close();
   }

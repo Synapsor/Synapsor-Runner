@@ -74,7 +74,7 @@ export async function discoverHostedProviderModels(input: {
         || !isRecord(item.architecture)
         || !Array.isArray(item.architecture.input_modalities) || !item.architecture.input_modalities.includes("text")
         || !Array.isArray(item.architecture.output_modalities) || !item.architecture.output_modalities.includes("text")) return [];
-    } else if (!safeModelId(id) || !compatibleModelId(input.provider, id)) return [];
+    } else return []; // These catalogs supply IDs without tool/modality capability facts.
     return [{
       id,
       ...(typeof item.created_at === "string" ? { created_at: item.created_at } : {}),
@@ -83,17 +83,6 @@ export async function discoverHostedProviderModels(input: {
   });
   models.sort((left, right) => modelTime(right) - modelTime(left) || left.id.localeCompare(right.id));
   return [...new Set(models.map((model) => model.id))].slice(0, 20);
-}
-
-function safeModelId(id: string): boolean {
-  return /^[a-z0-9][a-z0-9._:-]{0,159}$/iu.test(id);
-}
-
-function compatibleModelId(provider: HostedModelProvider, id: string): boolean {
-  const normalized = id.toLowerCase();
-  if (provider === "anthropic") return /^claude-/u.test(normalized);
-  if (!/^(?:gpt-|o[1345](?:-|$)|codex-)/u.test(normalized)) return false;
-  return !/(?:audio|realtime|transcrib|tts|whisper|embedding|moderation|image|dall-e|search-preview)/u.test(normalized);
 }
 
 function modelTime(model: HostedProviderModel): number {

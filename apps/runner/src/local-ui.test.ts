@@ -964,7 +964,8 @@ describe("local UI", () => {
 
       const summary = await getJson(`${baseUrl}/api/summary`, headers);
       expect(summary.setup.sources.app_postgres.read_url_env).toBe("SYNAPSOR_DATABASE_READ_URL");
-      expect(summary.doctor.no_raw_sql_exposed).toBe(true);
+      expect(summary.doctor.no_raw_sql_exposed).toBeNull();
+      expect(summary.doctor.forbidden_model_tools).toBeNull();
       expect(JSON.stringify(summary)).not.toMatch(/postgres(?:ql)?:\/\/|mysql:\/\/|reader_secret/i);
 
       const tools = await getJson(`${baseUrl}/api/tools`, headers);

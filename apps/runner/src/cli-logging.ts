@@ -99,15 +99,16 @@ export function errorNextAction(error: unknown, argv: string[]): string {
 }
 
 
-export function formatCliErrorHint(message: string): string {
-  if (/self-signed certificate|certificate.*chain|unable to verify/i.test(message)) {
+export function formatCliErrorHint(error: unknown): string {
+  const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+  if (typeof code === "string" && [
+    "DEPTH_ZERO_SELF_SIGNED_CERT", "SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+    "UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "CERT_HAS_EXPIRED", "ERR_TLS_CERT_ALTNAME_INVALID",
+  ].includes(code)) {
     return [
-      "",
-      "",
-      "Hint:",
-      "  The database is reachable, but TLS certificate verification failed.",
-      "  For disposable local/dev RDS tests, use sslmode=no-verify in the URL.",
-      "  For real staging/production-like testing, install the database CA bundle and keep certificate verification enabled.",
+      "", "", "Hint:",
+      "  TLS certificate verification failed.",
+      "  Inspect the certificate chain, hostname and configured CA bundle; keep certificate verification enabled.",
     ].join("\n");
   }
   return "";

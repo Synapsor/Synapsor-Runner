@@ -113,6 +113,18 @@ describe("runtime doctor RLS denied-identity canary", () => {
     expect(check.message).not.toContain(error.message);
     expect(probe.bindings).toHaveLength(2);
   });
+  it("B64 NEW9 supplementary I03550 leaves non-string driver codes unknown without coercion", async () => {
+    const toString = vi.fn(() => "42501");
+    const error = Object.assign(new Error("opaque supplementary diagnostic"), { code: { toString } });
+    const probe = canaryProbe({ deniedError: error });
+    const check = (await probe.run()).at(-1)!;
+    expect(check).toMatchObject({ ok: false, level: "fail" });
+    expect(check.message).toContain("(database probe failed)");
+    expect(check.message).not.toContain(error.message);
+    expect(toString).not.toHaveBeenCalled();
+    expect(probe.bindings).toHaveLength(2);
+  });
+
 });
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;

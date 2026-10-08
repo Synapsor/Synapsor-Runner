@@ -65,9 +65,9 @@ async function firstRunDoctor(args: string[]): Promise<number> {
       ? pass("docker-daemon", "Docker daemon is reachable.", "The demo needs Docker to start disposable databases.", "No action needed.")
       : fail(
         "docker-daemon",
-        "Docker daemon is not reachable.",
+        "The Docker info check failed.",
         "The first-run demo starts disposable Postgres/MySQL containers.",
-        dockerFix(info.stderr || info.stdout),
+        dockerFix(info.error),
       ));
     const compose = spawnSync("docker", ["compose", "version"], { encoding: "utf8" });
     checks.push(compose.status === 0
@@ -132,9 +132,9 @@ function dockerNames(args: string[]): string[] {
 }
 
 
-function dockerFix(message: string): string {
-  if (/permission denied/i.test(message)) return "Your user cannot access the Docker socket. Add your user to the docker group or start Docker Desktop, then rerun ./scripts/try-synapsor.sh.";
-  return "Start Docker Desktop or the Docker daemon, then run ./scripts/try-synapsor.sh.";
+function dockerFix(error: NodeJS.ErrnoException | undefined): string {
+  if (error?.code === "EACCES") return "Inspect the Docker executable and working directory permissions, then rerun ./scripts/try-synapsor.sh.";
+  return "Inspect the docker info diagnostics and saved Docker setup, then rerun ./scripts/try-synapsor.sh.";
 }
 
 

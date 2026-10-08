@@ -1560,17 +1560,12 @@ function quoteMysqlIdentifier(value: string): string {
 
 
 function safeDatabaseProbeError(error: unknown): string {
-  const raw = typeof error === "string"
-    ? error
-    : error instanceof Error
-      ? error.message
-      : JSON.stringify(error ?? {});
-  const message = raw.toLowerCase();
-  if (/permission|denied|not authorized|insufficient|42501|er_tableaccess_denied|er_dbaccess_denied/.test(message)) return "permission denied";
-  if (/authentication|password|28p01|access denied for user|invalid authorization/.test(message)) return "authentication failed";
-  if (/timeout|timed out|etimedout/.test(message)) return "timeout";
-  if (/econnrefused|enotfound|eai_again|network|connection terminated|connection failed/.test(message)) return "connection failed";
-  if (/does not exist|unknown database|no such table|undefined_table|er_no_such_table|42p01/.test(message)) return "configured object not found";
+  const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined;
+  if (["42501", "ER_TABLEACCESS_DENIED_ERROR", "ER_DBACCESS_DENIED_ERROR"].includes(code ?? "")) return "permission denied";
+  if (["28P01", "28000", "ER_ACCESS_DENIED_ERROR"].includes(code ?? "")) return "authentication failed";
+  if (code === "ETIMEDOUT") return "timeout";
+  if (["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ECONNRESET"].includes(code ?? "")) return "connection failed";
+  if (["42P01", "3D000", "ER_NO_SUCH_TABLE", "ER_BAD_DB_ERROR"].includes(code ?? "")) return "configured object not found";
   return "database probe failed";
 }
 

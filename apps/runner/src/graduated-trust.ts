@@ -239,7 +239,6 @@ async function inspectHistory(
     const human = approvals.filter(isHumanDecision);
     const auto = approvals.some((approval) => approval.approver.startsWith("policy:"));
     const receipts = await store.receipts(proposal.proposal_id);
-    const events = await store.events(proposal.proposal_id);
     outcomes.push({
       proposal,
       humanReviewed: human.length > 0,
@@ -248,7 +247,7 @@ async function inspectHistory(
       autoApproved: auto,
       conflict: proposal.state === "conflict" || receipts.some((receipt) => receipt.status === "conflict"),
       failure: proposal.state === "failed" || proposal.state === "reconciliation_required" || receipts.some(isFailedReceipt),
-      revert: proposal.change_set.schema_version === protocolVersions.compensationChangeSet || events.some((event) => /revert|compensation/.test(event.kind)),
+      revert: proposal.change_set.schema_version === protocolVersions.compensationChangeSet,
     });
   }
   return { ok: true, outcomes };

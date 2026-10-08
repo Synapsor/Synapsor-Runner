@@ -884,9 +884,10 @@ function classifyDeliveryError(error: unknown): { code: string; retryable: boole
   if (error instanceof NotificationDeliveryError) {
     return { code: error.code, retryable: error.retryable };
   }
-  const code = error instanceof Error && /timeout|reset|unavailable|temporary/i.test(error.message)
-    ? "NOTIFICATION_TRANSPORT_TRANSIENT"
-    : "NOTIFICATION_TRANSPORT_FAILED";
+  const transportCode = error instanceof Error && "code" in error ? error.code : undefined;
+  const transient = typeof transportCode === "string"
+    && ["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EAI_AGAIN", "ENETUNREACH", "EHOSTUNREACH"].includes(transportCode);
+  const code = transient ? "NOTIFICATION_TRANSPORT_TRANSIENT" : "NOTIFICATION_TRANSPORT_FAILED";
   return { code, retryable: code === "NOTIFICATION_TRANSPORT_TRANSIENT" };
 }
 

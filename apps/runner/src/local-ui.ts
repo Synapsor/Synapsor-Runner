@@ -6239,9 +6239,6 @@ function buildSummary(config: JsonRecord, configPath: string, storePath: string)
       reversibility: item.reversibility,
     };
   }) : [];
-  const forbiddenTools = capabilities
-    .map((capability) => String(asRecord(capability).name ?? ""))
-    .filter((name) => /execute_sql|run_query|approve|commit|apply_writeback/i.test(name));
   return {
     ok: true,
     setup: {
@@ -6257,8 +6254,8 @@ function buildSummary(config: JsonRecord, configPath: string, storePath: string)
       config_ok: validation.ok,
       errors: validation.errors,
       warnings: validation.warnings,
-      no_raw_sql_exposed: forbiddenTools.length === 0,
-      forbidden_model_tools: forbiddenTools,
+      no_raw_sql_exposed: null,
+      forbidden_model_tools: null,
     },
   };
 }
@@ -6280,8 +6277,8 @@ function buildTools(config: JsonRecord): JsonRecord {
       conflict_guard: item.conflict_guard,
       executor: item.executor ?? "sql_update",
       reversibility: item.reversibility,
-      no_raw_sql_exposed: !/execute_sql|run_query/i.test(String(item.name ?? "")),
-      approval_or_commit_exposed: /approve|commit|apply_writeback/i.test(String(item.name ?? "")),
+      no_raw_sql_exposed: null,
+      approval_or_commit_exposed: null,
     };
   }) : [];
   return { ok: true, tools: capabilities };
@@ -6943,8 +6940,17 @@ function workbenchWorkerApprovalSource(
   proposalId: string,
 ): "human" | "policy_auto" | "none" {
   const events = store.events(proposalId);
-  if (events.some((event) => /policy_auto_approv/.test(event.kind))) return "policy_auto";
-  if (store.approvals(proposalId).some((approval) => approval.status === "approved")) return "human";
+  const proposal = store.getProposal(proposalId);
+  const approvals = store.approvals(proposalId).filter((approval) => approval.status === "approved"
+    && approval.proposal_hash === proposal?.proposal_hash && approval.proposal_version === proposal?.proposal_version);
+  if (events.some((event) => {
+    const payload = asRecord(event.payload);
+    return event.kind === "proposal_approved" && typeof payload.policy === "string"
+      && event.actor === `policy:${payload.policy}`
+      && approvals.some((approval) => approval.approver === event.actor
+        && approval.proposal_hash === payload.proposal_hash && approval.proposal_version === payload.proposal_version);
+  })) return "policy_auto";
+  if (approvals.some((approval) => !approval.approver.startsWith("policy:"))) return "human";
   return "none";
 }
 
@@ -8474,7 +8480,7 @@ async function loadSummary() {
   const root = byId("summary"); root.replaceChildren(text("h2", "Setup summary"));
   root.append(pill("mode: " + payload.setup.mode, payload.doctor.config_ok ? "ok" : "bad"));
   root.append(pill("config valid: " + payload.doctor.config_ok, payload.doctor.config_ok ? "ok" : "bad"));
-  root.append(pill("no raw SQL exposed: " + payload.doctor.no_raw_sql_exposed, payload.doctor.no_raw_sql_exposed ? "ok" : "bad"));
+  root.append(pill(payload.doctor.no_raw_sql_exposed === null ? "Tool exposure not verified" : "no raw SQL exposed: " + payload.doctor.no_raw_sql_exposed, payload.doctor.no_raw_sql_exposed === null ? "warn" : payload.doctor.no_raw_sql_exposed ? "ok" : "bad"));
   const kv = el("dl", { class: "kv" });
   const add = (k, v) => { kv.append(el("dt", { text: k }), el("dd", { text: v })); };
   add("Config path", payload.setup.config_path);
@@ -9079,7 +9085,7 @@ async function loadTools() {
     const box = document.createElement("div"); box.className = "card"; box.style.margin = "10px 0"; box.style.boxShadow = "none";
     box.append(text("strong", tool.name), text("div", tool.target_business_object, "pitem-target"));
     box.append(chip(tool.kind, tool.kind === "read" ? "ok" : "wait"));
-    box.append(chip(tool.no_raw_sql_exposed ? "No raw SQL" : "RAW SQL EXPOSED", tool.no_raw_sql_exposed ? "ok" : "bad"));
+    box.append(chip(tool.no_raw_sql_exposed === null ? "Tool exposure not verified" : tool.no_raw_sql_exposed ? "No raw SQL" : "RAW SQL EXPOSED", tool.no_raw_sql_exposed === null ? "wait" : tool.no_raw_sql_exposed ? "ok" : "bad"));
     box.append(rawJson("View reviewed boundary", { target: tool.target_business_object, operation: tool.operation, input_schema: tool.input_schema, hidden_trusted_bindings: tool.hidden_trusted_bindings, allowed_patch_columns: tool.allowed_patch_columns, conflict_guard: tool.conflict_guard, reversibility: tool.reversibility }));
     root.append(box);
   }

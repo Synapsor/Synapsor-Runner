@@ -21,7 +21,7 @@ describe("hosted provider model discovery", () => {
     expect(await discoverHostedProviderModels({ provider: "openrouter", apiKey: "inert-fixture", fetchImpl: fetchImpl as typeof fetch }))
       .toEqual(["vendor/audio-image-name"]);
   });
-  it("sorts compatible OpenAI text models newest first and excludes non-chat surfaces", async () => {
+  it("does not infer OpenAI compatibility from IDs and still sends authenticated discovery headers", async () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => new Response(JSON.stringify({
       data: [
         { id: "gpt-5.6-terra", created: 300 },
@@ -40,14 +40,14 @@ describe("hosted provider model discovery", () => {
       provider: "openai",
       apiKey: "secret-key",
       fetchImpl: fetchImpl as typeof fetch,
-    })).resolves.toEqual(["gpt-5.6-terra", "gpt-5.6-luna"]);
+    })).resolves.toEqual([]);
     expect(fetchImpl).toHaveBeenCalledWith("https://api.openai.com/v1/models", expect.objectContaining({
       redirect: "error",
       headers: expect.objectContaining({ authorization: "Bearer secret-key" }),
     }));
   });
 
-  it("lists Anthropic Claude models and sends the supported API version header", async () => {
+  it("leaves Anthropic ID-only compatibility unknown and sends the supported API version header", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
       data: [
         { id: "claude-opus-latest", created_at: "2026-08-01T00:00:00Z" },
@@ -60,7 +60,7 @@ describe("hosted provider model discovery", () => {
       provider: "anthropic",
       apiKey: "secret-key",
       fetchImpl: fetchImpl as typeof fetch,
-    })).resolves.toEqual(["claude-opus-latest", "claude-sonnet-current"]);
+    })).resolves.toEqual([]);
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://api.anthropic.com/v1/models?limit=100",
       expect.objectContaining({
@@ -84,19 +84,21 @@ describe("hosted provider model discovery", () => {
   it("keeps the hosted picker bounded to the newest compatible candidates", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
       data: Array.from({ length: 35 }, (_, index) => ({
-        id: `gpt-5-test-${String(index).padStart(2, "0")}`,
+        id: `vendor/model-${String(index).padStart(2, "0")}`,
+        supported_parameters: ["tools", "tool_choice", "max_tokens"],
+        architecture: { input_modalities: ["text"], output_modalities: ["text"] },
         created: index,
       })),
     }), { status: 200 }));
 
     const models = await discoverHostedProviderModels({
-      provider: "openai",
+      provider: "openrouter",
       apiKey: "secret-key",
       fetchImpl: fetchImpl as typeof fetch,
     });
 
     expect(models).toHaveLength(20);
-    expect(models[0]).toBe("gpt-5-test-34");
-    expect(models.at(-1)).toBe("gpt-5-test-15");
+    expect(models[0]).toBe("vendor/model-34");
+    expect(models.at(-1)).toBe("vendor/model-15");
   });
 });

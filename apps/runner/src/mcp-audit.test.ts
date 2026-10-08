@@ -29,7 +29,7 @@ describe("stdio launch diagnostics", () => {
   it.each([
     { error: Object.assign(new Error("private-path"), { code: "ENOENT" }), expected: "ENOENT:" },
     { error: Object.assign(new Error("private-path"), { code: "EACCES" }), expected: "EACCES:" },
-    { error: new Error("tools/list timed out after 10000ms private-details"), expected: "MCP_LAUNCH_TIMEOUT:" },
+    { error: Object.assign(new Error("tools/list timed out after 10000ms private-details"), { code: -32001 }), expected: "MCP_LAUNCH_TIMEOUT:" },
     { error: { message: "private-details" }, expected: "MCP_LAUNCH_CHECK_FAILED:" },
   ])("keeps launch exceptions bounded without exposing arbitrary details (%j)", ({ error, expected }) => {
     expect(formatMcpLaunchFailure(error)).toContain(expected);
@@ -38,10 +38,10 @@ describe("stdio launch diagnostics", () => {
   });
 
   it.each([
-    { diagnostic: "npm error code ETARGET\nnpm error notarget No matching version found for @synapsor/runner@1.8.0.", expected: "ETARGET: The configured package version is unavailable" },
-    { diagnostic: "POLICY_EXECUTION_BINDING_CHANGED: private-runtime-settings", expected: "POLICY_EXECUTION_BINDING_CHANGED" },
+    { diagnostic: "npm error code ETARGET\nnpm error notarget No matching version found for @synapsor/runner@1.8.0.", expected: "MCP_LAUNCH_CHECK_FAILED:" },
+    { diagnostic: "POLICY_EXECUTION_BINDING_CHANGED: private-runtime-settings", expected: "MCP_LAUNCH_CHECK_FAILED:" },
     { diagnostic: "unrecognized-launch-failure", expected: "MCP_LAUNCH_CHECK_FAILED" },
-  ])("categorizes a failed child without exposing stderr (%j)", async ({ diagnostic, expected }) => {
+  ])("keeps an unstructured failed child cause unknown without exposing stderr (%j)", async ({ diagnostic, expected }) => {
     const stderr = `${"launcher warning ".repeat(50)}postgres://user:private-password@host/db\napi_key=private-api-key\n${diagnostic}`;
     const script = `process.stdin.once('data', () => { process.stderr.write(${JSON.stringify(stderr)}, () => process.exit(1)); });`;
     const error = await fetchStdioMcpToolsCommand(process.execPath, ["-e", script], 5000).catch((error: unknown) => error);
