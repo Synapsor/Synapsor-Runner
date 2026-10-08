@@ -1,4 +1,4 @@
-import { reloadReadReviewAfterCommit, saveBoundaryReviewSignoff, saveReviewedDisabledBoundary, saveReadReviewSignoff, type ReadReviewSignoff } from "./authoring-read-review-save.js";
+import { reloadReadReviewAfterCommit, saveBoundaryReviewSignoff, saveReviewedDisabledBoundary, saveReadReviewSignoff, type ReadReviewSignoff, type ReadReviewPredecessorCheck } from "./authoring-read-review-save.js";
 import { readMeaningPromptHandoff } from "./authoring-read-prompt-binding.js";
 import { selectUnplannedActionIntents } from "./authoring-action-entry.js";
 import { reviewRequiredPrincipalScopes } from "./authoring-principal-scope-host.js";
@@ -3178,66 +3178,6 @@ function isBoundaryAuthoringExplanationQuestion(value: string): boolean {
     .test(normalized);
 }
 
-async function promptModelGuidedActionClarification(input: {
-  question: string;
-  session: BoundaryReviewInteractiveSession;
-  modelSession: ActionModelSuggestionSession;
-  authoringChat?: BoundaryAuthoringChat;
-  narrator?: typeof narrateValidatedAuthoringStep;
-}): Promise<string | undefined> {
-  const context = [
-    "MODEL QUESTION",
-    "Answer only the business meaning. Runner resolves database keys, trusted scope, locks, SQL, and approval-ledger mechanics.",
-    "You may ask why this decision is needed before answering. No authority or source data changes while it is open.",
-  ];
-  let answer = await input.session.promptText(input.question, { context });
-  if (!input.authoringChat) return answer;
-
-  const narrator = input.narrator ?? narrateValidatedAuthoringStep;
-  let explanationTurns = 0;
-  while (answer !== undefined && isBoundaryAuthoringExplanationQuestion(answer)) {
-    if (explanationTurns >= 2) {
-      input.authoringChat.checkpoint("Pending business decision unchanged", [
-        "Two optional model explanations were used for this one decision.",
-        "Answer the pending question, use /details, or press Esc to pause safely.",
-      ], "warning");
-      answer = input.authoringChat.readOperator
-        ? await input.authoringChat.readOperator()
-        : await input.session.promptText(input.question, { context });
-      continue;
-    }
-    explanationTurns += 1;
-    const operatorQuestion = answer.trim();
-    const explanation = await input.authoringChat.progress(
-      `${boundaryModelLabel(input.modelSession)} is answering your question`,
-      () => narrator({
-        session: input.modelSession,
-        operatorMessage: operatorQuestion,
-        validatedFacts: [
-          `Pending business decision: ${input.question}`,
-          "Runner needs an operator-owned business answer before it can validate the disabled Action draft.",
-          "No answer has been recorded for this decision yet.",
-          "The current Read and Action authority, approval posture, and source database are unchanged.",
-          "Explain the reason for this question and its practical effect without inventing a value.",
-        ],
-        nextQuestion: input.question,
-        egressAcknowledged: true,
-      }),
-    );
-    if (explanation?.trim()) {
-      await input.authoringChat.streamModel(explanation.trim().split(/\r?\n/u));
-    } else {
-      input.authoringChat.checkpoint("Model explanation unavailable", [
-        "The pending business decision is unchanged. Use /details, answer it now, or press Esc to pause safely.",
-      ], "warning");
-    }
-    answer = input.authoringChat.readOperator
-      ? await input.authoringChat.readOperator()
-      : await input.session.promptText(input.question, { context });
-  }
-  return answer;
-}
-
 function boundaryAuthoringProviderOptions(
   dependencies: AskProviderDependencies | undefined,
   chat: BoundaryAuthoringChat | undefined,
@@ -3870,6 +3810,7 @@ type ReadBoundaryReviewOptions = {
   privateDependencies?: () => string[];
   onDisposition?: (disposition: ReadBoundaryReviewDisposition) => void;
   onReviewSignoff?: ReadReviewSignoff;
+  assertBeforeSave?: ReadReviewPredecessorCheck;
   reviewRules?: () => Promise<boolean>;
   rulesSummary?: () => Promise<string[]>;
   beforeActivation?: () => Promise<boolean>;
@@ -14702,7 +14643,7 @@ async function confirmAndActivateFocusedBoundary(input: {
     }
     if (accepted) {
       await saveReviewedDisabledBoundary({
-        onReviewSignoff: input.reviewOptions?.onReviewSignoff,
+        onReviewSignoff: input.reviewOptions?.onReviewSignoff, assertBeforeSave: input.reviewOptions?.assertBeforeSave,
         projectRoot: input.projectRoot,
         context,
         actor,
@@ -14914,7 +14855,7 @@ async function confirmAndActivateFocusedBoundary(input: {
     if (conversation) {
       if (saveReviewedDisabled) {
         await saveReviewedDisabledBoundary({
-          onReviewSignoff: input.reviewOptions?.onReviewSignoff,
+          onReviewSignoff: input.reviewOptions?.onReviewSignoff, assertBeforeSave: input.reviewOptions?.assertBeforeSave,
           projectRoot: input.projectRoot,
           context,
           actor,
@@ -14961,7 +14902,7 @@ async function confirmAndActivateFocusedBoundary(input: {
       : false;
     if (keepReviewedDisabled) {
       await saveReviewedDisabledBoundary({
-        onReviewSignoff: input.reviewOptions?.onReviewSignoff,
+        onReviewSignoff: input.reviewOptions?.onReviewSignoff, assertBeforeSave: input.reviewOptions?.assertBeforeSave,
         projectRoot: input.projectRoot,
         context,
         actor,
@@ -14999,7 +14940,7 @@ async function confirmAndActivateFocusedBoundary(input: {
     revision: (context.progress?.revision ?? 0) + 1,
   });
   await saveReadReviewSignoff({ projectRoot: input.projectRoot, context, progress,
-    onReviewSignoff: input.reviewOptions?.onReviewSignoff });
+    onReviewSignoff: input.reviewOptions?.onReviewSignoff, assertBeforeSave: input.reviewOptions?.assertBeforeSave });
   const activationResult = await boundaryActivateCommand(
     [
       "--project-root", input.projectRoot,

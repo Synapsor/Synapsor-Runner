@@ -18,5 +18,23 @@
     "independent_verdict": "PENDING",
     "public_binding": "NOT RUN"
   },
-  "change": "Existing protected owner reads actual current predecessor after binding check, invokes local synchronous check on a clone, commits with existing writer, and supplies actual before context only after exact committed reload. Existing public writer return contract unchanged. No boundary growth."
+  "change": "Existing protected owner reads actual current predecessor after binding check, invokes local synchronous check on a clone, commits with existing writer, and supplies actual before context only after exact committed reload. Existing public writer return contract unchanged. No boundary growth.",
+  "independent_before": {
+    "pin": "3fa0de98",
+    "preseal": "6355da89",
+    "passed": 5,
+    "failed": 1,
+    "cause": "Async callback rejects without save but leaks unhandled rejection",
+    "log": "/var/tmp/synapsor-r1-signoff-review-owned/evidence/3fa-before.log"
+  },
+  "correction": {
+    "behavior": "Detect only native Promise objects and observe rejection through intrinsic Promise.prototype.then without awaiting or reading arbitrary thenable methods; still refuse all non-undefined returns before save.",
+    "main_focused_passed": 8,
+    "main_focused_files": 3,
+    "types_exit": 0,
+    "log": "/var/tmp/synapsor-b64-main-owned/evidence/read-signoff-async-observer-after.log",
+    "types_log": "/var/tmp/synapsor-b64-main-owned/evidence/read-signoff-async-observer-types.log",
+    "independent_after": "PENDING"
+  },
+  "public_hooks": "All four existing ordinary review signoff call sites forward the same optional check. Uncalled promptModelGuidedActionClarification removed after all-repository caller check; shared live classifier retained pending typed migration. boundary-commands19366\u219219307. Actual public Action subject adapter remains OPEN."
 }

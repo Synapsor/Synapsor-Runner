@@ -1,3 +1,4 @@
+import { types as nodeTypes } from "node:util";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { loadBoundaryReviewContext } from "./boundary-review-context.js";
 import { createBoundaryReviewProgress, type BoundaryReviewProgress } from "./boundary-review-domain.js";
@@ -51,7 +52,11 @@ async function commitBoundaryReviewSignoff(projectRoot: string,
     // Bind the continuation to the actual context checked by this writer, not
     // a caller's expected projection or a later independently loaded revision.
     const before = structuredClone(current);
-    if (assertBeforeSave && assertBeforeSave(structuredClone(before)) !== undefined) {
+    const checked = assertBeforeSave?.(structuredClone(before));
+    if (checked !== undefined) {
+      // A mistaken async callback still refuses before saving. Observe a native
+      // rejection without waiting or invoking an arbitrary thenable's methods.
+      if (nodeTypes.isPromise(checked)) void Promise.prototype.then.call(checked, undefined, () => undefined);
       throw new Error("READ_REVIEW_PREDECESSOR_CHECK_INVALID: The local review predecessor check must complete synchronously without returning a result. Nothing was saved.");
     }
     const authoring_binding = await saveBoundaryReviewProgress(held.projectRoot, shown.progress, shown.bindings.authoring, held);
