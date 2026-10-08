@@ -627,3 +627,24 @@ Main protocol gate before1FAIL (continued past envelope into unavailable draft),
 after106PASS/types0; evidence subject-protocol-{before,after,types}.log in the
 existing Main evidence directory. Existing fresh fixture pins change; assertions
 and all prior failure captures remain intact.
+
+B64 resumed Owner direction (2026-10-08): usage-based pausing is removed; continue
+until Owner pauses or a binding decision/limit stops affected work. Keep private
+checkpoints and the unchanged B64 clock. Main owns boundary-commands.ts; it must
+not grow beyond its current20204 lines. Old-setup entry and typed scope/native
+assembly move to owned modules, leaving current-record projections and protected
+save ports only. New isolated Action owner replaces edit-intent/reply classifiers
+with typed submissions and Runner's full baseline diff; no legacy English copy.
+Read owner handles raw Replace continuation and classifies remaining212 fixture
+rows; independent reviewers remain separate, max2heavy/8workers.
+
+First extraction: authoring-saved-setup-entry owns early protocol refusal/presentation;
+authoring-read-scope-native owns coherent scope projection, native question/analysis
+assembly and actual no-Read completion recording. Existing scope host owns grouped
+transition, generation owner owns consumption, Resume writer owns durable save/CAS.
+No whole session or mutable generic state is exposed. Boundary exposes narrow
+record projections and protected save/mutation ports; no lock survives human wait.
+Boundary20204→20162;35 focused existing controls PASS/types0 after extraction.
+Initial type errors (missing reused notice import/null revision/control narrowing)
+preserved in native-read-extraction-types{,2}.log; fixed without assertion changes.
+Actual public/native composed extraction review remains required.
