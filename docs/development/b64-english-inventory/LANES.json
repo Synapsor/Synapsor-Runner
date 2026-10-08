@@ -38,10 +38,10 @@
     }
   },
   "heavy_slots": {
-    "1": "Ask finite focused checks; currently returned",
-    "2": "R1 Read/Ask independent checks; sequential finite loans",
-    "3": "Privacy focused checks/types",
-    "4": "B66 independent Chat review; finite checks"
+    "1": "Action finite before/affected tests (Ask released)",
+    "2": "R1/Main finite checks, returned at checkpoint",
+    "3": "R2 Privacy missing-origin independent regression",
+    "4": "Chat CP08 typed record before/fix"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -1006,10 +1006,10 @@
       "source": "Owner per-site reconciliation; GA04 independently accepted and integrated3996cb8e; remaining GA01-03 decision pending"
     },
     "privacy_visibility": {
-      "pin": "31bf96ca",
-      "typed": 36,
+      "pin": "c558bc34",
+      "typed": 34,
       "delete": 0,
-      "source": "Owner branch checkpoint; successor review and Main bindings pending"
+      "source": "Owner source counts; independent missing-origin field-type review finding OPEN"
     },
     "chat_presentation": {
       "pin": "444573cf",
@@ -1020,9 +1020,10 @@
       "source": "332PASS/types0; independent source and real callers pending"
     },
     "action": {
-      "typed": null,
-      "delete": null,
-      "source": "Reconciliation requested; previous50/18 is baseline, not verified remaining"
+      "pin": "89ee9868",
+      "typed": 50,
+      "delete": 5,
+      "source": "Actual per-site reconciliation;13deletions removed, independent acceptance pending; slot1 assigned now"
     }
   }
 }
