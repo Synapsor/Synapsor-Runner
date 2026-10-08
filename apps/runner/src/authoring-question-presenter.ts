@@ -352,3 +352,176 @@ export async function presentUnchangedActionRequest(input: {
     context: ["This records your disposition only. It does not prove a new edit, publish rules or discard other unfinished work.", `Request: ${instruction}`] });
   return choice === "confirmed_current" || choice === "cancelled" ? choice : undefined;
 }
+
+// B64 typed fields share the existing presenter/session. The domain remains the
+// sole owner of event application, currentness, protected persistence and saves.
+import type { TypedReviewView, TypedReviewField, TypedFieldEvent, TypedReviewResponse,
+  TypedReviewConfirmation, TypedFieldSelection } from "./authoring-typed-review.js";
+import { decodeTypedFieldLiteral, formatTypedFieldValue, isValidTypedFieldValue } from "./authoring-typed-field-codec.js";
+import { safeTerminalText } from "./analytics-shell-render.js";
+
+type TypedSession = Pick<BoundaryReviewInteractiveSession,
+  "promptText" | "confirm" | "chooseOption" | "present" | "rememberDetails" | "showReviewDetails">;
+const localTypedOptions = { decisionKind: "business_review" as const, localOnly: true };
+const originLabels: Record<TypedFieldSelection["origin"], string> = {
+  saved_confirmed: "previously confirmed", saved_unconfirmed: "saved, unconfirmed",
+  model_proposal: "assistant proposal, unconfirmed", operator_edit: "operator edit, unconfirmed",
+};
+function selectionText(selection: TypedFieldSelection): string {
+  return `${formatTypedFieldValue(selection.value)}${selection.value.kind === "money" ? ` ${selection.value.currency}` : ""} (${originLabels[selection.origin]})`;
+}
+/** Complete host-derived review, including noneditable duties and changes. */
+export function typedReviewCardLines(view: TypedReviewView): string[] {
+  return ["Runner business review — " + view.status, "COMPLETE PROPOSED RULES", ...view.normalized_lines,
+    "CHANGES", ...(view.change_lines.length ? view.change_lines : ["No change lines supplied; no claim of unchanged rules is inferred."]),
+    "EDITABLE BUSINESS VALUES", ...view.fields.flatMap(field => [field.label,
+      ...(field.current ? [`Current: ${selectionText(field.current)}`] : []),
+      ...(field.suggestion ? [`Suggestion: ${selectionText(field.suggestion)}${isValidTypedFieldValue(field, field.suggestion.value) ? "" : " — INVALID; cannot keep"}`]
+        : ["No suggestion; this value is not chosen for you."]),
+      ...(field.explanation ? [field.explanation] : [])]),
+    ...(view.unresolved.length ? ["UNRESOLVED", ...view.unresolved] : []),
+    "Value edits remain unconfirmed. This review does not activate, execute or authorize model disclosure."
+  ].map(safeTerminalText);
+}
+function unresolvedTypedFields(view: TypedReviewView): TypedReviewField[] {
+  return view.fields.filter(field => field.required && !(field.suggestion && isValidTypedFieldValue(field, field.suggestion.value))
+    && !(field.current && isValidTypedFieldValue(field, field.current.value)));
+}
+function typedReviewIsUnresolved(view: TypedReviewView): boolean {
+  return view.unresolved.length > 0 || unresolvedTypedFields(view).length > 0
+    || view.fields.some(field => field.suggestion && !isValidTypedFieldValue(field, field.suggestion.value));
+}
+function fieldIdentity(view: TypedReviewView, field: TypedReviewField) {
+  return { binding: view.binding, field_id: field.id, target_digest: field.target_digest, dependencies_digest: field.dependencies_digest };
+}
+
+/** Returns one bound event to the existing host. No decoded client value or raw
+ * testimony is manufactured for Enter. Every wait checks the host's currentness. */
+export async function presentTypedAuthoringReview(input: {
+  view: TypedReviewView; session: TypedSession; assertCurrent: () => Promise<void>;
+}): Promise<TypedReviewResponse> {
+  const view = structuredClone(input.view), { session } = input;
+  if (view.decision_kind !== "business_review" || new Set(view.fields.map(field => field.id)).size !== view.fields.length)
+    throw new Error("TYPED_REVIEW_VIEW_INVALID: Reopen the exact current business proposal.");
+  const wait = async <T>(fn: () => Promise<T>): Promise<T> => {
+    await input.assertCurrent(); const result = await fn(); await input.assertCurrent(); return result;
+  };
+  const pause = (): TypedReviewResponse => ({ kind: "pause", binding: view.binding });
+  const choose = (title: string, choices: { value: string; label: string; detail?: string; disabled?: boolean }[],
+    context: string[], initialValue = "pause") => wait(async () => session.chooseOption?.(safeTerminalText(title),
+      choices.map(choice => ({ ...choice, label: safeTerminalText(choice.label), ...(choice.detail ? { detail: safeTerminalText(choice.detail) } : {}) })),
+      { ...localTypedOptions, context: context.map(safeTerminalText), displayContext: true, reviewOnly: true, initialValue }));
+  const prompt = (title: string, context: string[]) => wait(() => session.promptText(safeTerminalText(title), {
+    ...localTypedOptions, context: context.map(safeTerminalText), recordPolicyAnswer: false, preserveWhitespace: true,
+  }));
+  const lines = typedReviewCardLines(view);
+  await input.assertCurrent();
+  session.rememberDetails?.(safeTerminalText(view.title), lines);
+  for (;;) {
+    const choice = await choose(view.title, [
+      { value: "edit", label: "Edit a value" }, { value: "missing", label: "Resolve missing details" },
+      { value: "sequential", label: "Review one by one" }, { value: "describe", label: "Describe a correction" },
+      { value: "review", label: "Review the complete proposal", disabled: typedReviewIsUnresolved(view) },
+      { value: "details", label: "View exact Runner details" }, { value: "pause", label: "Pause; keep this proposal unconfirmed" },
+    ], lines);
+    if (choice === undefined || choice === "pause") return pause();
+    if (choice === "details") {
+      await wait(async () => { if (session.showReviewDetails) await session.showReviewDetails(safeTerminalText(view.title), lines);
+        else session.present?.(safeTerminalText(view.title), lines); });
+      continue;
+    }
+    if (choice === "review") {
+      if (typedReviewIsUnresolved(view)) {
+        session.present?.("REVIEW STILL PENDING", ["Resolve the missing business decisions before the exact grouped review."]); continue;
+      }
+      return { kind: "review", binding: view.binding };
+    }
+    if (choice === "describe") {
+      const raw = await prompt("Describe the correction", ["Your exact words remain an unconfirmed correction request. This local entry makes no model call."]);
+      return raw === undefined || !raw.trim() ? pause() : { kind: "describe_correction", binding: view.binding, raw };
+    }
+    const fields = choice === "missing" ? unresolvedTypedFields(view) : view.fields;
+    if (!["edit", "missing", "sequential"].includes(choice)) throw new Error("TYPED_REVIEW_CHOICE_INVALID");
+    if (!fields.length) { session.present?.("NO EDITABLE MISSING VALUE", ["Unresolved meaning may need the ordinary correction route; no policy is chosen automatically."]); continue; }
+    let index = 0;
+    if (choice !== "sequential") {
+      const selected = await choose("Choose a business value", [
+        ...fields.map((field, i) => ({ value: `field:${i}`, label: field.label })), { value: "pause", label: "Back to the complete proposal" },
+      ], []);
+      if (selected === undefined || selected === "pause") continue;
+      index = fields.findIndex((_field, i) => selected === `field:${i}`);
+      if (index < 0) throw new Error("TYPED_REVIEW_FIELD_INVALID");
+    }
+    for (;;) {
+      const field = fields[index]!;
+      const validSuggestion = field.suggestion && isValidTypedFieldValue(field, field.suggestion.value);
+      const context = [field.label, ...(field.explanation ? [field.explanation] : []),
+        ...(field.current ? [`Current: ${selectionText(field.current)}`] : []),
+        ...(field.suggestion ? [`Suggestion: ${selectionText(field.suggestion)}`] : []),
+        validSuggestion ? "Enter keeps this exact displayed suggestion in the working proposal; it does not confirm it."
+          : "No valid suggestion is available to keep. Blank input leaves this field pending."];
+      if (choice === "sequential") {
+        const navigation = await choose(`Value ${index + 1} of ${fields.length}`, [
+          { value: "open", label: "Keep or edit this value" },
+          ...(index > 0 ? [{ value: "previous", label: "Previous value" }] : []),
+          ...(index + 1 < fields.length ? [{ value: "next", label: "Next value without changing this one" }] : []),
+          { value: "pause", label: "Back to the complete proposal" },
+        ], context);
+        if (navigation === "previous" && index > 0) { index--; continue; }
+        if (navigation === "next" && index + 1 < fields.length) { index++; continue; }
+        if (navigation !== "open") break;
+      }
+      let event: TypedFieldEvent;
+      if (field.kind === "choice") {
+        const selected = await choose(field.label, [
+          ...(validSuggestion ? [{ value: "keep", label: "Keep the displayed suggestion (unconfirmed)" }] : []),
+          ...field.options.map((option, i) => ({ value: `option:${i}`, label: option.label })),
+          { value: "pending", label: "Leave this value pending" }, { value: "pause", label: "Back to complete proposal" },
+        ], context, validSuggestion ? "keep" : "pending");
+        if (selected === undefined || selected === "pause") break;
+        if (selected === "keep" && validSuggestion) event = { ...fieldIdentity(view, field), kind: "keep_suggestion" };
+        else if (selected === "pending") event = { ...fieldIdentity(view, field), kind: "leave_pending" };
+        else { const option = field.options.find((_option, i) => selected === `option:${i}`);
+          if (!option || !decodeTypedFieldLiteral(field, option.value).ok) throw new Error("TYPED_REVIEW_OPTION_INVALID");
+          event = { ...fieldIdentity(view, field), kind: "select_option", value: option.value }; }
+      } else {
+        const raw = await prompt(field.label, context);
+        if (raw === undefined) break;
+        if (raw === "") {
+          event = { ...fieldIdentity(view, field), kind: validSuggestion ? "keep_suggestion" : "leave_pending" };
+          if (!validSuggestion) session.present?.("VALUE STILL PENDING", ["Enter one exact value, or use Describe a correction. No suggestion was inferred."]);
+        } else {
+          const decoded = decodeTypedFieldLiteral(field, raw);
+          if (!decoded.ok) {
+            const resolution = await choose("VALUE NOT APPLIED", [
+              { value: "retry", label: "Edit this value again" }, { value: "describe", label: "Use these exact words to describe a correction" },
+              { value: "pending", label: "Leave the value pending" }, { value: "pause", label: "Back to complete proposal" },
+            ], [decoded.message, `Your exact text: ${raw}`]);
+            if (resolution === "retry") continue;
+            if (resolution === "describe") return { kind: "describe_correction", binding: view.binding, raw };
+            if (resolution !== "pending") break;
+            event = { ...fieldIdentity(view, field), kind: "leave_pending" };
+          } else event = { ...fieldIdentity(view, field), kind: "replace_literal", raw };
+        }
+      }
+      return { kind: "field_event", event };
+    }
+  }
+}
+
+/** Existing host invokes this only after validating a complete current proposal.
+ * A returned Yes is only a business review decision, never a save or activation. */
+export async function confirmTypedAuthoringReview(input: {
+  view: TypedReviewView; session: TypedSession; assertCurrent: () => Promise<void>;
+}): Promise<TypedReviewConfirmation> {
+  const view = structuredClone(input.view);
+  await input.assertCurrent();
+  if (view.decision_kind !== "business_review" || typedReviewIsUnresolved(view))
+    throw new Error("TYPED_REVIEW_UNRESOLVED: Resolve current missing business decisions before confirmation.");
+  const lines = typedReviewCardLines(view);
+  const accepted = await input.session.confirm("Confirm this exact complete business proposal?", {
+    ...localTypedOptions, defaultValue: false, context: lines, exactDetails: { title: safeTerminalText(view.title), lines },
+  });
+  await input.assertCurrent();
+  return { kind: "decision", binding: view.binding, accepted: accepted ?? null };
+}

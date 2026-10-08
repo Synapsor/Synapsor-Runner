@@ -184,6 +184,10 @@ export type BoundaryAccessNotice = {
 };
 
 type BoundaryPromptOptions = {
+  /** Trusted typed authoring adapters bypass prose decision classification. */
+  decisionKind?: "business_review" | "disclosure" | "activation" | "recovery";
+  /** Local typed controls/details must never request a model explanation. */
+  localOnly?: boolean;
   context?: string[];
   exactDetails?: { title: string; lines: string[]; summaryTitle?: string; sections?: import("./read-boundary-review-types.js").ReviewSection[] };
   /** Display only; exact prompts, permissions and defaults remain with the caller. */

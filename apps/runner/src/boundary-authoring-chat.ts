@@ -838,17 +838,17 @@ export function createBoundaryAuthoringChat(input: {
       await streamRunner(runnerLines[0]!, runnerLines.slice(1));
     }
   };
-  const read = async (prompt: string, speaker: BoundaryAuthoringSpeaker = "runner", defaultValue?: string, recordPolicyAnswer = true, preserveWhitespace = false) => {
+  const read = async (prompt: string, speaker: BoundaryAuthoringSpeaker = "runner", defaultValue?: string, recordPolicyAnswer = true, preserveWhitespace = false, localOnly = false) => {
     writeRole(speaker, [prompt]);
     pendingConversationQuestion = { speaker, lines: [prompt] };
-    const answer = await readAnswer(defaultValue, recordPolicyAnswer, undefined, true, preserveWhitespace);
+    const answer = await readAnswer(defaultValue, recordPolicyAnswer, undefined, true, preserveWhitespace, localOnly);
     return answer === "" && defaultValue !== undefined ? defaultValue : answer;
   };
   let sourceCommandHandler: ((command: string, argument: string) => Promise<boolean | "reviewed">) | undefined;
   let sourceHasDraft: (() => boolean) | undefined;
   let completedSourceReviews = 0;
   let sourceAnswerRecorder: ((answer: string) => Promise<void>) | undefined;
-  const readAnswer = async (defaultValue?: string, recordPolicyAnswer = true, assertAnswerCurrent?: () => Promise<void>, recordSourceChangedAnswer = true, preserveWhitespace = false) => {
+  const readAnswer = async (defaultValue?: string, recordPolicyAnswer = true, assertAnswerCurrent?: () => Promise<void>, recordSourceChangedAnswer = true, preserveWhitespace = false, localOnly = false) => {
     finishLiveResponse();
     await livePending;
     io.clearStatus?.();
@@ -883,6 +883,11 @@ export function createBoundaryAuthoringChat(input: {
         }
       }
       if (command === "/attach" || command === "/rules") {
+        if (localOnly) {
+          checkpoint("Keep this value review local", ["Pause this review before changing attached rules through their ordinary reviewed route. No rule or value changed."], "warning");
+          restorePendingQuestion();
+          continue;
+        }
         if (!sourceCommandHandler) checkpoint("Rules attachment unavailable here", ["Open model-guided Boundary setup; the pending decision is unchanged."], "warning");
         else {
           try {
@@ -1156,7 +1161,9 @@ export function createBoundaryAuthoringChat(input: {
   const confirm = async (
     prompt: string,
     options: NonNullable<Parameters<BoundaryReviewInteractiveSession["confirm"]>[1]> = {},
-    kind: "decision" | "permission" = isPermissionPrompt(prompt, options.context) ? "permission" : "decision",
+    kind: "decision" | "permission" = options.decisionKind
+      ? options.decisionKind === "business_review" ? "decision" : "permission"
+      : isPermissionPrompt(prompt, options.context) ? "permission" : "decision",
   ): Promise<boolean | undefined> => {
     const permission = kind === "permission";
     const decisionContext = meaningfulContext(options.context);
@@ -1196,7 +1203,7 @@ export function createBoundaryAuthoringChat(input: {
         },
       ],
     } satisfies ChoiceInput;
-    const selected = permission
+    const selected = permission && !options.localOnly
       ? await choosePermission(choice, permissionContext, /^Activate verified Action Boundary\b/u.test(prompt) ? "ACTION REVIEW" : undefined)
       : await chooseReviewedDecision(choice);
     return selected === undefined ? undefined : selected === "yes";
@@ -1219,16 +1226,18 @@ export function createBoundaryAuthoringChat(input: {
         rememberDetails("SET UP ONE AGENT JOB", options?.context ?? []);
         return readAnswer();
       }
-      const speaker = isModelQuestion(undefined, options?.context) ? "model" : "runner";
+      const speaker = !options?.localOnly && isModelQuestion(undefined, options?.context) ? "model" : "runner";
       if (speaker === "model") {
         await streamModel(modelQuestionTurn(prompt, options?.context?.[0], options?.context));
         return readAnswer(undefined, options?.recordPolicyAnswer !== false, undefined, true, options?.preserveWhitespace === true);
       }
       await writeContext(options?.context);
-      return read(prompt.replace(/:\s*$/u, ""), speaker, options?.defaultValue, options?.recordPolicyAnswer, options?.preserveWhitespace);
+      return read(prompt.replace(/:\s*$/u, ""), speaker, options?.defaultValue, options?.recordPolicyAnswer, options?.preserveWhitespace, options?.localOnly);
     },
     chooseOption: async (title, choices, options) => {
-      const permission = Boolean(options?.exactDetails) || /^(?:ACTIVATE|APPROVE|APPLY|GRANT)\b/iu.test(title.trim());
+      const permission = options?.decisionKind
+        ? options.decisionKind !== "business_review"
+        : Boolean(options?.exactDetails) || /^(?:ACTIVATE|APPROVE|APPLY|GRANT)\b/iu.test(title.trim());
       if (permission) {
         if (options?.exactDetails) rememberDetails(options.exactDetails.title, options.exactDetails.lines);
         else rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options?.context), title]);
@@ -1252,7 +1261,7 @@ export function createBoundaryAuthoringChat(input: {
         ...(options?.onModelQuestion ? { onModelQuestion: options.onModelQuestion } : {}),
         ...(options?.explanationContext ? { explanationContext: options.explanationContext } : {}),
       } satisfies ChoiceInput;
-      return permission
+      return permission && !options?.localOnly
         ? choosePermission(choice, options?.context)
         : choose(choice);
     },
