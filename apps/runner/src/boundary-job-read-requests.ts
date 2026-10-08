@@ -1,5 +1,6 @@
 import { currentReadRequestBindings } from "./read-current-evidence.js";
-import type { ExactReadRequestBinding } from "./read-requested-scope.js";
+/** Exact existing native workload identity, never an interpretation of prose. */
+export type ExactReadRequestBinding = { description: string; resource_ids: string[] };
 import type { ReadWorkloadView } from "./read-workloads.js";
 
 /** Carry only current native workload associations into planning. The caller

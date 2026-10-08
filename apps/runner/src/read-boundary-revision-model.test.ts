@@ -51,6 +51,13 @@ describe("B64 structured Read revision", () => {
       structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context(draft) }, validateRevision: host,
       dependencies: { requestJson: send } } };
   }
+  it.each(["missing", "unsupported"] as const)("refuses %s revision scope protocol before provider access", async mode => {
+    const f = setup();
+    await expect(generateModelReadBoundaryRevision({ ...f.input, structuredScope: mode === "missing" ? undefined
+      : { ...f.input.structuredScope, protocol: "retired-protocol" as typeof READ_SCOPE_PROTOCOL } }))
+      .rejects.toThrow(/READ_SCOPE_PROTOCOL_(REQUIRED|UNSUPPORTED)/u);
+    expect(f.send).not.toHaveBeenCalled(); expect(f.host).not.toHaveBeenCalled();
+  });
   it.each([false, true])("keeps a real preview separate from workload analysis (existing workload: %s)", async withWorkload => {
     const f = setup(withWorkload), before = structuredClone(f.draft);
     const result = await generateModelReadBoundaryRevision(f.input);

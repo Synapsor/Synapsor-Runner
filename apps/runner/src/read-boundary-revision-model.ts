@@ -123,6 +123,8 @@ export async function generateModelReadBoundaryRevision(input: {
   conversation?: ModelAuthoringConversation;
   signal?: AbortSignal;
 }): Promise<ModelReadBoundaryRevisionResult> {
+  if (!input.structuredScope) throw new Error("READ_SCOPE_PROTOCOL_REQUIRED: Read revision requires the pinned structured scope protocol; preserve the saved job without replay.");
+  if (input.structuredScope.protocol !== READ_SCOPE_PROTOCOL) throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED: No legacy scope fallback is available.");
   const instruction = boundedText(input.instruction, "Read Boundary revision", 2_000);
   const operatorNamingContext = input.operatorNamingContext
     ? boundedText(input.operatorNamingContext, "Original operator naming context", 4_000) : undefined;

@@ -1,4 +1,4 @@
-import { resolveRequestedReadScope, type ExactReadRequestBinding } from "./read-requested-scope.js";
+import type { ExactReadRequestBinding } from "./boundary-job-read-requests.js";
 import { READ_SCOPE_PROTOCOL, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
   type ReadScopeBinding, type ReadScopeReference, type ReadScopeCatalog, type ReadScopeRecord } from "./read-structured-scope.js";
 import type { ReadWorkloadAnalysis } from "./read-workload-assist.js";
@@ -172,6 +172,8 @@ export async function planModelBoundaryJob(input: {
   signal?: AbortSignal;
   onDiagnostic?: (diagnostic: BoundaryJobPlanningDiagnostic) => Promise<void> | void;
 }): Promise<BoundaryJobPlan> {
+  if (!input.structuredScope) throw new Error("READ_SCOPE_PROTOCOL_REQUIRED: Planning requires the pinned structured scope protocol; preserve the saved job without replay.");
+  if (input.structuredScope.protocol !== READ_SCOPE_PROTOCOL) throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED: No legacy scope fallback is available.");
   const jobIntent = boundedText(
     input.jobIntent,
     "Boundary job",
@@ -629,38 +631,6 @@ function parseJobPlan(
       if (assessReadScopeDraft(typedScope, native.analysis).status !== "compatible")
         throw new Error("READ_SCOPE_NATIVE_COVERAGE_REQUIRED: The exact native analysis does not cover the proposed scope.");
     }
-  }
-  const requestedReadScope = structured ? { required: [], excluded: [], candidates: [], conflicts: [], unresolved: false }
-    : resolveRequestedReadScope({ original: jobIntent,
-    resources: availableResourceIds.map(id => ({ id })), definitions: [], statements: [],
-    exactRequests: readMode === "reuse" ? state.read.reviewed_requests : readMode === "resume" ? state.read.resumable_requests : undefined });
-  const explicitlyRequestedReadResources = requestedReadScope.required;
-  if (explicitlyRequestedReadResources.length) {
-    if (readMode === "none") {
-      throw new Error(
-        `read_mode=none omitted explicitly requested reviewed reads: ${explicitlyRequestedReadResources.join(", ")}.`,
-      );
-    }
-    if (readMode === "resume" || readMode === "reuse") {
-      const existing = new Set(readMode === "resume"
-        ? state.read.resumable_resource_ids ?? []
-        : state.read.resource_ids);
-      const missing = explicitlyRequestedReadResources.filter((resource) => !existing.has(resource));
-      if (missing.length) {
-        throw new Error(
-          `read_mode=${readMode} does not contain explicitly requested reviewed reads: ${missing.join(", ")}. ${(state.read.revision_eligible ?? state.read.fully_reviewed) ? "Choose revise or create." : "Use read_mode=create to prepare the corrected disabled mapping; revise is unavailable until an exact Read revision is reviewed. Preserve the existing policy and active authority."}`,
-        );
-      }
-    }
-    // read_intent is bounded routing presentation, not the requested scope.
-    // Actual workloads must cover the retained original request at the mapper;
-    // comparing a paraphrase here cannot establish a semantic omission.
-
-  }
-  if ((readMode === "none" || readMode === "reuse" || readMode === "resume")
-    && (requestedReadScope.unresolved || requestedReadScope.candidates.length || requestedReadScope.conflicts.length)) {
-    throw new Error(`READ_SCOPE_ASSOCIATION_UNRESOLVED: read_mode=${readMode} cannot establish coverage from names or empty extraction. `
-      + "Preserve the full operator request and ask one ordinary planning clarification about the intended business records; do not select a resource merely by its name.");
   }
   const actionIntent = value.action_intent === undefined
     ? undefined

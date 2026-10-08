@@ -48,6 +48,14 @@ describe("B64 structured planning scope", () => {
       jobIntent: original, currentState: reusableState, egressAcknowledged: true,
       structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => current } }) };
   }
+  it.each(["missing", "unsupported"] as const)("refuses %s planning scope protocol before provider access", async mode => {
+    const send = vi.fn(async () => response(planned()));
+    await expect(planModelBoundaryJob({ session: { provider: "openai", model: "scripted", apiKey: "test-key", dependencies: { requestJson: send } },
+      jobIntent: original, currentState: reusableState, egressAcknowledged: true,
+      structuredScope: mode === "missing" ? undefined : { protocol: "retired-protocol" as typeof READ_SCOPE_PROTOCOL, current: context } }))
+      .rejects.toThrow(/READ_SCOPE_PROTOCOL_(REQUIRED|UNSUPPORTED)/u);
+    expect(send).not.toHaveBeenCalled();
+  });
   it("proposes an exact scope without inferring meaning from narration or marking it confirmed", async () => {
     const tested = run(planned); const result = await tested.result;
     expect(result).toMatchObject({ state: "planned", read_mode: "create", read_scope: { proposal: scope() }, authority_granted: false });

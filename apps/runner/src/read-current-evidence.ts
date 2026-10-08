@@ -7,7 +7,7 @@ import { findReadMeaningEvidence, readDefinitionPhrases, ReadMeaningConflictErro
   type ReadMeaningCatalog, type ReadMeaningEvidence, type ReadMeaningStatement, type ReadMeaningTarget } from "./read-meaning-evidence.js";
 import type { ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import type { ReadWorkloadView } from "./read-workloads.js";
-import type { ExactReadRequestBinding } from "./read-requested-scope.js";
+import type { ExactReadRequestBinding } from "./boundary-job-read-requests.js";
 import type { ModelAuthoringConversation } from "./model-authoring-conversation.js";
 import { resolveNativeReadScope } from "./authoring-read-scope-question.js";
 

@@ -53,6 +53,14 @@ describe("B64 structured Read producer adapter", () => {
       egressAcknowledged: true, deferNarration: true, dependencies: { requestJson },
       structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context } }, context };
   }
+  it.each(["missing", "unsupported"] as const)("refuses %s Read scope protocol before provider access", async mode => {
+    const send = vi.fn(async () => response(args()));
+    const f = setup(send);
+    const input: ModelReadWorkloadInput = { ...f.input, structuredScope: mode === "missing" ? undefined
+      : { ...f.input.structuredScope, protocol: "retired-protocol" as typeof READ_SCOPE_PROTOCOL } };
+    await expect(generateModelReadWorkload(input)).rejects.toThrow(/READ_SCOPE_PROTOCOL_(REQUIRED|UNSUPPORTED)/u);
+    expect(send).not.toHaveBeenCalled();
+  });
   it("delivers the actual consumed completion only alongside the accepted scope result", async () => {
     let state: AuthoringTransportState = { version: 1, operations: [] };
     const events: Array<{ accepted: boolean; completion?: AuthoringQuestionCompletion }> = [];
