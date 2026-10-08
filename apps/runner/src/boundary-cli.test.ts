@@ -17963,8 +17963,8 @@ describe("saved review operation dispatch and persistence", () => {
           expect(requestedScope.routing_read_summary).toBe("Maintain the reviewed visit job.");
           // Only the operator's explicit review-only classification removes the
           // mistaken edit item. A retained independent request stays in scope.
-          expect(requestedScope.pending_change).toBe(mode === "context-renew" ? exact
-            : ["unrelated-edit", "model-review-edit"].includes(mode) ? "Change the maximum to four." : null);
+          expect(requestedScope.pending_change).toBe(["unrelated-edit", "model-review-edit"].includes(mode)
+            ? "Change the maximum to four." : null);
           if (changingModel) expect(request.body.model).toBe("gpt-selected-review");
           // After removal of the unsafe acknowledgement read, preserve the same
           // competing save at the next outside-lock provider boundary.

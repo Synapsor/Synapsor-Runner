@@ -12470,7 +12470,10 @@ async function reviewSavedBoundaryPolicyInner(input: {
       requestedRead:{jobIntent:resume.job_intent,readIntent:resume.read_intent ?? resume.job_intent,
         // An explicitly classified review request is retained in review history,
         // not a business change. Independent unfinished changes remain evidence.
-        ...(resume.pending_job_revision && resume.pending_job_revision !== request.supersedes_pending_job_revision
+        // A prior-context review-only classification does not complete that
+        // prior review; its exact retained request still is not a business edit.
+        ...(resume.pending_job_revision
+          && resume.pending_job_revision !== (request.supersedes_pending_job_revision ?? prior?.supersedes_pending_job_revision)
           ? {pendingJobRevision:resume.pending_job_revision} : {}),
         ...(requestedWorkload ? {workload:requestedWorkload} : {})},
       actions: [], authority, source: sourceInspection, reviewedVersionFields: boundaryAuthoringVersionReviews(resume),
