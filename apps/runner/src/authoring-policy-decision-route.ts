@@ -61,3 +61,14 @@ export function policyReviewNextStep(plan: Resolution): string {
     return 'Review the completion rule in ordinary business language, then confirm its exact applicability. Existing receipt storage is supplied separately; another model opinion cannot establish your meaning.';
   return 'Inspect the saved review and its actual prerequisite before starting another model episode.';
 }
+
+/** Consumers that require a complete report keep that prerequisite. An available
+ * business decision can resolve it once; pending/blocked leaves it unmet. */
+export async function reviewPolicyWithPendingDecision<T extends {report?: unknown} | undefined>(input: {
+  check(): Promise<T>; resolution(): Resolution | undefined; review(): Promise<ReceiptRequirementResult>;
+}): Promise<T> {
+  let result = await input.check();
+  if (!result?.report) await resolvePolicyDecision({resolution: input.resolution(), review: input.review,
+    recheck: async () => { result = await input.check(); }});
+  return result;
+}

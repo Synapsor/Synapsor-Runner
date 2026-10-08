@@ -1,4 +1,4 @@
-import { policyReviewNextStep, policyDecisionAllowsSavedReview, resumePolicyDecision, resolvePolicyDecision, reviewPolicyWithDecision } from './authoring-policy-decision-route.js';
+import { reviewPolicyWithPendingDecision, policyReviewNextStep, policyDecisionAllowsSavedReview, resumePolicyDecision, resolvePolicyDecision, reviewPolicyWithDecision } from './authoring-policy-decision-route.js';
 import { createReadRevisionCheckpointHost } from "./authoring-read-revision-checkpoint-host.js";
 import { createReadAssistanceCheckpointHost } from "./authoring-read-assistance-checkpoint-host.js";
 import { presentAuthoringRecovery } from "./authoring-interrupted-step-review.js";
@@ -7239,6 +7239,20 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         throw new ActionWorkUnitSourcePendingError("currentness");
       }
     };
+    const checkSourceCoverage = (proposed: ActionRuleAuthorityReviewSubjectV1) => reviewPolicyWithPendingDecision({
+      check: async () => { await assertSourceCurrent(); const result = await ensurePolicyCoverage(false, proposed, currentAuthority);
+        await assertSourceCurrent(); return result; },
+      resolution: () => policyFailure?.resolution,
+      review: () => reviewReceiptRequirement({context, currentDraft: () => currentPolicyCoverageDraft(proposed),
+        modelSession: modelAssistSession!, attemptKey: policyAttemptKey,
+        receiptSources: proposed.authority.rules.map(rule => rule.rule.source),
+        refreshEvidence: () => refreshPolicyCoverageEvidence(proposed),
+        assertReviewCurrent: async permit => {
+          if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, {permit});
+          await reloadReadReviewForModelRevision(input.projectRoot, context, currentAuthority);
+        },
+      }),
+    });
     await assertSourceCurrent();
     const savedRepair = checkpoint?.source_repair ?? (pendingActionRevision?.checkpoint ?? resumeAction?.checkpoint)?.source_repair;
     let originalPrepared: ReturnType<typeof currentPolicyCoverageDraft>;
@@ -7257,7 +7271,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         originalPreparedDraft: originalPrepared, expectedCoverageContextKey: originalKey,
         currentSourceSessionDigest: canonicalJsonDigest(sources) }).assessment;
     } else {
-      const checked = await ensurePolicyCoverage(false, currentAuthority, currentAuthority);
+      const checked = await checkSourceCoverage(currentAuthority);
       if (!checked?.report) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
       originalPrepared = structuredClone(checked.draftRecord); originalKey = checked.key as `sha256:${string}`;
       const assessmentInput = { context: workContext(), currentAction: before, preparedDraft: originalPrepared,
@@ -7294,7 +7308,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         await assertSourceCurrent();
         const proposed = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, revised.compiled, undefined,
           { nextBoundary: context.candidate, inspection: actionInspection! });
-        const checked = await ensurePolicyCoverage(false, proposed, currentAuthority);
+        const checked = await checkSourceCoverage(proposed);
         if (!checked?.report) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
         const current = assessActionWorkUnitSource({ context: workContext(), currentAction: revised.compiled.draft,
           preparedDraft: checked.draftRecord, report: checked.report, expectedReportDigest: canonicalJsonDigest(checked.report),

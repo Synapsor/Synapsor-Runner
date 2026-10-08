@@ -54,5 +54,13 @@
     "fix": "Every actually decoded planned routing sequence carries its host-only completion. Existing planning Resume CAS saves conversation and checkpoints only those exact owned turns before dispatch. Shared consumed-turn checkpoint also underlies durable Source producer ACK. No receipt-specific branch, no new schema or authority, no historical/partial/unknown promotion. Completed correction turns are included from actual returned objects.",
     "validation": "types0, existinggeneration+planning200P; actualpublicsuccessor pending",
     "boundary_size": "20078; +6 for generic completion protected-save wiring over routeextraction20072, net-22 vs20100"
+  },
+  "pre_action_assessment_route": {
+    "before": "studio-edit-b59-v2: original studio editPASS; supplemental receipt editFAIL ACTION_WORK_UNIT_SOURCE_ASSESSMENT_INCOMPLETE after realtyped OBLIGATION_RECEIPT_REQUIREMENT_UNESTABLISHED, no receipt question",
+    "fix": "Existing complete-assessment consumers use shared typed pending-decision adapter once, existing host and protected ports, then recheck only after saved meaning; complete report still required and all old assessment refusals remain. Applies before/after confined repair, not specific receipt/table/fixture logic. Native Action/Source currentness checked around every assessment.",
+    "types": 0,
+    "public_successor": "pending",
+    "boundary_lines": 20097,
+    "line_accounting": "includes acceptedB59fiveportlines; genericassessmentportwiring+14. Compared owner20100 still-3. No receiptif or copiedselection."
   }
 }
