@@ -1,5 +1,6 @@
 import { OLDER_AUTHORING_SETUP_MESSAGE } from "./authoring-protocol.js";
 import { savedAuthoringPolicyReview } from "./authoring-saved-review.js";
+import { boundaryReviewCommand } from "./boundary-commands.js";
 import { describe, expect, it } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import fs from "node:fs/promises";
@@ -41,6 +42,15 @@ describe("B64 protocol pin in native Resume", () => {
       const relative = await writeBoundaryAuthoringResumeState(root, structured(), { expectedRevisionDigest: null });
       const file = path.resolve(root, relative), old = older(version), bytes = JSON.stringify(old);
       await fs.writeFile(file, bytes);
+      const originalFiles = await fs.readdir(path.join(root, ".synapsor"));
+      const notices: unknown[] = [];
+      await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"],
+        async () => { throw new Error("Old setup must not inspect Source"); }, undefined, undefined,
+        { onAuthoringResult: notice => notices.push(notice), boundaryAuthoringChatFactory: () => {
+          throw new Error("Old setup must not open chat");
+        } });
+      expect(notices).toEqual([expect.objectContaining({ lines: [OLDER_AUTHORING_SETUP_MESSAGE] })]);
+      expect(await fs.readdir(path.join(root, ".synapsor"))).toEqual(originalFiles);
       expect(await readBoundaryAuthoringResumeState(root, base.binding)).toEqual({ status: "invalid", reason: OLDER_AUTHORING_SETUP_MESSAGE });
       expect(await savedAuthoringPolicyReview({ projectRoot: root, binding: base.binding, readDigest: digest }))
         .toMatchObject({ ready: false, privacy: false, summary: [OLDER_AUTHORING_SETUP_MESSAGE] });

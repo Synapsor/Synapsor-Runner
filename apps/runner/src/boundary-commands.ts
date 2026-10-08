@@ -228,6 +228,7 @@ import {
   clearBoundaryAuthoringResumeState,
   boundaryAuthoringActionIsUnfinished,
   readBoundaryAuthoringResumeState,
+  assertSavedBoundaryAuthoringEnvelopeCurrent,
   revalidateBoundaryAuthoringResume,
   writeBoundaryAuthoringResumeState,
   type BoundaryAuthoringResumeAction,
@@ -991,6 +992,16 @@ export async function boundaryReviewCommand(
     );
   }
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  try { await assertSavedBoundaryAuthoringEnvelopeCurrent(projectRoot); }
+  catch (error) {
+    if ((error as { code?: string })?.code !== "AUTHORING_SETUP_OLDER_VERSION") throw error;
+    const notice: BoundaryAccessNotice = { tone: "warning", title: "Older setup cannot be resumed",
+      lines: [OLDER_AUTHORING_SETUP_MESSAGE],
+      footer: "The saved setup is unchanged; no model request or migration was started." };
+    options.onAuthoringResult?.(notice);
+    writeBoundaryAccessNotice(notice);
+    return 0;
+  }
   if (args.includes("--map")) {
     if (args.includes("--json") || args.includes("--confirm") || optionalArg(args, "--output")) {
       throw new Error(
