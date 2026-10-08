@@ -1,0 +1,13 @@
+B60 receipt interaction ownership (candidate 4 development; independent acceptance pending)
+
+| Requirement | Current record | Handler | Entry routes | Protected save | Resulting view |
+|---|---|---|---|---|---|
+| Nominate exact unresolved receipt passage | Completed refused coverage submission; distinct whole episode and response context | createReceiptRequirementHost | setup Resolve; saved Review; edit clarification; waiting Resume | No save from nomination | no_target or exact business question |
+| Supply current storage, never ask owner to prove technical facts | Native receipt configuration + draft dependency digest | receipt host applicability/currentness | Same shared routes | Current readers at original guard boundaries | blocked prerequisite with specific reason |
+| Capture/map/review owner meaning | Native owner handoff + OperatorQuestion/raw/proposal | existing business-statement host; receiptBusinessStatementAdapter only for domain question/mapping/budget | Same shared routes plus Keep/Review/Replace/cancel | Native Resume CAS before Source projection; no lease across waiting | Pending or precise default-No readback |
+| Preserve replacement history and budget | Previous exact question, budget_owner_id, existing counters | Generic retained-answer lifecycle + receipt adapter budget transfer | Replace/reopened saved answer | Existing question advancement validators/Resume CAS | New revision; old words and allowance retained |
+| Recover acknowledged confirmation | Real native confirmation + pending/missing Source projection | Receipt host + receiptRequirementCheckpoint | Saved Review/Resume | Source CAS then separate Resume acknowledgement | saved/projection_recovered; no new answer/model/consent |
+| Adopt only durable result | Exact current Source receipt requirement review | Receipt host typed result consumed by caller | All callers | Existing Source/Resume acknowledged ports | no_target / pending / saved(reused/confirmed/recovered) / blocked |
+| Present full bounded Source | Exact excerpt/range binding up to16000 characters | receiptRequirementMaterial | Shared question model/view | Native <=2000 material entries, unchanged envelope limits | Lossless labelled sections, no invented Source references |
+
+The large session only wires current records, shared presentation and protected writers. It no longer selects receipt targets/configuration/predecessors or owns a pending flag. The shared business host does not own receipt mapping/storage or a separate receipt lifecycle. Owner meaning, configured storage, technical guarantees and observed completion remain distinct. The original studio case has not acquired capabilities; the finite declared studio receipt fixture is explicitly supplemental.

@@ -1,0 +1,30 @@
+{
+  "status": "FOCUSED_COMPLETE_INDEPENDENT_BEHAVIOR_AND_OWNERSHIP_PENDING",
+  "base": "04497a793e6345f6d8e75a291e78b5a19a1b99e2",
+  "branch": "codex/b60-production-host-20261008",
+  "owner_amendment": "7b17dfc0",
+  "before": "aaf0c788: Source excerpts2000/2001/16000 all fail AUTHORING_QUESTION_INVALID; original capture preserved",
+  "changes": [
+    "Production receipt host owns target nomination/current applicability/configuration/predecessor/Source projection recovery/typed outcome",
+    "Outer setup/Review/edit/Resume adapters provide narrow current record, existing protected writer and existing business-host ports",
+    "Receipt domain adapter owns native question identity/configuration binding/finite mapping pool; shared host retains raw/default-No/history/protected-save flow",
+    "No receiptRequirementPending mirror or boolean result; Source refusal response identity remains distinct from full prepared-review key",
+    "Exact Source sections remain <=2000 characters and preserve whitespace/UTF16 pairs; target limit16000/envelope limit unchanged"
+  ],
+  "commands": "isolated HOME/TMP corepack pnpm typecheck; vitest run receipt-requirement-host / business-statement-host / boundary-structured-authoring.integration maxWorkers1 minWorkers1 testTimeout20000 hookTimeout20000; vitest receipt-requirement-process maxWorkers1",
+  "results": {
+    "types": "0",
+    "existing_initial_affected": "38 pass / 0 fail",
+    "production_and_shared_host": "16 pass / 0 fail",
+    "actual_fresh_OS_process": "5 pass / 0 fail; raw answer, proposal, confirmation, Source projection, acknowledgement; actual native Source/Resume writers, network-unshared child PIDs",
+    "repeated_model_calls": "Exactly one mapping per question across each interrupted/cold/reused continuation; no words/consent replay",
+    "broader_affected": "PENDING",
+    "independent": "Reviewer2 eight-group seal unchanged; successor execution PENDING"
+  },
+  "logs": "/var/tmp/synapsor-main-b60-20261007-owned/evidence/production-host-*.log",
+  "limitations": [
+    "Fresh-process fixture uses the production host and native writers through narrow declared-metadata ports; it is not a whole installed public CLI or database-effect proof",
+    "Existing public structured Review callback and ordinary host regressions pass; independent public setup/edit/Resume route checks still pending",
+    "No full suite/final package/freeze/installed or paid qualification claimed"
+  ]
+}
