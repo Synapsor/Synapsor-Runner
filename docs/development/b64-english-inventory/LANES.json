@@ -1,0 +1,993 @@
+{
+  "base": "0bf2c1fdabf95e7509b889b0e09f03a577618d9c",
+  "source_inventory_pin": "2857e2e4c0ffab23591e96f76887d523038c5031",
+  "owner_request": "2026-10-08 parallel English retirement by owning file; no English fallback; sensitivity/raw visibility priority",
+  "note": "Partitions every non-legitimate canonical file/span; conceptual group count is not a file/AST-span count. Matching test files belong to product owner. Shared cross-file changes are sent to named owner; no concurrent file editors. No deferral by time. Separate advisory audit cases classified against their actual contract, not silently promoted into authoring scope.",
+  "reviewers": {
+    "read": "R1 presealed ZR; R2 may independently review current candidate",
+    "privacy_visibility": "R2",
+    "chat_presentation": "R2",
+    "ask": "R1 (independent of R2 Ask delegate)",
+    "action": "R1",
+    "main": "R1/R2 independent existing owners"
+  },
+  "lanes": {
+    "read": {
+      "agent": "/root/b59_regression_fix",
+      "workspace": "../b57-fixture-prep"
+    },
+    "privacy_visibility": {
+      "agent": "/root/b64_visibility_retirement",
+      "workspace": "../b64-visibility-retirement"
+    },
+    "chat_presentation": {
+      "agent": "/root/b64_chat_retirement",
+      "workspace": "../b64-chat-retirement"
+    },
+    "ask": {
+      "agent": "R2 /root/b64_ask_typed",
+      "workspace": "../b64-ask-typed"
+    },
+    "action": {
+      "agent": "/root/b64_action_typed",
+      "workspace": "../b64-action-typed"
+    },
+    "main": {
+      "agent": "Main",
+      "workspace": "."
+    }
+  },
+  "heavy_slots": {
+    "1": "B64 chat/presentation (B65 PG completed and released)",
+    "2": "B64 Ask (B65 MySQL completed and released)",
+    "3": "B64 Read",
+    "4": "B64 privacy"
+  },
+  "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
+  "counts": {
+    "read": 10,
+    "privacy_visibility": 13,
+    "ask": 8,
+    "action": 17,
+    "chat_presentation": 7,
+    "main": 6
+  },
+  "files": [
+    {
+      "file": "apps/runner/src/action-boundary-interview.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01935",
+        "I01936"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/action-execution-intent.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01933"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/action-policy-scope.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01920",
+        "I01921",
+        "I01922",
+        "I01923",
+        "I01924",
+        "I01925"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/action-rule-diagnostic-repair.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01944",
+        "I01945"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/action-rule-model.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01926",
+        "I01927",
+        "I01928",
+        "I01929",
+        "I01930",
+        "I01931",
+        "I01932"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/action-rule-schema-metadata.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01946"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/action-suggestion-model.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01934"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/action-tui.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01951",
+        "I01952",
+        "I01953",
+        "I01954",
+        "I01955",
+        "I01956"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/analytics-shell-render.ts",
+      "owner": "ask",
+      "inventory_annotations": [
+        "I03558",
+        "I03559",
+        "I03560",
+        "I03591",
+        "I03592"
+      ],
+      "scope": [
+        "authoring_or_shared",
+        "separate_runtime_ask"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/ask-access-summary.ts",
+      "owner": "ask",
+      "inventory_annotations": [
+        "I03562",
+        "I03578",
+        "I04427",
+        "I04428",
+        "I04430",
+        "I04431",
+        "I04432",
+        "I04433",
+        "I04434",
+        "I04436",
+        "I04439",
+        "I04440",
+        "I04441",
+        "I04442"
+      ],
+      "scope": [
+        "separate_runtime_ask"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/audit-candidates.ts",
+      "owner": "main",
+      "inventory_annotations": [
+        "I03564",
+        "I03565",
+        "I04463",
+        "I04465"
+      ],
+      "scope": [
+        "authoring_or_shared",
+        "separate_code_or_audit"
+      ],
+      "status": "MAIN_HOOKS_OR_SEPARATE_ADVISORY_CLASSIFICATION"
+    },
+    {
+      "file": "apps/runner/src/authoring-business-statement-host.ts",
+      "owner": "read",
+      "inventory_annotations": [
+        "I00057",
+        "I02066"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/authoring-business-statement-read-decision.ts",
+      "owner": "read",
+      "inventory_annotations": [
+        "I00063"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/authoring-counting-requirements.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01937",
+        "I01938",
+        "I01967"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/authoring-coverage-feedback.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I04444",
+        "I04446",
+        "I04448",
+        "I04449",
+        "I04451",
+        "I04457",
+        "I04458",
+        "I04459",
+        "I04460",
+        "I04461",
+        "I04462"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/authoring-obligation-review.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01939",
+        "I01940",
+        "I01970",
+        "I01971"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/authoring-operator-presentation.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [
+        "I02060",
+        "I02061"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/authoring-operator-question-model.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I02064"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/authoring-read-meaning-host.ts",
+      "owner": "read",
+      "inventory_annotations": [
+        "I00056"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/authoring-scoped-receipt-components.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01968",
+        "I01969"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/authoring-version-conversation.ts",
+      "owner": "read",
+      "inventory_annotations": [
+        "I00058",
+        "I02065"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I00289",
+        "I00290",
+        "I00291",
+        "I00292",
+        "I00293",
+        "I00294",
+        "I00295",
+        "I00296",
+        "I00297",
+        "I00298",
+        "I00299",
+        "I00300",
+        "I00302",
+        "I00303",
+        "I00304",
+        "I00305",
+        "I00306",
+        "I00307",
+        "I00308",
+        "I00309",
+        "I00310",
+        "I00311",
+        "I00312",
+        "I00313",
+        "I00314",
+        "I00319",
+        "I00320",
+        "I00321",
+        "I00322",
+        "I00323",
+        "I00324",
+        "I00325",
+        "I00326",
+        "I00417",
+        "I00418"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [
+        "I02039",
+        "I02040",
+        "I02041",
+        "I02042",
+        "I02043",
+        "I02044",
+        "I02045",
+        "I02046",
+        "I02047",
+        "I02048",
+        "I02049",
+        "I02050",
+        "I02051",
+        "I02052",
+        "I02053"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/boundary-authoring-resume.ts",
+      "owner": "main",
+      "inventory_annotations": [
+        "I03537"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "MAIN_HOOKS_OR_SEPARATE_ADVISORY_CLASSIFICATION"
+    },
+    {
+      "file": "apps/runner/src/boundary-catalog.ts",
+      "owner": "ask",
+      "inventory_annotations": [
+        "I00327",
+        "I00328",
+        "I00329",
+        "I00330",
+        "I00335",
+        "I00336",
+        "I00337"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [
+        "I03538",
+        "I03539",
+        "I03540",
+        "I08156",
+        "I08157",
+        "I08158",
+        "I08159"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/boundary-commands.ts",
+      "owner": "main",
+      "inventory_annotations": [
+        "I03525",
+        "I03527",
+        "I03528",
+        "I03529",
+        "I03530",
+        "I03531",
+        "I03532",
+        "I03533",
+        "I03534",
+        "I03579",
+        "I03580",
+        "I03581",
+        "I03582",
+        "I03583",
+        "I03585",
+        "I03586"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "MAIN_HOOKS_OR_SEPARATE_ADVISORY_CLASSIFICATION"
+    },
+    {
+      "file": "apps/runner/src/boundary-job-model.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01941",
+        "I01942",
+        "I01943",
+        "I04408",
+        "I04410",
+        "I04412",
+        "I04414",
+        "I04416",
+        "I04418",
+        "I04420",
+        "I04421",
+        "I04422",
+        "I04424"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/boundary-rescan.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I00338",
+        "I00339"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/boundary-review-domain.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I00340",
+        "I00341",
+        "I00342",
+        "I00343",
+        "I00344",
+        "I00345",
+        "I00346",
+        "I00347",
+        "I00348",
+        "I00349",
+        "I00350",
+        "I00351",
+        "I00352"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/boundary-review-mutation.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I04426"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/boundary-scope-guidance.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I00353"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/capability-surface-lint.ts",
+      "owner": "main",
+      "inventory_annotations": [
+        "I03588",
+        "I03589",
+        "I03590"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "MAIN_HOOKS_OR_SEPARATE_ADVISORY_CLASSIFICATION"
+    },
+    {
+      "file": "apps/runner/src/cli-logging.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [
+        "I03554"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/contract-tools.ts",
+      "owner": "main",
+      "inventory_annotations": [
+        "I03566"
+      ],
+      "scope": [
+        "separate_code_or_audit"
+      ],
+      "status": "MAIN_HOOKS_OR_SEPARATE_ADVISORY_CLASSIFICATION"
+    },
+    {
+      "file": "apps/runner/src/explore-vocabulary.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I00048",
+        "I00049",
+        "I00050",
+        "I00051",
+        "I00052",
+        "I00053"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/guided-action-quick.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01947",
+        "I01948",
+        "I01949",
+        "I01950"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/guided-action.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01957",
+        "I01958",
+        "I01959"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/guided-start.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [
+        "I04405"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/instant-first-value.ts",
+      "owner": "ask",
+      "inventory_annotations": [
+        "I00354",
+        "I00355",
+        "I00356"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [
+        "I03542",
+        "I03546"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/model-ask.ts",
+      "owner": "ask",
+      "inventory_annotations": [
+        "I02067",
+        "I02068",
+        "I02069",
+        "I02070"
+      ],
+      "scope": [
+        "separate_runtime_ask"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/model-authoring-narration.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [
+        "I02036",
+        "I02037"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/onboarding.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I00372"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/post-activation-ask.ts",
+      "owner": "ask",
+      "inventory_annotations": [
+        "I03584"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/read-boundary-privacy-review.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I00047"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/read-boundary-review-view.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I00070"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/read-boundary-revision-model.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I00044",
+        "I00045",
+        "I00046"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/read-current-evidence.ts",
+      "owner": "read",
+      "inventory_annotations": [
+        "I00019",
+        "I00020",
+        "I00021",
+        "I00022",
+        "I00023"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/read-meaning-evidence.ts",
+      "owner": "read",
+      "inventory_annotations": [
+        "I00001",
+        "I00002",
+        "I00003",
+        "I00004",
+        "I00005",
+        "I00006",
+        "I00007",
+        "I00008",
+        "I00009",
+        "I00010",
+        "I00011",
+        "I00012",
+        "I00013",
+        "I00014",
+        "I00015",
+        "I00016",
+        "I00017",
+        "I00018",
+        "I04467",
+        "I04468"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/read-prerequisite-checkpoint.ts",
+      "owner": "read",
+      "inventory_annotations": [
+        "I00062"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/read-prerequisite-model.ts",
+      "owner": "read",
+      "inventory_annotations": [
+        "I00059",
+        "I00060",
+        "I00061"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/read-workload-assist.ts",
+      "owner": "read",
+      "inventory_annotations": [
+        "I00064"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/read-workload-model.ts",
+      "owner": "read",
+      "inventory_annotations": [
+        "I00024",
+        "I00025",
+        "I00026",
+        "I00027",
+        "I00028",
+        "I00029",
+        "I00030",
+        "I00031",
+        "I00032",
+        "I00033",
+        "I00034",
+        "I00035",
+        "I00036",
+        "I00037",
+        "I00038",
+        "I00039",
+        "I00040",
+        "I00041",
+        "I00042",
+        "I00043",
+        "I04406"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/safe-action.ts",
+      "owner": "action",
+      "inventory_annotations": [
+        "I01960"
+      ],
+      "scope": [
+        "separate_code_or_audit"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/schema-candidates.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I00374",
+        "I00375",
+        "I00376",
+        "I00377",
+        "I00381",
+        "I00382",
+        "I00383",
+        "I00384",
+        "I00385",
+        "I00386"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "apps/runner/src/scoped-explore.ts",
+      "owner": "ask",
+      "inventory_annotations": [
+        "I00389",
+        "I00390",
+        "I00391",
+        "I00392",
+        "I00393",
+        "I00394",
+        "I00395",
+        "I00396",
+        "I00397",
+        "I00398",
+        "I00399",
+        "I00400",
+        "I00414"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "packages/mcp-server/src/scoped-catalog.ts",
+      "owner": "ask",
+      "inventory_annotations": [
+        "I02093",
+        "I02094"
+      ],
+      "scope": [
+        "separate_runtime_catalog"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "packages/schema-inspector/src/index.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I02080",
+        "I02081"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "packages/schema-inspector/src/sensitivity.ts",
+      "owner": "privacy_visibility",
+      "inventory_annotations": [
+        "I02076",
+        "I02077",
+        "I02078",
+        "I02079"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "ACTIVE_RETIREMENT"
+    },
+    {
+      "file": "packages/worker-core/src/mcp-audit.ts",
+      "owner": "main",
+      "inventory_annotations": [
+        "I02083",
+        "I02084",
+        "I02085",
+        "I02101",
+        "I02102",
+        "I02103",
+        "I02104"
+      ],
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "status": "MAIN_HOOKS_OR_SEPARATE_ADVISORY_CLASSIFICATION"
+    }
+  ],
+  "hooks": [
+    {
+      "file": "apps/runner/src/boundary-workbench.ts",
+      "owner": "main",
+      "reason": "Typed sensitivity presentation consumer hook; privacy lane requests review_required pending rather than low-risk rendering."
+    }
+  ],
+  "slot_rule": "Finite reviewer checks share released lane slot; do not assume reservation means an active process. Main integration/types/review coordinates a released slot; four actual heavy jobs max."
+}
