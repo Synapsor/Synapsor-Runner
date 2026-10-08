@@ -342,7 +342,16 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         if (clarification && error instanceof ReadNamingEvidenceError
           && clarification.resource === error.target?.resource && clarification.field === error.target.field
           && !clarificationRequest && !valueRequest) {
-          clarificationRequest = businessRequest(clarification);
+          // A newly displayed Runner root question can also resolve the
+          // current requested association. Ask that actual task question; do
+          // not reinterpret a generic/legacy meaning answer as intent selection.
+          const purposes = !knownMeaning && clarification.field === undefined
+            && !meaningConflicts.has(JSON.stringify(error.target))
+            ? requestedScopeQuestions().filter(item => item.alternatives.includes(clarification!.resource)) : [];
+          const uniquePurposes = new Map(purposes.map(item => [item.reason_binding.digest, item]));
+          const purpose = uniquePurposes.size === 1 ? [...uniquePurposes.values()][0] : undefined;
+          clarificationRequest = businessRequest(purpose ? { ...clarification, reason: purpose.reason,
+            question: purpose.question, reason_binding: purpose.reason_binding } : clarification);
           clarificationFromInvalidNaming = true;
           return { ok: true, value: { status: knownMeaning ? "naming_representation_correction_required" : "clarification_required_before_mapping",
             finding: { kind: knownMeaning ? "established_meaning_representation" : "missing_relevant_meaning", target: { resource: clarification.resource, ...(clarification.field ? { field: clarification.field } : {}) },

@@ -806,7 +806,11 @@ describe("model-assisted Read workload mapping", () => {
     expect(result.analysis.status).toBe("ready");
     expect(clarificationHandler).toHaveBeenCalledTimes(2);
     expect(clarificationHandler.mock.calls[0]![0]).not.toHaveProperty("field");
+    expect(clarificationHandler.mock.calls[0]![0]).toMatchObject({ resource: "public.tbl_7",
+      reason_binding: { kind: "requested_read_scope", digest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u) } });
+    expect(clarificationHandler.mock.calls[0]![0].question).toMatch(/information|records/iu);
     expect(clarificationHandler.mock.calls[1]![0]).toMatchObject({ resource: "public.tbl_7", field: "col_2" });
+    expect(clarificationHandler.mock.calls[1]![0]).not.toHaveProperty("reason_binding");
     expect(requestJson).toHaveBeenCalledTimes(3);
     expect(boundary).toEqual(before);
   });
