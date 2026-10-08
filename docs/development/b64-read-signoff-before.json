@@ -34,7 +34,14 @@
     "types_exit": 0,
     "log": "/var/tmp/synapsor-b64-main-owned/evidence/read-signoff-async-observer-after.log",
     "types_log": "/var/tmp/synapsor-b64-main-owned/evidence/read-signoff-async-observer-types.log",
-    "independent_after": "PENDING"
+    "independent_after": {
+      "source": "c7b614cb",
+      "reviewer_checkpoint": "642e5c57",
+      "passed": 6,
+      "failed": 0,
+      "verdict": "SCOPED SIGNOFF OWNER ACCEPT; actual public Action adapter remains OPEN",
+      "unchanged_preseal": "6355da89"
+    }
   },
   "public_hooks": "All four existing ordinary review signoff call sites forward the same optional check. Uncalled promptModelGuidedActionClarification removed after all-repository caller check; shared live classifier retained pending typed migration. boundary-commands19366\u219219307. Actual public Action subject adapter remains OPEN."
 }
