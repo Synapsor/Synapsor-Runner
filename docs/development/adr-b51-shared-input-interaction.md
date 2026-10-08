@@ -648,3 +648,20 @@ Boundary20204→20162;35 focused existing controls PASS/types0 after extraction.
 Initial type errors (missing reused notice import/null revision/control narrowing)
 preserved in native-read-extraction-types{,2}.log; fixed without assertion changes.
 Actual public/native composed extraction review remains required.
+
+
+B64 structural review acknowledgement (f2c21e90, R1 scoped accepted):
+`authoring-read-review-save.ts` owns the existing protected signoff writer,
+exact post-save reload and disabled signoff composition. Its returned commit
+contains the actual saved progress and authoring binding. All three disabled
+review exits and the existing activation exit pass the same optional
+continuation only after the corresponding save and exact reload; uncertainty
+or a competing revision cannot call it. Activation remains a separate decision.
+The boundary module only binds these ports (-51 lines, now19366).
+For the Action v2 composition still in development, the subject host owns the
+PLANNED/PREPARED/REVIEWED predecessor, proof and replacement transitions.
+Only explicit structural-save acknowledgement metadata may authorize checking
+that exact successor before the original Resume CAS. Ordinary/Version saves
+retain their existing freshness contract; neither mutable latest-state
+adoption nor a rewritten producer-completion identity is permitted. Independent
+native/public composition and interrupted-save controls remain required.

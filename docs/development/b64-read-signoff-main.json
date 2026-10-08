@@ -1,6 +1,6 @@
 {
   "source": "f2c21e90",
-  "status": "WIP; independent native/public review pending",
+  "status": "R1 scoped independent ACCEPT; Action v2 public composition pending",
   "change": "Shared protected disabled/active Read signoff writer returns exact acknowledged commit and verified continuation; no authority activation added",
   "boundary_lines": 19366,
   "boundary_line_delta": -51,
@@ -12,5 +12,29 @@
     "log": "/var/tmp/synapsor-b64-main-owned/evidence/signoff-public-f2c.log"
   },
   "preseal": "R1 7ec2af1e SR01\u201306; real governed binding, cancellation, stale wait, unknown ACK, competing postcommit, public callback",
-  "remaining": "R1 independent verdict; actual Action v2 public ports/cold recovery. No final acceptance claimed."
+  "remaining": "R1 independent verdict; actual Action v2 public ports/cold recovery. No final acceptance claimed.",
+  "independent_verdict": {
+    "preseal": "7ec2af1e",
+    "fixture_pin": "c14844b8",
+    "product_pin": "f2c21e90",
+    "native_governed": {
+      "passed": 4,
+      "covers": [
+        "nonempty actual authoring binding",
+        "stale human review",
+        "real save followed by lost acknowledgement",
+        "real save A followed by competing B before reload"
+      ]
+    },
+    "public": {
+      "passed": 2,
+      "covers": [
+        "disabled continuation invokes callback once after exact acknowledged save",
+        "cancel invokes no callback or activation"
+      ]
+    },
+    "types": "exit0",
+    "scope": "shared protected writer and three disabled route bindings; no full Action v2 conversation acceptance",
+    "before_evidence": "Source inspection proves discarded ACK; do not claim a dynamic before run"
+  }
 }
