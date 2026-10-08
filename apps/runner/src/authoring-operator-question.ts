@@ -1,3 +1,4 @@
+import { parseTypedParameterBinding, parseTypedParameterRecord, assertTypedParameterSequence, assertTypedParameterGeneration, type TypedParameterBinding, type TypedParameterRecord } from "./authoring-typed-parameter-binding.js";
 import { parseReadScopeQuestionBinding, readScopeConsumption, type ReadScopeQuestionBinding } from "./authoring-read-scope-binding.js";
 import { assertAuthoringReadCheckpoint } from "./authoring-generation-recovery.js";
 import { randomUUID } from "node:crypto";
@@ -10,6 +11,7 @@ import { parseOperatorClarificationGateState, type OperatorClarificationGateStat
 
 type Digest = `sha256:${string}`;
 export type OperatorQuestionValue =
+  | { kind: "typed_parameters"; record: TypedParameterRecord }
   | { kind: "read_scope"; scope_digest: Digest }
   | { kind: "attributed_meaning" }
   | { kind: "input_bounds"; requirements: Array<{ outcomes: string[]; input: string;
@@ -24,6 +26,7 @@ export type OperatorQuestionValue =
 export type OperatorQuestion = {
   version: 1 | 2;
   read_scope?: ReadScopeQuestionBinding;
+  typed_parameters?: TypedParameterBinding;
   id: string;
   revision: number;
   handoff_id?: string;
@@ -86,9 +89,9 @@ export function createOperatorQuestion(input: Pick<OperatorQuestion,
 
 export function parseOperatorQuestion(value: unknown): OperatorQuestion {
   if (!object(value) || !exact(value, ["version", "id", "revision", "handoff_id", "kind", "scope_digest", "context_digest", "target",
-    "material", "evidence", "receipt_selection", "read_scope", "continuation", "source_binding", "budget_owner_id", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
+    "material", "evidence", "receipt_selection", "read_scope", "typed_parameters", "continuation", "source_binding", "budget_owner_id", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
     || ![1, 2].includes(value.version as number) || !id(value.id) || value.handoff_id !== undefined && !text(value.handoff_id, 100) || !count(value.revision, Number.MAX_SAFE_INTEGER, 1)
-    || !["attributed_meaning", "input_bounds", "writer_maintenance", "receipt_requirement", "read_scope"].includes(value.kind as string)
+    || !["attributed_meaning", "input_bounds", "writer_maintenance", "receipt_requirement", "read_scope", "typed_parameters"].includes(value.kind as string)
     || !digest(value.scope_digest) || !digest(value.context_digest) || !digest(value.digest)
     || !object(value.target) || !exact(value.target, ["phase", "resource", "field", "outcomes"])
     || !text(value.target.phase, 100) || value.target.resource !== undefined && !text(value.target.resource, 256)
@@ -100,10 +103,19 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     || value.evidence.some(e => !object(e) || !exact(e, ["id", "digest"]) || !text(e.id, 256) || !digest(e.digest))
     || !["read_mapping", "action_rule_review", "input_policy_review", "version_mapping", "receipt_requirement_review"].includes(value.continuation as string)
     || Buffer.byteLength(JSON.stringify(value)) > 128 * 1024) invalid("The saved question envelope is malformed or too large.");
-  const continuation = { read_scope: "read_mapping", attributed_meaning: "read_mapping", input_bounds: "input_policy_review", writer_maintenance: "version_mapping",
+  const continuation = { typed_parameters: "action_rule_review", read_scope: "read_mapping", attributed_meaning: "read_mapping", input_bounds: "input_policy_review", writer_maintenance: "version_mapping",
     receipt_requirement: "receipt_requirement_review" };
-  if (value.version === 2 ? value.kind !== "read_scope" : value.kind === "read_scope" || value.read_scope !== undefined)
+  if (value.version === 2 ? !["read_scope", "typed_parameters"].includes(value.kind as string) : ["read_scope", "typed_parameters"].includes(value.kind as string) || value.read_scope !== undefined || value.typed_parameters !== undefined)
     invalid("The question version does not support this typed interaction.");
+  if (value.kind === "typed_parameters") {
+    const binding = parseTypedParameterBinding(value.typed_parameters);
+    if (value.read_scope !== undefined || value.handoff_id !== undefined || value.raw_answer !== undefined
+      || value.source_binding !== undefined || value.budget !== undefined || value.budget_owner_id !== undefined
+      || value.wording_state !== undefined || value.terminal_failure !== undefined || value.target.phase !== "typed_parameters"
+      || value.target.resource !== undefined || value.target.field !== undefined
+      || canonicalJsonDigest(value.target.outcomes) !== canonicalJsonDigest([binding.origin.outcome]))
+      invalid("A typed parameter review cannot fabricate testimony or a model allowance.");
+  } else if (value.typed_parameters !== undefined) invalid("Typed parameter binding belongs to its own review.");
   if (value.kind === "read_scope") {
     const binding = parseReadScopeQuestionBinding(value.read_scope);
     if (value.target.phase !== "read_scope" || value.target.resource !== undefined || value.target.field !== undefined
@@ -131,7 +143,7 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
         source_digest: s.source_digest, store_digest: s.store_digest, outcomes: value.target.outcomes })) {
       invalid("The input interpretation is not bound to its exact current Source and agenda.");
     }
-  } else if (!(value.kind === "read_scope" && (value.read_scope as ReadScopeQuestionBinding).mode === "review") && !text(value.handoff_id, 100)) invalid("A raw-answer question requires its actual owner handoff.");
+  } else if (value.kind !== "typed_parameters" && !(value.kind === "read_scope" && (value.read_scope as ReadScopeQuestionBinding).mode === "review") && !text(value.handoff_id, 100)) invalid("A raw-answer question requires its actual owner handoff.");
   if (value.budget_owner_id !== undefined && (!id(value.budget_owner_id) || value.budget_owner_id === value.id
     || !["input_bounds", "receipt_requirement"].includes(value.kind as string) || value.source_binding !== undefined
     || value.kind === "input_bounds" && value.budget !== undefined || value.kind === "receipt_requirement" && value.budget === undefined))
@@ -162,11 +174,16 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     if (!Array.isArray(value.proposal_history) || value.proposal_history.length > 16) invalid("Invalid proposed interpretation history.");
     for (const previous of value.proposal_history) validateProposal(value as OperatorQuestion, previous);
   }
+  if (value.kind === "typed_parameters") assertTypedParameterSequence(parseTypedParameterBinding(value.typed_parameters), [...((value.proposal_history as OperatorQuestion["proposal_history"]) ?? []), ...(value.proposal ? [value.proposal as NonNullable<OperatorQuestion["proposal"]>] : [])]);
   if (value.confirmation !== undefined && (!value.proposal || !object(value.confirmation)
     || !exact(value.confirmation, ["actor", "recorded_at", "proposal_digest", "decision"])
     || value.confirmation.actor !== "local_installation_operator" || !date(value.confirmation.recorded_at)
     || value.confirmation.decision !== "new_attributed_decision" || value.confirmation.proposal_digest !== canonicalJsonDigest(value.proposal)
     || (value.proposal as OperatorQuestion["proposal"])!.disposition !== "proposed" || value.disposition !== undefined)) invalid("Invalid material confirmation.");
+  if (value.confirmation !== undefined && value.kind === "typed_parameters"
+    && (value.proposal as NonNullable<OperatorQuestion["proposal"]>).value?.kind === "typed_parameters"
+    && ((value.proposal as NonNullable<OperatorQuestion["proposal"]>).value as Extract<OperatorQuestionValue,{kind:"typed_parameters"}>).record.view.unresolved.length)
+    invalid("An explicitly pending typed field cannot acquire grouped confirmation.");
   if (value.disposition !== undefined && !["unknown", "cancelled", "declined"].includes(value.disposition as string)) invalid("Invalid unresolved disposition.");
   if (value.disposition_history !== undefined && (!Array.isArray(value.disposition_history) || value.disposition_history.length > 64
     || value.disposition_history.some(event => !object(event) || !exact(event, ["disposition", "recorded_at"])
@@ -198,7 +215,10 @@ function validateProposal(q: OperatorQuestion, proposal: unknown): asserts propo
   if (!object(proposal) || !exact(proposal, ["question_id", "revision", "answer_id", "source_reference", "disposition", "value"])
     || proposal.question_id !== q.id || proposal.revision !== q.revision
     || !["pending", "proposed"].includes(proposal.disposition as string)) invalid("The proposed answer belongs to another question or response.");
-  if (q.read_scope?.mode === "review") {
+  if (q.typed_parameters) {
+    if (proposal.answer_id !== undefined || proposal.source_reference !== canonicalJsonDigest(q.typed_parameters))
+      invalid("The typed proposal must retain its exact origin without fabricated raw words.");
+  } else if (q.read_scope?.mode === "review") {
     if (proposal.answer_id !== undefined || proposal.source_reference !== canonicalJsonDigest(q.read_scope))
       invalid("The Read review must bind its complete typed proposal, without invented raw testimony.");
   } else if (q.source_binding) {
@@ -207,10 +227,13 @@ function validateProposal(q: OperatorQuestion, proposal: unknown): asserts propo
   } else if (proposal.source_reference !== undefined || !q.raw_answer || proposal.answer_id !== q.raw_answer.id)
     invalid("The proposed answer belongs to another trusted response.");
   if (proposal.disposition === "pending") { if (proposal.value !== undefined) invalid("A pending answer cannot carry a resolved value."); return; }
-  if (!q.source_binding && !q.read_scope && !q.raw_answer!.text.trim()) invalid("A blank response has no resolved meaning.");
+  if (!q.source_binding && !q.read_scope && !q.typed_parameters && !q.raw_answer!.text.trim()) invalid("A blank response has no resolved meaning.");
   const v = proposal.value;
   if (!object(v) || v.kind !== q.kind) invalid("The proposal changed the decision kind.");
-  if (v.kind === "read_scope") {
+  if (v.kind === "typed_parameters") {
+    if (!exact(v, ["kind", "record"]) || !q.typed_parameters) invalid("Unknown typed parameter record.");
+    parseTypedParameterRecord(v.record, q.typed_parameters);
+  } else if (v.kind === "read_scope") {
     if (!exact(v, ["kind", "scope_digest"]) || !q.read_scope || q.read_scope.mode !== "review"
       || v.scope_digest !== q.read_scope.record.digest
       || (q.read_scope.record.proposal.applicability === "read_requested" ? !q.read_scope.record.analysis_digest : q.read_scope.record.analysis_digest !== undefined)
@@ -270,6 +293,8 @@ export function proposeOperatorAnswer(q: OperatorQuestion, proposal: unknown): O
 export function confirmOperatorAnswer(q: OperatorQuestion): OperatorQuestion {
   return update(q, next => {
     if (next.proposal?.disposition !== "proposed" || next.disposition) invalid("No material proposal is ready for explicit operator adoption.");
+    if (next.kind === "typed_parameters" && (next.proposal.value?.kind !== "typed_parameters" || next.proposal.value.record.view.unresolved.length))
+      invalid("Typed values remain pending; no grouped confirmation is available.");
     next.confirmation = { actor: "local_installation_operator", recorded_at: new Date().toISOString(),
       proposal_digest: canonicalJsonDigest(next.proposal), decision: "new_attributed_decision" };
   });
@@ -344,6 +369,17 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
         || op.context_digest !== c.context_digest || op.attempts.at(-1)?.outcome !== "response") {
         invalid("The terminal Input refusal has no consumed generation in its saved history.");
       }
+    }
+    if (q.typed_parameters) {
+      assertTypedParameterGeneration(q.typed_parameters, generation);
+      const ref = q.typed_parameters.predecessor;
+      const predecessor = ref && result.find(p => p.id === ref.question_id);
+      if (ref ? !predecessor || !seen.has(predecessor.id) || predecessor.id === q.id || predecessor.digest !== ref.question_digest
+        || predecessor.kind !== q.kind || predecessor.scope_digest !== q.scope_digest || q.revision !== predecessor.revision + 1
+        || canonicalJsonDigest(predecessor.target) !== canonicalJsonDigest(q.target)
+        || result.some(other => other.id !== q.id && other.typed_parameters?.predecessor?.question_id === predecessor.id)
+        : q.revision !== 1) invalid("A typed replacement must preserve its exact predecessor without branching.");
+      continue;
     }
     if (q.read_scope) {
       assertAuthoringReadCheckpoint(generation, q.read_scope.completion, readScopeConsumption(q.read_scope));
@@ -429,6 +465,7 @@ export function assertOperatorQuestionsAdvance(previous: readonly OperatorQuesti
       kind: q.kind, scope_digest: q.scope_digest, context_digest: q.context_digest, target: q.target,
       material: q.material, evidence: q.evidence, continuation: q.continuation,
       ...(q.read_scope ? { read_scope: q.read_scope } : {}),
+      ...(q.typed_parameters ? { typed_parameters: q.typed_parameters } : {}),
       ...(q.receipt_selection ? { receipt_selection: q.receipt_selection } : {}),
       ...(q.source_binding ? { source_binding: q.source_binding } : {}),
       ...(q.budget_owner_id ? { budget_owner_id: q.budget_owner_id } : {}) });
@@ -451,6 +488,7 @@ export function operatorQuestionReadback(q: OperatorQuestion): string[] {
   parseOperatorQuestion(q);
   const v = q.proposal?.value;
   if (!v || q.proposal?.disposition !== "proposed") return ["This answer is still pending. No interpretation or permission will be recorded.", ...q.material];
+  if (v.kind === "typed_parameters") return [...v.record.view.normalized_lines, ...v.record.view.change_lines, ...v.record.view.unresolved];
   if (v.kind === "read_scope") return [
     "Review the complete proposed Read scope. This decision does not activate access.",
     ...q.read_scope!.record.proposal.requirements.flatMap(requirement => [

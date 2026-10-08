@@ -26,6 +26,8 @@ export type ActionParameterReviewInput = Readonly<{
   expected_baseline_digest: TypedReviewDigest;
   proposal_id: string; proposal_revision: number; applicability_digest: TypedReviewDigest; operation_id: string;
   origin: TypedFieldOrigin; baseline_origin: TypedFieldOrigin; targets: readonly ActionParameterTarget[];
+  /** Derived only from retained field events by the native question owner. */
+  pending_fields?: readonly string[];
   /** Existing compiler validates full proposal; this port cannot save/adopt it. */
   compile: (draft: ActionRuleModelDraftV1) => ActionParameterCompilation;
 }>;
@@ -123,7 +125,10 @@ export function buildActionParameterReview(input: ActionParameterReviewInput): A
     ...preserved.map(label => `${label}: identical to selected baseline (canonical comparison).`),
     "Original review wording is retained as history; the current compiled values above control this proposal."];
   const change_lines = changes.map(change => `${change.label} changed — ${change.digest}; inspect exact before/after in details.`);
+  if (input.pending_fields?.some(id => !fields.some(field => field.id === id)) || new Set(input.pending_fields).size !== (input.pending_fields?.length ?? 0))
+    fail("INVALID", "Pending fields must name distinct current targets.");
   const unresolved = fields.filter(field => !field.suggestion || !isValidTypedFieldValue(field, field.suggestion.value)).map(field => `${field.label} has no valid exact value.`);
+  unresolved.push(...fields.filter(field => input.pending_fields?.includes(field.id)).map(field => `${field.label} was explicitly left pending; choose its value before confirming.`));
   const body = { decision_kind: "business_review" as const, status: "unconfirmed" as const, title: "Review Action business values", fields,
     normalized_lines, change_lines, unresolved, technical_lines };
   const binding = { proposal_id: input.proposal_id, proposal_revision: input.proposal_revision, proposal_digest: canonicalJsonDigest(compiled.draft),

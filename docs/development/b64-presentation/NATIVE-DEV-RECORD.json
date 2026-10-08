@@ -1,0 +1,20 @@
+{
+  "status": "WIP_NOT_ACCEPTED",
+  "base": "1b73e230",
+  "types": 0,
+  "first_characterization": "missing module before implementation, not old product defect",
+  "first_run": {
+    "pass": 0,
+    "fail": 4,
+    "cause": "Existing provider grammar requires2 review examples; actual manual/compiler draft permits1. Existing fixture preserved; codec compatibility decision pending Main."
+  },
+  "evidence": "/var/tmp/synapsor-b64-native-parameter-owned/out/",
+  "ownership": "Sole delegated authoring-operator-question.ts plus typed parameter binding/host; Main Resume/boundary untouched",
+  "contract": "Existing question/proposal/history, immutable origin/baseline refs, no new store/completion/allowance; full candidate replay compile before native CAS port; pending fields derived from events",
+  "open": [
+    "Complete focused validation after codec-purpose compatibility resolution",
+    "Independent NF variants",
+    "Main actual Resume/current-record resolver/public wiring; current protected ports synthetic"
+  ],
+  "usage": "28% used latest Main checkpoint; controlling stop >=95% used"
+}
