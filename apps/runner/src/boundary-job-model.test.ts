@@ -93,10 +93,11 @@ describe("B64 structured planning scope", () => {
 
 describe("model Boundary job planning", () => {
   it.each(["ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION","ASK_GENERATION_OUTCOME_UNKNOWN","ASK_GENERATION_NOT_SENT"])("preserves %s after planning diagnostics without a semantic retry",async code=>{
+    const typed = declaredReadContext("Read my services.", ["telecom.services"]);
     const failure=new AskError(code,"DERIVED transport stop"),requestJson=vi.fn(async()=>{throw failure;});
     let diagnostic:BoundaryJobPlanningDiagnostic|undefined;
     await expect(planModelBoundaryJob({session:{provider:"openai",model:"gpt-test",apiKey:"memory-key",dependencies:{requestJson}},
-      jobIntent:"Read my services.",currentState:reusableState,egressAcknowledged:true,onDiagnostic:d=>{diagnostic=d;}})).rejects.toBe(failure);
+      jobIntent:"Read my services.",currentState:reusableState,egressAcknowledged:true,structuredScope:typed.structuredScope,onDiagnostic:d=>{diagnostic=d;}})).rejects.toBe(failure);
     expect(requestJson).toHaveBeenCalledOnce();expect(diagnostic?.attempts).toHaveLength(1);expect(diagnostic?.attempts[0]?.code).toBe(code);
   });
 
@@ -127,6 +128,7 @@ describe("model Boundary job planning", () => {
     { fully_reviewed: true, revision_eligible: false },
     { fully_reviewed: true, revision_eligible: undefined },
   ])("advertises mode-specific Read intent bounds for $fully_reviewed/$revision_eligible", async (readState) => {
+    const typed = declaredReadContext("Prepare the requested reads.", ["telecom.accounts"]);
     const state = { ...reusableState, read: { ...reusableState.read, ...readState, resumable_draft_count: 1 } };
     const before = structuredClone(state);
     const requestJson = vi.fn(async (request) => {
@@ -145,10 +147,10 @@ describe("model Boundary job planning", () => {
       expect(plans.flatMap(branch => branch.properties.read_mode?.enum ?? [])).toEqual(
         expect.arrayContaining(["create", "resume", "reuse", "none"]));
       return { status: 200, body: { output: [{ type: "function_call", call_id: "schema", name: "runner__plan_boundary_job",
-        arguments: JSON.stringify({ status: "planned", read_mode: "create", read_intent: "x".repeat(500), action_mode: "none", summary: "Map the requested reads." }) }] } };
+        arguments: JSON.stringify({ status: "planned", read_scope: typed.proposal, read_mode: "create", read_intent: "x".repeat(500), action_mode: "none", summary: "Map the requested reads." }) }] } };
     });
     await expect(planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "test-key", dependencies: { requestJson } },
-      jobIntent: "Prepare the requested reads.", currentState: state, egressAcknowledged: true })).resolves.toMatchObject({ state: "planned", read_mode: "create" });
+      jobIntent: "Prepare the requested reads.", currentState: state, egressAcknowledged: true, structuredScope: typed.structuredScope })).resolves.toMatchObject({ state: "planned", read_mode: "create" });
     expect(requestJson).toHaveBeenCalledOnce();
     expect(state).toEqual(before);
   });
@@ -326,14 +328,15 @@ describe("model Boundary job planning", () => {
   });
 
   it("does not give a second correction after a malformed response followed by a refused plan", async () => {
+    const typed = declaredReadContext("Read my services.", ["telecom.services"]);
     let calls = 0;
     let diagnostic: BoundaryJobPlanningDiagnostic | undefined;
     const operation = planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "memory-key",
       dependencies: { requestJson: async () => { calls++;
         return { status: 200, body: { output: [{ type: "function_call", call_id: "bad", name: "runner__plan_boundary_job",
-          arguments: calls === 1 ? "{bad" : JSON.stringify({ status: "planned", read_mode: "create", action_mode: "none", summary: "Missing Read intent" }),
+          arguments: calls === 1 ? "{bad" : JSON.stringify({ status: "planned", read_scope: typed.proposal, read_mode: "create", action_mode: "none", summary: "Missing Read intent" }),
         }] } };
-      } } }, jobIntent: "Read my services.", currentState: reusableState, egressAcknowledged: true,
+      } } }, jobIntent: "Read my services.", currentState: reusableState, egressAcknowledged: true, structuredScope: typed.structuredScope,
       onDiagnostic: (value) => { diagnostic = value; } });
     await expect(operation).rejects.toBeInstanceOf(BoundaryJobPlanningError);
     expect(calls).toBe(2);
@@ -342,10 +345,11 @@ describe("model Boundary job planning", () => {
   });
 
   it("retains a provider failure category without retrying a rejected credential", async () => {
+    const typed = declaredReadContext("Read my services.", ["telecom.services"]);
     const requestJson = vi.fn(localProviderRefusal);
     let diagnostic: BoundaryJobPlanningDiagnostic | undefined;
     await expect(planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
-      jobIntent: "Read my services.", currentState: reusableState, egressAcknowledged: true,
+      jobIntent: "Read my services.", currentState: reusableState, egressAcknowledged: true, structuredScope: typed.structuredScope,
       onDiagnostic: (value) => { diagnostic = value; } })).rejects.toBeInstanceOf(BoundaryJobPlanningError);
     expect(diagnostic?.attempts[0]).toMatchObject({ category: "provider_request", code: "ASK_PROVIDER_AUTHENTICATION_FAILED" });
     expect(requestJson).toHaveBeenCalledOnce();
