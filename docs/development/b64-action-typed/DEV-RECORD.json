@@ -25,5 +25,16 @@
     "end": "2026-10-13T06:32:23Z"
   },
   "paid": "CLOSED",
-  "usage": "No usage pause under latest Owner direction"
+  "usage": "No usage pause under latest Owner direction",
+  "fixture_migration": {
+    "baseline": "206 PASS / 1 new expected failure / 1 live-provider skip on f938749a with new controls",
+    "before_ports": "163 PASS / 44 FAIL / 1 live-provider skip",
+    "after_ports": "205 PASS / 2 FAIL / 1 live-provider skip",
+    "changes": "Explicitly declared fake-model operator questions now submit clarification tools; narration-only negative controls remain narration. Provider counts and cancellation/privacy/currentness/save assertions unchanged.",
+    "remaining": [
+      "Logical-turn tool_calls_used expected0 from old narration; actual typed tool charges1, iterations unchanged. Await independent semantic agreement.",
+      "Focused English approval-only phase shortcut expected1 request; prepare ordinary typed changed_fields preservation equivalent rather than relaxing to4."
+    ],
+    "logs": "/var/tmp/synapsor-b64-action-owned/evidence/action-file-{baseline-inventory,migration-inventory,typed-fixtures}.log"
+  }
 }
