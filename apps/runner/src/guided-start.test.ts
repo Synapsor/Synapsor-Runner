@@ -17,7 +17,7 @@ import {
   saveInstantBoundaryEditBaseline,
   saveInstantBoundaryReviewBaseline,
 } from "./boundary-review-persistence.js";
-import { boundaryCommand, onboard, reviewUnresolvedOrganizationScope, start, type GuidedStartDependencies } from "./guided-start.js";
+import { boundaryCommand, formatGuidedBoundaryReady, onboard, reviewUnresolvedOrganizationScope, start, type GuidedStartDependencies } from "./guided-start.js";
 import * as runtimeCommands from "./runtime-commands.js";
 import { initializeGuidedProject } from "./guided-project.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
@@ -50,6 +50,17 @@ async function savedStatusFixtureFiles(root: string, relative = ""): Promise<Rec
 }
 
 describe("guided start surfaces", () => {
+  it("reports configured RLS principal scope from the reviewed resource rather than first-query prose", () => {
+    const build = buildAutoBoundary({ inspection: inspection(), sourceEnv: "DATABASE_URL",
+      project: { root: suiteCwd, frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] } });
+    expect(build.exploration_boundary.pack.resources.length).toBeGreaterThan(0);
+    for (const resource of build.exploration_boundary.pack.resources) {
+      delete resource.principal_key;
+      resource.rls_session = { tenant_setting: "app.tenant", principal_setting: "app.person" };
+    }
+    const output = formatGuidedBoundaryReady(build, { blocked_objects: 0 }, "terminal", true);
+    expect(output).toContain("principal from your application");
+  });
   it("public status describes unresolved generation records, preserves healthy handoffs and does not mutate saved state", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-status-generation-"));
     const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);

@@ -903,7 +903,7 @@ async function loadManagedBoundaryProjectContext(
 }
 
 
-function formatGuidedBoundaryReady(
+export function formatGuidedBoundaryReady(
   build: ReturnType<typeof buildAutoBoundary>,
   result: Pick<Awaited<ReturnType<typeof writeAutoBoundaryArtifacts>>, "blocked_objects">,
   reviewSurface: "workbench" | "terminal" | "deferred" = "workbench",
