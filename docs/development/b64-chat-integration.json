@@ -1,0 +1,17 @@
+{
+  "source": "444573cf",
+  "source_verdict": "B66ba2b47f7 scoped selective integration accepted",
+  "integration": "d73eefc2",
+  "result": "340PASS5FAIL/types0; original evidence preserved",
+  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/chat-integrated.json",
+  "classification": {
+    "one_assertion": "Selective packet omitted exact accepted fee2e37b test hunk while Main already had its38eb typed activationView forwarding; importing exact reviewed original test hunk, not new expectation",
+    "four_guided": "Launcher omitted standard repo --testTimeout=20000 and used default5000; failures at5000ms. Rerun affected only under unchanged official profile, no source timeout change"
+  },
+  "open": [
+    "CP08 current exact display owner fix",
+    "CP06 actual shared Chat independent after",
+    "Action/Main narration provenance callers",
+    "Privacy typed protocol/native persistence"
+  ]
+}

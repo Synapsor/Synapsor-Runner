@@ -120,7 +120,7 @@ describe("Boundary authoring chat", () => {
       explanationContext: ["Only two reviewed resources are removed."],
       operatorQuestion: "What stays active if I wait?",
     }));
-    expect(guide.mock.calls[0]![0]).not.toHaveProperty("activationView");
+    expect(guide.mock.calls[0]![0].activationView).toEqual(readActivationView({ replacing: true, removedResources: 2, revisionModel: "new" }));
     for (const choice of memory.choices) {
       expect(choice).toMatchObject({ title: "REVIEW ACCESS CHANGES", initialValue: "finish" });
       expect(choice.labels).toContain("Replace current reading access (removes 2 tables)");

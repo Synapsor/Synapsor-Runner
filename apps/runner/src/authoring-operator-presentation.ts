@@ -134,7 +134,7 @@ export function presentOperatorClarification(text: string, options: {
 }
 
 /** One wording correction within the caller's EXISTING allowance. The second
- * fully decoded, structurally valid technical question gets a host fallback.
+ * fully decoded, structurally valid question gets the retained host fallback.
  * Transport, malformed arguments, cancellation and unknown outcomes never do. */
 export function operatorClarificationGate(options: Parameters<typeof presentOperatorClarification>[1] & {
   resumeState?: OperatorClarificationGateState;
