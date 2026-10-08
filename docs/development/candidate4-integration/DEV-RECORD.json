@@ -231,6 +231,26 @@
       "explicit public/old-installed compatibility",
       "consent/ACK inherited failures then composed and settled acceptance"
     ],
-    "no_public_protocol_enablement": true
+    "no_public_protocol_enablement": true,
+    "paused_lanes": {
+      "read": {
+        "pin": "7ff7f9cf",
+        "product": "2a4702b5",
+        "next": "Independent parity/analysis-binding review, native question slot, unresolved checkpoint, agree shared planning ownership"
+      },
+      "presentation": {
+        "pin": "36ce6b88",
+        "domain": "UNACCEPTED WIP 53PASS, types before last raw guard",
+        "next": "Types on exact WIP, independent domain variants, protected native input persistence/wiring"
+      },
+      "independent_read_field": {
+        "pin": "dce3f72b",
+        "next": "Document stronger analysis-binding positive fixture mapping, rerun Read parity/finite controls; native and domain lifecycle pending"
+      },
+      "tester": {
+        "pin": "fb12a2b3",
+        "next": "Wait accepted protocol/package/guard admission; paid CLOSED"
+      }
+    }
   }
 }
