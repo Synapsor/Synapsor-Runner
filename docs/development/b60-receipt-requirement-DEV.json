@@ -9,7 +9,8 @@
     "restart_barrier": "3 pass / 2 fail on exact6d2 product + declared tests; restart-barrier-before-v3.log; prior harness response-shape mistakes preserved separately",
     "requested_scope_consumer": "0 pass / 2 fail before full original-job/workload hook; requested-read-evidence-before.log",
     "native_context": "native-source-context-before-v2.log: 2 pass / 1 fail on1cd096d4; actual producer nested Source+draft+messages identity rejected by bare-draft caller; prior manually declared identity tests were insufficient",
-    "saved_review_adapter": "Public v6 on8707: 0 pass / 1 fail; callback0, native Source+Resume unchanged, receipt_requirement_review notice only; independent helper204be90f and reviewer1316cbbe"
+    "saved_review_adapter": "Public v6 on8707: 0 pass / 1 fail; callback0, native Source+Resume unchanged, receipt_requirement_review notice only; independent helper204be90f and reviewer1316cbbe",
+    "cancelled_unanswered": "public cold Replace\u2192cancel on5168 then005/006 onlyKeep (independent b57); Main shared-host initial +replacement cancel tests0P2F, cancel-unanswered-before.log"
   },
   "checks": {
     "focused_wip8": "244 pass / 0 fail / 1 skip (live model admission opt-in; paid closed)",
@@ -24,13 +25,14 @@
     "types_wip9": "exit 0",
     "native_context": "176 pass / 0 fail / 1 live-model opt-in skip; actual native producer + persisted preflight; types exit0",
     "saved_review_adapter": "212 pass / 0 fail / 29 PostgreSQL env-gated skips in8 affected files; new pending route regression included; types exit0",
-    "test_isolation_correction": "initial structured attempt found parent decoy due missing test-root .git stop; added owned .git directory per existing full1378 isolation; assertions/customer discovery unchanged; initial failure preserved"
+    "test_isolation_correction": "initial structured attempt found parent decoy due missing test-root .git stop; added owned .git directory per existing full1378 isolation; assertions/customer discovery unchanged; initial failure preserved",
+    "cancelled_unanswered": "75 pass / 0 fail / 0 skip in6 shared host/presenter/receipt files; types exit0; independent different-stage variants presealedNOT_RUN until thispin"
   },
   "open": [
-    "ordinary SAME-root public receipt question/raw/map/readback/decline/save/Resume proof RUNNING on5168",
-    "six independent route controls + Reviewer2 static adapter verdict",
-    "final accepted integrated gates/composed Luna/studio",
-    "actual installed package acceptance"
+    "independent public cold/cancel/save-fault controls+newhiddenstagevariant",
+    "remaining B59 ordinary PUBLIC continuation checks (existing nativecontrols alreadyqualified)",
+    "unofficial practice full/type/liveDB/offline/package/composed Luna only; no credit toward ONE finalgate",
+    "final accepted integrated gates/composed Luna/studio and exact installed acceptance"
   ],
   "paid": "CLOSED; no calls/reservations/ledger change",
   "changes_wip9": [
@@ -57,5 +59,9 @@
     "native successful Resume writer handoff synchronizes captured generations/owner state without adopting competing disk state",
     "one existing-host decision; pending/declined returns pending; ready recomputes full key under same prepared state, ordinary separate bounded-review consent",
     "waiting receipt Resume enters saved Review, preserving independent edits and default-No"
+  ],
+  "changes_cancelled_unanswered": [
+    "nonterminal cancelled/unanswered question offers existing Replace route; no phantom adoption of nonexistent old words",
+    "newrevision preserves old questions/handoff/history, exactbindings and receipt budget_owner/counters; terminal behavior unchanged"
   ]
 }

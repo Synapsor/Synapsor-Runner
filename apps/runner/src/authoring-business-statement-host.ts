@@ -190,14 +190,17 @@ export function createBusinessStatementHost(input: {
       q = latestQuestion()!;
     }
     if (q.disposition || q.terminal_failure) {
+      // A cancelled prompt may have no words yet. Answering it again still
+      // retains the old question and the existing receipt allowance.
+      const canReplace = Boolean(q.raw_answer) || q.disposition === 'cancelled' && !q.terminal_failure;
       const response = await exchange({ kind: "pending", binding: binding(), lines: operatorQuestionReadback(q),
-        defaultValue: "keep", canReplace: Boolean(q.raw_answer),
+        defaultValue: "keep", canReplace,
         ...(q.kind === 'receipt_requirement' ? { canReview: !q.terminal_failure && q.proposal?.disposition === 'proposed' } : {}) });
       const choice = response.kind === "pending" ? response.choice : "keep";
-      if (choice === "replace" && q.raw_answer) {
+      if (choice === "replace" && canReplace) {
         const previous = q;
-        if (previous.raw_answer!.text.trim() && !input.handoff) {
-          await adopt(previous.raw_answer!.text, undefined, false);
+        if (previous.raw_answer?.text.trim() && !input.handoff) {
+          await adopt(previous.raw_answer.text, undefined, false);
           savedHandoff = await createHandoff(savedHandoff.consumer);
         }
         let next = createOperatorQuestion({ id: randomUUID(), revision: previous.revision + 1,

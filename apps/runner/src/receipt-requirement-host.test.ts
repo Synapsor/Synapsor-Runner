@@ -97,6 +97,30 @@ it('preserves a vague answer on restart, then Replace uses the same finite pool 
   expect(records[1]!.budget?.iterations_used).toBe(2);expect(records[1]!.budget?.tool_calls_used).toBe(2);
   expect(f.requests).toHaveLength(2);expect(f.sources.receipt_requirement_reviews!.at(-1)?.decision).toBe('confirmed');
 });
+it.each(['initial-question','replacement-question'] as const)('answers a cancelled %s after reload while preserving the old question and finite pool',async point=>{
+  const f=await fixture();
+  if(point==='replacement-question')await f.invoke(respond(clear,false));
+  expect(await f.invoke(async view=>view.kind==='pending'
+    ?{kind:'pending',binding:view.binding,choice:'replace'}:{kind:'answer',binding:view.binding,raw:null})).toBeUndefined();
+  await f.restart();const before=f.inspect(),old=before.questions!.at(-1)!,calls=f.requests.length;
+  expect(old.disposition).toBe('cancelled');expect(old.raw_answer).toBeUndefined();
+  expect(await f.invoke(async view=>{
+    expect(view.kind).toBe('pending');
+    if(view.kind==='pending') {expect(view.defaultValue).toBe('keep');expect(view.canReplace).toBe(true);}
+    return {kind:'pending',binding:view.binding,choice:'keep'};
+  })).toBeUndefined();
+  expect(f.inspect()).toEqual(before);expect(f.requests).toHaveLength(calls);
+  expect(await f.invoke(async view=>view.kind==='pending'
+    ?{kind:'pending',binding:view.binding,choice:'replace'}:respond(clear)(view))).toBe(clear);
+  const after=f.inspect().questions!;
+  expect(after.slice(0,-1)).toEqual(before.questions);
+  expect(after.at(-1)!.revision).toBe(old.revision+1);
+  expect(after.at(-1)!.budget_owner_id).toBe(old.budget_owner_id??old.id);
+  expect(after.at(-1)!.budget!.iterations_used).toBe(old.budget!.iterations_used+1);
+  expect(after.at(-1)!.budget!.tool_calls_used).toBe(old.budget!.tool_calls_used+1);
+  expect(f.requests).toHaveLength(calls+1);
+  expect(f.sources.receipt_requirement_reviews!.at(-1)!.decision).toBe('confirmed');
+});
 it('decline and cancellation remain pending; Review accepts the same retained mapping without another model call',async()=>{
   const f=await fixture();expect(await f.invoke(respond(clear,false))).toBeUndefined();await f.restart();
   expect(currentReceiptRequirement(f.source,{start:1,end:1},f.prepared(),f.sources)).toBeUndefined();
