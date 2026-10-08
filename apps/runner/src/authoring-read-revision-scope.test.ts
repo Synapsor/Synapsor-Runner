@@ -86,6 +86,7 @@ it("keeps a real privacy-restricted preview pending when it no longer supports t
     committedCandidate: narrower.candidate })).rejects.toThrow("READ_REVISION_MAPPING_PENDING");
 });
 
+import { boundaryAuthoringResumeBinding } from "./boundary-commands.js";
 import { buildBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { projectAuthoringReadScopeContext, projectAuthoringReadScopePreview } from "./authoring-read-scope-context.js";
 function contextInput(f: Awaited<ReturnType<typeof fixture>>) {
@@ -135,4 +136,21 @@ it.each(["prepared_lock", "schema", "source", "role"] as const)("refuses %s drif
   }
   if (mode !== "prepared_lock") preparedCandidate.generation_lock_fingerprint = canonicalJsonDigest(preparedLock);
   expect(() => projectAuthoringReadScopePreview({ ...input, preparedCandidate, preparedLock })).toThrow("READ_SUBJECT_CONTEXT_CHANGED");
+});
+
+it("binds the preview to the exact Resume identity produced by its real disabled commit", async () => {
+  const f = await fixture(), input = contextInput(f);
+  const preview = projectAuthoringReadScopePreview({ ...input, preparedCandidate: f.preview.candidate, preparedLock: f.preview.build.lock });
+  await commitBoundaryResourceReviewMutation(f.root, f.preview);
+  const committed = await loadBoundaryReviewContext(f.root);
+  const binding = boundaryAuthoringResumeBinding(committed.bundle);
+  const resume = buildBoundaryAuthoringResumeState({ binding, previous: input.resume, stage: "authority_review",
+    jobIntent: input.resume.job_intent, provider: "openai", model: "scripted" });
+  const current = projectAuthoringReadScopeContext({ ...input, resume, boundary: committed.candidate, structuralReview: committed });
+  expect(preview.binding).toEqual(current.binding);
+  expect(preview.references).toEqual(current.references);
+  expect(preview.catalog).toEqual(current.catalog);
+  expect(resume.created_at).toBe(input.resume.created_at);
+  expect(resume).not.toHaveProperty("read");
+  expect(resume.operator_questions ?? []).toEqual([]);
 });
