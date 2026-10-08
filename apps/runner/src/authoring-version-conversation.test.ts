@@ -165,18 +165,18 @@ describe("Version outside-batch controller with controlled host CAS and genuine 
       expect(f.disk().question!.budget).toBeUndefined();
     } finally { await fs.rm(f.root, { recursive: true, force: true }); }
   });
-  it.each(["I'm not sure", "  I’m not sure.\t "])("keeps explicit uncertainty pending without asking the model to guess: %s", async answer => {
-    const f = await fixture({ answer, decision: true });
+  it.each(["I'm not sure", "  I’m not sure.\t "])("keeps a typed uncertainty mapping pending with exact raw history and one counted interpretation: %s", async answer => {
+    const f = await fixture({ answer, decision: true, replies: ["pending"] });
     try {
       const calls = f.requestJson.mock.calls.length;
       expect((await f.tracked(() => runVersionConversation(f.input))).state).toBe("pending");
       const saved = f.disk();
       expect(saved.question!.raw_answer!.text).toBe(answer);
       expect(saved.question!.disposition).toBe("unknown");
-      expect(saved.question!.proposal).toBeUndefined(); expect(saved.question!.confirmation).toBeUndefined();
-      expect(f.requestJson).toHaveBeenCalledTimes(calls); expect(f.ports.confirm).not.toHaveBeenCalled();
+      expect(saved.question!.proposal?.disposition).toBe("pending"); expect(saved.question!.confirmation).toBeUndefined();
+      expect(f.requestJson).toHaveBeenCalledTimes(calls + 1); expect(f.ports.confirm).not.toHaveBeenCalled();
       await f.tracked(() => runVersionConversation(f.input));
-      expect(f.disk()).toEqual(saved); expect(f.requestJson).toHaveBeenCalledTimes(calls);
+      expect(f.disk()).toEqual(saved); expect(f.requestJson).toHaveBeenCalledTimes(calls + 1);
     } finally { await fs.rm(f.root, { recursive: true, force: true }); }
   });
   it.each(["no", "eof", "blank", "unknown"] as const)("%s preserves pending evidence and does not silently adopt", async kind => {

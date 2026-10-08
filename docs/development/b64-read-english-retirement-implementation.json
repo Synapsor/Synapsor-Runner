@@ -1,0 +1,32 @@
+{
+  "base": "0bf2c1fd",
+  "before": "0b25ad67; shared host corrected-before2FAIL; actual typed producer2PASS",
+  "status": "COMPONENT_PASS_INDEPENDENT_REVIEW_PENDING",
+  "product": [
+    "Shared business host and Version send nonblank raw testimony to existing typed mapper; blank/cancel still stop mechanically.",
+    "Read producer removes unreachable English meaning/mechanical/opaque-name branches, legacy provider schema and prompt copy.",
+    "Read host removes old meaning interpreter, retains explicit unsupported old entry points until Main removes callbacks; native scope raw/replacement unchanged."
+  ],
+  "tests": {
+    "command": "vitest run authoring-business-statement-host/read-english-retirement-characterization/authoring-version-conversation/authoring-read-scope-replacement/read-scope-replacement-producer/read-relationship-preparation --maxWorkers=2 --minWorkers=1",
+    "result": "78 PASS / 0 FAIL",
+    "types": "PASS exit0",
+    "evidence": "/var/tmp/synapsor-b64-read-retirement-owned/evidence/retired-mapping-after1.json"
+  },
+  "fixture_changes": [
+    "Four old unknown-answer tests expected local English recognition. Successors declare pending typed interpretations; actual Version map costs one counted turn, no confirmation, raw retained. Generic host adapters keep pending and original Replace history assertions. R1 independent verdict pending."
+  ],
+  "preserved": [
+    "Approved literal context all-filter guard and actual separate value consent",
+    "Exact raw/Source/native reference binding",
+    "Typed omission/delta/exclusion validation; default-No",
+    "Currentness/counters/cancellation/Replace; no old Yes resurrection",
+    "Old semantic checkpoint bytes are retained; existing ingress refuses unsupported history before replay."
+  ],
+  "open": [
+    "read-meaning-evidence and legacy current-evidence chain retirement + exact audit codec handling",
+    "Privacy owner removes read-boundary-revision-model retired currentMeanings dependency; Main removes old callback hooks",
+    "Public revision/Replace zero-English instrumentation and R1 acceptance",
+    "Remaining migration ledger rows and full gate not claimed"
+  ]
+}

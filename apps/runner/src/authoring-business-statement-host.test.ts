@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { afterEach, expect, it, vi } from "vitest";
 import * as readEnglishEvidence from "./read-meaning-evidence.js";
-import { createOperatorQuestion } from "./authoring-operator-question.js";
+import { createOperatorQuestion, leaveOperatorQuestionPending } from "./authoring-operator-question.js";
 import { createBusinessStatementHost, type BusinessStatementRecordUpdate, type BusinessStatementDecisionAdapter } from "./authoring-business-statement-host.js";
 import type { BusinessStatementInteraction, BusinessStatementResponse } from "./authoring-business-statement-interaction.js";
 import { PolicySourceChangedError } from "./authoring-policy-source.js";
@@ -159,14 +159,28 @@ it("preserves exact raw testimony and appends Source before the acceptance save,
   expect(s.recovery).toBeUndefined();
 });
 
+// The scenario declares an unresolved typed interpretation; the host does not
+// infer it from words. This is a domain-adapter port control, not a model proof.
+const declaredPendingAdapter: BusinessStatementDecisionAdapter = {
+  kind: "attributed_meaning", appendToSource: false,
+  createQuestion: identity => createOperatorQuestion({ ...identity, revision: 1, kind: "attributed_meaning",
+    target: { phase: "action_rule_components", outcomes: [] }, material: [], continuation: "action_rule_review" }),
+  replacementQuestion: next => next, canReview: () => true,
+  mapAnswer: async ports => {
+    await ports.assertCurrent(); const question = ports.readQuestion();
+    await ports.saveQuestion(leaveOperatorQuestionPending(question, "unknown"), question.digest);
+    return "pending";
+  },
+};
+
 it.each([
   { raw: null, accepted: true, disposition: "cancelled", captured: false },
   { raw: " \t", accepted: true, disposition: "unknown", captured: true },
-  { raw: "I'm not sure", accepted: true, disposition: "unknown", captured: true },
+  { raw: "I'm not sure", accepted: true, disposition: "unknown", captured: true, typedPending: true },
   { raw: "Two reviewers", accepted: false, disposition: "declined", captured: true },
   { raw: "Two reviewers", accepted: null, disposition: "cancelled", captured: true },
-])("retains distinct pending behavior: $disposition / $raw / $accepted", async ({ raw, accepted, disposition, captured }) => {
-  const f = await fixture(); expect(await f.host(answer(raw, accepted)).review()).toBeUndefined();
+])("retains distinct pending behavior: $disposition / $raw / $accepted", async ({ raw, accepted, disposition, captured, typedPending }) => {
+  const f = await fixture(); expect(await f.host(answer(raw, accepted), undefined, typedPending ? declaredPendingAdapter : undefined).review()).toBeUndefined();
   const q = f.inspect().questions!.at(-1)!;
   expect(q.disposition).toBe(disposition); expect(!!q.raw_answer).toBe(captured);
   if (captured) expect(q.raw_answer!.text).toBe(raw);
@@ -186,7 +200,7 @@ it("Keep saves nothing and Review reuses the exact retained raw event", async ()
 });
 
 it.each([" \t", "I'm not sure"])("Replace retains earlier words and distinct blank/nonblank handoff history: %s", async raw => {
-  const f = await fixture(); await f.host(answer(raw)).review(); const old = f.inspect();
+  const f = await fixture(); await f.host(answer(raw), undefined, declaredPendingAdapter).review(); const old = f.inspect();
   expect(await f.host(async view => view.kind === "pending" ? { kind: "pending", binding: view.binding, choice: "replace" }
     : answer("Two reviewers")(view)).review()).toBe("Two reviewers");
   const s = f.inspect(); expect(s.questions![0]).toEqual(old.questions![0]);
