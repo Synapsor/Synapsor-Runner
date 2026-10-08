@@ -1537,14 +1537,7 @@ function findInspectionTable(inspection: SchemaInspection, tableName: string, sc
 
 export function inferPrimaryKeyCandidate(table: TableInfo): string | undefined {
   if (table.primary_key.length === 1) return table.primary_key[0];
-  const columns = new Set(table.columns.map((column) => column.name));
-  const objectName = safeObjectName(table.name);
-  const candidates = [
-    "id",
-    `${objectName}_id`,
-    `${table.name}_id`,
-  ];
-  return candidates.find((candidate) => columns.has(candidate));
+  return undefined;
 }
 
 

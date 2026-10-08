@@ -55,6 +55,7 @@ import {
 import {
   applyManagedBoundaryReviewDecision,
   boundaryReviewDecisions,
+  applicableBoundaryReviewConfirmations,
   createBoundaryReviewProgress,
   nativePolicyMigration,
   normalizeManagedBoundaryReviewDecision,
@@ -735,7 +736,8 @@ export async function listBoundaryResourceReviews(
     path.resolve(projectRoot),
     state.candidate.pack.name,
   );
-  const confirmed = new Set(state.progress?.confirmed_decisions ?? []);
+  const confirmed = new Set(applicableBoundaryReviewConfirmations(state.candidate, state.progress?.confirmations ?? [])
+    .map(item => item.current.id));
   return state.review.resources
     .map((resource) => {
       const generated = state.draft.pack.resources.find((candidate) => candidate.id === resource.id);
@@ -746,8 +748,9 @@ export async function listBoundaryResourceReviews(
         Boolean(state.candidate.organization_scope),
         resource,
       );
-      const pendingDecisions = state.candidate.unresolved_decisions
-        .filter((decision) => decision.startsWith(`${resource.id}:`) && !confirmed.has(decision));
+      const pendingDecisions = boundaryReviewDecisions(state.candidate)
+        .filter(decision => "resource_id" in decision && decision.resource_id === resource.id && !confirmed.has(decision.id))
+        .map(decision => decision.decision);
       const organizationScope = state.candidate.organization_scope;
       const scopeResolutionGuidance = blockedTenantScopeGuidance({
         ...resource,
@@ -1697,16 +1700,9 @@ async function commitPreparedBoundaryReviewMutationUnlocked(input: Parameters<ty
   assertBindingsEqual(input.bindings, reviewBindings(current));
   assertReadPrerequisiteRetained(current.candidate, input.candidate);
 
-  const decisions = boundaryReviewDecisions(input.candidate);
-  const currentById = new Map(decisions.map((decision) => [decision.id, decision]));
-  const retainedConfirmations = (input.previousProgress?.confirmations ?? [])
-    .filter((confirmation) =>
-      currentById.get(confirmation.id)?.input_digest === confirmation.input_digest)
-    .map((confirmation) => currentById.get(confirmation.id)!.decision);
   const progress = createBoundaryReviewProgress({
     draft: current.authoring ? preparedReadAuthoringDraft(input.build) : input.build.exploration_boundary,
     candidate: input.candidate,
-    confirmedDecisions: retainedConfirmations,
     ...(input.previousProgress ? { previous: input.previousProgress } : {}),
     reviewOverrides: input.build.overrides,
     policyMigration: input.previousProgress?.policy_migration.source === "legacy_exact_boundary_revision"

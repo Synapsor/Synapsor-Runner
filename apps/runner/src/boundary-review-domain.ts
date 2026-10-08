@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import { principalScopeReviewDecision } from "./boundary-principal-review.js";
 import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
@@ -12,6 +11,14 @@ import {
   normalizeExplorationAutoBandPolicy,
   normalizeExplorationNumericBand,
   reviewExplorationBoundaryCandidate,
+  projectBoundaryReviewDecisions,
+  validateBoundaryReviewSubmission,
+  parseBoundaryReviewDecisionRef,
+  type BoundaryReviewDecisionRef,
+  type BoundaryReviewOrigin,
+  type ResolvedBoundaryReviewOrigin,
+  type BoundaryReviewSubmission,
+  type ProjectedBoundaryReviewDecision,
   type AutoBoundaryReviewOverrides,
   type ExplorationBoundaryDraft,
   type ExplorationDerivedMeasure,
@@ -569,17 +576,8 @@ export function applyManagedBoundaryReviewDecision(
   return next;
 }
 
-export function normalizePartialReviewDecisions(required: string[], confirmed: string[]): string[] {
-  if (new Set(confirmed).size !== confirmed.length) {
-    throw new Error("Boundary-review progress cannot contain duplicate confirmations.");
-  }
-  const requiredSet = new Set(required);
-  const unknown = confirmed.filter((decision) => !requiredSet.has(decision));
-  if (unknown.length) {
-    throw new Error("Boundary-review progress references a decision outside the current generated review.");
-  }
-  const confirmedSet = new Set(confirmed);
-  return required.filter((decision) => confirmedSet.has(decision));
+export function normalizePartialReviewDecisions(candidate: ExplorationBoundaryDraft, submission: unknown): BoundaryReviewDecisionRef[] {
+  return validateBoundaryReviewSubmission(candidate, submission, "partial");
 }
 
 export function newBoundaryReviewId(): `bnd_${string}` {
@@ -614,10 +612,76 @@ export function legacyPolicyMigration(): BoundaryReviewPolicyMigration {
   };
 }
 
+function confirmationReference(confirmation: BoundaryReviewConfirmation): BoundaryReviewDecisionRef {
+  const { decision: _copy, status: _status, actor: _actor, reason: _reason, confirmed_at: _at,
+    origin: _origin, ...reference } = confirmation as BoundaryReviewConfirmation & { origin?: BoundaryReviewOrigin };
+  return parseBoundaryReviewDecisionRef(reference);
+}
+
+type ReviewResource = ExplorationBoundaryDraft["pack"]["resources"][number];
+/** Existing rescan reduction predicate; it does not create another confirmation. */
+export function isSafeUnavailableReviewFieldChange(before: ReviewResource | undefined, after: ReviewResource | undefined): boolean {
+  if (!before || !after) return false;
+  const same = (left: string[], right: string[]) => JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
+  if (!same(before.selectable_fields, after.selectable_fields)
+    || !same(before.model_withheld_fields ?? [], after.model_withheld_fields ?? [])) return false;
+  const beforeFields = new Set(Object.keys(before.field_types)), afterFields = new Set(Object.keys(after.field_types));
+  const access = (resource: ReviewResource, field: string) => !resource.selectable_fields.includes(field) ? "kept_out"
+    : (resource.model_withheld_fields ?? []).includes(field) ? "withheld" : "visible";
+  return [...afterFields].filter(field => !beforeFields.has(field)).every(field => after.kept_out_fields.includes(field))
+    && [...beforeFields].filter(field => !afterFields.has(field)).every(field => before.kept_out_fields.includes(field))
+    && [...beforeFields].filter(field => afterFields.has(field)).every(field => access(before, field) === access(after, field));
+}
+
+export function applicableBoundaryReviewConfirmations(candidate: ExplorationBoundaryDraft,
+  confirmations: readonly BoundaryReviewConfirmation[], resolvedOrigins: readonly ResolvedBoundaryReviewOrigin[] = []): Array<{ confirmation: BoundaryReviewConfirmation;
+    current: BoundaryReviewDecisionRef; basis: "exact_input" | "unavailable_fields_only" }> {
+  const decisions = new Map(projectBoundaryReviewDecisions(candidate).map(({ decision: _copy, ...reference }) => [reference.id, reference]));
+  if (new Set(confirmations.map(item => item.id)).size !== confirmations.length) throw new Error("Boundary review has duplicate native confirmation identities.");
+  return confirmations.flatMap<{ confirmation: BoundaryReviewConfirmation; current: BoundaryReviewDecisionRef;
+    basis: "exact_input" | "unavailable_fields_only" }>(confirmation => {
+    const reference = confirmationReference(confirmation), current = decisions.get(reference.id);
+    if (!current) return [];
+    const { input_digest: _previousDigest, ...previousBinding } = reference;
+    const { input_digest: _currentDigest, ...currentBinding } = current;
+    if (canonicalJsonDigest(previousBinding) !== canonicalJsonDigest(currentBinding)) return [];
+    const origin = (confirmation as BoundaryReviewConfirmation & { origin?: BoundaryReviewOrigin }).origin;
+    const resolved = origin && resolvedOrigins.find(item => canonicalJsonDigest(item.reference) === canonicalJsonDigest(origin));
+    if (resolved && explorationBoundaryCandidateDigest(resolved.candidate) !== origin!.candidate_digest) {
+      throw new Error("Resolved boundary review origin does not match its exact candidate digest.");
+    }
+    const original = resolved?.candidate;
+    if (original) {
+      const originalDecision = projectBoundaryReviewDecisions(original).find(item => item.id === reference.id);
+      if (!originalDecision) return [];
+      const { decision: _copy, ...originalReference } = originalDecision;
+      if (canonicalJsonDigest(originalReference) !== canonicalJsonDigest(reference)) return [];
+    }
+    if (reference.input_digest === current.input_digest) {
+      if (current.kind === "field_permissions") {
+        // This decision digest intentionally retains its existing contract and does not
+        // contain field types. Only the immutable reviewed candidate proves those types;
+        // a previous reconciliation candidate can already contain an unreviewed change.
+        if (!original) return [];
+        const before = original.pack.resources.find(item => item.id === current.resource_id);
+        const after = candidate.pack.resources.find(item => item.id === current.resource_id);
+        if (!before || !after || [...new Set([...before.selectable_fields, ...(before.model_withheld_fields ?? [])])]
+          .some(field => before.field_types[field] !== after.field_types[field])) return [];
+      }
+      return [{ confirmation, current, basis: "exact_input" as const }];
+    }
+    if (current.kind !== "field_visibility" || !original) return [];
+    if (!isSafeUnavailableReviewFieldChange(original.pack.resources.find(item => item.id === current.resource_id),
+      candidate.pack.resources.find(item => item.id === current.resource_id))) return [];
+    return [{ confirmation, current, basis: "unavailable_fields_only" as const }];
+  });
+}
+
 export function createBoundaryReviewProgress(input: {
   draft: ExplorationBoundaryDraft;
   candidate: ExplorationBoundaryDraft;
-  confirmedDecisions: string[];
+  submission?: BoundaryReviewSubmission;
+  resolvedOrigins?: readonly ResolvedBoundaryReviewOrigin[];
   previous?: BoundaryReviewProgress;
   boundaryId?: `bnd_${string}`;
   reviewOverrides?: AutoBoundaryReviewOverrides;
@@ -627,36 +691,46 @@ export function createBoundaryReviewProgress(input: {
   now?: string;
   reason?: string;
 }): BoundaryReviewProgress {
+  if (Object.hasOwn(input, "confirmedDecisions")) {
+    throw Object.assign(new Error("Text-only boundary confirmations are unsupported; submit the exact typed review."),
+      { code: "BOUNDARY_REVIEW_PROTOCOL_REQUIRED" as const });
+  }
+  const boundaryId = input.boundaryId ?? input.previous?.boundary_id ?? newBoundaryReviewId();
+  for (const confirmation of input.previous?.confirmations ?? []) {
+    const origin = (confirmation as BoundaryReviewConfirmation & { origin?: BoundaryReviewOrigin }).origin;
+    if (origin && origin.boundary_id !== boundaryId) throw new Error("Boundary confirmation origin belongs to another boundary.");
+  }
   const now = input.now ?? new Date().toISOString();
   const actor = input.actor?.trim().slice(0, 128)
     || process.env.SYNAPSOR_OPERATOR_ID?.trim().slice(0, 128)
     || "local-workbench-review";
-  const confirmed = new Set(normalizePartialReviewDecisions(
-    input.candidate.unresolved_decisions,
-    input.confirmedDecisions,
-  ));
+  const submitted = input.submission ? validateBoundaryReviewSubmission(input.candidate, input.submission, "partial") : [];
   const currentDecisions = boundaryReviewDecisions(input.candidate);
-  const previousById = new Map(input.previous?.confirmations.map((item) => [item.id, item]) ?? []);
-  const confirmations = currentDecisions
-    .filter((decision) => confirmed.has(decision.decision))
-    .map((decision): BoundaryReviewConfirmation => {
-      const previous = previousById.get(decision.id);
-      if (previous?.input_digest === decision.input_digest) {
-        return { ...previous, ...decision };
-      }
-      return {
-        ...decision,
-        status: "confirmed",
-        actor,
-        reason: input.reason ?? "Confirmed during managed boundary review.",
-        confirmed_at: now,
-      };
-    });
+  const currentByReferenceId = new Map(currentDecisions.map(item => [item.id, item]));
+  if (input.previous && new Set(input.previous.confirmations.map(item => item.id)).size !== input.previous.confirmations.length) {
+    throw new Error("Boundary review has duplicate native confirmation identities.");
+  }
+  const confirmationsById = new Map((input.previous?.confirmations ?? []).map(item => [item.id, structuredClone(item)]));
+  const previouslyApplicableIds = new Set(applicableBoundaryReviewConfirmations(input.candidate,
+    [...confirmationsById.values()], input.resolvedOrigins).map(item => item.current.id));
+  for (const reference of submitted) {
+    const decision = currentByReferenceId.get(reference.id)!;
+    const previous = confirmationsById.get(reference.id);
+    if (previous && previouslyApplicableIds.has(reference.id)
+      && canonicalJsonDigest(confirmationReference(previous)) === canonicalJsonDigest(reference)) continue;
+    confirmationsById.set(reference.id, { ...decision, status: "confirmed", actor,
+      reason: input.reason ?? "Confirmed during managed boundary review.", confirmed_at: now });
+  }
+  const confirmations = [...confirmationsById.values()];
+  const applicable = applicableBoundaryReviewConfirmations(input.candidate, confirmations, input.resolvedOrigins);
+  // A fresh submission proves this exact candidate only in this operation. Persistence
+  // must attach and resolve its immutable origin before a later reload can reuse it.
+  const applicableIds = new Set([...applicable.map(item => item.current.id), ...submitted.map(item => item.id)]);
   const currentById = new Map(currentDecisions.map((item) => [item.id, item]));
   const invalidated = (input.previous?.confirmations ?? [])
     .filter((previous) => {
       const current = currentById.get(previous.id);
-      return !current || current.input_digest !== previous.input_digest;
+      return !current || !applicableIds.has(previous.id);
     })
     .map((previous): BoundaryReviewInvalidation => {
       const current = currentById.get(previous.id);
@@ -671,9 +745,7 @@ export function createBoundaryReviewProgress(input: {
     });
   return {
     schema_version: BOUNDARY_REVIEW_PROGRESS_VERSION,
-    boundary_id: input.boundaryId
-      ?? input.previous?.boundary_id
-      ?? newBoundaryReviewId(),
+    boundary_id: boundaryId,
     review_overrides: normalizeAutoBoundaryReviewOverrides(
       input.reviewOverrides
         ?? input.previous?.review_overrides
@@ -687,7 +759,7 @@ export function createBoundaryReviewProgress(input: {
     candidate: input.candidate,
     candidate_digest: explorationBoundaryCandidateDigest(input.candidate),
     confirmed_decisions: currentDecisions
-      .filter((decision) => confirmations.some((confirmation) => confirmation.id === decision.id))
+      .filter((decision) => applicableIds.has(decision.id))
       .map((decision) => decision.decision),
     confirmations,
     invalidated_decisions: mergeBoundaryReviewInvalidations(
@@ -704,15 +776,9 @@ export function reconcileBoundaryReviewProgress(
   reviewOverrides?: AutoBoundaryReviewOverrides,
 ): BoundaryReviewProgress | undefined {
   if (!previous) return undefined;
-  const nextDecisions = boundaryReviewDecisions(draft);
-  const nextById = new Map(nextDecisions.map((decision) => [decision.id, decision]));
-  const confirmedDecisions = previous.confirmations
-    .filter((confirmation) => nextById.get(confirmation.id)?.input_digest === confirmation.input_digest)
-    .map((confirmation) => nextById.get(confirmation.id)!.decision);
   return createBoundaryReviewProgress({
     draft,
     candidate: draft,
-    confirmedDecisions,
     previous,
     ...(reviewOverrides ? {
       reviewOverrides,
@@ -729,227 +795,37 @@ export function reconcileBoundaryReviewProgress(
   });
 }
 
-export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): BoundaryReviewDecision[] {
-  const resources = new Map(candidate.pack.resources.map((resource) => [resource.id, resource]));
-  const principalDecisions = new Map(candidate.pack.resources.map(resource => {
-    const decision = principalScopeReviewDecision(resource, candidate);
-    return [decision.decision, decision] as const;
-  }));
-  return candidate.unresolved_decisions.map((decision) => {
-    const principal = principalDecisions.get(decision);
-    if (principal) return principal;
-    if (decision.startsWith("deployment profile:")) {
-      return reviewDecision("global.deployment_profile", "deployment_profile", decision, {
-        deployment_profile: candidate.deployment_profile,
-      });
-    }
-    if (decision.startsWith("trusted context:")) {
-      return reviewDecision("global.trusted_context", "trusted_context", decision, candidate.trusted_context);
-    }
-    if (decision.startsWith("organization scope:")) {
-      return reviewDecision("global.organization_scope", "organization_scope", decision, {
-        mode: candidate.organization_scope?.mode,
-        organization_id: candidate.organization_scope?.organization_id,
-        tenant_predicate: "not_applied",
-      });
-    }
-    if (decision.startsWith("database role:")) {
-      return reviewDecision("global.database_role", "database_role", decision, {
-        role_posture_fingerprint: candidate.role_posture_fingerprint,
-      });
-    }
-    const separator = decision.indexOf(": ");
-    if (separator < 1) {
-      return reviewDecision(
-        `other.${reviewDecisionSuffix(decision)}`,
-        "other",
-        decision,
-        { decision },
-      );
-    }
-    const resourceId = decision.slice(0, separator);
-    const detail = decision.slice(separator + 2);
-    const resource = resources.get(resourceId);
-    if (!resource) {
-      return reviewDecision(
-        `resource.${resourceId}.blocked.${reviewDecisionSuffix(detail)}`,
-        "resource_blocker",
-        decision,
-        { resource_id: resourceId, blocker: detail },
-        resourceId,
-      );
-    }
-    if (detail.startsWith("confirm tenant key ")) {
-      return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
-        tenant_key: resource.tenant_key,
-        ...(candidate.trusted_context.provider === "http_claims"
-          ? { trusted_tenant_http_claim: candidate.trusted_context.tenant_claim }
-          : {
-            trusted_tenant_env: candidate.trusted_context.tenant_env,
-            ...(candidate.trusted_context.database_role_tenant ? {
-              trusted_tenant_database_role_setting: candidate.trusted_context.database_role_tenant.setting,
-            } : {}),
-          }),
-        rls_session: resource.rls_session ?? null,
-      }, resourceId);
-    }
-    if (detail === "confirm whole-organization read access with no tenant predicate") {
-      return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
-        organization_scope: candidate.organization_scope,
-        tenant_predicate: "not_applied",
-      }, resourceId);
-    }
-    if (detail.startsWith("confirm mandatory derived tenant scope ")) {
-      return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
-        tenant_scope: resource.tenant_scope,
-        ...(candidate.trusted_context.provider === "http_claims"
-          ? { trusted_tenant_http_claim: candidate.trusted_context.tenant_claim }
-          : {
-            trusted_tenant_env: candidate.trusted_context.tenant_env,
-            ...(candidate.trusted_context.database_role_tenant ? {
-              trusted_tenant_database_role_setting: candidate.trusted_context.database_role_tenant.setting,
-            } : {}),
-          }),
-        rls_session: resource.rls_session ?? null,
-      }, resourceId);
-    }
-    if (detail === "confirm reviewed shared reference with no tenant predicate") {
-      return reviewDecision(`resource.${resourceId}.tenant_scope`, "tenant_scope", decision, {
-        shared_reference_scope: resource.shared_reference_scope,
-        tenant_predicate: "not_applied",
-        field_privacy_controls: "unchanged",
-      }, resourceId);
-    }
-    if (detail === "confirm visible and kept-out fields") {
-      return reviewDecision(`resource.${resourceId}.field_visibility`, "field_visibility", decision, {
-        selectable_fields: resource.selectable_fields,
-        ...(resource.model_withheld_fields?.length
-          ? { model_withheld_fields: resource.model_withheld_fields }
-          : {}),
-        kept_out_fields: resource.kept_out_fields,
-      }, resourceId);
-    }
-    if (detail === "confirm reviewed labels and descriptions") {
-      return reviewDecision(`resource.${resourceId}.metadata`, "metadata", decision, {
-        ...(resource.label ? { label: resource.label } : {}),
-        ...(resource.description ? { description: resource.description } : {}),
-        field_metadata: resource.field_metadata ?? {},
-      }, resourceId);
-    }
-    if (detail === "confirm filter/sort/group/aggregate-only field permissions") {
-      return reviewDecision(`resource.${resourceId}.field_permissions`, "field_permissions", decision, {
-        filterable_fields: resource.filterable_fields,
-        sortable_fields: resource.sortable_fields,
-        groupable_fields: resource.groupable_fields,
-        aggregate_measures: resource.aggregate_measures,
-        ...(resource.aggregate_measure_functions
-          ? { aggregate_measure_functions: resource.aggregate_measure_functions }
-          : {}),
-        ...(resource.presence_measure_fields
-          ? { presence_measure_fields: resource.presence_measure_fields }
-          : {}),
-        ...(resource.derived_measures?.length
-          ? { derived_measures: resource.derived_measures }
-          : {}),
-        ...(resource.numeric_bands?.length
-          ? { numeric_bands: resource.numeric_bands }
-          : {}),
-        ...(resource.auto_bands?.length
-          ? { auto_bands: resource.auto_bands }
-          : {}),
-        count_distinct_fields: resource.count_distinct_fields,
-        time_bucket_fields: resource.time_bucket_fields,
-        field_enums: resource.field_enums,
-      }, resourceId);
-    }
-    if (detail === "confirm minimum cohort and extraction/differencing budgets") {
-      return reviewDecision(`resource.${resourceId}.privacy_budgets`, "privacy_budgets", decision, {
-        minimum_cohort_size: resource.minimum_cohort_size,
-        ...(resource.minimum_cohort_overridden ? { minimum_cohort_overridden: true } : {}),
-        suppression_aware_totals: resource.suppression_aware_totals,
-        budgets: candidate.budgets,
-      }, resourceId);
-    }
-    const relationship = /^review relationship (.+) cardinality and scope on (.+)$/.exec(detail);
-    if (relationship) {
-      const relationshipId = relationship[1]!;
-      const targetResource = resources.get(relationship[2]!);
-      return reviewDecision(
-        `resource.${resourceId}.relationship.${relationshipId}`,
-        "relationship",
-        decision,
-        {
-          relationship: resource.relationships.find((item) => item.id === relationshipId) ?? null,
-          source_scope: {
-            ...(resource.tenant_key ? { tenant_key: resource.tenant_key } : {}),
-            ...(resource.tenant_scope ? { tenant_scope: resource.tenant_scope } : {}),
-            ...(resource.shared_reference_scope
-              ? { shared_reference_scope: resource.shared_reference_scope }
-              : {}),
-            principal_key: resource.principal_key ?? null,
-            ...(resource.principal_scope ? { principal_scope: resource.principal_scope } : {}),
-          },
-          target_scope: targetResource ? {
-            ...(targetResource.tenant_key ? { tenant_key: targetResource.tenant_key } : {}),
-            ...(targetResource.tenant_scope ? { tenant_scope: targetResource.tenant_scope } : {}),
-            ...(targetResource.shared_reference_scope
-              ? { shared_reference_scope: targetResource.shared_reference_scope }
-              : {}),
-            principal_key: targetResource.principal_key ?? null,
-            ...(targetResource.principal_scope ? { principal_scope: targetResource.principal_scope } : {}),
-          } : null,
-        },
-        resourceId,
-      );
-    }
-    return reviewDecision(
-      `resource.${resourceId}.other.${reviewDecisionSuffix(detail)}`,
-      "resource_other",
-      decision,
-      { resource_id: resourceId, detail },
-      resourceId,
-    );
-  });
+export function boundaryReviewDecisions(candidate: ExplorationBoundaryDraft): ProjectedBoundaryReviewDecision[] {
+  return projectBoundaryReviewDecisions(candidate);
 }
 
 export function normalizeStoredBoundaryReviewProgress(
   raw: JsonRecord,
   candidate: ExplorationBoundaryDraft,
+  resolvedOrigins: readonly ResolvedBoundaryReviewOrigin[] = [],
 ): BoundaryReviewProgress {
-  const currentVersion = raw.schema_version === BOUNDARY_REVIEW_PROGRESS_VERSION;
-  const boundaryId = currentVersion
-    ? normalizeBoundaryReviewId(raw.boundary_id)
-    : legacyBoundaryReviewId(candidate);
-  const reviewOverrides = currentVersion
-    ? normalizeAutoBoundaryReviewOverrides(raw.review_overrides)
-    : emptyReviewOverrides();
-  const policyMigration = currentVersion
-    ? normalizePolicyMigration(raw.policy_migration)
-    : legacyPolicyMigration();
+  if (raw.schema_version !== BOUNDARY_REVIEW_PROGRESS_VERSION) {
+    throw Object.assign(new Error("Saved review progress needs the current typed protocol; previous records remain preserved."),
+      { code: "BOUNDARY_REVIEW_PROTOCOL_REQUIRED" as const });
+  }
+  const boundaryId = normalizeBoundaryReviewId(raw.boundary_id);
+  const reviewOverrides = normalizeAutoBoundaryReviewOverrides(raw.review_overrides);
+  const policyMigration = normalizePolicyMigration(raw.policy_migration);
   const decisions = boundaryReviewDecisions(candidate);
-  const decisionById = new Map(decisions.map((decision) => [decision.id, decision]));
   const confirmations: BoundaryReviewConfirmation[] = [];
-  for (const item of raw.confirmations as unknown[]) {
-    if (!isRecord(item)
-      || typeof item.id !== "string"
-      || typeof item.decision !== "string"
-      || typeof item.input_digest !== "string"
-      || item.status !== "confirmed"
-      || typeof item.actor !== "string"
-      || typeof item.reason !== "string"
-      || typeof item.confirmed_at !== "string") {
+  if (!Array.isArray(raw.confirmations)) throw new Error("Saved boundary-review confirmations are invalid.");
+  for (const item of raw.confirmations) {
+    if (!isRecord(item) || typeof item.decision !== "string" || item.status !== "confirmed"
+      || typeof item.actor !== "string" || typeof item.reason !== "string" || typeof item.confirmed_at !== "string") {
       throw new Error("Saved boundary-review confirmations are invalid.");
     }
-    const current = decisionById.get(item.id);
-    if (!current || current.input_digest !== item.input_digest) continue;
-    confirmations.push({
-      ...current,
-      status: "confirmed",
-      actor: item.actor,
-      reason: item.reason,
-      confirmed_at: item.confirmed_at,
-    });
+    const confirmation = structuredClone(item) as BoundaryReviewConfirmation;
+    const origin = (confirmation as BoundaryReviewConfirmation & { origin?: BoundaryReviewOrigin }).origin;
+    if (origin && origin.boundary_id !== boundaryId) throw new Error("Boundary confirmation origin belongs to another boundary.");
+    confirmationReference(confirmation);
+    confirmations.push(confirmation);
   }
+  const applicableIds = new Set(applicableBoundaryReviewConfirmations(candidate, confirmations, resolvedOrigins).map(item => item.current.id));
   const invalidatedDecisions = (raw.invalidated_decisions as unknown[])
     .flatMap((item): BoundaryReviewInvalidation[] => {
       if (!isRecord(item)
@@ -980,7 +856,7 @@ export function normalizeStoredBoundaryReviewProgress(
     candidate,
     candidate_digest: explorationBoundaryCandidateDigest(candidate),
     confirmed_decisions: decisions
-      .filter((decision) => confirmations.some((confirmation) => confirmation.id === decision.id))
+      .filter((decision) => applicableIds.has(decision.id))
       .map((decision) => decision.decision),
     confirmations,
     invalidated_decisions: invalidatedDecisions,
@@ -1022,29 +898,6 @@ function mergeBoundaryReviewInvalidations(
     .slice(-200);
 }
 
-function reviewDecision(
-  id: string,
-  kind: string,
-  decision: string,
-  reviewedInput: unknown,
-  resourceId?: string,
-): BoundaryReviewDecision {
-  return {
-    id,
-    kind,
-    decision,
-    input_digest: canonicalJsonDigest({
-      schema_version: "synapsor.boundary-review-input.v1",
-      decision_kind: kind,
-      reviewed_input: reviewedInput,
-    }),
-    ...(resourceId ? { resource_id: resourceId } : {}),
-  };
-}
-
-function reviewDecisionSuffix(value: string): string {
-  return canonicalJsonDigest({ value }).slice("sha256:".length, "sha256:".length + 16);
-}
 
 function requiredText(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim()) {

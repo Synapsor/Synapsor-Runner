@@ -1,0 +1,22 @@
+{
+  "status": "WIP source composition only; not tested or integrated into accepted branch",
+  "branch": "codex/b64-read-compose-20261008",
+  "accepted_branch_preserved": "codex/b64-authoring-protocol-20261008 @6fe8e789",
+  "privacy_source": "2fb150c9, product5d1a7a39, R2 scoped source/component21 acceptance; globaltypes298external on owner branch",
+  "method": "Thirteen owned production files applied three-way from their merge base0bf2c1fd; preserve independent Main changes, no whole branch snapshot",
+  "conflicts": {
+    "explore-vocabulary.ts": "Use reviewed metadata-only successor; retire English identifier meaning and label readiness",
+    "read-boundary-revision-model.ts": "Remove retired vocabulary-gap import; retain current typed Read evidence imports",
+    "schema-inspector/index.ts": "Keep Main B66 exact relation/column parser, add optional catalog_complete evidence returned from complete verified scoped wildcard SELECT only"
+  },
+  "read_source": "16f44f67 exact twelve listed Read-owned modules; no intervening Main-only commits on these paths; native codec from2fb retains strict374v2 successor",
+  "native_save": "saveBoundaryReviewSignoff fourth submission; lower persistence fifth; acknowledged returned state includes exact protected writer origin",
+  "remaining": [
+    "Main typed review submissions/origin/current-context ports",
+    "SC04 outer file/native Read-family/export/registry version fences using presealed map9b918",
+    "genuine same-project public native analysis/confirmation/activation fixtures",
+    "whole types and selected integration regressions",
+    "R2 actual old-process/mixed/native-first/file/export acceptance and actual outgoing context check"
+  ],
+  "no_claim": "No accepted count decrease or native/public pass; paid closed; no legacy English fallback"
+}

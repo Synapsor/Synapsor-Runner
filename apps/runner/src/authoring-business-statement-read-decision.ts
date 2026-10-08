@@ -4,7 +4,7 @@ import type { OperatorQuestion } from "./authoring-operator-question.js";
 import { PolicySourceChangedError } from "./authoring-policy-source.js";
 import { authoringReadDecisionCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { readBoundaryRevisionCheckpoint, type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
-import { readPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
+import { readPrerequisiteCheckpoint, retireReadPrerequisiteQuestionIdentities } from "./read-prerequisite-checkpoint.js";
 import { parseReadPrerequisiteBusinessDecisions, type ReadPrerequisiteBusinessDecision } from "./read-prerequisite-decisions.js";
 
 export type ReadBusinessStatementDecision = {
@@ -49,7 +49,7 @@ export function prepareReadBusinessStatementDecision(input: {
       state: { ...body.state, answers: [...body.state.answers, exchange],
         confirmed_answers: [...body.state.confirmed_answers, exchange],
         ...(body.pending.kind === "semantic_confirmation" ? { questioned_proposal: body.pending.proposal,
-          questions: body.state.questions.filter(q => !decisions.some(d => d.question.trim().toLowerCase() === q)) } : {}),
+          questions: retireReadPrerequisiteQuestionIdentities(body.state.questions, decisions) } : {}),
         saved_decisions: saved ? parseReadPrerequisiteBusinessDecisions([
           ...body.state.saved_decisions.filter(record => record.decision_id !== saved.decision_id), saved]) : body.state.saved_decisions } });
     if (decided.pending?.kind === "semantic_confirmation" && decided.pending.completion)

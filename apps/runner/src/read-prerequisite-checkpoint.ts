@@ -28,7 +28,7 @@ export type ReadPrerequisiteCheckpointPending = ({ kind: "clarification"; reques
     & { completion?: AuthoringQuestionCompletion };
 
 export type ReadPrerequisiteCheckpoint = {
-  schema_version: "synapsor.read-prerequisite-checkpoint.v1";
+  schema_version: "synapsor.read-prerequisite-checkpoint.v2";
   input_digest: Digest; tool_digest: Digest;
   /** Exact approved inputs, before this producer's own confirmed additions. */
   seed: { approved_business_clarifications: Array<{ question: string; answer: string }>;
@@ -61,15 +61,35 @@ function proposal(x: unknown): boolean {
     && hash(x.candidate_id) && hash(x.selection_digest) && obj(x.selection)
     && text(x.source_description, 1000) && text(x.positive_state_description, 1000);
 }
+/** Scoped identity is the host decision ID. Unscoped bytes identify only a
+ * repeated literal question; they establish no meaning, applicability or consent. */
+export function readPrerequisiteQuestionIdentity(request: Pick<ModelReadPrerequisiteClarification, "question" | "decision">): Digest {
+  if (request.decision !== undefined) {
+    if (!request.decision || !hash(request.decision.decision_id)) throw invalid();
+    return request.decision.decision_id;
+  }
+  if (!text(request.question, 4000)) throw invalid();
+  return canonicalJsonDigest({ kind: "read_prerequisite_question_identity", version: 1, question: request.question });
+}
+
+/** An explicit mapping correction retires only the identified bookkeeping.
+ * Raw answers and applicability records remain in their existing audit history. */
+export function retireReadPrerequisiteQuestionIdentities(questions: readonly string[],
+  decisions: readonly Pick<ReadPrerequisiteBusinessDecision, "decision_id" | "question">[]): string[] {
+  const retired = new Set(decisions.flatMap(decision => [decision.decision_id,
+    readPrerequisiteQuestionIdentity({ question: decision.question })]));
+  return questions.filter(question => !retired.has(question as Digest));
+}
+
 export function readPrerequisiteCheckpoint(input: ReadPrerequisiteCheckpoint extends infer C ? C extends ReadPrerequisiteCheckpoint ? Omit<C, "schema_version" | "digest"> : never : never): ReadPrerequisiteCheckpoint {
-  const body = { schema_version: "synapsor.read-prerequisite-checkpoint.v1" as const, ...structuredClone(input) };
+  const body = { schema_version: "synapsor.read-prerequisite-checkpoint.v2" as const, ...structuredClone(input) };
   return parseReadPrerequisiteCheckpoint({ ...body, digest: canonicalJsonDigest(body) });
 }
 /** JSON storage is not consent or a transport acknowledgement. The producer
  * checks the exact current input/catalog and reparses every retained proposal. */
 export function parseReadPrerequisiteCheckpoint(value: unknown): ReadPrerequisiteCheckpoint {
   if (!obj(value) || !keys(value, ["schema_version", "input_digest", "tool_digest", "stage", "seed", "pending", "dispatch_question", "previous_pending", "state", "digest"])
-    || value.schema_version !== "synapsor.read-prerequisite-checkpoint.v1"
+    || value.schema_version !== "synapsor.read-prerequisite-checkpoint.v2"
     || ![value.input_digest, value.tool_digest, value.digest].every(hash)
     || !["waiting", "decided", "dispatching"].includes(String(value.stage)) || !obj(value.state) || (value.stage === "dispatching" ? value.pending !== undefined || !text(value.dispatch_question,64*1024) : !obj(value.pending) || value.dispatch_question!==undefined)) throw invalid();
   if (!obj(value.seed) || !keys(value.seed, ["approved_business_clarifications", "approved_business_decisions"])) throw invalid();
@@ -114,7 +134,7 @@ export function parseReadPrerequisiteCheckpoint(value: unknown): ReadPrerequisit
     || !count(s.new_questions) || (s.new_questions as number) > 3
     || !history(s.answers) || !history(s.confirmed_answers)
     || s.confirmed_answers.some(a => !(s.answers as Array<{ question: string; answer: string }>).some(b => a.question === b.question && a.answer === b.answer))
-    || !Array.isArray(s.questions) || s.questions.length > 19 || s.questions.some(q => !text(q, 4000)) || new Set(s.questions).size !== s.questions.length
+    || !Array.isArray(s.questions) || s.questions.length > 19 || s.questions.some(q => !hash(q)) || new Set(s.questions).size !== s.questions.length
     || !Array.isArray(s.replayed_decisions) || s.replayed_decisions.some(d => !hash(d)) || new Set(s.replayed_decisions).size !== s.replayed_decisions.length
     || s.questioned_proposal !== undefined && !proposal(s.questioned_proposal)
     || !obj(s.metrics) || !keys(s.metrics, ["business_questions", "reused_business_answers", "repeated_business_questions", "renewed_business_questions", "semantic_reviews"])
@@ -127,7 +147,7 @@ export function parseReadPrerequisiteCheckpoint(value: unknown): ReadPrerequisit
   if(value.stage!=="dispatching") {
   if (p.kind === "clarification") {
     const request = p.request as Record<string, unknown>;
-    const key = obj(request.decision) ? request.decision.decision_id : (request.question as string).trim().toLowerCase();
+    const key = readPrerequisiteQuestionIdentity(request as ModelReadPrerequisiteClarification);
     if ((s.new_questions as number) < 1 || !s.questions.includes(key)) throw invalid();
     if (value.stage === "decided") {
       const last = s.answers.at(-1), decision = p.decision as Record<string, unknown>;

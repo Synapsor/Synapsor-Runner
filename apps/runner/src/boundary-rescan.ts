@@ -27,9 +27,11 @@ import {
   type ConfiguredTrustedContextAuthority,
   type ExplorationBoundaryDraft,
   type GenerationLock,
+  type ResolvedBoundaryReviewOrigin,
 } from "./auto-boundary.js";
 import {
   boundaryReviewDecisions,
+  applicableBoundaryReviewConfirmations,
   createBoundaryReviewProgress,
   type BoundaryReviewProgress,
 } from "./boundary-review-domain.js";
@@ -188,6 +190,7 @@ export async function prepareBoundaryRescan(input: {
   boundaryRoot?: string;
   schemaInspector?: typeof inspectDatabase;
   inspection?: SchemaInspection;
+  resolvedOrigins?: readonly ResolvedBoundaryReviewOrigin[];
   now?: string;
 }): Promise<PreparedBoundaryRescan> {
   const projectRoot = path.resolve(input.projectRoot);
@@ -375,11 +378,11 @@ export async function prepareBoundaryRescan(input: {
           inspection,
           previousPrerequisitePolicyNames,
         });
-    const retained = retainedReviewDecisions(previous, candidate);
+    const retained = retainedReviewDecisions(previous, candidate, input.resolvedOrigins);
     const progress = createBoundaryReviewProgress({
       draft: storedEntry ? preparedReadAuthoringDraft(build) : build.exploration_boundary,
       candidate,
-      confirmedDecisions: retained.decisions,
+      resolvedOrigins: input.resolvedOrigins,
       previous,
       reviewOverrides: reviewedAggregates.overrides,
       actor: "synapsor-rescan-reconciliation",
@@ -695,8 +698,7 @@ function runnerConfigDecision(value: {
   actor: string;
   reason: string;
 } | undefined): boolean {
-  return value?.actor === "runner-config"
-    || /^Runner config (?:principal|tenant)_binding explicitly names /i.test(value?.reason ?? "");
+  return value?.actor === "runner-config";
 }
 
 function reflectedDirectBinding(input: {
@@ -908,36 +910,10 @@ function buildInputForBoundary(input: {
   };
 }
 
-function retainedReviewDecisions(
-  previous: BoundaryReviewProgress,
-  candidate: ExplorationBoundaryDraft,
-): { decisions: string[]; safelyCarried: string[] } {
-  const next = boundaryReviewDecisions(candidate);
-  const nextById = new Map(next.map((decision) => [decision.id, decision]));
-  const previousResources = new Map(previous.candidate.pack.resources.map((resource) => [resource.id, resource]));
-  const nextResources = new Map(candidate.pack.resources.map((resource) => [resource.id, resource]));
-  const decisions: string[] = [];
-  const safelyCarried: string[] = [];
-  for (const confirmation of previous.confirmations) {
-    const current = nextById.get(confirmation.id);
-    if (!current) continue;
-    if (current.input_digest === confirmation.input_digest) {
-      if (!decisionDependsOnChangedReviewedType(current.id, previousResources, nextResources)) {
-        decisions.push(current.decision);
-      }
-      continue;
-    }
-    if (current.kind === "field_visibility"
-      && current.resource_id
-      && isSafeUnavailableFieldChange(
-        previousResources.get(current.resource_id),
-        nextResources.get(current.resource_id),
-      )) {
-      decisions.push(current.decision);
-      safelyCarried.push(current.id);
-    }
-  }
-  return { decisions, safelyCarried };
+function retainedReviewDecisions(previous: BoundaryReviewProgress, candidate: ExplorationBoundaryDraft,
+  resolvedOrigins?: readonly ResolvedBoundaryReviewOrigin[]): { safelyCarried: string[] } {
+  const applicable = applicableBoundaryReviewConfirmations(candidate, previous.confirmations, resolvedOrigins);
+  return { safelyCarried: applicable.filter(item => item.basis === "unavailable_fields_only").map(item => item.current.id) };
 }
 
 function rebaseEmptyDisabledBoundary(
@@ -949,48 +925,10 @@ function rebaseEmptyDisabledBoundary(
   candidate.pack.name = boundaryName;
   candidate.pack.resources = [];
   candidate.budgets = structuredClone(previous.budgets);
-  const newlyEligible = generated.pack.resources.map((resource) => `${resource.id}:`);
-  candidate.unresolved_decisions = generated.unresolved_decisions.filter((decision) =>
-    !newlyEligible.some((prefix) => decision.startsWith(prefix)));
+  candidate.unresolved_decisions = boundaryReviewDecisions(candidate).map(item => item.decision);
   return candidate;
 }
 
-function decisionDependsOnChangedReviewedType(
-  decisionId: string,
-  previous: Map<string, BoundaryResource>,
-  next: Map<string, BoundaryResource>,
-): boolean {
-  const match = /^resource\.(.+)\.field_permissions$/.exec(decisionId);
-  if (!match) return false;
-  const before = previous.get(match[1]!);
-  const after = next.get(match[1]!);
-  if (!before || !after) return true;
-  const reviewedFields = new Set([
-    ...before.selectable_fields,
-    ...(before.model_withheld_fields ?? []),
-  ]);
-  return [...reviewedFields].some((field) =>
-    before.field_types[field] !== after.field_types[field]);
-}
-
-function isSafeUnavailableFieldChange(
-  before: BoundaryResource | undefined,
-  after: BoundaryResource | undefined,
-): boolean {
-  if (!before || !after) return false;
-  if (!sameStrings(before.selectable_fields, after.selectable_fields)
-    || !sameStrings(before.model_withheld_fields ?? [], after.model_withheld_fields ?? [])) {
-    return false;
-  }
-  const beforeFields = new Set(Object.keys(before.field_types));
-  const afterFields = new Set(Object.keys(after.field_types));
-  const added = [...afterFields].filter((field) => !beforeFields.has(field));
-  const removed = [...beforeFields].filter((field) => !afterFields.has(field));
-  return added.every((field) => after.kept_out_fields.includes(field))
-    && removed.every((field) => before.kept_out_fields.includes(field))
-    && [...beforeFields].filter((field) => afterFields.has(field)).every((field) =>
-      fieldAccess(before, field) === fieldAccess(after, field));
-}
 
 function fieldAccess(resource: BoundaryResource, field: string): "visible" | "withheld" | "kept_out" {
   if (!resource.selectable_fields.includes(field)) return "kept_out";

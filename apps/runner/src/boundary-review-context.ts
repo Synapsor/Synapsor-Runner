@@ -1,12 +1,13 @@
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft, type GenerationLock } from "./auto-boundary.js";
+import { explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft, type GenerationLock, type ResolvedBoundaryReviewOrigin } from "./auto-boundary.js";
 import { readGuidedOnboardingState } from "./guided-project.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { readJsonFileWithLocation } from "./cli-files.js";
 import { readBoundaryReviewProgress } from "./boundary-review-persistence.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { boundaryReviewDecisions } from "./boundary-review-domain.js";
+import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import type { BoundaryReviewMutationBindings } from "./read-authoring-contract-types.js";
 
 export type BoundaryReviewBundle = {
@@ -31,13 +32,14 @@ export type BoundaryReviewBundle = {
   candidate: ExplorationBoundaryDraft;
 };
 
-export async function loadBoundaryReviewContext(projectRoot: string): Promise<{
+export async function loadBoundaryReviewContext(projectRoot: string, permit?: ProjectAuthorityMutationPermit): Promise<{
   boundaryRoot: string;
   draft: ExplorationBoundaryDraft;
   candidate: ExplorationBoundaryDraft;
   lock: GenerationLock;
   progress: Awaited<ReturnType<typeof readBoundaryReviewProgress>>;
   bundle: BoundaryReviewBundle;
+  resolvedOrigins?: ResolvedBoundaryReviewOrigin[];
 }> {
   const journey = await readGuidedOnboardingState(projectRoot);
   const boundaryRoot = path.resolve(projectRoot, journey?.artifacts.boundary_root ?? "synapsor/generated");
@@ -45,7 +47,7 @@ export async function loadBoundaryReviewContext(projectRoot: string): Promise<{
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error("Managed boundary root escapes the selected project.");
   }
-  const stored = await readProjectReadAuthoring(projectRoot);
+  const stored = await readProjectReadAuthoring(projectRoot, undefined, permit);
   if (stored && !stored.selected) {
     throw new Error("No saved Read boundary is selected. Create a disabled boundary before opening its review.");
   }
@@ -57,7 +59,7 @@ export async function loadBoundaryReviewContext(projectRoot: string): Promise<{
     path.join(projectRoot, ".synapsor/generation-lock.json"),
     "generation lock",
   );
-  const progress = stored?.selected?.progress ?? await readBoundaryReviewProgress(projectRoot, draft);
+  const progress = stored?.selected?.progress ?? await readBoundaryReviewProgress(projectRoot, draft, permit);
   const candidate = progress?.candidate ?? recommendedBoundaryReviewCandidate(draft);
   const decisions = boundaryReviewDecisions(candidate).map((decision) => ({
     ...decision,
@@ -96,5 +98,5 @@ export async function loadBoundaryReviewContext(projectRoot: string): Promise<{
     },
     bundle_digest: canonicalJsonDigest(core),
   };
-  return { boundaryRoot, draft, candidate, lock, progress, bundle };
+  return { boundaryRoot, draft, candidate, lock, progress, bundle, resolvedOrigins: stored?.resolvedOrigins ?? [] };
 }

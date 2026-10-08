@@ -1,13 +1,26 @@
 import { z } from "zod";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { AUTO_BOUNDARY_VERSION, assertStoredExplorationMetadata, assertStoredExplorationPolicy, explorationBoundaryCandidateDigest, generationLockSharedFactsDigest, generationReviewEvidenceDigest, parseAutoBoundaryPolicyBaseline, reviewExplorationBoundaryCandidate,
+import { AUTO_BOUNDARY_VERSION, EXPLORATION_BOUNDARY_VERSION, GENERATION_LOCK_VERSION, AUTO_BOUNDARY_COMPILER_VERSION, parseBoundaryReviewDecisionRef, assertStoredExplorationMetadata, assertStoredExplorationPolicy, explorationBoundaryCandidateDigest, generationLockSharedFactsDigest, generationReviewEvidenceDigest, parseAutoBoundaryPolicyBaseline, reviewExplorationBoundaryCandidate,
   type AutoBoundaryBuild, type ExplorationBoundaryDraft, type GenerationLock } from "./auto-boundary.js";
 import { normalizeStoredBoundaryReviewProgress, type BoundaryReviewProgress } from "./boundary-review-domain.js";
-import { BOUNDARY_REVIEW_PROGRESS_VERSION } from "./boundary-review-progress-types.js";
+import { BOUNDARY_REVIEW_PROGRESS_VERSION, readReviewOriginSchema } from "./boundary-review-progress-types.js";
 import { OPERATOR_POLICY_RECORD_VERSION } from "./control-policy-record.js";
+
+
+export const READ_REVIEW_PROTOCOL = "synapsor.read-review.v2" as const;
 
 const identity = z.string().regex(/^bnd_[a-f0-9]{32}$/u);
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
+const confirmationSchema = z.record(z.unknown()).superRefine((value, ctx) => {
+  try {
+    const { decision, status, actor, reason, confirmed_at, origin, ...reference } = value;
+    parseBoundaryReviewDecisionRef(reference);
+    if (typeof decision !== "string" || status !== "confirmed" || typeof actor !== "string"
+      || !actor.trim() || typeof reason !== "string" || !reason.trim()
+      || !z.string().datetime({ offset: true }).safeParse(confirmed_at).success) throw new Error("Invalid confirmation metadata");
+    if (origin !== undefined) readReviewOriginSchema.parse(origin);
+  } catch { ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid exact typed review confirmation" }); }
+});
 const progressSchema = z.object({
   schema_version: z.literal(BOUNDARY_REVIEW_PROGRESS_VERSION),
   boundary_id: identity,
@@ -18,8 +31,12 @@ const progressSchema = z.object({
   candidate: z.record(z.unknown()),
   candidate_digest: digest,
   confirmed_decisions: z.array(z.string()).max(10_000),
-  confirmations: z.array(z.unknown()).max(10_000),
-  invalidated_decisions: z.array(z.unknown()).max(200),
+  confirmations: z.array(confirmationSchema).max(10_000),
+  invalidated_decisions: z.array(z.object({ id: z.string().min(1), decision: z.string(),
+    previous_input_digest: digest, current_input_digest: digest.optional(),
+    reason: z.enum(["reviewed_input_changed", "decision_removed"]),
+    invalidated_at: z.string().datetime({ offset: true }),
+  }).strict()).max(200),
   updated_at: z.string().datetime({ offset: true }),
 }).strict();
 // Catalog metadata supports operator inspection only. Candidate compilation and
@@ -45,6 +62,7 @@ const entrySchema = z.object({
 }).strict();
 export const readAuthoringDocument = z.object({
   schema_version: z.literal(OPERATOR_POLICY_RECORD_VERSION), type: z.literal("read_authoring"),
+  review_protocol: z.literal(READ_REVIEW_PROTOCOL),
   selected_boundary_id: identity.nullable(), entries: z.array(entrySchema).max(128),
   rescan_report: z.record(z.unknown()).optional(),
 }).strict();
@@ -56,7 +74,7 @@ export type PreparedReadEntry = {
   catalog?: Pick<AutoBoundaryBuild, "lock" | "review" | "policy_baseline"> & { evidence_project: AutoBoundaryBuild["graph"]["project"] };
 };
 export type StoredReadAuthoring = {
-  type: "read_authoring"; selected_boundary_id: string | null; entries: PreparedReadEntry[];
+  type: "read_authoring"; review_protocol: typeof READ_REVIEW_PROTOCOL; selected_boundary_id: string | null; entries: PreparedReadEntry[];
   rescan_report?: Record<string, unknown>;
 };
 
@@ -85,11 +103,16 @@ export function parseReadAuthoringDocument(input: unknown): StoredReadAuthoring 
   for (const entry of parsed.entries) {
     const draft = entry.draft as unknown as ExplorationBoundaryDraft;
     const candidate = entry.progress.candidate as unknown as ExplorationBoundaryDraft;
+    if (draft.schema_version !== EXPLORATION_BOUNDARY_VERSION || candidate.schema_version !== EXPLORATION_BOUNDARY_VERSION) {
+      fail("POLICY_AUTHORING_BOUNDARY_VERSION_UNSUPPORTED");
+    }
     if (draft.activation !== "disabled_unreviewed" || candidate.activation !== "disabled_unreviewed") {
       fail("POLICY_AUTHORING_MUST_BE_DISABLED");
     }
     const draftLock = entry.draft_lock as unknown as GenerationLock;
     const candidateLock = entry.candidate_lock as unknown as GenerationLock;
+    if ([draftLock, candidateLock].some(lock => lock.schema_version !== GENERATION_LOCK_VERSION
+      || lock.compiler_version !== AUTO_BOUNDARY_COMPILER_VERSION)) fail("POLICY_AUTHORING_LOCK_VERSION_UNSUPPORTED");
     const metadataOnly = entry.stage === "metadata_only";
     if (metadataOnly !== (candidate.pack.resources.length === 0)) fail("POLICY_AUTHORING_STAGE_MISMATCH");
     if ((metadataOnly || draft.pack.resources.length === 0) && !entry.catalog) fail("POLICY_AUTHORING_CATALOG_REQUIRED");
@@ -120,12 +143,7 @@ export function parseReadAuthoringDocument(input: unknown): StoredReadAuthoring 
       || entry.progress.candidate_digest !== explorationBoundaryCandidateDigest(candidate)) {
       fail("POLICY_AUTHORING_REVISION_MISMATCH");
     }
-    const normalized = normalizeStoredBoundaryReviewProgress(entry.progress, candidate);
-    if (canonicalJsonDigest(normalized) !== canonicalJsonDigest(entry.progress)
-      || new Set(normalized.confirmations.map((confirmation) => confirmation.id)).size !== normalized.confirmations.length
-      || new Set(normalized.confirmed_decisions).size !== normalized.confirmed_decisions.length) {
-      fail("POLICY_AUTHORING_NORMALIZATION_REQUIRED");
-    }
+    const normalized = parseStoredReadReviewProgress(entry.progress);
     if (ids.has(normalized.boundary_id) || names.has(candidate.pack.name)) fail("POLICY_AUTHORING_DUPLICATE_BOUNDARY");
     ids.add(normalized.boundary_id); names.add(candidate.pack.name);
   }
@@ -133,9 +151,24 @@ export function parseReadAuthoringDocument(input: unknown): StoredReadAuthoring 
     : parsed.selected_boundary_id === null || !ids.has(parsed.selected_boundary_id)) {
     fail("POLICY_AUTHORING_SELECTION_INVALID");
   }
-  return { type: parsed.type, selected_boundary_id: parsed.selected_boundary_id,
+  return { type: parsed.type, review_protocol: parsed.review_protocol, selected_boundary_id: parsed.selected_boundary_id,
     entries: structuredClone(parsed.entries) as unknown as PreparedReadEntry[],
     ...(parsed.rescan_report ? { rescan_report: structuredClone(parsed.rescan_report) } : {}) };
+}
+
+/** Wire validation only. The persisted display cache does not prove applicability.
+ * The native loader resolves immutable origins before deriving current decisions. */
+export function parseStoredReadReviewProgress(input: unknown): BoundaryReviewProgress {
+  const parsed = progressSchema.parse(input);
+  const candidate = parsed.candidate as unknown as ExplorationBoundaryDraft;
+  if (parsed.candidate_digest !== explorationBoundaryCandidateDigest(candidate)) fail("POLICY_AUTHORING_REVISION_MISMATCH");
+  const normalized = normalizeStoredBoundaryReviewProgress(parsed, candidate);
+  const { confirmed_decisions: _derived, ...canonical } = normalized;
+  const { confirmed_decisions: _auditCache, ...wire } = parsed;
+  if (canonicalJsonDigest(canonical) !== canonicalJsonDigest(wire)
+    || new Set(normalized.confirmations.map(item => item.id)).size !== normalized.confirmations.length
+    || new Set(parsed.confirmed_decisions).size !== parsed.confirmed_decisions.length) fail("POLICY_AUTHORING_NORMALIZATION_REQUIRED");
+  return structuredClone(parsed) as unknown as BoundaryReviewProgress;
 }
 
 function fail(code: string): never {

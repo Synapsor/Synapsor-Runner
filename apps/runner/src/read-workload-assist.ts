@@ -1201,10 +1201,14 @@ function scalarType(value: unknown): string {
 }
 
 function generatedEngine(
-  boundary: Pick<ExplorationBoundaryDraft, "source" | "database_server_authority">,
+  boundary: Pick<ExplorationBoundaryDraft, "database_server_authority">,
 ): "postgres" | "mysql" {
-  return boundary.database_server_authority?.engine
-    ?? (boundary.source.toLowerCase().includes("mysql") ? "mysql" : "postgres");
+  const authority = boundary.database_server_authority;
+  if (authority?.schema_version !== "synapsor.database-server-authority.v1"
+    || (authority.engine !== "postgres" && authority.engine !== "mysql")) {
+    throw new Error("READ_WORKLOAD_DATABASE_ENGINE_REQUIRED: Current inspected database engine metadata is required; source display text cannot establish compiler authority.");
+  }
+  return authority.engine;
 }
 
 function placeholderContext(): { tenant: string; principal: string } {

@@ -1,15 +1,12 @@
-import { z } from "zod";
+import type { z } from "zod";
+import { readReviewOriginSchema } from "./boundary-review-progress-types.js";
+export { readReviewOriginSchema } from "./boundary-review-progress-types.js";
 import { explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { decodeOperatorAuthority } from "./control-policy-authority-codec.js";
 import { OPERATOR_READ_AUTHORING_KEY } from "./control-policy-record.js";
 import { openBoundProjectControlPolicies } from "./control-policy-store.js";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
-export const readReviewOriginSchema = z.object({
-  revision_id: z.string().regex(/^policy:[a-f0-9]{64}$/u).transform(value => value as `policy:${string}`),
-  boundary_id: z.string().regex(/^bnd_[a-f0-9]{32}$/u).transform(value => value as `bnd_${string}`),
-  candidate_digest: z.string().regex(/^sha256:[a-f0-9]{64}$/u).transform(value => value as `sha256:${string}`),
-}).strict();
 export type ReadReviewOrigin = z.infer<typeof readReviewOriginSchema>;
 
 const unavailable = (): never => {

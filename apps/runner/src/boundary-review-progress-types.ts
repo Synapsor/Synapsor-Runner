@@ -1,15 +1,20 @@
-export const BOUNDARY_REVIEW_PROGRESS_VERSION = "synapsor.boundary-review-progress.v3" as const;
+import { z } from "zod";
+import type { ProjectedBoundaryReviewDecision, BoundaryReviewOrigin } from "./auto-boundary.js";
+/** Pure reference syntax; resolving this reference is a separate native read. */
+export const readReviewOriginSchema = z.object({
+  revision_id: z.string().regex(/^policy:[a-f0-9]{64}$/u).transform(value => value as `policy:${string}`),
+  boundary_id: z.string().regex(/^bnd_[a-f0-9]{32}$/u).transform(value => value as `bnd_${string}`),
+  candidate_digest: z.string().regex(/^sha256:[a-f0-9]{64}$/u).transform(value => value as `sha256:${string}`),
+}).strict();
 
-export type BoundaryReviewDecision = {
-  id: string;
-  kind: string;
-  decision: string;
-  input_digest: `sha256:${string}`;
-  resource_id?: string;
-};
+export const BOUNDARY_REVIEW_PROGRESS_VERSION = "synapsor.boundary-review-progress.v4" as const;
+
+export type BoundaryReviewDecision = ProjectedBoundaryReviewDecision;
 
 export type BoundaryReviewConfirmation = BoundaryReviewDecision & {
   status: "confirmed";
+  /** Original immutable pre-confirmation candidate; never replaced on rescan. */
+  origin?: BoundaryReviewOrigin;
   actor: string;
   reason: string;
   confirmed_at: string;

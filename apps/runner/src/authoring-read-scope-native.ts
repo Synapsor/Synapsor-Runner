@@ -10,7 +10,7 @@ import { projectAuthoringReadScopeContext, projectAuthoringReadScopePreview } fr
 import { createReadScopeHost, type ReadScopeHostAccess, type ReadScopeInteraction, type ReadScopeInteractionResponse } from "./authoring-read-scope-host.js";
 import { createReadScopeQuestion, proposeReadScopeReview, resolveNativeReadScope } from "./authoring-read-scope-question.js";
 import { readScopeConsumption } from "./authoring-read-scope-binding.js";
-import { assertReadScopeProvenance, assessReadScopeRecordCurrentness, parseReadScopeRecord, type ReadScopeRecord } from "./read-structured-scope.js";
+import { assertReadScopeProvenance, assessReadScopeDraft, assessReadScopeRecordCurrentness, parseReadScopeRecord, type ReadScopeRecord } from "./read-structured-scope.js";
 import { loadBoundaryReviewContext } from "./boundary-review-context.js";
 import { readReadWorkloadAnalysis, type ReadWorkloadView, readStoredReadWorkloadAnalysis } from "./read-workloads.js";
 import type { ReadScopeReplacementOwner } from "./read-current-evidence.js";
@@ -18,6 +18,13 @@ import { readRevisionMappingContinuation, type ReadRevisionMappingOwner } from "
 import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
 type Digest = `sha256:${string}`;
+/** Semantic readiness is derived from the exact native question/analysis, never labels. */
+export type NativeReadScopeAssessment =
+  | { kind: "missing"; status: "pending"; candidate_digest: Digest }
+  | { kind: "native"; status: "pending" | "proposed" | "confirmed" | "stale";
+      candidate_digest: Digest; question_id: string; record: ReadScopeRecord;
+      requirements: ReadScopeRecord["proposal"]["requirements"]; replacement_pending: boolean;
+      analysis_assessment?: ReturnType<typeof assessReadScopeDraft> };
 export type NativeReadScopeSnapshot = {
   resume?: BoundaryAuthoringResumeState; revision?: Digest; blocked: boolean;
   questions: readonly OperatorQuestion[]; handoffs: readonly AuthoringOwnerHandoff[];
@@ -62,7 +69,7 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
   };
   const context = async (boundary: ExplorationBoundaryDraft, answerQuestionIds = answerIds(), permit?: ProjectAuthorityMutationPermit) => {
     await input.ports.assertCurrent(permit);
-    const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot();
+    const current = await loadBoundaryReviewContext(input.projectRoot, permit), state = snapshot();
     const selected = state.read?.scope_question_id;
     const stored = selected && state.read ? await readStoredReadWorkloadAnalysis({
       projectRoot: input.projectRoot, analysisId: state.read.analysis_id }) : undefined;
@@ -80,7 +87,7 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     prepared: { candidate: ExplorationBoundaryDraft; build: { lock: GenerationLock } },
     answerQuestionIds = answerIds(), permit?: ProjectAuthorityMutationPermit) => {
     await input.ports.assertCurrent(permit);
-    const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot();
+    const current = await loadBoundaryReviewContext(input.projectRoot, permit), state = snapshot();
     const projected = projectAuthoringReadScopePreview({ resume: state.resume, boundary, structuralReview: current,
       sources: state.sources, records: { questions: state.questions, handoffs: state.handoffs, generation: state.generation },
       answerQuestionIds, preparedCandidate: prepared.candidate, preparedLock: prepared.build.lock });
@@ -92,7 +99,7 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
    * selects the separately saved, consumed revision for ordinary new mapping. */
   const pendingRevision = async (boundary: ExplorationBoundaryDraft, permit?: ProjectAuthorityMutationPermit) => {
     await input.ports.assertCurrent(permit);
-    const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot();
+    const current = await loadBoundaryReviewContext(input.projectRoot, permit), state = snapshot();
     const revision = state.resume.pending_read_revision_state, saved = state.read;
     if (!revision?.scope_question_id || !saved) return unavailable("The exact pending Read revision and prior mapping");
     const priorAnalysis = await readStoredReadWorkloadAnalysis({ projectRoot: input.projectRoot, analysisId: saved.analysis_id });
@@ -112,7 +119,7 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     selected?: Pick<BoundaryAuthoringResumeRead, "analysis_id" | "analysis_digest">) =>
     input.ports.mutate(async permit => {
       await input.ports.assertCurrent(permit);
-      const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot();
+      const current = await loadBoundaryReviewContext(input.projectRoot, permit), state = snapshot();
       const revision = state.resume.pending_read_revision_state;
       if (!revision?.result_received || revision.checkpoint || revision.terminal_reason
         || revision.scope_question_id !== expected.questionId || revision.saved_read_digest !== expected.savedReadDigest
@@ -167,23 +174,53 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
   const commitAnalyzedRevisionScope = (expected: CommittedRevision & {
     analysis: Pick<BoundaryAuthoringResumeRead, "analysis_id" | "analysis_digest">;
   }) => commitRevisionScope(expected, expected.analysis);
+  const loadScope = async (questionId: string, permit?: ProjectAuthorityMutationPermit) => {
+    await input.ports.assertCurrent(permit);
+    const current = await loadBoundaryReviewContext(input.projectRoot, permit), state = snapshot(), scope = project(current.candidate, current);
+    const question = state.questions.find(q => q.id === questionId);
+    if (!question?.read_scope) return unavailable("The exact native Read question");
+    const stored = question.read_scope.record.analysis_digest && state.read?.scope_question_id === questionId
+      ? await readStoredReadWorkloadAnalysis({ projectRoot: input.projectRoot, analysisId: state.read.analysis_id }) : undefined;
+    if (question.read_scope.record.analysis_digest && (!stored || stored.analysis_digest !== state.read?.analysis_digest))
+      unavailable("The exact analyzed Read proposal");
+    const context_digest = await input.ports.questionContext(permit);
+    await input.ports.assertCurrent(permit);
+    if (snapshot().revision !== state.revision) return unavailable("The coherent native Read assessment");
+    return { candidate_digest: explorationBoundaryCandidateDigest(current.candidate), questions: state.questions, handoffs: state.handoffs, generation: state.generation, question_id: questionId,
+      expectedBinding: scope.binding, references: scope.references, catalog: scope.catalog,
+      ...(stored ? { analysis: stored.analysis } : {}), resume_revision_digest: state.revision,
+      context_digest, scope_digest: input.ports.questionScope() };
+  };
+  const assess = async (boundary: ExplorationBoundaryDraft,
+    permit?: ProjectAuthorityMutationPermit): Promise<NativeReadScopeAssessment> => {
+    await input.ports.assertCurrent(permit);
+    const before = snapshot(), candidateDigest = explorationBoundaryCandidateDigest(boundary);
+    const pending = before.resume.pending_read_revision_state?.scope_question_id;
+    const questionId = pending ?? before.read?.scope_question_id;
+    if (!questionId) {
+      const current = await loadBoundaryReviewContext(input.projectRoot, permit);
+      await input.ports.assertCurrent(permit);
+      if (snapshot().revision !== before.revision || explorationBoundaryCandidateDigest(current.candidate) !== candidateDigest)
+        return unavailable("The unchanged current Read candidate");
+      return { kind: "missing", status: "pending", candidate_digest: candidateDigest };
+    }
+    // A consumed settings-only revision has a separate exact owner. It may not
+    // borrow the old mapped selection or imply an analyzed/confirmed result.
+    if (pending) await pendingRevision(boundary, permit);
+    const loaded = await loadScope(questionId, permit);
+    if (loaded.resume_revision_digest !== before.revision || loaded.candidate_digest !== candidateDigest)
+      return unavailable("The unchanged selected native Read scope");
+    const resolved = resolveNativeReadScope(loaded), record = resolved.record;
+    const exactContext = resolved.question.context_digest === loaded.context_digest
+      && resolved.question.scope_digest === loaded.scope_digest && resolved.question.id === questionId;
+    return { kind: "native", status: exactContext ? resolved.status : "stale", candidate_digest: candidateDigest,
+      question_id: resolved.question.id, record, requirements: structuredClone(record.proposal.requirements),
+      replacement_pending: resolved.replacement_pending,
+      ...(loaded.analysis ? { analysis_assessment: assessReadScopeDraft(record, loaded.analysis) } : {}) };
+  };
   const host = createReadScopeHost({ access: {
     mutate: input.ports.mutate,
-    load: async (questionId, permit) => {
-      await input.ports.assertCurrent(permit);
-      const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot(), scope = project(current.candidate, current);
-      const question = state.questions.find(q => q.id === questionId);
-      if (!question?.read_scope) return unavailable("The exact native Read question");
-      const stored = question.read_scope.record.analysis_digest && state.read?.scope_question_id === questionId
-        ? await readStoredReadWorkloadAnalysis({ projectRoot: input.projectRoot, analysisId: state.read.analysis_id }) : undefined;
-      if (question.read_scope.record.analysis_digest && !stored) unavailable("The exact analyzed Read proposal");
-      const context_digest = await input.ports.questionContext(permit);
-      await input.ports.assertCurrent(permit);
-      return { questions: state.questions, handoffs: state.handoffs, generation: state.generation, question_id: questionId,
-        expectedBinding: scope.binding, references: scope.references, catalog: scope.catalog,
-        ...(stored ? { analysis: stored.analysis } : {}), resume_revision_digest: state.revision,
-        context_digest, scope_digest: input.ports.questionScope() };
-    },
+    load: loadScope,
     save: async (question, options) => {
       const state = snapshot();
       await input.ports.save({ questions: state.questions.map(q => q.id === question.id ? question : q),
@@ -192,7 +229,7 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
   }, interact: input.interact });
   const recordNoRead = async (record: ReadScopeRecord, completion: AuthoringQuestionCompletion) => input.ports.mutate(async permit => {
     await input.ports.assertCurrent(permit);
-    const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot(), inventory = project(current.candidate, current);
+    const current = await loadBoundaryReviewContext(input.projectRoot, permit), state = snapshot(), inventory = project(current.candidate, current);
     const question = proposeReadScopeReview(createReadScopeQuestion({ id: randomUUID(), revision: 1,
       scope_digest: input.ports.questionScope(), context_digest: await input.ports.questionContext(permit),
       read_scope: { mode: "review", record, completion } }), inventory.binding, undefined, inventory);
@@ -255,5 +292,5 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     }
     return { required, unresolved };
   };
-  return { context, preview, pendingRevision, commitPendingRevisionScope, commitAnalyzedRevisionScope, answerIds, review: host.review, restore, recordNoRead, principalRequirement };
+  return { context, assess, preview, pendingRevision, commitPendingRevisionScope, commitAnalyzedRevisionScope, answerIds, review: host.review, restore, recordNoRead, principalRequirement };
 }

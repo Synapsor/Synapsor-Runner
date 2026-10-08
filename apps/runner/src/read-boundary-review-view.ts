@@ -184,8 +184,9 @@ export function readRevisionDiff(
           ...(!old.raw && next.raw ? ["NEW ACCESS: raw values may now be returned to the model."] : []),
           "Private reference/conflict verification is controlled separately by the Action Boundary; row-selection changes do not prove a new verification requirement.",
           ...(field === resource.primary_key ? ["Reviewed row identity: used privately for opaque references when required by an Action; no model-supplied identity."] : []),
+        ], children: [{ id: "model_proposed_rationale", title: "Model-proposed rationale", lines: [
           `Model-proposed rationale (not proof of a runtime role): ${reasons.find((reason) => reason.resource === resource.id && reason.field === field)?.rationale ?? "Requested privacy/operation change."}`,
-        ] });
+        ] }] });
     }
     for (const key of ["derived_measures", "numeric_bands", "auto_bands", "relationships"] as const) {
       if (JSON.stringify(previous[key] ?? []) !== JSON.stringify(resource[key] ?? [])) {
@@ -251,12 +252,10 @@ export function readBoundaryReviewSections(input: {
                 : "No field filters, sorting, grouping or aggregate inference grants. Private verification and opaque references require their separately reviewed Action dependencies.",
             ] : []),
             ...(access === "NO RAW RETURN" ? ["Model + Runner classification alone does not grant retrieval. Only the operations listed above are available."] : []),
-            `Structural roles/hints: ${field.roles.join(", ") || "none proven; review business meaning if ambiguous"}`,
-            ...(field.roles.some((role) => role.endsWith("candidate") || role === "conflict_or_version_guard")
-              ? ["Naming hints are not proof that a business field is private or used as a conflict guard. Review metadata and Action dependencies."] : []),
+            `Structural roles: ${field.roles.join(", ") || "none proven; review business meaning if ambiguous"}`,
             `Reviewed value allowlist: ${JSON.stringify(resource.field_enums[field.id] ?? [])}`,
             `Numeric aggregate functions: ${JSON.stringify(resource.aggregate_measure_functions?.[field.id] ?? [])}`,
-            ...(change?.lines.filter((line) => line.startsWith("Model-proposed rationale")) ?? []),
+            ...(change?.children?.find(section => section.id === "model_proposed_rationale")?.lines ?? []),
           ] };
         }),
         { id: "resource_settings", title: "Resource settings and Read relationships", lines: JSON.stringify({

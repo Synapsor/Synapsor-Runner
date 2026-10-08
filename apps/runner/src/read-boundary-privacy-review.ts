@@ -49,7 +49,9 @@ export function readPrivacyReview(input: {
     const pending = passages.filter((passage) => ["needs_decision", "conflict", "unsupported"].includes(passage.disposition));
     const visible = passages.filter((passage) => ["implemented", "overridden"].includes(passage.disposition)
       && passage.field_checks?.some((check) => check.resource === resource.id && check.field === field.id && check.expectation === "business_visible"));
-    const rawHint = field.raw_return && field.roles.length > 0;
+    // Every returned field is eligible for review; identifier spelling does not
+    // determine which disclosures the reviewer can inspect.
+    const rawHint = field.raw_return;
     const hiddenAnalysis = !field.raw_return && field.model_operations.length > 0;
     if (!rawHint && !hiddenAnalysis && !pending.length) return [];
     const recorded = field.raw_return && meanings.has(`${resource.id}.${field.id}`);
@@ -82,7 +84,6 @@ export function readPrivacyReview(input: {
   const checkedPrivateFields = checkedFields.length;
   const checkedPrivateGroups = [...new Set(checkedFields.map((field) =>
     field.roles.some((role) => ["record_identity", "relationship_key", "trusted_scope"].includes(role)) ? "record identifiers"
-      : field.roles.includes("conflict_or_version_guard") ? "internal revision markers"
       : "other policy-private information"))];
   return { digest, coverage: checked ? "current" : source ? "unavailable" : "not_attached", findings,
     ...(checked ? { checkedPrivateFields, checkedPrivateGroups,

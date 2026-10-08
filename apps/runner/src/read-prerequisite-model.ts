@@ -1,5 +1,5 @@
 import { operatorBusinessContext, operatorClarificationGate, presentOperatorClarification } from "./authoring-operator-presentation.js";
-import { readPrerequisiteCheckpoint, parseReadPrerequisiteCheckpoint, type ReadPrerequisiteCheckpoint,
+import { readPrerequisiteCheckpoint, parseReadPrerequisiteCheckpoint, readPrerequisiteQuestionIdentity, retireReadPrerequisiteQuestionIdentities, type ReadPrerequisiteCheckpoint,
   type ModelReadPrerequisiteClarification, type ModelReadPrerequisiteProposal } from "./read-prerequisite-checkpoint.js";
 export type { ModelReadPrerequisiteClarification, ModelReadPrerequisiteProposal } from "./read-prerequisite-checkpoint.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -378,7 +378,7 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
       }
     }, async close() {},
   };
-  const questions = new Set(answers.map(answer => answer.question.trim().toLowerCase()));
+  const questions = new Set<string>(answers.map(answer => readPrerequisiteQuestionIdentity(answer)));
   const replayedDecisions = new Set<string>();
   let newQuestions = 0;
   let questionedProposal: ModelReadPrerequisiteProposal | undefined;
@@ -516,7 +516,7 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
           replayedDecisions.add(scoped.decision_id);
           continue;
         }
-        const key = scoped?.decision_id ?? outcome.request.question.trim().toLowerCase();
+        const key = readPrerequisiteQuestionIdentity({ question: outcome.request.question, decision: scoped });
         if (!input.clarificationHandler || !resumed && (questions.has(key) || newQuestions >= MAX_CLARIFICATIONS)) return pending(`Unresolved business meaning: ${outcome.request.question}`);
         if (scoped && !input.recordBusinessDecision) return pending("A host persistence callback is required before recording this scoped business answer. The decision remains pending.");
         if (answers.length >= MAX_BUSINESS_HISTORY_TURNS) return pending(`Business clarification history reached 16 turns; preserve the requested meaning pending without dropping prior answers: ${outcome.request.question}`);
@@ -569,7 +569,9 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
         if (retainedStage !== "decided" && !businessHistoryWithinBounds([...answers, next])) return pending("The mapping review reached its complete business-history limit. The unconfirmed condition remains pending; no history was truncated or sent.");
         if (retainedStage !== "decided") {
           answers.push(next); confirmedAnswers.push(next); questionedProposal = structuredClone(proposal);
-          for (const decision of businessDecisions) questions.delete(decision.question.trim().toLowerCase());
+          const retainedQuestionIds = retireReadPrerequisiteQuestionIdentities([...questions], businessDecisions);
+          questions.clear();
+          for (const questionId of retainedQuestionIds) questions.add(questionId);
           retained = { ...retained as Extract<ReadPrerequisiteCheckpoint["pending"], { kind: "semantic_confirmation" }>,
             decision: { state: "revise", instruction: answer } };
           retainedStage = "decided"; await save("decided");

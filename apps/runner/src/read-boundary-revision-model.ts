@@ -17,7 +17,6 @@ import { operatorBusinessContext, operatorClarificationGate, presentOperatorClar
 import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionCheckpoint, type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
-import { exploreBoundaryVocabularyGaps } from "./explore-vocabulary.js";
 import { currentStructuredReadEvidence, currentReadScopeContextDigest,
   type CurrentStructuredReadEvidence } from "./read-current-evidence.js";
 import { READ_SCOPE_PROTOCOL, READ_SUBJECT_SCOPE_GUIDANCE, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
@@ -282,7 +281,6 @@ export async function generateModelReadBoundaryRevision(input: {
         }
         if (input.vocabularyOnly) {
           assertVocabularyOnlyReadRevision(parsed);
-          assertCompleteReadVocabulary(parsed.policy_changes, input.boundary);
         }
         // Correction repairs an invalid candidate; it must not "succeed" by
         // silently dropping an already submitted Runner-only privacy decision.
@@ -358,7 +356,7 @@ export async function generateModelReadBoundaryRevision(input: {
     ...(input.privacyOnly ? ["This is a privacy-only refinement: no new raw return, private row selection, model analysis, or removal of existing exclusions is permitted. Omit unrelated fields and settings. If a business request needs additional access, explain that separately instead of bundling it into this privacy correction."] : []),
     ...(input.vocabularyOnly ? [
       "This is vocabulary-only: submit no field exposure changes and only metadata or field_metadata settings. Retain every Read operation, exclusion, scope, limit, Action rule, approval and execution setting. Reuse meanings already stated by the operator in the original job, approved policy or saved clarifications; ask one business question only if a required meaning is actually missing. Do not guess business meanings from coded identifiers.",
-      `Required vocabulary gaps in the exact current Read: ${JSON.stringify(exploreBoundaryVocabularyGaps(input.boundary.pack.resources))}. A resource_gap requires a table label or description in settings.metadata; field labels do not name their table. Every listed field needs a label or description in settings.field_metadata. Repair all gaps without dropping existing meanings. A partial repair or already_satisfied response is refused while any gap remains.`,
+      "Labels and descriptions are optional presentation metadata. Missing metadata does not establish a missing business meaning; return genuinely unresolved requirements in the typed read_scope through the existing Read owner.",
     ] : []),
     ...(operatorNamingContext ? [`Original operator job (naming evidence, not new authority): ${JSON.stringify(operatorNamingContext)}`] : []),
     "Never make a trusted tenant or principal scope field model_and_runner. Never infer a wider request than the operator stated.",
@@ -687,7 +685,6 @@ export function readBoundaryRevisionCatalog(boundary: ExplorationBoundaryDraft) 
           ? { description: resource.field_metadata[field]!.description }
           : {}),
         roles: fieldRoles({
-          field,
           primaryKey: resource.primary_key === field,
           trustedScope: trustedScope.has(field),
           relationshipKey: relationshipKeys.has(field),
@@ -925,31 +922,6 @@ export function assertVocabularyOnlyReadRevision(
   }
 }
 
-function assertCompleteReadVocabulary(
-  changes: readonly ReadBoundaryPolicyChange[],
-  boundary: ExplorationBoundaryDraft,
-): void {
-  const resources = structuredClone(boundary.pack.resources);
-  for (const change of changes) {
-    const resource = resources.find(resource => resource.id === change.resource)!;
-    for (const key of ["label", "description"] as const) {
-      const value = change.settings.metadata?.[key];
-      if (value === null) delete resource[key];
-      else if (value !== undefined) resource[key] = value;
-    }
-    for (const metadata of change.settings.field_metadata ?? []) {
-      resource.field_metadata ??= {};
-      const field = resource.field_metadata[metadata.field] ??= {};
-      for (const key of ["label", "description"] as const) {
-        if (metadata[key] === null) delete field[key];
-        else if (metadata[key] !== undefined) field[key] = metadata[key];
-      }
-    }
-  }
-  const gaps = exploreBoundaryVocabularyGaps(resources);
-  if (gaps.length) throw new Error(`READ_VOCABULARY_INCOMPLETE: The proposed metadata still lacks reviewed table or field meanings: ${JSON.stringify(gaps)}. Supply complete labels/descriptions from the operator's evidence, or ask for the genuinely missing meaning. No Read revision was accepted.`);
-}
-
 function assertPrivacyOnlyRevision(
   revision: Pick<ModelReadBoundaryRevisionResult, "changes" | "policy_changes">,
 ): void {
@@ -997,24 +969,14 @@ function currentFieldExposure(
 }
 
 function fieldRoles(input: {
-  field: string;
   primaryKey: boolean;
   trustedScope: boolean;
   relationshipKey: boolean;
 }): string[] {
   const roles: string[] = [];
   if (input.primaryKey) roles.push("record_identity");
-  if (/(?:^|_)(?:id|identifier)(?:$|_)/iu.test(input.field)) {
-    roles.push("internal_identifier_candidate");
-  }
   if (input.trustedScope) roles.push("trusted_scope");
   if (input.relationshipKey) roles.push("relationship_key");
-  if (/(?:^|_)(?:version|revision|etag|lock_version|updated_at)(?:$|_)/iu.test(input.field)) {
-    roles.push("conflict_or_version_guard");
-  }
-  if (/(?:^|_)(?:auto_?approval|approval|private|internal)(?:$|_)/iu.test(input.field)) {
-    roles.push("private_policy_candidate");
-  }
   return roles;
 }
 

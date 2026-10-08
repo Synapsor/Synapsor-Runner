@@ -29,10 +29,6 @@ const TEST_FILE = "synapsor.candidate.contract-tests.json";
 const REVIEW_JSON_FILE = "generation-review.json";
 const REVIEW_FILE = "REVIEW.md";
 
-const TENANT_PATTERN = /^(tenant|tenant_id|tenantid|workspace_id|organization_id|org_id|account_id|merchant_id|store_id|company_id|team_id|facility_id|property_id|clinic_id|project_id)$/i;
-const PRINCIPAL_PATTERN = /^(user_id|userid|owner_id|assignee_id|assigned_[a-z0-9_]+_id|agent_id|staff_id|technician_id|manager_id|trainer_id|principal_id|customer_id|patient_id)$/i;
-const CONFLICT_PATTERN = /^(version|row_version|lock_version|updated_at|updatedat|etag|modified_at)$/i;
-const PRIMARY_PATTERN = /^(id|uuid|[a-z0-9_]+_id)$/i;
 const MODEL_AUTHORITY_PATTERN =
   /^(tenant|tenant_id|tenantid|principal|principal_id|schema|table|column|columns|database|database_url|sql|query|where|predicate|expected_version|row_version|approval_identity|token|api_key|password|secret)$/i;
 
@@ -309,7 +305,6 @@ function buildCapability(
   const structuralPrimary = object.fields.find((field) => field.name === primaryKey);
   const args = actionArgs(action.args, lookupArg, structuralPrimary?.type);
   const suggestedVisible = unique([
-    primaryKey,
     ...action.visible_candidates,
     ...object.visible_candidates,
   ]).filter(isSafeIdentifier);
@@ -333,7 +328,6 @@ function buildCapability(
     args,
     lookup: { id_from_arg: Object.prototype.hasOwnProperty.call(args, lookupArg) ? lookupArg : Object.keys(args)[0]! },
     visible_fields: unique([
-      isSafeIdentifier(primaryKey) ? primaryKey : "review_required_id",
       "review_required_tenant",
       "review_required_version",
       "review_required_visible_field",
@@ -1041,7 +1035,7 @@ function parseOpenApiDocument(source: string, sourceName: string): ParsedSchema 
       schema: "review_required_schema",
       table: `review_required_api_object_${index + 1}`,
       fields,
-      primary: fields.filter((field) => PRIMARY_PATTERN.test(field.name)).map((field) => field.name).slice(0, 1),
+      primary: [],
       assumptions: [
         "OpenAPI path/operation shape does not prove a database table, tenant boundary, or authorization policy.",
       ],
@@ -1139,7 +1133,7 @@ function candidateFieldFromOpenApi(name: string, schema: unknown, required: bool
     name,
     type,
     required,
-    primary_key: PRIMARY_PATTERN.test(name) && (schema.readOnly === true || /id$/i.test(name)),
+    primary_key: false,
     unique: false,
     generated: schema.readOnly === true,
     sensitive: sensitivity.state !== "structurally_low_risk",
@@ -1207,9 +1201,9 @@ function objectFromFields(input: {
 }): CandidateObject {
   const fields = uniqueFields(input.fields).slice(0, MAX_FIELDS_PER_OBJECT);
   const primaryCandidates = unique(input.primary.filter(isSafeIdentifier));
-  const tenant = fields.filter((field) => TENANT_PATTERN.test(field.name)).map((field) => field.name);
-  const principal = fields.filter((field) => PRINCIPAL_PATTERN.test(field.name)).map((field) => field.name);
-  const conflict = fields.filter((field) => CONFLICT_PATTERN.test(field.name)).map((field) => field.name);
+  const tenant: string[] = [];
+  const principal: string[] = [];
+  const conflict: string[] = [];
   const sensitive = fields.filter((field) => field.sensitive).map((field) => field.name);
   const visible = fields
     .filter((field) => !field.sensitive)
@@ -1259,8 +1253,8 @@ function objectFromFields(input: {
       ...(primaryCandidates.length === 1
         ? []
         : ["A single structural primary key was not proven; review_required_id remains a placeholder."]),
-      ...(tenant.length ? ["Tenant-like field names are suggestions only and were not selected as authority."] : ["No tenant-like field was found; choose an isolated deployment or reviewed tenant key."]),
-      ...(conflict.length ? ["Version-like field names are suggestions only and were not selected as the conflict guard."] : ["No version-like field was found; define an exact concurrency strategy before writes."]),
+      "Static storage metadata does not establish tenant or principal authority; review the exact trusted bindings.",
+      "Static storage metadata does not establish version semantics; define an exact concurrency strategy before writes.",
       ...input.assumptions,
     ]),
     unsupported: unique(input.unsupported),
@@ -1274,7 +1268,7 @@ function fieldFromName(name: string): CandidateField {
     name: safe,
     type: "string",
     required: true,
-    primary_key: PRIMARY_PATTERN.test(name),
+    primary_key: false,
     unique: false,
     generated: false,
     sensitive: sensitivity.state !== "structurally_low_risk",
@@ -1316,6 +1310,7 @@ function moreRestrictiveSensitivity(
 ): SensitivityClassification {
   const rank = {
     structurally_low_risk: 0,
+    review_required: 1,
     unresolved_free_text: 1,
     high_confidence_sensitive: 2,
   } as const;

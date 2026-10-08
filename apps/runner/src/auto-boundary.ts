@@ -15,6 +15,7 @@ import {
   schemaFingerprintForInspection,
   classifySensitivity,
   type SchemaInspection,
+  type InspectedSourceInventory,
   type DatabaseServerAuthority,
   type DatabaseServerCompatibility,
   type SensitivityClassification,
@@ -36,7 +37,8 @@ import type {
   BoundaryReviewProgressArtifact,
 } from "./boundary-review-progress-types.js";
 import { formatDerivedScopePath } from "./derived-scope-display.js";
-import { exploreBoundaryVocabularyGaps, exploreFieldSemanticStatus, exploreVocabularyCoverage } from "./explore-vocabulary.js";
+import { exploreFieldVocabularyStatus, exploreVocabularyCoverage } from "./explore-vocabulary.js";
+import type { NativeReadScopeAssessment } from "./authoring-read-scope-native.js";
 import { RELATIVE_TIME_WINDOWS, RELATIVE_TIME_COMPARISONS } from "./relative-time-window.js";
 import { checkReadDiscoveryContracts, readDiscoveryConcernLines, type ReadDiscoveryConcern } from "./read-discovery-compatibility.js";
 import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
@@ -53,14 +55,14 @@ import { OPERATOR_POLICY_RECORD_VERSION, OPERATOR_READ_SELECTION_KEY, OPERATOR_R
   assertReadAuthoringBindings, type ReadAuthoringBindings, storedOperatorPolicyRecord } from "./control-policy-record.js";
 
 export const AUTO_BOUNDARY_VERSION = "synapsor.auto-boundary.v1";
-export const GENERATION_LOCK_VERSION = "synapsor.generation-lock.v1";
+export const GENERATION_LOCK_VERSION = "synapsor.generation-lock.v2";
 export const AUTHORITY_DEPENDENCIES_VERSION = "synapsor.authority-dependencies.v1";
 export const CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION =
   "synapsor.configured-trusted-context-authority.v1";
-export const EXPLORATION_BOUNDARY_VERSION = "synapsor.exploration-boundary.v1";
+export const EXPLORATION_BOUNDARY_VERSION = "synapsor.exploration-boundary.v2";
 export const AUTO_BOUNDARY_OVERRIDES_VERSION = "synapsor.auto-boundary-overrides.v1";
 export const ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION = "synapsor.active-exploration-boundaries.v1";
-export const AUTO_BOUNDARY_COMPILER_VERSION = "1.7.0";
+export const AUTO_BOUNDARY_COMPILER_VERSION = "2.0.0";
 export const AUTO_BOUNDARY_SPEC_VERSION = "1.9.0";
 export const SUPPORTED_AUTO_BOUNDARY_SPEC_VERSIONS = new Set(["1.8.0", AUTO_BOUNDARY_SPEC_VERSION]);
 export const SHARED_REFERENCE_ACKNOWLEDGEMENT = "table_has_no_per_tenant_rows";
@@ -281,6 +283,8 @@ export type SharedReferenceScopeInference = {
   confirmation_required: true;
   safety_consequence: string;
   blockers: string[];
+  /** Exact inspected relationship ownership for guidance; diagnostic prose has no decision effect. */
+  relationship_blockers?: Array<{ relationship: string; target_resource: string }>;
   review_override?: ReviewedValueDecision;
 };
 
@@ -470,10 +474,15 @@ export function ownerReviewableExplorationBudgetCeiling(
     : undefined;
 }
 
+export type SingleOrganizationInventory = Omit<InspectedSourceInventory, "coverage" | "resources"> & {
+  coverage: "complete";
+  resources: Array<{ schema: string; table: string; columns: string[]; row_level_security: false }>;
+};
 export type SingleOrganizationScope = {
   mode: "single_organization";
   organization_id: string;
   acknowledgement: "all_rows_belong_to_one_organization";
+  inspected_source_inventory: SingleOrganizationInventory;
 };
 
 export type ConfiguredTrustedContextAuthority = {
@@ -486,6 +495,198 @@ export type ConfiguredTrustedContextAuthority = {
   tenant_claim?: string;
   principal_claim?: string;
 };
+
+export const BOUNDARY_REVIEW_REQUIREMENTS_VERSION = "synapsor.boundary-review-requirements.v1";
+export const BOUNDARY_REVIEW_SUBMISSION_VERSION = "synapsor.boundary-review-submission.v1";
+export type BoundaryReviewRequirements = {
+  schema_version: typeof BOUNDARY_REVIEW_REQUIREMENTS_VERSION;
+  database_role_review_required: boolean;
+};
+export type BoundaryReviewBinding =
+  | { kind: "deployment_profile" | "trusted_context" | "organization_scope" | "database_role" }
+  | { kind: "tenant_scope" | "principal_scope" | "field_visibility" | "field_permissions" | "privacy_budgets" | "metadata"; resource_id: string }
+  | { kind: "relationship"; resource_id: string; relationship_id: string; target_resource: string };
+export type BoundaryReviewDecisionRef = BoundaryReviewBinding & { id: string; input_digest: `sha256:${string}` };
+export type ProjectedBoundaryReviewDecision = BoundaryReviewDecisionRef & { decision: string };
+export type BoundaryReviewSubmission = {
+  schema_version: typeof BOUNDARY_REVIEW_SUBMISSION_VERSION;
+  candidate_digest: `sha256:${string}`;
+  decisions: BoundaryReviewDecisionRef[];
+};
+
+export type BoundaryReviewOrigin = {
+  revision_id: string;
+  boundary_id: `bnd_${string}`;
+  candidate_digest: `sha256:${string}`;
+};
+export type ResolvedBoundaryReviewOrigin = {
+  reference: BoundaryReviewOrigin;
+  candidate: ExplorationBoundaryDraft;
+};
+
+export function parseBoundaryReviewDecisionRef(value: unknown): BoundaryReviewDecisionRef {
+  const invalid = (): never => { throw Object.assign(new Error("Boundary review reference is not a supported exact typed binding."),
+    { code: "BOUNDARY_REVIEW_SUBMISSION_INVALID" as const }); };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return invalid();
+  const item = value as Record<string, unknown>;
+  if (typeof item.id !== "string" || !item.id.length || typeof item.input_digest !== "string"
+    || !/^sha256:[a-f0-9]{64}$/.test(item.input_digest)) return invalid();
+  let keys = ["id", "input_digest", "kind"];
+  switch (item.kind) {
+    case "deployment_profile": case "trusted_context": case "organization_scope": case "database_role": break;
+    case "tenant_scope": case "principal_scope": case "field_visibility": case "field_permissions": case "privacy_budgets": case "metadata":
+      if (typeof item.resource_id !== "string" || !item.resource_id.length) return invalid();
+      keys.push("resource_id"); break;
+    case "relationship":
+      if ([item.resource_id, item.relationship_id, item.target_resource].some(part => typeof part !== "string" || !part.length)) return invalid();
+      keys.push("resource_id", "relationship_id", "target_resource"); break;
+    default: return invalid();
+  }
+  if (Object.keys(item).sort().join(",") !== keys.sort().join(",")) return invalid();
+  return structuredClone(item) as BoundaryReviewDecisionRef;
+}
+
+function reviewProtocolError(message: string): Error {
+  return Object.assign(new Error(message), { code: "BOUNDARY_REVIEW_PROTOCOL_REQUIRED" as const });
+}
+export function assertBoundaryReviewRequirements(value: unknown): asserts value is BoundaryReviewRequirements {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || Object.keys(value).sort().join(",") !== "database_role_review_required,schema_version"
+    || (value as BoundaryReviewRequirements).schema_version !== BOUNDARY_REVIEW_REQUIREMENTS_VERSION
+    || typeof (value as BoundaryReviewRequirements).database_role_review_required !== "boolean") {
+    throw reviewProtocolError("This draft requires a fresh typed boundary review; existing records remain preserved.");
+  }
+}
+
+/** Complete review obligations come from current typed authority, never display copy. */
+export function projectBoundaryReviewDecisions(candidateInput: ExplorationBoundaryDraft): ProjectedBoundaryReviewDecision[] {
+  const candidate = normalizeDependentAggregateAuthority(candidateInput);
+  assertBoundaryReviewRequirements(candidate.review_requirements);
+  const resources = new Map(candidate.pack.resources.map(resource => [resource.id, resource]));
+  if (resources.size !== candidate.pack.resources.length) throw reviewProtocolError("Boundary review contains duplicate resource identities.");
+  const result: ProjectedBoundaryReviewDecision[] = [];
+  const add = (binding: BoundaryReviewBinding, detail: string, reviewedInput: unknown) => {
+    const id = "resource_id" in binding
+      ? `resource.${binding.resource_id}.${binding.kind}${binding.kind === "relationship" ? `.${binding.relationship_id}` : ""}`
+      : `global.${binding.kind}`;
+    result.push({ ...binding, id, decision: "resource_id" in binding ? `${binding.resource_id}: ${detail}` : detail,
+      input_digest: canonicalJsonDigest({ schema_version: "synapsor.boundary-review-input.v1",
+        decision_kind: binding.kind, reviewed_input: reviewedInput }) });
+  };
+  add({ kind: "deployment_profile" }, candidate.deployment_profile === "production"
+    ? "deployment profile: confirm production Explore over secured HTTP with mandatory per-principal scope and privacy accounting"
+    : "deployment profile: confirm development or staging authoring-only use", { deployment_profile: candidate.deployment_profile });
+  if (candidate.organization_scope) {
+    const scope = singleOrganizationScope(candidate.organization_scope.organization_id, candidate.organization_scope.inspected_source_inventory);
+    if (canonicalJsonDigest(scope) !== canonicalJsonDigest(candidate.organization_scope)) throw reviewProtocolError("Invalid exact organization scope.");
+    const population = scope.inspected_source_inventory.resources.map(resource =>
+      `${JSON.stringify([resource.schema, resource.table])} columns ${JSON.stringify(resource.columns)}`).join("; ");
+    add({ kind: "organization_scope" },
+      `organization scope: confirm this source contains one organization (${scope.organization_id}), every row belongs to it, and Explore will apply no tenant predicate; persistent user relations in ${JSON.stringify(scope.inspected_source_inventory.scope)}: ${population || "none"}`,
+      { organization_scope: scope, source_name: candidate.source, deployment_profile: candidate.deployment_profile,
+        generation_lock_fingerprint: candidate.generation_lock_fingerprint, tenant_predicate: "not_applied" });
+  }
+  add({ kind: "trusted_context" }, candidate.trusted_context.provider === "http_claims"
+    ? candidate.organization_scope
+      ? `trusted context: confirm principal comes only from verified HTTP claim ${candidate.trusted_context.principal_claim}; organization identity is fixed by the reviewed boundary`
+      : `trusted context: confirm tenant and principal come only from verified HTTP claims ${candidate.trusted_context.tenant_claim} and ${candidate.trusted_context.principal_claim}`
+    : candidate.trusted_context.database_role_tenant
+      ? `trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting ${candidate.trusted_context.database_role_tenant.setting} and principal scope remains outside model arguments`
+      : candidate.organization_scope
+        ? `trusted context: confirm organization identity is fixed as ${candidate.organization_scope.organization_id} and any principal binding remains outside model arguments`
+        : "trusted context: confirm operator-supplied tenant and principal bindings remain outside model arguments", candidate.trusted_context);
+  if (candidate.review_requirements.database_role_review_required) add({ kind: "database_role" },
+    "database role: use and verify a non-owner, non-superuser, non-BYPASSRLS, read-only credential before enabling Scoped Explore",
+    { role_posture_fingerprint: candidate.role_posture_fingerprint });
+  const trustedTenant = candidate.trusted_context.provider === "http_claims"
+    ? { trusted_tenant_http_claim: candidate.trusted_context.tenant_claim }
+    : { trusted_tenant_env: candidate.trusted_context.tenant_env,
+      ...(candidate.trusted_context.database_role_tenant ? { trusted_tenant_database_role_setting: candidate.trusted_context.database_role_tenant.setting } : {}) };
+  const relationshipScope = (resource: ExplorationBoundaryDraft["pack"]["resources"][number]) => ({
+    ...(resource.tenant_key ? { tenant_key: resource.tenant_key } : {}),
+    ...(resource.tenant_scope ? { tenant_scope: resource.tenant_scope } : {}),
+    ...(resource.shared_reference_scope ? { shared_reference_scope: resource.shared_reference_scope } : {}),
+    principal_key: resource.principal_key ?? null,
+    ...(resource.principal_scope ? { principal_scope: resource.principal_scope } : {}),
+  });
+  for (const resource of candidate.pack.resources) {
+    const resource_id = resource.id;
+    const scopeCount = [candidate.organization_scope, resource.tenant_key, resource.tenant_scope, resource.shared_reference_scope].filter(Boolean).length;
+    if (scopeCount !== 1) throw reviewProtocolError(`${resource_id} requires one exact typed tenant or organization scope before review.`);
+    if (candidate.organization_scope) add({ kind: "tenant_scope", resource_id },
+      "confirm whole-organization read access with no tenant predicate", { organization_scope: candidate.organization_scope, tenant_predicate: "not_applied" });
+    else if (resource.tenant_key) add({ kind: "tenant_scope", resource_id }, `confirm tenant key ${resource.tenant_key}`,
+      { tenant_key: resource.tenant_key, ...trustedTenant, rls_session: resource.rls_session ?? null });
+    else if (resource.tenant_scope) add({ kind: "tenant_scope", resource_id },
+      `confirm mandatory derived tenant scope via ${resource.tenant_scope.path_id} to ${resource.tenant_scope.ancestor_resource}.${resource.tenant_scope.ancestor_column}`,
+      { tenant_scope: resource.tenant_scope, ...trustedTenant, rls_session: resource.rls_session ?? null });
+    else add({ kind: "tenant_scope", resource_id }, "confirm reviewed shared reference with no tenant predicate",
+      { shared_reference_scope: resource.shared_reference_scope, tenant_predicate: "not_applied", field_privacy_controls: "unchanged" });
+    const principal = principalScopeReviewDecision(resource, candidate);
+    result.push({ ...principal, kind: "principal_scope", resource_id });
+    add({ kind: "field_visibility", resource_id }, "confirm visible and kept-out fields", {
+      selectable_fields: resource.selectable_fields,
+      ...(resource.model_withheld_fields?.length ? { model_withheld_fields: resource.model_withheld_fields } : {}),
+      kept_out_fields: resource.kept_out_fields,
+    });
+    if (resource.label || resource.description || Object.keys(resource.field_metadata ?? {}).length) add({ kind: "metadata", resource_id },
+      "confirm reviewed labels and descriptions", {
+        ...(resource.label ? { label: resource.label } : {}), ...(resource.description ? { description: resource.description } : {}),
+        field_metadata: resource.field_metadata ?? {},
+      });
+    add({ kind: "field_permissions", resource_id }, "confirm filter/sort/group/aggregate-only field permissions", {
+      filterable_fields: resource.filterable_fields, sortable_fields: resource.sortable_fields,
+      groupable_fields: resource.groupable_fields, aggregate_measures: resource.aggregate_measures,
+      ...(resource.aggregate_measure_functions ? { aggregate_measure_functions: resource.aggregate_measure_functions } : {}),
+      ...(resource.presence_measure_fields ? { presence_measure_fields: resource.presence_measure_fields } : {}),
+      ...(resource.derived_measures?.length ? { derived_measures: resource.derived_measures } : {}),
+      ...(resource.numeric_bands?.length ? { numeric_bands: resource.numeric_bands } : {}),
+      ...(resource.auto_bands?.length ? { auto_bands: resource.auto_bands } : {}),
+      count_distinct_fields: resource.count_distinct_fields, time_bucket_fields: resource.time_bucket_fields, field_enums: resource.field_enums,
+    });
+    add({ kind: "privacy_budgets", resource_id }, "confirm minimum cohort and extraction/differencing budgets", {
+      minimum_cohort_size: resource.minimum_cohort_size,
+      ...(resource.minimum_cohort_overridden ? { minimum_cohort_overridden: true } : {}),
+      suppression_aware_totals: resource.suppression_aware_totals, budgets: candidate.budgets,
+    });
+    for (const relationship of resource.relationships) {
+      const target = resources.get(relationship.target_resource);
+      if (!target) throw reviewProtocolError(`${resource_id} relationship ${relationship.id} has no retained target resource.`);
+      add({ kind: "relationship", resource_id, relationship_id: relationship.id, target_resource: target.id },
+        `review relationship ${relationship.id} cardinality and scope on ${target.id}`, {
+          relationship, source_scope: relationshipScope(resource), target_scope: relationshipScope(target),
+        });
+    }
+  }
+  if (new Set(result.map(item => item.id)).size !== result.length) throw reviewProtocolError("Boundary review has duplicate decision identities.");
+  return result.sort((left, right) => left.id.localeCompare(right.id));
+}
+
+export function boundaryReviewDecisionRefs(candidate: ExplorationBoundaryDraft): BoundaryReviewDecisionRef[] {
+  return projectBoundaryReviewDecisions(candidate).map(({ decision: _copy, ...reference }) => reference);
+}
+
+/** Validates actual native references; never creates an operator confirmation. */
+export function validateBoundaryReviewSubmission(candidate: ExplorationBoundaryDraft, submission: unknown,
+  completeness: "partial" | "complete"): BoundaryReviewDecisionRef[] {
+  const invalid = (): never => { throw Object.assign(new Error("Boundary review requires exact current typed decision references."),
+    { code: "BOUNDARY_REVIEW_SUBMISSION_INVALID" as const }); };
+  if (!submission || typeof submission !== "object" || Array.isArray(submission)
+    || Object.keys(submission).sort().join(",") !== "candidate_digest,decisions,schema_version") return invalid();
+  const value = submission as BoundaryReviewSubmission;
+  if (value.schema_version !== BOUNDARY_REVIEW_SUBMISSION_VERSION
+    || value.candidate_digest !== explorationBoundaryCandidateDigest(candidate) || !Array.isArray(value.decisions)) return invalid();
+  const required = boundaryReviewDecisionRefs(candidate), byId = new Map(required.map(item => [item.id, item]));
+  const selected = new Set<string>();
+  for (const item of value.decisions) {
+    if (!item || typeof item !== "object" || Array.isArray(item) || typeof item.id !== "string" || selected.has(item.id)) return invalid();
+    const expected = byId.get(item.id);
+    if (!expected || canonicalJsonDigest(expected) !== canonicalJsonDigest(item)) return invalid();
+    selected.add(item.id);
+  }
+  if (completeness === "complete" && selected.size !== required.length) return invalid();
+  return required.filter(item => selected.has(item.id));
+}
 
 export type ExplorationBoundaryDraft = {
   schema_version: typeof EXPLORATION_BOUNDARY_VERSION;
@@ -595,6 +796,8 @@ export type ExplorationBoundaryDraft = {
     }>;
   };
   budgets: ExplorationBudgets;
+  /** Absent only on preserved legacy artifacts; new authoring must validate the exact protocol. */
+  review_requirements?: BoundaryReviewRequirements;
   unresolved_decisions: string[];
 };
 
@@ -605,10 +808,9 @@ export type ActivatedExplorationBoundary = Omit<ExplorationBoundaryDraft, "activ
     actor: string;
     activated_at: string;
     generation_lock_fingerprint: `sha256:${string}`;
-    reviewed_decisions: Array<{
-      decision: string;
-      confirmed: true;
-    }>;
+    /** New typed receipts and preserved legacy receipts are distinct representations. */
+    reviewed_decisions: Array<BoundaryReviewDecisionRef & { confirmed: true }>
+      | Array<{ decision: string; confirmed: true }>;
     mode?: "full_review" | "instant_development";
     profile_assertion?: "own_development";
     launch_context?: "start_from_env_local_authoring";
@@ -1361,8 +1563,10 @@ function buildAutoBoundaryOnce(input: BuildAutoBoundaryInput): AutoBoundaryBuild
   const existingContracts = input.existingContracts ?? [];
   const overrides = normalizeAutoBoundaryReviewOverrides(input.overrides);
   const sourceName = input.sourceName ?? (input.inspection.engine === "postgres" ? "local_postgres" : "local_mysql");
+  if (input.singleOrganization) assertSingleOrganizationInventory(input.inspection.inspected_source_inventory,
+    { engine: input.inspection.engine, schema: input.inspectedSchema });
   const organizationScope = input.singleOrganization
-    ? singleOrganizationScope(input.singleOrganization.organizationId)
+    ? singleOrganizationScope(input.singleOrganization.organizationId, input.inspection.inspected_source_inventory)
     : undefined;
   const configuredTrustedContext = configuredTrustedContextForBuild(input, organizationScope);
   const configuredTrustedContextUsedForInference = Boolean(input.configuredTrustedContext)
@@ -1637,8 +1841,8 @@ function generationEvidenceAuthority(resources: AutoBoundaryResource[]): unknown
 
 function sharedReferenceEvidenceAuthority(
   scope: SharedReferenceScopeInference,
-): Omit<SharedReferenceScopeInference, "review_override"> {
-  const { review_override: _reviewOverride, ...authority } = scope;
+): Omit<SharedReferenceScopeInference, "review_override" | "relationship_blockers"> {
+  const { review_override: _reviewOverride, relationship_blockers: _guidanceRelationships, ...authority } = scope;
   return authority;
 }
 
@@ -1848,7 +2052,18 @@ export function compareGenerationLock(
         `database server release line changed from ${reviewedServerAuthority.engine} ${reviewedServerAuthority.version_line} to ${currentServerAuthority ? `${currentServerAuthority.engine} ${currentServerAuthority.version_line}` : inspection.server_version}`,
       ]
       : [];
+  const inventoryChanges: string[] = [];
+  if (lock.organization_scope) {
+    try {
+      assertSingleOrganizationInventory(inspection.inspected_source_inventory, { engine: lock.engine, schema: lock.inspected_schema });
+      assertSingleOrganizationInventory(lock.organization_scope.inspected_source_inventory, { engine: lock.engine, schema: lock.inspected_schema });
+      if (canonicalJsonDigest(inspection.inspected_source_inventory) !== canonicalJsonDigest(lock.organization_scope.inspected_source_inventory)) {
+        inventoryChanges.push("complete persistent Source inventory changed");
+      }
+    } catch { inventoryChanges.push("complete persistent Source inventory is unavailable or unsupported"); }
+  }
   const changes = [
+    ...inventoryChanges,
     ...serverAuthorityChanges,
     ...(schemaFingerprint !== lock.schema_fingerprint ? ["schema metadata changed"] : []),
     ...(roleFingerprint !== lock.role_posture_fingerprint ? ["database role, grants, ownership, or RLS posture changed"] : []),
@@ -2156,10 +2371,11 @@ export function describeExplorationBoundaryMetadata(
       model_supplied_date_arithmetic: false,
     },
     vocabulary_policy: {
-      reviewed_metadata_is_semantic_only: true,
+      metadata_purpose: "optional_presentation",
       exact_ids_required_in_plans: true,
-      opaque_identifier_behavior: "do_not_guess; ask the operator to add a reviewed label or description",
-      coded_value_behavior: "do_not_infer_business_meaning_from_codes; use exact codes only when the question names them or reviewed metadata explains them",
+      meaning_authority: "current_native_read_scope",
+      missing_meaning_behavior: "use_existing_read_owner_typed_requirements",
+      metadata_grants_authority: false,
     },
     resources: selected.map((resource) => {
       const reviewableRelationships = inactiveReviewableRelationships(resource, boundary, reviewableBoundary);
@@ -2360,7 +2576,7 @@ function describeReviewedFieldGrammar(
   return {
     id: field,
     plan_reference: "exact_id_only",
-    semantic_status: exploreFieldSemanticStatus(resource, field),
+    vocabulary_status: exploreFieldVocabularyStatus(resource, field),
     ...(resource.field_metadata?.[field]?.label
       ? { label: resource.field_metadata[field]!.label }
       : {}),
@@ -2516,7 +2732,9 @@ export async function activateExplorationBoundary(input: {
   expectedDigest: string;
   actor: string;
   confirmation: string;
-  confirmedDecisions: string[];
+  /** Derived by the existing native Read owner in the same protected operation. */
+  readScopeAssessment?: NativeReadScopeAssessment;
+  reviewSubmission: BoundaryReviewSubmission;
   currentInspection: SchemaInspection;
   activeSetMode?: "replace" | "add";
   activationAudit?: {
@@ -2541,11 +2759,7 @@ export async function activateExplorationBoundary(input: {
   const reviewed = reviewExplorationBoundaryCandidate(draft, input.candidate);
   const candidate = reviewed.candidate;
   assertGenerationLockFingerprint(lock, candidate.generation_lock_fingerprint);
-  const reviewedDecisions = assertExactDecisionReview(
-    candidate.unresolved_decisions,
-    input.confirmedDecisions,
-    draft.unresolved_decisions,
-  );
+  const reviewedDecisions = validateBoundaryReviewSubmission(candidate, input.reviewSubmission, "complete");
   assertCurrentExplorationBoundaryAuthority({
     lock,
     inspection: input.currentInspection,
@@ -2558,21 +2772,18 @@ export async function activateExplorationBoundary(input: {
       throw new Error(`${resource.id} relationship ${unresolved.id} is nullable; choose whether unmatched rows are kept as null or excluded.`);
     }
   }
-  const vocabularyGaps = exploreBoundaryVocabularyGaps(candidate.pack.resources);
-  if (vocabularyGaps.length > 0) {
-    const details = vocabularyGaps.map((gap) => {
-      const missing = [
-        ...(gap.resource_gap ? ["table label or description"] : []),
-        ...(gap.fields.length > 0 ? [`field vocabulary for ${gap.fields.join(", ")}`] : []),
-      ];
-      return `- ${gap.resource}: ${missing.join("; ")}`;
+  const readScope = input.readScopeAssessment;
+  if (!readScope || readScope.kind !== "native" || readScope.status !== "confirmed"
+    || readScope.candidate_digest !== explorationBoundaryCandidateDigest(candidate)
+    || readScope.replacement_pending || readScope.record.proposal.applicability !== "read_requested"
+    || readScope.analysis_assessment?.status !== "compatible") {
+    throw Object.assign(new Error("The exact current analyzed Read meaning remains pending with its native review owner."), {
+      code: "READ_SCOPE_REVIEW_REQUIRED" as const,
+      candidate_digest: explorationBoundaryCandidateDigest(candidate),
+      read_scope_status: readScope?.status ?? "pending",
+      ...(readScope?.kind === "native" && readScope.analysis_assessment
+        ? { read_scope_delta: readScope.analysis_assessment } : {}),
     });
-    throw new Error([
-      "Exploration-boundary activation requires reviewed vocabulary for clearly opaque model-facing identifiers.",
-      ...details,
-      "Open /access, select each table or column, and press I to add a reviewed label or description; then review and activate again.",
-      "Plans will still use exact database IDs. Reviewed vocabulary helps the model choose those IDs and grants no additional data authority.",
-    ].join("\n"));
   }
   const normalizedAuthority = boundaryAuthority(candidate);
   const digest = canonicalJsonDigest(normalizedAuthority);
@@ -2602,6 +2813,7 @@ export async function activateExplorationBoundary(input: {
     trusted_context: candidate.trusted_context,
     generation_lock_fingerprint: candidate.generation_lock_fingerprint,
     role_posture_fingerprint: candidate.role_posture_fingerprint,
+    review_requirements: structuredClone(candidate.review_requirements),
     ...(candidate.read_prerequisite ? { read_prerequisite: structuredClone(candidate.read_prerequisite) } : {}),
     pack: candidate.pack,
     budgets: candidate.budgets,
@@ -2611,7 +2823,7 @@ export async function activateExplorationBoundary(input: {
       actor,
       activated_at: new Date().toISOString(),
       generation_lock_fingerprint: input.candidate.generation_lock_fingerprint,
-      reviewed_decisions: reviewedDecisions.map((decision) => ({ decision, confirmed: true as const })),
+      reviewed_decisions: reviewedDecisions.map((reference) => ({ ...reference, confirmed: true as const })),
       ...(input.activationAudit ?? {}),
     },
   };
@@ -2642,6 +2854,7 @@ export function assertCurrentExplorationBoundaryAuthority(input: {
   candidate: ExplorationBoundaryDraft;
 }): void {
   const compatibility = assertSupportedDatabaseServerVersion(input.inspection);
+  assertStoredOrganizationScope(input.candidate, input.lock);
   if (!input.lock.database_server_version
     || !input.lock.database_server_tier
     || !input.lock.database_server_authority) {
@@ -2690,6 +2903,7 @@ export function assertStoredExplorationPolicy(
   lock: GenerationLock,
 ): void {
   assertGenerationLockFingerprint(lock, boundary.generation_lock_fingerprint);
+  assertStoredOrganizationScope(boundary, lock);
   if (boundary.activation === "disabled_unreviewed") {
     const reviewed = reviewExplorationBoundaryCandidate(boundary, boundary);
     // A transfer must not silently repair or minimize saved authority.
@@ -2714,6 +2928,7 @@ export function assertStoredExplorationMetadata(
     throw new Error("Metadata-only authoring requires an empty disabled scaffold, not Read authority.");
   }
   assertGenerationLockFingerprint(lock, boundary.generation_lock_fingerprint);
+  assertStoredOrganizationScope(boundary, lock);
   assertBoundaryCandidateMetadata(boundary, boundary);
 }
 
@@ -3039,7 +3254,7 @@ function validateActivatedExplorationBoundary(
     throw new Error("Activated exploration boundary has an unsupported reporting timezone.");
   }
   if (active.organization_scope) {
-    const normalized = singleOrganizationScope(active.organization_scope.organization_id);
+    const normalized = singleOrganizationScope(active.organization_scope.organization_id, active.organization_scope.inspected_source_inventory);
     if (canonicalJsonDigest(normalized) !== canonicalJsonDigest(active.organization_scope)) {
       throw new Error("Activated exploration boundary has an invalid single-organization scope declaration.");
     }
@@ -4288,11 +4503,11 @@ function applyReviewOverrides(
       field.raw_visible_suggestion = allow;
       field.aggregate_measure_suggestion = allow
         && isNumericType(field.data_type)
-        && isAnalyticalNumericMeasureName(field.name);
+        && !isStructuralIdentityField(resource, field.name);
       field.count_distinct_suggestion = allow;
       field.groupable_suggestion = allow
         && !field.primary_key
-        && !isReferenceIdentifierName(field.name)
+        && !isStructuralIdentityField(resource, field.name)
         && isCategoricalType(field.data_type);
       field.time_bucket_suggestion = allow && isTimestampType(field.data_type);
     }
@@ -4501,6 +4716,7 @@ function sharedReferenceScopeInference(
   resources: Map<string, AutoBoundaryResource>,
 ): SharedReferenceScopeInference {
   const blockers = new Set<string>();
+  const relationshipBlockers: NonNullable<SharedReferenceScopeInference["relationship_blockers"]> = [];
   if (resource.tenant_key.selected || resource.tenant_key.candidates.length > 0) {
     blockers.add("the inspected table has tenant-scope column evidence");
   }
@@ -4519,6 +4735,7 @@ function sharedReferenceScopeInference(
       || target.tenant_key.candidates.length > 0
       || target.derived_tenant_scope?.selected
       || (target.derived_tenant_scope?.candidates.length ?? 0) > 0) {
+      relationshipBlockers.push({ relationship: relationship.name, target_resource: target.id });
       blockers.add(
         `relationship ${relationship.name} reaches tenant-scoped resource ${target.id}`,
       );
@@ -4530,6 +4747,8 @@ function sharedReferenceScopeInference(
     safety_consequence:
       "Runner will apply no tenant predicate to this table; every tenant may receive the same reviewed rows, while field, cohort, and budget controls remain enforced.",
     blockers: [...blockers].sort(),
+    ...(relationshipBlockers.length ? { relationship_blockers: relationshipBlockers.sort((left, right) =>
+      left.relationship.localeCompare(right.relationship) || left.target_resource.localeCompare(right.target_resource)) } : {}),
   };
 }
 
@@ -4569,50 +4788,76 @@ function refreshResourceStatus(resource: AutoBoundaryResource, singleOrganizatio
       : "draft_read";
 }
 
-function singleOrganizationScope(organizationId: string): SingleOrganizationScope {
+function organizationInventoryError(): Error {
+  return Object.assign(new Error("Single-organization Explore requires the exact complete persistent Source inventory with no RLS, followed by explicit current review."),
+    { code: "SINGLE_ORGANIZATION_SCOPE_REVIEW_REQUIRED" as const });
+}
+
+function assertSingleOrganizationInventory(value: unknown,
+  expected?: { engine: SchemaInspection["engine"]; schema?: string }): asserts value is SingleOrganizationInventory {
+  const fail = (): never => { throw organizationInventoryError(); };
+  if (!isRecord(value) || Object.keys(value).sort().join(",") !== "coverage,engine,population,resources,schema_version,scope"
+    || value.schema_version !== "synapsor.inspected-source-inventory.v1" || value.population !== "persistent_user_relations"
+    || value.coverage !== "complete" || typeof value.engine !== "string" || !["postgres", "mysql"].includes(value.engine)
+    || !isRecord(value.scope) || !Array.isArray(value.resources)) return fail();
+  const schemaSupported = (schema: unknown): schema is string => typeof schema === "string" && schema.length > 0 && !schema.includes("\0")
+    && (value.engine === "postgres" ? schema !== "information_schema" && !schema.startsWith("pg_")
+      : !["information_schema", "mysql", "performance_schema", "sys"].includes(schema.toLowerCase()));
+  if (value.scope.kind === "database") {
+    if (Object.keys(value.scope).join(",") !== "kind") return fail();
+  } else if (value.scope.kind !== "schema" || Object.keys(value.scope).sort().join(",") !== "kind,schema"
+    || !schemaSupported(value.scope.schema)) return fail();
+  if (expected && (value.engine !== expected.engine || canonicalJsonDigest(value.scope) !== canonicalJsonDigest(
+    expected.schema === undefined ? { kind: "database" } : { kind: "schema", schema: expected.schema }))) return fail();
+  const identities = new Set<string>();
+  for (const resource of value.resources) {
+    if (!isRecord(resource) || Object.keys(resource).sort().join(",") !== "columns,row_level_security,schema,table"
+      || !schemaSupported(resource.schema) || typeof resource.table !== "string" || !resource.table || resource.table.includes("\0")
+      || value.scope.kind === "schema" && resource.schema !== value.scope.schema
+      || resource.row_level_security !== false || !Array.isArray(resource.columns)
+      || resource.columns.some(field => typeof field !== "string" || !field || field.includes("\0"))
+      || canonicalJsonDigest(resource.columns) !== canonicalJsonDigest([...new Set(resource.columns)].sort())) return fail();
+    const identity = JSON.stringify([resource.schema, resource.table]);
+    if (identities.has(identity)) return fail();
+    identities.add(identity);
+  }
+  const sorted = [...value.resources].sort((a, b) => a.schema.localeCompare(b.schema) || a.table.localeCompare(b.table));
+  if (canonicalJsonDigest(sorted) !== canonicalJsonDigest(value.resources)) return fail();
+}
+
+function singleOrganizationScope(organizationId: string, inventory: unknown): SingleOrganizationScope {
   const normalized = organizationId.trim();
   if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(normalized)) {
     throw new Error("Single-organization Explore requires an organization id of 1-128 letters, numbers, dots, colons, underscores, or dashes.");
   }
-  return {
-    mode: "single_organization",
-    organization_id: normalized,
-    acknowledgement: "all_rows_belong_to_one_organization",
-  };
+  assertSingleOrganizationInventory(inventory);
+  return { mode: "single_organization", organization_id: normalized,
+    acknowledgement: "all_rows_belong_to_one_organization", inspected_source_inventory: structuredClone(inventory) };
 }
 
-export function assertSingleOrganizationInspectionSafe(
-  inspection: SchemaInspection,
-  graph?: AutoBoundaryEvidenceGraph,
-): void {
-  const evidence = new Set<string>(inspection.global_tenant_isolation_evidence ?? []);
+function assertStoredOrganizationScope(boundary: Pick<ExplorationBoundaryDraft, "organization_scope">, lock: GenerationLock): void {
+  if (canonicalJsonDigest(boundary.organization_scope ?? null) !== canonicalJsonDigest(lock.organization_scope ?? null)) {
+    throw organizationInventoryError();
+  }
+  if (boundary.organization_scope) {
+    const scope = singleOrganizationScope(boundary.organization_scope.organization_id, boundary.organization_scope.inspected_source_inventory);
+    if (canonicalJsonDigest(scope) !== canonicalJsonDigest(boundary.organization_scope)) throw organizationInventoryError();
+    assertSingleOrganizationInventory(scope.inspected_source_inventory, { engine: lock.engine, schema: lock.inspected_schema });
+  }
+}
+
+export function assertSingleOrganizationInspectionSafe(inspection: SchemaInspection, graph?: AutoBoundaryEvidenceGraph): void {
+  assertSingleOrganizationInventory(inspection.inspected_source_inventory);
+  if (inspection.inspected_source_inventory.engine !== inspection.engine) throw organizationInventoryError();
   for (const table of inspection.tables) {
-    const resource = `${table.schema}.${table.name}`;
-    for (const column of table.suggestions.tenant_columns) {
-      evidence.add(`${resource}.${column} is a tenant-scope candidate`);
-    }
-    for (const column of table.columns.filter((item) => item.suggestions.tenant)) {
-      evidence.add(`${resource}.${column.name} is marked as tenant scope`);
-    }
-    if (table.row_level_security === true || (table.row_level_security_policies?.length ?? 0) > 0) {
-      evidence.add(`${resource} has row-level security metadata`);
-    }
+    const inventory = inspection.inspected_source_inventory.resources.find(resource => resource.schema === table.schema && resource.table === table.name);
+    if (!inventory || table.columns.some(column => !inventory.columns.includes(column.name))
+      || table.row_level_security === true || (table.row_level_security_policies?.length ?? 0) > 0) throw organizationInventoryError();
   }
-  for (const resource of graph?.resources ?? []) {
-    for (const candidate of resource.tenant_key.candidates) {
-      evidence.add(`${resource.id}.${candidate} is a generated tenant-scope candidate`);
-    }
-    if (resource.tenant_key.selected) {
-      evidence.add(`${resource.id}.${resource.tenant_key.selected} is selected as tenant scope`);
-    }
-  }
-  if (evidence.size > 0) {
-    throw new Error([
-      "Single-organization Explore was refused because the inspected source contains tenant-isolation evidence.",
-      ...[...evidence].sort().map((item) => `- ${item}`),
-      "Use the normal multi-tenant boundary so Runner keeps injecting trusted tenant scope. No boundary was generated or activated.",
-    ].join("\n"));
-  }
+  // Candidates are now exact declared contract/configuration bindings; names,
+  // comments and legacy sensitivity/suggestion metadata contribute no roles.
+  if (graph?.resources.some(resource => resource.tenant_key.candidates.length > 0 || resource.tenant_key.selected
+    || resource.derived_tenant_scope?.selected || resource.shared_reference_scope?.selected)) throw organizationInventoryError();
 }
 
 function reviewDecisionEvidence(
@@ -4738,7 +4983,9 @@ function assertBoundaryCandidateMetadata(
   draft: ExplorationBoundaryDraft,
   candidate: ExplorationBoundaryDraft,
 ): void {
-  if (candidate.schema_version !== draft.schema_version) throw new Error("Exploration boundary schema version cannot change during review.");
+  if (draft.schema_version !== EXPLORATION_BOUNDARY_VERSION || candidate.schema_version !== EXPLORATION_BOUNDARY_VERSION) {
+    throw new Error("Exploration boundary requires the current supported typed review version; prior records remain preserved.");
+  }
   if (candidate.activation !== "disabled_unreviewed") throw new Error("A reviewed candidate must still be disabled before activation.");
   if (draft.deployment_profile === "production" && candidate.deployment_profile !== "production") {
     throw new Error("A production boundary cannot be downgraded during review.");
@@ -4788,7 +5035,7 @@ function assertBoundaryCandidateMetadata(
       throw new Error("A reviewed Read current-state prerequisite cannot be removed or changed during narrowing review.");
     }
   }
-  if (candidate.organization_scope) singleOrganizationScope(candidate.organization_scope.organization_id);
+  if (candidate.organization_scope) singleOrganizationScope(candidate.organization_scope.organization_id, candidate.organization_scope.inspected_source_inventory);
   if (candidate.organization_scope
     && (candidate.organization_scope.mode !== "single_organization"
       || candidate.organization_scope.acknowledgement !== "all_rows_belong_to_one_organization")) {
@@ -5368,46 +5615,14 @@ export function requiredReviewDecisionsForCandidate(
   draft: ExplorationBoundaryDraft,
   candidate: ExplorationBoundaryDraft,
 ): string[] {
-  const retained = new Map(candidate.pack.resources.map((resource) => [resource.id, resource]));
-  return draft.unresolved_decisions.filter((decision) => {
-    if (decision.startsWith("deployment profile:")
-      || decision.startsWith("organization scope:")
-      || decision.startsWith("trusted context:")
-      || decision.startsWith("database role:")) return true;
-    const separator = decision.indexOf(": ");
-    if (separator < 1) return true;
-    const resourceId = decision.slice(0, separator);
-    const resource = retained.get(resourceId);
-    if (!resource) return false;
-    const relationship = /^review relationship (.+) cardinality and scope on (.+)$/.exec(
-      decision.slice(separator + 2),
-    );
-    if (!relationship) return true;
-    return resource.relationships.some((item) =>
-      item.id === relationship[1] && item.target_resource === relationship[2]);
-  });
+  assertBoundaryReviewRequirements(draft.review_requirements);
+  assertBoundaryReviewRequirements(candidate.review_requirements);
+  if (canonicalJsonDigest(draft.review_requirements) !== canonicalJsonDigest(candidate.review_requirements)) {
+    throw reviewProtocolError("Generation review requirements cannot change during candidate review.");
+  }
+  return projectBoundaryReviewDecisions(candidate).map(item => item.decision);
 }
 
-function assertExactDecisionReview(
-  required: string[],
-  confirmed: string[],
-  legacyComplete?: string[],
-): string[] {
-  if (!Array.isArray(confirmed) || confirmed.some((decision) => typeof decision !== "string")) {
-    throw new Error("Boundary activation requires an explicit confirmation for every generated review decision.");
-  }
-  const normalizedRequired = [...new Set(required)].sort();
-  const normalizedConfirmed = [...new Set(confirmed)].sort();
-  const normalizedLegacy = legacyComplete ? [...new Set(legacyComplete)].sort() : undefined;
-  const exactCurrent = JSON.stringify(normalizedConfirmed) === JSON.stringify(normalizedRequired);
-  const exactLegacy = normalizedLegacy
-    ? JSON.stringify(normalizedConfirmed) === JSON.stringify(normalizedLegacy)
-    : false;
-  if (normalizedConfirmed.length !== confirmed.length || (!exactCurrent && !exactLegacy)) {
-    throw new Error("Boundary activation requires the exact complete set of generated review decisions.");
-  }
-  return normalizedRequired;
-}
 
 function assertBudgetsNarrow(draft: ExplorationBudgets, candidate: ExplorationBudgets): void {
   for (const key of Object.keys(candidate) as Array<keyof ExplorationBudgets>) {
@@ -5509,20 +5724,6 @@ type ExistingScopeEvidence = {
   principal: Array<{ value: string; detail: string }>;
 };
 
-type RankedScopeCandidate = {
-  value: string;
-  score: number;
-  confidence: InferenceConfidence;
-  evidence: string[];
-  structurally_supported: boolean;
-};
-
-const TENANT_SCOPE_NAME = /^(?:tenant|tenant_id|tenantid|organization_id|org_id|workspace_id|account_id|merchant_id|store_id|company_id|team_id|facility_id|property_id|clinic_id|project_id)$/i;
-const REVIEWABLE_TENANT_SCOPE_NAME = /^(?:tenant|tenant_id|tenantid|organization_id|org_id|workspace_id|account_id|merchant_id|store_id|company_id|team_id|facility_id|hospital_id|property_id|clinic_id|project_id)$/i;
-const PRINCIPAL_SCOPE_NAME = /^(?:principal|principal_id|user_id|owner_id|assignee_id|assigned_[a-z0-9_]+_id|agent_id|staff_id|technician_id|manager_id|trainer_id|customer_id|patient_id)$/i;
-const TENANT_RELATION_TARGET = /^(?:tenants?|organizations?|orgs?|workspaces?|merchants?|stores?|companies?|teams?|facilities?|properties?|clinics?|projects?)$/i;
-const PRINCIPAL_RELATION_TARGET = /^(?:users?|principals?|owners?|assignees?|agents?|staff|staff_members?|technicians?|managers?|trainers?)$/i;
-
 function existingScopeEvidence(table: TableInfo, contracts: SynapsorContract[]): ExistingScopeEvidence {
   const result: ExistingScopeEvidence = { primary: [], tenant: [], principal: [] };
   for (const contract of contracts) {
@@ -5573,195 +5774,36 @@ function uniqueScopeEvidence(values: Array<{ value: string; detail: string }>): 
     .sort((left, right) => `${left.value}:${left.detail}`.localeCompare(`${right.value}:${right.detail}`));
 }
 
-function rankedScopeInference(input: {
+/** Scope roles come only from declared typed bindings. Catalog grammar may
+ * resolve a setting for a declared column later; it cannot assign its role. */
+function declaredScopeInference(input: {
   kind: "tenant" | "principal";
   table: TableInfo;
-  inspection: SchemaInspection;
-  staticObjects: Array<{ format: SchemaCandidateFormat; object: CandidateObject }>;
   existing: ExistingScopeEvidence;
   configuredBinding?: string;
 }): BoundaryInference<string> {
-  const { kind, table, inspection, staticObjects, existing } = input;
-  const columns = new Set(table.columns.map((column) => column.name));
-  const candidates = new Map<string, {
-    score: number;
-    evidence: Set<string>;
-    strong: boolean;
-    confidence: InferenceConfidence;
-  }>();
-  const add = (
-    value: string,
-    score: number,
-    detail: string,
-    options: { strong?: boolean; confidence?: InferenceConfidence } = {},
-  ) => {
-    if (!columns.has(value)) return;
-    const current = candidates.get(value) ?? { score: 0, evidence: new Set<string>(), strong: false, confidence: "low" as const };
-    current.score += score;
-    current.evidence.add(detail);
-    current.strong ||= options.strong === true;
-    if (options.confidence === "high" || (options.confidence === "medium" && current.confidence === "low")) {
-      current.confidence = options.confidence;
-    }
-    candidates.set(value, current);
-  };
-  const namePattern = kind === "tenant" ? REVIEWABLE_TENANT_SCOPE_NAME : PRINCIPAL_SCOPE_NAME;
-  const configuredBinding = input.configuredBinding?.trim();
-  const configuredColumn = configuredBinding
-    ? table.columns.find((column) => column.name === configuredBinding)
-    : undefined;
-  if (configuredColumn
-    && configuredColumn.nullable === false
-    && configuredColumn.suggestions.large_or_binary !== true
-    && !isUnsafeRawType(configuredColumn.data_type)) {
-    add(
-      configuredColumn.name,
-      120,
-      `Runner config ${kind}_binding explicitly names inspected non-null column ${configuredColumn.name}; exact boundary review is still required`,
-      { strong: true, confidence: "high" },
-    );
-  }
-  for (const column of table.columns) {
-    if (namePattern.test(column.name)) {
-      add(column.name, 5, `column name ${column.name} matches a low-confidence ${kind} convention`);
-    }
-  }
-  const inspectorSuggestions = kind === "tenant" ? table.suggestions.tenant_columns : [];
-  for (const candidate of inspectorSuggestions) {
-    add(candidate, 5, `database inspector suggested ${candidate} from naming metadata`);
-  }
-  for (const item of staticObjects) {
-    const values = kind === "tenant" ? item.object.tenant_candidates : item.object.principal_candidates;
-    for (const candidate of values) {
-      add(candidate, 10, `${item.format} object ${item.object.name} suggests ${candidate}; structured source names do not prove authority`);
-    }
-  }
-  const reviewed = kind === "tenant" ? existing.tenant : existing.principal;
-  for (const item of reviewed) {
-    add(item.value, 100, item.detail, { strong: true, confidence: "high" });
-  }
-  for (const column of table.columns) {
-    const matchingPolicies = (table.row_level_security_policies ?? [])
-      .filter((policy) => policyAppliesToInspectedRole(policy.roles, inspection.current_user))
-      .filter((policy) => policy.using_expression && rlsExpressionSupportsScope(policy.using_expression, column.name, kind));
-    for (const policy of matchingPolicies) {
-      add(
-        column.name,
-        70,
-        `active RLS policy ${policy.name} references ${column.name}: ${policy.using_expression}`,
-        { strong: true, confidence: "high" },
-      );
-    }
-  }
-  const targetPattern = kind === "tenant" ? TENANT_RELATION_TARGET : PRINCIPAL_RELATION_TARGET;
-  for (const foreignKey of table.foreign_keys) {
-    if (!targetPattern.test(foreignKey.referenced_table)) continue;
-    for (const column of foreignKey.columns) {
-      add(
-        column,
-        35,
-        kind === "principal"
-          ? `foreign key ${foreignKey.name} maps ${column} to ${foreignKey.referenced_schema}.${foreignKey.referenced_table}; the relationship suggests identity but does not prove per-principal authorization`
-          : `foreign key ${foreignKey.name} maps ${column} to ${foreignKey.referenced_schema}.${foreignKey.referenced_table}`,
-        { strong: kind === "tenant", confidence: "medium" },
-      );
-    }
-  }
-  for (const [column, count] of repeatedColumnCounts(inspection)) {
-    if (count < 2 || !columns.has(column) || !namePattern.test(column)) continue;
-    add(column, Math.min(20, 4 + count), `${column} repeats across ${count} inspected resources; repetition is supporting evidence only`);
-  }
-  const ranked: RankedScopeCandidate[] = [...candidates.entries()]
-    .map(([value, candidate]) => ({
-      value,
-      score: candidate.score,
-      confidence: candidate.confidence,
-      evidence: [...candidate.evidence].sort(),
-      structurally_supported: candidate.strong,
-    }))
-    .sort((left, right) => right.score - left.score || left.value.localeCompare(right.value));
-  const winner = ranked[0];
-  const runnerUp = ranked[1];
-  const selected = winner?.structurally_supported
-    && (!runnerUp || winner.score > runnerUp.score)
-    ? winner.value
-    : undefined;
-  const evidence = ranked.flatMap((candidate) => candidate.evidence.map((detail) => ({
-    source: evidenceSource(detail),
-    detail: `${candidate.value}: ${detail}`,
-  })));
-  const blockedReason = selected
-    ? undefined
-    : ranked.length === 0
-      ? `No ${kind} scope candidate was found in reviewed contracts, database enforcement, keys, or supported static schemas.`
-      : ranked.some((candidate) => candidate.structurally_supported)
-        ? `Multiple structurally plausible ${kind} scope candidates remain; a human must choose one.`
-        : kind === "principal"
-          ? "Only descriptive schema evidence exists for principal scope; names and relationships do not prove per-principal authorization."
-          : `Only naming or repetition evidence exists for ${kind} scope; names alone cannot grant cross-row authority.`;
-  return inference(
-    selected,
-    ranked.map((candidate) => candidate.value),
-    evidence,
-    winner?.confidence === "high" && selected === winner.value,
+  const { kind, table, existing } = input;
+  const declarations = [...(kind === "tenant" ? existing.tenant : existing.principal)];
+  if (input.configuredBinding) declarations.push({ value: input.configuredBinding,
+    detail: `Runner config ${kind}_binding explicitly names ${input.configuredBinding}; exact boundary review is still required` });
+  const candidates = uniqueScopeEvidence(declarations).filter(item => {
+    const column = table.columns.find(column => column.name === item.value);
+    return column?.nullable === false && !isUnsafeRawType(column.data_type);
+  });
+  const values = unique(candidates.map(item => item.value)).sort();
+  const selected = values.length === 1 ? values[0] : undefined;
+  const evidence = candidates.map(item => ({ source: "synapsor" as const, detail: item.detail }));
+  return inference(selected, values, evidence, selected !== undefined,
     kind === "tenant"
       ? "The wrong tenant key can cause cross-tenant reads; confirmation is mandatory."
-      : "An incorrect owner or assignee key can expose another principal's row.",
-    {
-      alternatives: ranked.map((candidate) => ({
-        value: candidate.value,
-        confidence: candidate.confidence,
-        evidence: candidate.evidence,
-        selected: candidate.value === selected,
-      })),
-      confidence: selected ? winner!.confidence : "low",
-      ...(blockedReason ? { blockedReason } : {}),
-    },
-  );
-}
-
-function policyAppliesToInspectedRole(roles: string[], currentUser: string): boolean {
-  return roles.some((role) => role === "public" || role === currentUser);
-}
-
-function evidenceSource(detail: string): BoundaryInference<string>["evidence"][number]["source"] {
-  if (detail.startsWith("prisma ")) return "prisma";
-  if (detail.startsWith("drizzle ")) return "drizzle";
-  if (detail.startsWith("openapi ")) return "openapi";
-  if (detail.startsWith("Runner config")
-    || detail.startsWith("existing Synapsor")
-    || detail.includes("contract")
-    || detail.includes("capability")) return "synapsor";
-  return "database";
-}
-
-function repeatedColumnCounts(inspection: SchemaInspection): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const table of inspection.tables) {
-    for (const column of new Set(table.columns.map((candidate) => candidate.name))) {
-      counts.set(column, (counts.get(column) ?? 0) + 1);
-    }
-  }
-  return counts;
-}
-
-function expressionReferencesColumn(expression: string, column: string): boolean {
-  const escaped = column.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?:^|[^A-Za-z0-9_$])(?:"${escaped}"|${escaped})(?:$|[^A-Za-z0-9_$])`, "i").test(expression);
-}
-
-function rlsExpressionSupportsScope(
-  expression: string,
-  column: string,
-  kind: "tenant" | "principal",
-): boolean {
-  if (!expressionReferencesColumn(expression, column)) return false;
-  const setting = settingForScopedColumn([expression], column) ?? "";
-  const columnPattern = kind === "tenant" ? TENANT_SCOPE_NAME : PRINCIPAL_SCOPE_NAME;
-  // A familiar column name cannot override an explicit opposite identity
-  // binding in the inspected predicate (for example account_id -> principal).
-  if (settingNameSupportsScope(setting, kind === "tenant" ? "principal" : "tenant")) return false;
-  return settingNameSupportsScope(setting, kind) || columnPattern.test(column);
+      : "An incorrect principal key can expose another principal's row.", {
+      alternatives: values.map(value => ({ value, confidence: "high" as const,
+        evidence: candidates.filter(item => item.value === value).map(item => item.detail), selected: value === selected })),
+      confidence: selected ? "high" : "low",
+      ...(!selected ? { blockedReason: values.length
+        ? `Conflicting declared ${kind} bindings require an exact reviewed choice.`
+        : `No valid declared ${kind} binding exists; review an exact inspected field through the existing scope owner.` } : {}),
+    });
 }
 
 function buildResource(
@@ -5787,21 +5829,17 @@ function buildResource(
     : sourceProvenUniqueIdentifiers.length === 1
       ? sourceProvenUniqueIdentifiers[0]
       : undefined;
-  const tenantInference = rankedScopeInference({
+  const tenantInference = declaredScopeInference({
     kind: "tenant",
     table,
-    inspection,
-    staticObjects,
     existing,
     ...(configuredTrustedContext?.tenant_binding
       ? { configuredBinding: configuredTrustedContext.tenant_binding }
       : {}),
   });
-  const principalInference = rankedScopeInference({
+  const principalInference = declaredScopeInference({
     kind: "principal",
     table,
-    inspection,
-    staticObjects,
     existing,
     ...(configuredTrustedContext?.principal_binding
       ? { configuredBinding: configuredTrustedContext.principal_binding }
@@ -5841,7 +5879,7 @@ function buildResource(
       ...existing.primary
         .filter((item) => sourceColumns.has(item.value))
         .map((item) => ({ source: "synapsor" as const, detail: item.detail })),
-      ...evidence.map((detail) => ({ source: sourceKind(detail), detail })),
+      ...staticObjects.map((item) => ({ source: item.format, detail: `${item.format}:${item.object.name}` })),
     ], Boolean(primarySelected), "The wrong identifier could select a different row or make one-row guarantees impossible.", {
       ...(!primarySelected
         ? { blockedReason: "The database does not prove one single-column primary or unique key; a friendly field name is not enough." }
@@ -5868,11 +5906,16 @@ function buildResource(
           : []),
         ...staticClassifications,
       ]
-        .filter((classification) => !nameOnlySensitivityRefutedByStructure(
-          classification,
-          deterministicClassification,
-        ))
-        .reduce(moreRestrictiveSensitivity);
+        // Old heuristic classifications cannot supply a privacy decision. Only
+        // the typed write-only source restriction survives beside pending review.
+        .filter((classification) => classification.state === "review_required"
+          || classification.reason_codes.includes("write_only_input"))
+        .reduce(moreRestrictiveSensitivity, {
+          state: "review_required",
+          reason_codes: ["field_exposure_review_required"],
+          reasons: ["Storage metadata does not establish field disclosure permission; an explicit field exposure review is required."],
+          evidence_source: "database",
+        });
       const keptOutByClassification = sensitivity.state !== "structurally_low_risk";
       return {
         name: column.name,
@@ -5883,16 +5926,11 @@ function buildResource(
         sensitive_suggestion: keptOutByClassification,
         sensitivity,
         raw_visible_suggestion: !keptOutByClassification && !column.suggestions.large_or_binary,
-        aggregate_measure_suggestion: !keptOutByClassification
-          && isNumericType(column.data_type)
-          && isAnalyticalNumericMeasureName(column.name),
-        count_distinct_suggestion: !keptOutByClassification
-          && (table.primary_key.includes(column.name) || isReferenceIdentifierName(column.name)),
-        groupable_suggestion: !keptOutByClassification
-          && !table.primary_key.includes(column.name)
-          && !isReferenceIdentifierName(column.name)
-          && isCategoricalType(column.data_type, column.enum_values),
-        time_bucket_suggestion: !keptOutByClassification && isTimestampType(column.data_type),
+        // These are storage observations, never reviewed operation nominations.
+        aggregate_measure_suggestion: false,
+        count_distinct_suggestion: false,
+        groupable_suggestion: false,
+        time_bucket_suggestion: false,
         evidence: [
           `database column ${column.name} ${column.data_type}`,
           ...sensitivity.reasons.map((reason) => `${sensitivity.evidence_source} classification: ${reason}`),
@@ -6015,6 +6053,7 @@ function emitDraftDsl(graph: AutoBoundaryEvidenceGraph, sourceName: string): str
           && (!trustedScopeFields.has(field.name) || trustedScopeReadableFields.has(field.name)))
         .map((field) => field.name),
     ]).filter((field) => !keptOut.includes(field));
+    if (visible.length === 0) continue;
     const modelWithheld = resource.fields
       .filter((field) =>
         field.review_override?.exposure === "withhold_from_model"
@@ -6076,7 +6115,7 @@ function buildExplorationBoundaryDraft(
       .map((field) => field.name));
     const reviewedFieldEnums = Object.fromEntries(resource.fields
       .flatMap((field) => {
-        const values = reviewedBoundaryEnumValues(field, keptOutSet, trustedScopeFields);
+        const values = reviewedBoundaryEnumValues(resource, field, keptOutSet, trustedScopeFields);
         return values ? [[field.name, values] as const] : [];
       }));
     const categoricalAnalysisAvailable = (field: AutoBoundaryField): boolean =>
@@ -6292,7 +6331,9 @@ function buildExplorationBoundaryDraft(
     budgets: { ...DEFAULT_REVIEWED_EXPLORATION_BUDGETS },
     unresolved_decisions: [] as string[],
   };
-  draft.unresolved_decisions = unresolvedDecisions(graph, draft);
+  draft.review_requirements = { schema_version: BOUNDARY_REVIEW_REQUIREMENTS_VERSION,
+    database_role_review_required: !graph.database_role.verified || !graph.database_role.read_only };
+  draft.unresolved_decisions = projectBoundaryReviewDecisions(draft).map(item => item.decision);
   return draft;
 }
 
@@ -6430,63 +6471,6 @@ function generatedContractTests(
   };
 }
 
-function unresolvedDecisions(
-  graph: AutoBoundaryEvidenceGraph,
-  boundary: Pick<ExplorationBoundaryDraft, "pack" | "trusted_context" | "deployment_profile" | "organization_scope" | "source" | "role_posture_fingerprint">,
-): string[] {
-  const boundaryResources = new Map(
-    (boundary?.pack.resources ?? []).map((resource) => [resource.id, resource]),
-  );
-  return unique([
-    boundary?.deployment_profile === "production"
-      ? "deployment profile: confirm production Explore over secured HTTP with mandatory per-principal scope and privacy accounting"
-      : "deployment profile: confirm development or staging authoring-only use",
-    ...(boundary?.organization_scope
-      ? [`organization scope: confirm this source contains one organization (${boundary.organization_scope.organization_id}), every row belongs to it, and Explore will apply no tenant predicate`]
-      : []),
-    boundary?.trusted_context.provider === "http_claims"
-      ? boundary.organization_scope
-        ? `trusted context: confirm principal comes only from verified HTTP claim ${boundary.trusted_context.principal_claim}; organization identity is fixed by the reviewed boundary`
-        : `trusted context: confirm tenant and principal come only from verified HTTP claims ${boundary.trusted_context.tenant_claim} and ${boundary.trusted_context.principal_claim}`
-      : boundary?.trusted_context.database_role_tenant
-      ? `trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting ${boundary.trusted_context.database_role_tenant.setting} and principal scope remains outside model arguments`
-      : boundary?.organization_scope
-        ? `trusted context: confirm organization identity is fixed as ${boundary.organization_scope.organization_id} and any principal binding remains outside model arguments`
-        : "trusted context: confirm operator-supplied tenant and principal bindings remain outside model arguments",
-    ...(!graph.database_role.verified || !graph.database_role.read_only
-      ? ["database role: use and verify a non-owner, non-superuser, non-BYPASSRLS, read-only credential before enabling Scoped Explore"]
-      : []),
-    ...graph.resources.flatMap((resource) => [
-    ...(resource.status !== "draft_read" ? resource.blockers.map((blocker) => `${resource.id}: ${blocker}`) : []),
-    ...(resource.status === "draft_read" ? [
-      boundary?.organization_scope
-        ? `${resource.id}: confirm whole-organization read access with no tenant predicate`
-        : resource.tenant_key.selected
-          ? `${resource.id}: confirm tenant key ${resource.tenant_key.selected}`
-          : resource.derived_tenant_scope?.selected
-            ? `${resource.id}: confirm mandatory derived tenant scope via ${resource.derived_tenant_scope.selected.path_id} to ${resource.derived_tenant_scope.selected.ancestor_resource}.${resource.derived_tenant_scope.selected.ancestor_column}`
-            : `${resource.id}: confirm reviewed shared reference with no tenant predicate`,
-      principalScopeReviewDecision(boundaryResources.get(resource.id)!, boundary).decision,
-      `${resource.id}: confirm visible and kept-out fields`,
-      `${resource.id}: confirm filter/sort/group/aggregate-only field permissions`,
-      `${resource.id}: confirm minimum cohort and extraction/differencing budgets`,
-      ...(boundaryResources.get(resource.id)?.label
-        || boundaryResources.get(resource.id)?.description
-        || Object.keys(boundaryResources.get(resource.id)?.field_metadata ?? {}).length
-        ? [`${resource.id}: confirm reviewed labels and descriptions`]
-        : []),
-      ...(boundaryResources.get(resource.id)?.relationships ?? resource.relationships
-        .filter((relationship) => relationship.cardinality_proven)
-        .map((relationship) => ({
-          id: relationship.name,
-          target_resource: relationship.referenced_resource,
-        })))
-        .map((relationship) =>
-          `${resource.id}: review relationship ${relationship.id} cardinality and scope on ${relationship.target_resource}`),
-    ] : []),
-    ]),
-  ]).sort();
-}
 
 function reviewMarkdown(build: AutoBoundaryBuild): string {
   const derivedScopes = build.review.resources.flatMap((resource) => [
@@ -6643,6 +6627,7 @@ function moreRestrictiveSensitivity(
 ): SensitivityClassification {
   const rank = {
     structurally_low_risk: 0,
+    review_required: 1,
     unresolved_free_text: 1,
     high_confidence_sensitive: 2,
   } as const;
@@ -6654,22 +6639,6 @@ function moreRestrictiveSensitivity(
     reasons: unique([...left.reasons, ...right.reasons]).sort(),
     evidence_source: left.evidence_source,
   };
-}
-
-function nameOnlySensitivityRefutedByStructure(
-  classification: SensitivityClassification,
-  deterministic: SensitivityClassification,
-): boolean {
-  return deterministic.state === "structurally_low_risk"
-    && classification.state === "unresolved_free_text"
-    && classification.reason_codes.length > 0
-    && classification.reason_codes.every((code) =>
-      code === "unconstrained_free_text_name" || code === "ambiguous_display_name");
-}
-
-function sourceKind(detail: string): "prisma" | "drizzle" | "openapi" | "synapsor" {
-  const prefix = detail.split(":", 1)[0];
-  return prefix === "prisma" || prefix === "drizzle" || prefix === "openapi" ? prefix : "synapsor";
 }
 
 export type ExactNumericGroupingEligibility = {
@@ -6702,9 +6671,6 @@ export function exactNumericGroupingEligibility(
   }
   if (resource.relationships.some((relationship) => relationship.columns.includes(fieldName))) {
     reasons.push("foreign-key and reference fields cannot be exact grouping dimensions");
-  }
-  if (isReferenceIdentifierName(fieldName)) {
-    reasons.push("identifier-like fields cannot be exact grouping dimensions");
   }
   if (resource.tenant_key.selected === fieldName
     || resource.principal_key.selected === fieldName
@@ -6745,6 +6711,7 @@ function isCategoricalType(type: string, enumValues?: string[]): boolean {
 }
 
 function reviewedBoundaryEnumValues(
+  resource: AutoBoundaryResource,
   field: AutoBoundaryField,
   keptOutFields: Set<string>,
   trustedScopeFields: Set<string>,
@@ -6753,8 +6720,9 @@ function reviewedBoundaryEnumValues(
   if (!values?.length
     || values.length > 64
     || field.primary_key
-    || isReferenceIdentifierName(field.name)
-    || field.sensitivity.state !== "structurally_low_risk"
+    || isStructuralIdentityField(resource, field.name)
+    || (field.review_override?.exposure !== "allow_reviewed_use"
+      && field.review_override?.exposure !== "withhold_from_model")
     || keptOutFields.has(field.name)
     || trustedScopeFields.has(field.name)
     || values.some((value) => [...value].length > 64)
@@ -6790,17 +6758,9 @@ function explorationRlsSession(
   const directPrincipal = principalOwner?.principal_key.selected && principalOwner.rls.enabled === true
     ? settingForScopedColumn(principalOwner.rls.using_expressions, principalOwner.principal_key.selected)
     : undefined;
-  const conventionalPrincipalCandidates = resource.rls.enabled === true
-    ? (resource.rls.principal_setting_candidates ?? [])
-      .filter((setting) => setting !== tenant && settingNameSupportsScope(setting, "principal"))
-    : [];
   const reviewedPrincipalSetting = resource.rls.principal_setting_review_override;
   const principal = directPrincipal
-    ?? (reviewedPrincipalSetting
-      ? reviewedPrincipalSetting.value ?? undefined
-      : conventionalPrincipalCandidates.length === 1
-        ? conventionalPrincipalCandidates[0]
-        : undefined);
+    ?? reviewedPrincipalSetting?.value ?? undefined;
   if (!tenant && !principal) return {};
   return {
     rls_session: {
@@ -6811,23 +6771,12 @@ function explorationRlsSession(
 }
 
 /**
- * Returns exact settings mentioned by an RLS policy that are not already
- * proven to carry tenant context. The list is deliberately broader than the
- * automatic vocabulary: opaque names are candidates for human/model-assisted
- * clarification, never automatic principal authority.
+ * Returns exact settings mentioned by an RLS policy. Their names do not prove
+ * a tenant or principal role. The existing reviewed decision must bind a setting;
+ * structural consumers can exclude an already-bound tenant setting by identity.
  */
 function rlsPrincipalSettingCandidates(expressions: string[]): string[] {
-  const settings = unique(expressions.flatMap(currentSettingNames));
-  const tenantSettings = new Set(settings.filter((setting) =>
-    settingNameSupportsScope(setting, "tenant")));
-  return settings.filter((setting) => !tenantSettings.has(setting)).sort();
-}
-
-function settingNameSupportsScope(setting: string, kind: "tenant" | "principal"): boolean {
-  const settingPattern = kind === "tenant"
-    ? /(?:^|[._-])(?:tenant|org|organization|workspace|merchant|store|company|team|facility|property|clinic|project)(?:$|[._-])/i
-    : /(?:^|[._-])(?:principal|user|actor|owner|assignee|agent|staff|technician|manager|trainer)(?:$|[._-])/i;
-  return settingPattern.test(setting);
+  return unique(expressions.flatMap(currentSettingNames)).sort();
 }
 
 function settingForScopedColumn(expressions: string[], column: string): string | undefined {
@@ -6916,13 +6865,13 @@ function humanize(value: string): string {
   return value.replace(/_/g, " ");
 }
 
-function isReferenceIdentifierName(value: string): boolean {
-  return value.toLowerCase() === "id" || /_id$/i.test(value);
-}
-
-function isAnalyticalNumericMeasureName(value: string): boolean {
-  return !isReferenceIdentifierName(value)
-    && !/(?:^|_)(?:version|revision|sequence|seq|ordinal|position|rank)(?:_|$)/i.test(value);
+function isStructuralIdentityField(resource: Pick<AutoBoundaryResource,
+  "fields" | "primary_key" | "tenant_key" | "principal_key" | "relationships">, field: string): boolean {
+  return resource.primary_key.selected === field
+    || resource.fields.some(candidate => candidate.name === field && candidate.primary_key)
+    || resource.tenant_key.selected === field
+    || resource.principal_key.selected === field
+    || resource.relationships.some(relationship => relationship.columns.includes(field));
 }
 
 function escapeDslString(value: string): string {

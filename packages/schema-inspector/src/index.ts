@@ -848,6 +848,59 @@ export function assessDirectWritePrerequisites(table: TableInfo, input: DirectWr
   return checks;
 }
 
+export type InspectedSourceInventory = {
+  schema_version: "synapsor.inspected-source-inventory.v1";
+  /** Persistent user relations only; excludes internal and session/temporary relations. */
+  population: "persistent_user_relations";
+  engine: SourceEngine;
+  scope: { kind: "schema"; schema: string } | { kind: "database" };
+  coverage: "complete" | "unavailable";
+  resources: Array<{ schema: string; table: string; columns: string[]; row_level_security: boolean | "unknown" }>;
+};
+
+type SourceInventoryRow = {
+  schema: string; table_name: string | null; column_name: string | null;
+  row_level_security: boolean;
+};
+
+function supportedInventorySchema(engine: SourceEngine, schema: unknown): schema is string {
+  if (typeof schema !== "string" || !schema || schema.includes("\0")) return false;
+  return engine === "postgres"
+    ? schema !== "information_schema" && !schema.startsWith("pg_")
+    : !["information_schema", "mysql", "performance_schema", "sys"].includes(schema.toLowerCase());
+}
+
+function inspectedSourceInventory(engine: SourceEngine, schema: string | undefined,
+  rows: SourceInventoryRow[], complete: boolean): InspectedSourceInventory {
+  const resources = new Map<string, InspectedSourceInventory["resources"][number]>();
+  let requestedSchemaObserved = schema === undefined;
+  if (schema !== undefined && !supportedInventorySchema(engine, schema)) complete = false;
+  for (const row of rows) {
+    if (!supportedInventorySchema(engine, row.schema)
+      || schema !== undefined && row.schema !== schema
+      || row.table_name !== null && (typeof row.table_name !== "string" || !row.table_name)
+      || row.column_name !== null && (typeof row.column_name !== "string" || !row.column_name)
+      || typeof row.row_level_security !== "boolean") { complete = false; continue; }
+    requestedSchemaObserved = true;
+    // Namespace/schemata rows survive the relation left join. This proves an
+    // existing empty schema instead of mistaking no returned rows for existence.
+    if (row.table_name === null) {
+      if (row.column_name !== null || row.row_level_security !== false) complete = false;
+      continue;
+    }
+    const key = JSON.stringify([row.schema, row.table_name]);
+    const resource = resources.get(key) ?? { schema: row.schema, table: row.table_name, columns: [], row_level_security: row.row_level_security };
+    if (resource.row_level_security !== row.row_level_security) complete = false;
+    if (row.column_name !== null) resource.columns.push(row.column_name);
+    resources.set(key, resource);
+  }
+  return { schema_version: "synapsor.inspected-source-inventory.v1", population: "persistent_user_relations", engine,
+    scope: schema === undefined ? { kind: "database" } : { kind: "schema", schema },
+    coverage: complete && requestedSchemaObserved ? "complete" : "unavailable",
+    resources: [...resources.values()].map(resource => ({ ...resource, columns: [...new Set(resource.columns)].sort() }))
+      .sort((a, b) => a.schema.localeCompare(b.schema) || a.table.localeCompare(b.table)) };
+}
+
 export type SchemaInspection = {
   engine: SourceEngine;
   server_version: string;
@@ -865,11 +918,8 @@ export type SchemaInspection = {
   schemas: string[];
   tables: TableInfo[];
   warnings: string[];
-  /**
-   * A scoped live inspection can retain the whole-database single-organization
-   * refusal guard without fetching every unrelated column into the result.
-   */
-  global_tenant_isolation_evidence?: string[];
+  /** Fresh complete-source catalog projection, requested only for whole-organization review. */
+  inspected_source_inventory?: InspectedSourceInventory;
 };
 
 export type InspectOptions = {
@@ -880,7 +930,7 @@ export type InspectOptions = {
   env?: NodeJS.ProcessEnv;
   /** Fetch complete metadata only for these relations. Omit for discovery. */
   resources?: Array<{ schema: string; table: string }>;
-  /** Retain the whole-database tenant-evidence guard during a scoped inspection. */
+  /** Inspect the complete persistent user population for explicit whole-organization review. */
   verifySingleOrganization?: boolean;
 };
 
@@ -1016,24 +1066,6 @@ export type GeneratedOnboardingFiles = {
   mcpSnippets: Record<string, unknown>;
 };
 
-const TENANT_COLUMNS = new Set([
-  "tenant_id",
-  "account_id",
-  "organization_id",
-  "org_id",
-  "workspace_id",
-  "customer_id",
-  "merchant_id",
-  "store_id",
-  "company_id",
-  "team_id",
-  "facility_id",
-  "property_id",
-  "clinic_id",
-  "project_id",
-]);
-const CONFLICT_COLUMNS = new Set(["updated_at", "modified_at", "row_version", "version", "lock_version", "etag"]);
-const IMMUTABLE_COLUMNS = new Set(["id", "uuid", "created_at", "created_by"]);
 const DEFAULT_RESULT_FORMAT = 2;
 const LARGE_OR_BINARY_TYPES = new Set([
   "bytea",
@@ -1615,48 +1647,24 @@ async function inspectPostgres(
           : [],
       };
     }
-    let globalTenantIsolationEvidence: string[] | undefined;
-    if (selectedResources && options.verifySingleOrganization) {
-      const tenantColumns = await client.query<{
-        schema: string;
-        table_name: string;
-        column_name: string;
-      }>(
-        `SELECT n.nspname AS schema, c.relname AS table_name, a.attname AS column_name
-         FROM pg_catalog.pg_attribute a
-         JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
-         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-         WHERE c.relkind IN ('r', 'p', 'v')
-           AND a.attnum > 0
-           AND NOT a.attisdropped
-           AND lower(a.attname) = ANY($2::text[])
-           AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    let sourceInventory: InspectedSourceInventory | undefined;
+    if (options.verifySingleOrganization) {
+      // One catalog statement observes every relation/column/RLS fact in the
+      // requested Source scope, independently of the selected resource pack.
+      const catalog = await client.query<SourceInventoryRow>(
+        `SELECT n.nspname AS schema, c.relname AS table_name, a.attname AS column_name,
+                (COALESCE(c.relrowsecurity, false) OR EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid)) AS row_level_security
+         FROM pg_catalog.pg_namespace n
+         LEFT JOIN pg_catalog.pg_class c ON c.relnamespace = n.oid
+           AND c.relkind IN ('r', 'p', 'v', 'm', 'f') AND c.relpersistence IN ('p', 'u')
+         LEFT JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+         WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+           AND left(n.nspname, 3) <> 'pg_'
            AND ($1::text IS NULL OR n.nspname = $1)
          ORDER BY n.nspname, c.relname, a.attname`,
-        [options.schema ?? null, [...TENANT_COLUMNS].sort()],
-      );
-      const rlsRelations = await client.query<{
-        schema: string;
-        table_name: string;
-      }>(
-        `SELECT n.nspname AS schema, c.relname AS table_name
-         FROM pg_catalog.pg_class c
-         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-         WHERE c.relkind IN ('r', 'p')
-           AND (c.relrowsecurity OR EXISTS (
-             SELECT 1 FROM pg_catalog.pg_policy policy WHERE policy.polrelid = c.oid
-           ))
-           AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-           AND ($1::text IS NULL OR n.nspname = $1)
-         ORDER BY n.nspname, c.relname`,
         [options.schema ?? null],
       );
-      globalTenantIsolationEvidence = unique([
-        ...tenantColumns.rows.map((row) =>
-          `${row.schema}.${row.table_name}.${row.column_name} is a tenant-scope candidate`),
-        ...rlsRelations.rows.map((row) =>
-          `${row.schema}.${row.table_name} has row-level security metadata`),
-      ]).sort();
+      sourceInventory = inspectedSourceInventory("postgres", options.schema, catalog.rows, version.rowCount === 1);
     }
     await client.query("COMMIT");
     return normalizeInspection({
@@ -1680,9 +1688,7 @@ async function inspectPostgres(
       rlsPolicies: rlsPolicies.rows,
       relationRolePosture: relationRolePosture.rows,
       ...(globalRolePosture ? { globalRolePosture } : {}),
-      ...(globalTenantIsolationEvidence
-        ? { globalTenantIsolationEvidence }
-        : {}),
+      ...(sourceInventory ? { sourceInventory } : {}),
     });
   } catch (error) {
     await client?.query("ROLLBACK").catch(() => undefined);
@@ -1852,6 +1858,7 @@ async function inspectMysql(
         schema: String(row.schema),
         table: String(row.name),
       })),
+      options.verifySingleOrganization ? { schema: options.schema } : undefined,
     );
     const relationRolePosture = (tableRows as Array<Record<string, unknown>>).map((row): RawRelationRolePosture => ({
       schema: String(row.schema),
@@ -1877,21 +1884,24 @@ async function inspectMysql(
         owned_relations: [],
       }
       : undefined;
-    let globalTenantIsolationEvidence: string[] | undefined;
-    if (selectedResources && options.verifySingleOrganization) {
-      const tenantNames = [...TENANT_COLUMNS].sort();
+    let sourceInventory: InspectedSourceInventory | undefined;
+    if (options.verifySingleOrganization) {
       const [rows] = await connection.query<mysql.RowDataPacket[]>(
-        `SELECT table_schema AS \`schema\`, table_name AS table_name,
-                column_name AS column_name
-         FROM information_schema.columns
-         WHERE table_schema NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
-           AND (? IS NULL OR table_schema = ?)
-           AND lower(column_name) IN (${tenantNames.map(() => "?").join(", ")})
-         ORDER BY table_schema, table_name, column_name`,
-        [schemaParam, schemaParam, ...tenantNames],
+        `SELECT s.schema_name AS \`schema\`, t.table_name AS table_name, c.column_name AS column_name
+         FROM information_schema.schemata s
+         LEFT JOIN information_schema.tables t ON t.table_schema = s.schema_name
+         LEFT JOIN information_schema.columns c ON c.table_schema = t.table_schema AND c.table_name = t.table_name
+         WHERE s.schema_name NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
+           AND (? IS NULL OR s.schema_name = ?)
+         ORDER BY s.schema_name, t.table_name, c.column_name`,
+        [schemaParam, schemaParam],
       );
-      globalTenantIsolationEvidence = (rows as Array<Record<string, unknown>>).map((row) =>
-        `${String(row.schema)}.${String(row.table_name)}.${String(row.column_name)} is a tenant-scope candidate`);
+      const catalog = (rows as Array<Record<string, unknown>>).map(row => ({
+        schema: row.schema, table_name: row.table_name, column_name: row.column_name,
+        row_level_security: false,
+      })) as SourceInventoryRow[];
+      sourceInventory = inspectedSourceInventory("mysql", options.schema, catalog,
+        mysqlGrants.catalog_complete === true);
     }
     await connection.query("COMMIT").catch(() => undefined);
     return normalizeInspection({
@@ -1930,9 +1940,7 @@ async function inspectMysql(
       checks: checkRows as RawCheckConstraint[],
       relationRolePosture,
       ...(globalRolePosture ? { globalRolePosture } : {}),
-      ...(globalTenantIsolationEvidence
-        ? { globalTenantIsolationEvidence }
-        : {}),
+      ...(sourceInventory ? { sourceInventory } : {}),
     });
   } catch (error) {
     inspectionFailed = true;
@@ -2054,7 +2062,7 @@ function normalizeInspection(input: {
     writable_relations: string[];
     owned_relations: string[];
   };
-  globalTenantIsolationEvidence?: string[];
+  sourceInventory?: InspectedSourceInventory;
 }): SchemaInspection {
   const columnsByTable = groupBy(input.columns, (row) => tableKey(row.schema, row.table_name));
   const keysByTable = groupBy(input.keyColumns, (row) => tableKey(row.schema, row.table_name));
@@ -2190,9 +2198,7 @@ function normalizeInspection(input: {
         ? []
         : [`Database compatibility: ${databaseServerCompatibilityMessage(compatibility)}`]),
     ],
-    ...(input.globalTenantIsolationEvidence
-      ? { global_tenant_isolation_evidence: [...input.globalTenantIsolationEvidence].sort() }
-      : {}),
+    ...(input.sourceInventory ? { inspected_source_inventory: input.sourceInventory } : {}),
   };
 }
 
@@ -2271,7 +2277,6 @@ function nativeColumnDeclarationDigest(column: RawColumn): `sha256:${string}` | 
 
 function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
   const name = String(column.name);
-  const lower = name.toLowerCase();
   const type = String(column.udt_name || column.data_type || "unknown").toLowerCase();
   const nativeDigest = nativeColumnDeclarationDigest(column);
   const sensitivity = classifySensitivity({
@@ -2297,11 +2302,11 @@ function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
     identity: /yes|identity|auto_increment/i.test(String(column.is_identity ?? "")),
     ordinal_position: Number(column.ordinal_position),
     suggestions: {
-      tenant: TENANT_COLUMNS.has(lower),
-      conflict: CONFLICT_COLUMNS.has(lower),
+      tenant: false,
+      conflict: false,
       sensitive: sensitivity.state !== "structurally_low_risk",
       sensitivity,
-      immutable: primaryKey.includes(name) || TENANT_COLUMNS.has(lower) || IMMUTABLE_COLUMNS.has(lower),
+      immutable: primaryKey.includes(name),
       large_or_binary: LARGE_OR_BINARY_TYPES.has(type) || /blob|binary|bytea|vector/i.test(type),
     },
   };
@@ -2358,11 +2363,13 @@ function relationIsWriteCapable(table: TableInfo): boolean {
 export function mysqlGrantPosture(
   grants: string[],
   relations: Array<{ schema: string; table: string }>,
+  catalogScope?: { schema?: string },
 ): {
   verified: boolean;
   elevated: boolean;
   relations: Record<string, RelationPrivilegeInfo>;
   column_privileges: Record<string, NonNullable<RelationRolePosture["column_privileges"]>>;
+  catalog_complete?: boolean;
 } {
   const parsed: Array<{
     schema: string | "*";
@@ -2436,7 +2443,9 @@ export function mysqlGrantPosture(
     relationMap[`${relation.schema}.${relation.table}`] = posture;
     columnMap[`${relation.schema}.${relation.table}`] = columns;
   }
-  return { verified, elevated, relations: relationMap, column_privileges: columnMap };
+  return { verified, elevated, relations: relationMap, column_privileges: columnMap,
+    ...(catalogScope ? { catalog_complete: verified && parsed.some(grant => grant.table === "*"
+      && grant.privileges.select && (grant.schema === "*" || catalogScope.schema !== undefined && grant.schema === catalogScope.schema)) } : {}) };
 }
 
 function mysqlGrantsIncludeWriteAuthority(grants: string[]): boolean {

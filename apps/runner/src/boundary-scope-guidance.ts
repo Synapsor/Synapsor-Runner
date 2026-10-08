@@ -45,9 +45,8 @@ export function blockedTenantScopeGuidance(
     "Direct tenant scope unavailable: no trusted tenant column was found.",
   ];
   const tenantRelationshipBlockers = new Map<string, string>();
-  for (const blocker of input.shared_reference_scope?.blockers ?? []) {
-    const match = /^relationship (.+) reaches tenant-scoped resource (.+)$/.exec(blocker);
-    if (match) tenantRelationshipBlockers.set(match[1]!, match[2]!);
+  for (const blocker of input.shared_reference_scope?.relationship_blockers ?? []) {
+    tenantRelationshipBlockers.set(blocker.relationship, blocker.target_resource);
   }
   const nullableTenantRelationships = input.relationships.filter((relationship) =>
     relationship.nullable
