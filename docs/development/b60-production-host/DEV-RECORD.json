@@ -1,5 +1,5 @@
 {
-  "status": "FOCUSED_COMPLETE_INDEPENDENT_BEHAVIOR_AND_OWNERSHIP_PENDING",
+  "status": "PUBLIC_AND_NATIVE_FOCUSED_COMPLETE_FINAL_INDEPENDENT_VERDICT_PENDING",
   "base": "04497a793e6345f6d8e75a291e78b5a19a1b99e2",
   "branch": "codex/b60-production-host-20261008",
   "owner_amendment": "7b17dfc0",
@@ -74,7 +74,15 @@
     "before": "studio-edit-route-v3 receipt1/1/1 saved; Source2 Input review skipped because singleton edit resumeAction omitted intended_outcomes. Diagnostic-v5 exact SOURCE_INPUT_REQUIREMENT_PENDING from Action validation; historical partial operation untouched.",
     "fix": "Use the exact retained program record selected by native Resume persistence for Input initial and live agenda readers. Existing Input host performs fresh Source2 review/defaultNo confirmation, preserving old records. No inferred meaning or receipt-specific logic.",
     "after": "helper93e6cb09: saved route6P, supplemental studio setup/edit+original unchanged-Source edit3P, types0. v6 original copied Input/report counts failed1P1F preserved; R2 independently requires currentSource2 root/child/raw mapping/review and before/after receipt coverage contexts; only supplemental counts corrected with stronger exact identities.",
-    "root_affected": "types0; 684P1F/5files at a570; one old callback test assumes only initial menu and throws on existing CHOOSE THE SAVED JOB OPERATION. Diagnostic preserved; adjudication pending.",
+    "root_affected": "a570 types0,684P1F/5files. Failure is old test callback rejecting the existing Sep14 saved-job menu; a35 correctly surfaces that assertion instead of swallowing it. R2 contract adjudication accepted exact continue/review/pause menu handling with original planner1/snapshot/noactivation assertions and added exact pendingrequest/client/conversation preservation. e4f48eeb targeted successor1P/442filtered/5.55sec, product unchanged. Original failure/diagnostic retained; not reported as a rerun of all685.",
     "line_count": "20093 root; 20098 with accepted B59 current-record ports (under original20100)."
+  },
+  "public_binding_packet": {
+    "head": "93e6cb09",
+    "product": "a5706ef7 = helper ee71fa53 product bytes",
+    "saved_routes": "6P0F: saved Review, below-planner Resume, actual planner Resume, cancel-return, declined Replace-return, competing native planner CAS",
+    "studio": "3P0F: original unchanged-Source edit, supplemental ordinary setup, supplemental Source2 edit",
+    "tests": "ecbe89ea; supplemental-only counts independently adjudicated and exact records strengthened; original validated_reuse/provider-count controls unchanged",
+    "types": 0
   }
 }
