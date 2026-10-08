@@ -349,7 +349,7 @@ describe("host-only scope reason binding", () => {
       provider: "openai", model: "declared-scope-fixture", apiKey: "local-fixture-only", egressAcknowledged: true,
       deferNarration: true, dependencies: { requestJson }, clarificationHandler })).rejects.toThrow(/reason_binding|CLARIFICATION_REFUSED/u);
     expect(clarificationHandler).not.toHaveBeenCalled();
-    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(requestJson).toHaveBeenCalledOnce(); // Native host-only shape refusal spends no semantic correction.
     expect(boundary).toEqual(before);
   });
 });
