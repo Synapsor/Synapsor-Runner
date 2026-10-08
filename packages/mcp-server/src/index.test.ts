@@ -1593,8 +1593,8 @@ describe("local Synapsor MCP runtime", () => {
         data: null,
         proposal: null,
         error: {
-          code: "TEMPORARILY_UNAVAILABLE",
-          retryable: true,
+          code: "INTERNAL",
+          retryable: false,
         },
         source_database_changed: false,
         _meta: {
@@ -1608,9 +1608,9 @@ describe("local Synapsor MCP runtime", () => {
         event: "tool_rejected",
         capability: "billing.inspect_invoice",
         tenant: "acme",
-        error_code: "TEMPORARILY_UNAVAILABLE",
+        error_code: "INTERNAL",
         runtime_code: "UNCLASSIFIED",
-        retryable: true,
+        retryable: false,
         source_database_changed: false,
       });
       expect(logs.join("")).not.toMatch(/ECONNREFUSED|127\.0\.0\.1|postgres(?:ql)?:\/\//i);
@@ -1636,7 +1636,7 @@ describe("local Synapsor MCP runtime", () => {
       const result = await runtime.callTool("billing.inspect_invoice", { invoice_id: "INV-3001" });
       expect(result).toMatchObject({
         ok: false,
-        error: { code: "TEMPORARILY_UNAVAILABLE" },
+        error: { code: "INTERNAL" },
         source_database_changed: false,
       });
       expect(logs).toEqual([]);

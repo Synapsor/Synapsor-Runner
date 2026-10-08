@@ -1,0 +1,28 @@
+{
+  "base": "ea7ba567",
+  "sites": [
+    "I02087",
+    "I02100"
+  ],
+  "scope": "Runtime retry/freshness classification uses exact host and driver codes, never message prose or code fragments. Unknowns retain safe refusal. SQLSTATE connection class requires exact formal five-character syntax.",
+  "before": {
+    "new17": "2PASS15FAIL",
+    "existing7": "5PASS2FAIL; other102outside-selected"
+  },
+  "after": {
+    "focused17": "17PASS",
+    "fullAffected2files": "126PASS0FAIL0SKIP",
+    "types": "tsc -b --pretty false exit0"
+  },
+  "test_changes": {
+    "file": "packages/mcp-server/src/index.test.ts",
+    "tests": [
+      "returns safe result envelope v2 errors without raw infra strings",
+      "lets an interactive caller suppress only its duplicate rejection log"
+    ],
+    "independent_contract_reason": "Both inject message-only Error without driver code. Inferring a known infrastructure cause/retry permission from those English words is explicitly prohibited by Owner. Expect generic INTERNAL/nonretryable instead. All exact privacy/no-source-change/no-duplicate-log assertions unchanged; five existing typed-driver retry cases unchanged and pass."
+  },
+  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/runtime-errors-*",
+  "review": "R1 RT01\u201308 presealed; exact successor pending",
+  "counts": "Two implemented but unaccepted; Main38typed/0delete unchanged until independent verdict"
+}

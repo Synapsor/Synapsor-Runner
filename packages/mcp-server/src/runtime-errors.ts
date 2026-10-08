@@ -210,6 +210,8 @@ export function infrastructureRetryAfterMs(error: unknown): number {
   return DEFAULT_INFRA_RETRY_AFTER_MS;
 }
 
+const connectionSqlState = (code: string): boolean => /^08[0-9A-Z]{3}$/u.test(code);
+
 export function isTransientInfrastructureError(error: unknown): boolean {
   for (const candidate of errorChain(error)) {
     if (candidate instanceof McpRuntimeError && TRANSIENT_RUNTIME_CODES.has(candidate.code)) return true;
@@ -219,15 +221,11 @@ export function isTransientInfrastructureError(error: unknown): boolean {
     if (code && (
       TRANSIENT_SYSTEM_CODES.has(code)
       || TRANSIENT_POSTGRES_CODES.has(code)
-      || code.startsWith("08")
+      || connectionSqlState(code)
       || TRANSIENT_MYSQL_CODES.has(code)
     )) return true;
-    if (sqlState && (TRANSIENT_POSTGRES_CODES.has(sqlState) || sqlState.startsWith("08"))) return true;
+    if (sqlState && (TRANSIENT_POSTGRES_CODES.has(sqlState) || connectionSqlState(sqlState))) return true;
     if (errno !== undefined && TRANSIENT_MYSQL_ERRNOS.has(errno)) return true;
-    const message = errorMessage(candidate);
-    if (/\b(ECONNABORTED|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ENETDOWN|ENETUNREACH|ENOTFOUND|EPIPE|ETIMEDOUT)\b/i.test(message)) return true;
-    if (/\b(connection (?:queue|pool) (?:is )?(?:full|exhausted|timed out)|pool (?:is )?(?:full|exhausted)|too many (?:clients|connections)|remaining connection slots|cannot connect now)\b/i.test(message)) return true;
-    if (/\b(connection (?:closed|lost|refused|reset|terminated|timed out)|database (?:is )?(?:starting up|shutting down|temporarily unavailable)|operation timed out|server closed the connection|socket hang up|timeout expired)\b/i.test(message)) return true;
   }
   return false;
 }
@@ -241,8 +239,8 @@ export function safeRuntimeErrorCode(error: unknown): string {
     if (code && TRANSIENT_SYSTEM_CODES.has(code)) return `NODE_${code}`;
     if (code && TRANSIENT_MYSQL_CODES.has(code)) return `MYSQL_${code}`;
     if (errno !== undefined && TRANSIENT_MYSQL_ERRNOS.has(errno)) return `MYSQL_${errno}`;
-    if (code && (TRANSIENT_POSTGRES_CODES.has(code) || code.startsWith("08"))) return `POSTGRES_${code}`;
-    if (sqlState && (TRANSIENT_POSTGRES_CODES.has(sqlState) || sqlState.startsWith("08"))) return `POSTGRES_${sqlState}`;
+    if (code && (TRANSIENT_POSTGRES_CODES.has(code) || connectionSqlState(code))) return `POSTGRES_${code}`;
+    if (sqlState && (TRANSIENT_POSTGRES_CODES.has(sqlState) || connectionSqlState(sqlState))) return `POSTGRES_${sqlState}`;
   }
   return "UNCLASSIFIED";
 }

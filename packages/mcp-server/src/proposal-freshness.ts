@@ -38,8 +38,7 @@ import {
 } from "./runtime-config.js";
 import {
   McpRuntimeError,
-  errorMessage,
-  errorStringProperty,
+  isTransientInfrastructureError,
 } from "./runtime-errors.js";
 import {
   conflictGuardScalar,
@@ -498,11 +497,11 @@ export function classifyFreshnessReadError(error: unknown): {
   result: "unavailable" | "invalid" | "unsupported";
   safe_code: string;
 } {
-  const code = error instanceof McpRuntimeError ? error.code : errorStringProperty(error, "code") ?? "";
-  if (/(TIMEOUT|POOL|CONNECTION|ECONN|ETIMEDOUT|TOO_MANY|UNAVAILABLE|SATURAT)/i.test(`${code} ${errorMessage(error)}`)) {
+  const code = error instanceof McpRuntimeError ? error.code : undefined;
+  if (isTransientInfrastructureError(error) || code === "SOURCE_CREDENTIAL_MISSING") {
     return { result: "unavailable", safe_code: "FRESHNESS_TEMPORARILY_UNAVAILABLE" };
   }
-  if (/(UNSUPPORTED|CROSS_SOURCE)/i.test(code)) {
+  if (code === "FRESHNESS_CROSS_SOURCE_UNSUPPORTED") {
     return { result: "unsupported", safe_code: "FRESHNESS_TOPOLOGY_UNSUPPORTED" };
   }
   return { result: "invalid", safe_code: "FRESHNESS_CHECK_FAILED" };
