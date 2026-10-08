@@ -1,0 +1,32 @@
+{
+  "command": [
+    "bwrap",
+    "--unshare-net",
+    "--bind",
+    "/",
+    "/",
+    "--dev",
+    "/dev",
+    "--proc",
+    "/proc",
+    "--chdir",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review",
+    "node",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b48-input-review/node_modules/typescript/bin/tsc",
+    "-b",
+    "packages/postgres",
+    "packages/proposal-store",
+    "--force",
+    "--pretty",
+    "false"
+  ],
+  "env": {
+    "PATH": "/home/sandesh-tiwari/.local/bin:/home/sandesh-tiwari/.codex/tmp/arg0/codex-arg0Zgewla:/home/sandesh-tiwari/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/override:/home/sandesh-tiwari/.local/bin:/home/sandesh-tiwari/.npm-global/bin:/home/sandesh-tiwari/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin:/home/sandesh-tiwari/.cache/codex-runtimes/codex-primary-runtime/dependencies/bin/fallback:/usr/lib/chatgpt/resources",
+    "HOME": "/var/tmp/synapsor-b61-recovery-local-8888a2f1/home",
+    "TMPDIR": "/var/tmp/synapsor-b61-recovery-local-8888a2f1/tmp",
+    "CI": "1",
+    "COREPACK_ENABLE_NETWORK": "0"
+  },
+  "head": "9c40de8ec8a1f37fd19e474cde6b334871ad304f",
+  "scope": "one bounded local worker/no PG/provider"
+}

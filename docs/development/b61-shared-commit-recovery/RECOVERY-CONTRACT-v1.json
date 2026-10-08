@@ -1,0 +1,52 @@
+{
+  "state": "PROSPECTIVE_INTERFACE_DESIGN_NOT_IMPLEMENTED",
+  "purpose": "Complete existing fenced local control records from an exact atomically committed Source completion, without another business write.",
+  "existing_surfaces": [
+    "selected Source receipt table",
+    "writeback_intents original attempt",
+    "authenticated RECONCILE decision",
+    "existing receipt/proposal/worker bookkeeping transaction"
+  ],
+  "source_mode": "source_db only for positive atomic evidence; actual runner_ledger has no such evidence and remains unknown",
+  "prospective_source_column": "optional versioned completion_evidence_json, same selected receipt row, written in the same transaction as every reviewed Source target",
+  "completion_envelope": {
+    "schema_version": "synapsor.postgres.source-completion.v1",
+    "job_digest": "canonical digest of the complete original normalized job, including original IDs/idempotency/proposal/proof/scope/attempt; never renewed",
+    "binding_digest": "original reviewed execution binding + safe native destination/receipt namespace + source ID + trusted scope; credentials excluded",
+    "result": "full parsed native WritebackResult with completed status, exact identity and every atomic member result",
+    "result_digest": "canonical digest of the full result; the existing receipt row status/IDs/hash also must agree"
+  },
+  "original_intent_metadata": {
+    "source_mode": "source_db",
+    "source_completion_binding": "same exact original binding digest, persisted before the Source mutation boundary using the existing intent store",
+    "phase": "recorded/applying/reconciliation_required uses the existing state machine, no new queue"
+  },
+  "production_binding_producer": "native admitted runtime derives execution binding/selected writer reference, safe resolved destination and exact receipt namespace before apply; no model/config flag can assert a completion",
+  "legacy_behavior": "Normal supported old receipt schema may still apply. Missing prospective column, original binding or full envelope supplies no recovery guarantee. No synthetic envelope or new evidence is written during recovery.",
+  "inspection": "Reconnect using current supported native Source configuration and perform SELECT for the original key only. Validate original full job/binding, row IDs/status/hash, full parsed result, scope/target and semantic/atomic proof. Receipt absence is unknown, not rollback.",
+  "authorization": "Current authenticated exact RECONCILE authority is distinct from APPLY; original proposal/approval/job and Source binding must remain exact. Expired execution eligibility is never renewed for recovery.",
+  "local_completion": "Within the existing control transaction, CAS only the original applying/reconciliation_required intent, record the exact proven completion receipt/proposal event and reconcile only the original unknown worker item. Preserve all original failed/unknown attempts and approvals.",
+  "idempotency_and_concurrency": "One matching completion may win. Repeated identical completed bookkeeping may be observed without new Source effect; conflicting or competing records refuse. A crash inside the local transaction retains either the original fence or the complete bookkeeping, never partial adoption.",
+  "forbidden": [
+    "APPLY or source receipt claim during recovery",
+    "business SQL mutation",
+    "row similarity or operator assertion as completion",
+    "legacy result inference",
+    "new job/idempotency/approval",
+    "automatic retry/requeue",
+    "lease reset",
+    "2PC",
+    "new authority/store/lifecycle",
+    "lock/isolation changes"
+  ],
+  "open_design_constraints": [
+    "Exact minimal destination binding format and original-intent field must be independently reviewed before broader implementation",
+    "Source mode lacking a trustworthy full-bound atomic receipt stays fenced",
+    "Shared-store bridge must preserve any additive metadata, or that deployment remains unsupported for positive recovery"
+  ],
+  "destination_resolution": {
+    "policy": "Require explicit nonempty URL username and explicit port; unsupported destinations receive no positive binding",
+    "ambient_drift_cold_control": "Required; not yet executed",
+    "ordinary_execution": "unchanged"
+  }
+}

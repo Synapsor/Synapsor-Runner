@@ -12,7 +12,10 @@ export function sourceCompletionBinding(job: WritebackJob, config: RunnerConfig)
     || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(config.receipts.table ?? "synapsor_writeback_receipts")) return undefined;
   try {
     const u = new URL(config.databaseUrl);
-    if (!["postgres:", "postgresql:"].includes(u.protocol) || u.hash || !u.hostname || u.pathname.length < 2) return undefined;
+    // pg resolves falsy URL users/ports from ambient PGUSER/PGPORT. Positive
+    // recovery proof requires an explicit destination; ordinary execution is
+    // unchanged when a legacy URL cannot provide this binding.
+    if (!["postgres:", "postgresql:"].includes(u.protocol) || u.hash || !u.hostname || !u.username || !u.port || u.pathname.length < 2) return undefined;
     // One explicit Unix socket host is supported. Other URL option overrides
     // cannot supply an unambiguous safe destination binding for this version.
     const options = [...u.searchParams.entries()];
@@ -20,7 +23,7 @@ export function sourceCompletionBinding(job: WritebackJob, config: RunnerConfig)
     if (config.databaseScope && (String(job.target.tenant_guard?.value) !== config.databaseScope.tenantId
       || (job.target.principal_scope && String(job.target.principal_scope.value) !== config.databaseScope.principal))) return undefined;
     const destination = { engine: "postgres", source: job.source_id, host: options.length ? options[0]![1] : u.hostname.toLowerCase(),
-      port: u.port || "5432", database: decodeURIComponent(u.pathname.slice(1)), role: decodeURIComponent(u.username),
+      port: u.port, database: decodeURIComponent(u.pathname.slice(1)), role: decodeURIComponent(u.username),
       receipts: { schema: config.receipts.schema, table: config.receipts.table ?? "synapsor_writeback_receipts" },
       trusted_scope: config.databaseScope ?? null };
     const body = { schema_version: "synapsor.source-completion-binding.v1" as const, job_digest: canonicalJsonDigest(job),

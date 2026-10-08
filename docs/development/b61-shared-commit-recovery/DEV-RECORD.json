@@ -1,0 +1,189 @@
+{
+  "status": "CONNECTION_REPAIR_PROVED_PROSPECTIVE_BINDING_WIP",
+  "product_base": "ab91163d641fced8f97c7d80750183192d6e4389",
+  "new_native_execution": "6_RUNTIME_FAILURES_6_COMMITTED_SOURCE_EFFECT_WITNESSES",
+  "original_lost_ack_checkpoint_preserved": "eb608c27d50e6a9f7108fc57c85530650fe29aa6",
+  "old_fixture_replay": false,
+  "authoritative_records": {
+    "effect": "Source DB",
+    "completion_evidence": "selected receipt mode",
+    "attempt": "existing writeback intent/worker queue ledger",
+    "admission": "immutable proposal/approval/job and worker authority",
+    "reconciliation_actor": "current authenticated reconcile role, distinct from APPLY"
+  },
+  "static_trace": [
+    "sourceTransaction catches rejected COMMIT query and wraps outcome unknown; cleanup cannot prove rollback.",
+    "applyPostgresJob owns PoolClient but currently attaches no asynchronous error listener.",
+    "source_db branch returns uncertainty ID but creates no durable intent.",
+    "runner_ledger branch records/applying intent before Source transaction, but unhandled Client error can prevent require-reconciliation completion.",
+    "Existing reconcile inspect selects only Runner-ledger intent and refuses source_db.",
+    "Legacy Source receipt binds job/proposal/key/status and semantic proof, but has no full normalized job/result evidence envelope; missing guarantee remains unresolved."
+  ],
+  "impact_plan": {
+    "new_container_count": 1,
+    "separate_databases_roles": 6,
+    "serial_child_cases": 6,
+    "source_receipt_modes": [
+      "source_db",
+      "runner_ledger"
+    ],
+    "families": [
+      "anchored_semantic_insert",
+      "ordinary_guarded_update",
+      "actual_luna_seven_field_two_target_atomic_update"
+    ],
+    "connector": "applyPostgresJob/createPostgresPool real pg8.22",
+    "scope_limit": "Native adapter/connector physical impact; not whole public CLI admission or activation.",
+    "pg_lease": "APPROVED_MAX_ONE_LIVE_SERIAL"
+  },
+  "source_sha256": {
+    "packages/postgres/src/index.ts": "fb235bf3b889d78bb64a15a0cc30aa7d37a485df14bac4cee711c06ba706d965",
+    "packages/proposal-store/src/sqlite-writeback-methods.ts": "ca4cf01c7fcad95c3484c177aa1048cff60a75307fae91946831ebdd8607b1ba",
+    "apps/runner/src/writeback-execution.ts": "a6e26f035090c598b60ae0951577ba46871179a4d3a6c0c63638fa5a76384ba0",
+    "apps/runner/src/writeback-setup.ts": "2bb4b1315bc0e8dea76f825fd92773faca34a91f6c4eb1d48e874917f69d4aa4",
+    "apps/runner/src/worker-runtime.ts": "c76101b50730f04defd531cac75d2894c946d4d56e7438d29d9b9d5468532453"
+  },
+  "postgreSQL_source_equals_frozen_d9f": true,
+  "build_before": {
+    "exit": 0,
+    "seconds": 6.26109504699707,
+    "pgid": 3751579,
+    "owned_live": 0
+  },
+  "offline_shape_checks": {
+    "result": "PASS",
+    "native_authorities_compiled": 2,
+    "ordinary_normalized_job": true,
+    "native_generated_insert_lock_grant": true,
+    "preserved_setup_corrections": [
+      "root docs TypeScript module .mts loader shape",
+      "relationship ordered local/target pairs, no mixed representation",
+      "native all.expressions",
+      "native principalScopeFingerprint schema binding"
+    ]
+  },
+  "luna_structural_packet": {
+    "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-07/luna-independent-tester-replacement-20261007/outputs/LUNA-ACTUAL-UPDATE-STRUCTURAL-REFS.json",
+    "sha256": "0802d283c89917b9a2eadec81e6953a765192946bc5567cf40b2bf6ee80dd4ad",
+    "actual_receipt_mode": "runner_ledger",
+    "historical_authority_or_values_imported": false,
+    "reconstruction": "same seven-field primary effect, offer.status companion, composite FK/lock order/isolation, two BEFORE UPDATE version triggers; fresh compiled native test authority and declared rows",
+    "limit": "new direct exact principal RLS fixture policy, not historical membership/authentication/public activation evidence"
+  },
+  "actual_luna_before": {
+    "witness_exit": 0,
+    "child_exit": 1,
+    "child_pid": 3766224,
+    "proxy_observed_actual_commit": true,
+    "target_effects": 2,
+    "ack_withheld": true,
+    "subscription_version": [
+      7,
+      8
+    ],
+    "offer_version": [
+      4,
+      5
+    ],
+    "offer_status": [
+      "active",
+      "accepted"
+    ],
+    "main_mapped_fields": 7,
+    "unrelated_and_foreign_rows_unchanged": true,
+    "source_receipt_mode": "runner_ledger",
+    "source_atomic_receipt": false,
+    "native_result": null,
+    "durable_intent_status": "applying",
+    "async_client_error": "Connection terminated unexpectedly; unhandled Client error event",
+    "stopped_preserved_container": "synapsor-b61-recovery-d7855bd0",
+    "owned_live": 0,
+    "no_replay_or_reconcile": true,
+    "scope": "exact effect/FK/trigger native adapter reconstruction, not public activation/historical policy credentials"
+  },
+  "remaining_before": {
+    "witness_exit": 0,
+    "seconds": 9.47510814666748,
+    "native_controls": 5,
+    "child_exits": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "all_actual_backend_commit_ack_dropped": true,
+    "structured_results": 0,
+    "source_db_applied_atomic_receipts": 3,
+    "runner_ledger_applying_intents": 3,
+    "stopped_preserved_container": "synapsor-b61-recovery-acf16895",
+    "owned_live": 0,
+    "no_replay_or_reconcile": true
+  },
+  "product_runtime_pin": "1026279b",
+  "after_client": {
+    "native_cases": 6,
+    "child_exits": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "actual_commit_ack_loss": 6,
+    "structured_unknown_results": 6,
+    "runner_ledger_durable_fences": 3,
+    "source_db_applied_legacy_atomic_receipts": 3,
+    "observation_checks": 61,
+    "all_checks": true,
+    "seconds": 12.702228546142578,
+    "stopped_preserved_container": "synapsor-b61-recovery-55b5f343",
+    "owned_live": 0,
+    "no_legacy_reconcile_replay": true
+  },
+  "compatibility": {
+    "build0": true,
+    "seconds": 6.241976976394653,
+    "focused_files": 3,
+    "passed": 122,
+    "failed": 0,
+    "seconds_focus": 2.0476419925689697,
+    "owned_live": 0
+  },
+  "remaining": "Prospective full-bound atomic Source receipt, durable Source-db intent and authorized zero-business-write recovery are not yet implemented; legacy/missing evidence stays unknown.",
+  "prospective": {
+    "typed_envelope_binding_pin": "93b52520",
+    "types_exit": 0,
+    "types_seconds": 6.677392959594727,
+    "intent_metadata_pin": "8336ea36",
+    "intent_types_exit": 0,
+    "intent_types_seconds": 6.371678352355957,
+    "intent_focus_passed": 5,
+    "intent_focus_failed": 0,
+    "intent_focus_filtered": 76,
+    "intent_focus_seconds": 1.2382943630218506,
+    "native_recovery": "NOT_IMPLEMENTED_NOT_RUN",
+    "source_schema_or_rows_changed_for_recovery": false,
+    "source_completion_binding_persistence": "same existing local/shared intent, optional; bridge retained; missing/changed binding refuses",
+    "independent_conditional_review": "QUEUED_REVIEWER2",
+    "owned_live": 0,
+    "destination_binding": {
+      "reviewer_finding": "Native pg resolves absent URL user/port via PGUSER/PGPORT, so the original destination digest was ambiguous",
+      "before": {
+        "passed": 1,
+        "failed": 2,
+        "scope": "actual pg native parameter resolution, offline/no connection"
+      },
+      "after": {
+        "passed": 3,
+        "failed": 0,
+        "build_exit": 0
+      },
+      "fix": "Positive binding requires explicit URL user and port; ordinary execution remains compatible",
+      "cold_wrong_destination_ambient_control": "NOT_RUN_REQUIRED_BEFORE_POSITIVE_RECOVERY_ACCEPTANCE",
+      "owned_live": 0
+    }
+  },
+  "setup_only_correction": "run-local launcher first had newline syntax error before native launch; corrected narrow syntax only, not runtime outcome"
+}
