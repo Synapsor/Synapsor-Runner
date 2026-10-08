@@ -1,6 +1,6 @@
-import { createCurrentReadEvidence, type CurrentReadEvidenceRecords } from "./read-current-evidence.js";
+import { createCurrentReadEvidence, currentReadEvidenceStatements, type CurrentReadEvidenceRecords } from "./read-current-evidence.js";
 import { exactOnlyReadResourceIds, resolveRequestedReadScope } from "./read-requested-scope.js";
-import { readResourceDefinitionPhrases, isExplicitReadMeaningStatement, explicitReadTaskTargets, isUnknownReadMeaning, type ReadMeaningAttempt, type ReadMeaningEvidence, type ReadMeaningStatement } from "./read-meaning-evidence.js";
+import { readResourceDefinitionPhrases, isExplicitReadMeaningStatement, explicitReadTaskTargets, isUnknownReadMeaning, type ReadMeaningAttempt, type ReadMeaningEvidence } from "./read-meaning-evidence.js";
 import type { ReadScopeReasonBinding, ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 export type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 import { isAuthoringGenerationStop, assertAuthoringGenerationAdmission, authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
@@ -136,19 +136,12 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     ? [boundedText(input.operatorNamingContext, "operator naming context", 4_000)] : allowedQuestions;
   const policySource = activePolicySource(input.conversation?.policySources);
   if (policySource) policySourceHistory(input.conversation?.policySources, input);
+  // Preserve the producer's ordinary immutable input episode; new answers use
+  // exact native clarified-target records until the accepted save.
+  const meaningConversation = input.conversation ? structuredClone(input.conversation) : undefined;
   const namingSources = [...originalNamingSources,
     ...(input.conversation?.turns.filter(turn => turn.kind === "clarification").map(turn => turn.answer) ?? []), ...(policySource
     ? [policySource.text, ...(input.conversation?.policySources?.operator_messages ?? [])] : [])];
-  const meaningStatements: ReadMeaningStatement[] = [
-    ...originalNamingSources.map((text, index) => ({ text, origin: "operator_statement" as const,
-      source_digest: canonicalJsonDigest(text), source_id: `operator_context:${index}` })),
-    ...(input.conversation?.turns.filter(turn => turn.kind === "clarification").map((turn, index) => ({ text: turn.answer,
-      origin: "operator_statement" as const, source_digest: canonicalJsonDigest(turn.answer), source_id: `operator_answer:${index}` })) ?? []),
-    ...(policySource ? [{ text: policySource.text, origin: "policy_source" as const, source_digest: policySource.digest,
-      source_id: input.conversation!.policySources!.id, source_version: policySource.version },
-      ...(input.conversation?.policySources?.operator_messages ?? []).map((text, index) => ({ text,
-        origin: "operator_statement" as const, source_digest: canonicalJsonDigest(text), source_id: `operator_message:${index}` }))] : []),
-  ];
   const meaningContext = () => canonicalJsonDigest({ source: activePolicySource(input.conversation?.policySources) ?? null,
     messages: input.conversation?.policySources?.operator_messages ?? [],
     answers: input.conversation?.turns.filter(turn => turn.kind === "clarification") ?? [],
@@ -199,9 +192,9 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   const reviewedReplacements: ReadReviewedClarificationReplacement[] = [];
   const retiredIndices = () => new Set(reviewedReplacements.map(review => review.previous_index));
   const activeClarifiedTargets = () => clarifiedTargets.filter((_answer, index) => !retiredIndices().has(index));
-  const retiredAnswerText = () => new Set(reviewedReplacements.map(review => clarifiedTargets[review.previous_index]!.answer));
-  const activeMeaningStatements = () => meaningStatements.filter(statement => statement.origin === "policy_source" || !retiredAnswerText().has(statement.text));
-  const activeNamingSources = () => namingSources.filter(text => !retiredAnswerText().has(text) || originalNamingSources.includes(text) || policySource?.text === text);
+  const activeMeaningStatements = () => currentReadEvidenceStatements({ original: originalNamingSources, conversation: meaningConversation,
+    retiredAnswers: reviewedReplacements.map(review => clarifiedTargets[review.previous_index]!) });
+  const activeNamingSources = () => activeMeaningStatements().map(statement => statement.text);
   const meaningBinding = () => canonicalJsonDigest({ meaning: expectedMeaningContext, boundary: expectedBoundaryDigest, catalog: catalog.digest });
   const meaningConflicts = new Map<string, ReadMeaningEvidence[]>();
   const readAnswerCount = () => clarifiedTargets.length + unresolvedAnswers.length;

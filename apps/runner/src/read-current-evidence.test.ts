@@ -8,6 +8,11 @@ import { createModelAuthoringConversation } from "./model-authoring-conversation
 import { modelVisibleUserText } from "./test-fixtures/model-visible-frame.js";
 import { READ_PROCESS_FACTS as facts } from "./test-fixtures/source-read-process-contract.js";
 import { nativeReadEvidence1655 } from "./test-fixtures/native-read-evidence1655.js";
+import { randomUUID } from "node:crypto";
+import { createOperatorQuestion } from "./authoring-operator-question.js";
+import { createOwnerHandoff } from "./authoring-owner-handoff.js";
+import { readWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
+import { generateModelReadBoundaryRevision } from "./read-boundary-revision-model.js";
 
 it("derives a short answer from the actual accepted native lineage after a new producer episode", async () => {
   const native = await nativeReadEvidence1655();
@@ -28,10 +33,26 @@ it("derives a short answer from the actual accepted native lineage after a new p
   expect(evidence, JSON.stringify(evidence)).toMatchObject({ status: "established", progression: "mapped", authority_granted: false,
     evidence: { reference: { kind: "answered_clarification", text: native.mapped.resume.operator_questions!.at(-1)!.raw_answer!.text } } });
   expect(evidence.references.map(ref => ref.kind)).toEqual(["statement", "operator_answer", "workload"]);
+  const history = input.records.history!;
+  if (history.stage !== "dispatching") throw new Error("Expected the actual accepted mapping dispatch history.");
+  const { schema_version: _version, digest: _digest, pending_question: _pending, previous_question: _previous, ...episode } = history;
+  const freshCheckpoint = readWorkloadAssistanceCheckpoint({ ...episode, stage: "dispatching", dispatch_question: "Map the same business Read after the unrelated edit.",
+    state: { ...history.state, clarified_targets: [], clarification_answers: [], reviewed_replacements: [] } });
+  expect(createCurrentReadEvidence({ ...input, records: { ...input.records, checkpoint: freshCheckpoint } }).meaning(target))
+    .toMatchObject({ status: "established", progression: "mapped", authority_granted: false });
   const changedMeaning = "studio.parcels.units means the shipping weight in kilograms.";
   const conflicting = { ...input, statements: [...input.statements, { text: changedMeaning,
     origin: "operator_statement" as const, source_id: "new-declared-meaning", source_digest: canonicalJsonDigest(changedMeaning) }] };
   expect(createCurrentReadEvidence(conflicting).meaning(target)).toMatchObject({ status: "conflicting", authority_granted: false });
+  const latest = input.records.questions.at(-1)!;
+  const nextHandoff = createOwnerHandoff({ consumer: "read_clarification", question: "What does this measure represent for the changed requirement?",
+    scope_digest: latest.scope_digest, context_digest: latest.context_digest });
+  const nextQuestion = createOperatorQuestion({ id: randomUUID(), revision: 1, handoff_id: nextHandoff.id,
+    kind: "attributed_meaning", scope_digest: latest.scope_digest, context_digest: latest.context_digest,
+    target: latest.target, material: latest.material, evidence: latest.evidence, continuation: "read_mapping" });
+  const revisiting = { ...input, records: { ...input.records, questions: [...input.records.questions, nextQuestion],
+    handoffs: [...input.records.handoffs, nextHandoff] } };
+  expect(createCurrentReadEvidence(revisiting).meaning(target)).toMatchObject({ status: "missing", authority_granted: false });
   const forged = structuredClone(input);
   const copied = JSON.parse(forged.records.source.operator_messages![0]!);
   copied.statements[0].raw_answer = "studio.parcels.units means an unconfirmed private balance.";
@@ -69,4 +90,22 @@ it("derives a short answer from the actual accepted native lineage after a new p
   expect(generated.workload.source.meaning_evidence).toEqual(expect.arrayContaining([
     expect.objectContaining({ ...target, reference: expect.objectContaining({ kind: "answered_clarification", text: facts.raw }) }) ]));
   expect(requestJson).toHaveBeenCalledOnce();
+  const revisionRequest = vi.fn(async request => {
+    const text = modelVisibleUserText(request.body);
+    const line = text.split("\n").find(line => line.startsWith("Runner-derived current Read evidence: "))!;
+    const meanings = JSON.parse(line.slice("Runner-derived current Read evidence: ".length));
+    expect(meanings).toEqual(expect.arrayContaining([expect.objectContaining({ target,
+      status: "established", authority_granted: false, evidence: expect.objectContaining({ reference: expect.objectContaining({ text: facts.raw }) }) })]));
+    // The change is only the explicitly requested presentation text; the
+    // responder has no hidden answer or inherited activation permission.
+    return { status: 200, body: { output: [{ type: "function_call", call_id: "retained-revision",
+      name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ status: "revision", summary: "Update the requested display label.",
+        resource_changes: [{ resource: target.resource, settings: { field_metadata: [{ field: "units", label: "Requested parcel count" }] } }] }) }] } };
+  });
+  const revision = await generateModelReadBoundaryRevision({ instruction: "Label the selected unit measure Requested parcel count.",
+    operatorNamingContext: facts.job, boundary: native.context.candidate, provider: "openai", model: "owned-read-offline",
+    apiKey: "inert-offline-key", egressAcknowledged: true, conversation, currentEvidenceRecords: () => input.records,
+    dependencies: { requestJson: revisionRequest } });
+  expect(revision.policy_changes).toEqual(expect.arrayContaining([expect.objectContaining({ resource: target.resource })]));
+  expect(revisionRequest).toHaveBeenCalledOnce();
 }, 60_000);

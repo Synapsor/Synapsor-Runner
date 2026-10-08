@@ -8,6 +8,7 @@ import { findReadMeaningEvidence, readDefinitionPhrases, ReadMeaningConflictErro
 import type { ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import type { ReadWorkloadView } from "./read-workloads.js";
 import type { ExactReadRequestBinding } from "./read-requested-scope.js";
+import type { ModelAuthoringConversation } from "./model-authoring-conversation.js";
 
 type Digest = `sha256:${string}`;
 type Answer = ReadMeaningTarget & { question: string; answer: string };
@@ -16,6 +17,9 @@ export type CurrentReadEvidenceRecords = {
   questions: readonly OperatorQuestion[];
   handoffs: readonly AuthoringOwnerHandoff[];
   history?: ReadWorkloadAssistanceCheckpoint;
+  /** The current episode may be empty while an earlier accepted mapping has
+   * useful evidence. Keep both native records; neither replaces the other. */
+  checkpoint?: ReadWorkloadAssistanceCheckpoint;
   workloads: readonly ReadWorkloadView[];
   boundary: ExplorationBoundaryDraft;
 };
@@ -55,6 +59,8 @@ export function createCurrentReadEvidence(input: CurrentReadEvidenceInput) {
     catch (error) { return result("unsupported", { reason: error instanceof Error ? error.message : String(error) }); }
     if (retained.status === "conflicting") return result("conflicting", { references: retained.references, reason: retained.reason });
     const currentAnswers = input.answers.filter(answer => sameTarget(answer, target));
+    if (retained.pending && !currentAnswers.length) return result(retained.status ?? "missing", {
+      references: retained.references, ...(retained.progression ? { progression: retained.progression } : {}), reason: retained.reason });
     const answers = currentAnswers.length ? input.answers : [...input.answers, ...(retained.answer ? [retained.answer] : [])];
     try {
       const statements = input.statements.filter(statement => !isConfirmedMeaningIndex(statement));
@@ -102,7 +108,33 @@ export function createCurrentReadEvidence(input: CurrentReadEvidenceInput) {
     return structuredClone(answers);
   };
   const statementMeaning = (target: ReadMeaningTarget) => createCurrentReadEvidence({ ...input, answers: [], records: undefined }).meaning(target);
-  return { meaning, confirmedAnswers, statementMeaning };
+  const view = () => input.catalog.resources.flatMap(resource => [meaning({ resource: resource.id }),
+    ...resource.fields.map(field => meaning({ resource: resource.id, field: field.id }))]);
+  return { meaning, confirmedAnswers, statementMeaning, view };
+}
+
+/** One projection of original operator context, attached Source and declared
+ * conversation answers for all Read producers. Source indexes remain inert
+ * unless the native-record resolver verifies their lineage. */
+export function currentReadEvidenceStatements(input: {
+  original: readonly string[];
+  conversation?: ModelAuthoringConversation;
+  retiredAnswers?: readonly Answer[];
+}): ReadMeaningStatement[] {
+  const source = activePolicySource(input.conversation?.policySources);
+  return [
+    ...input.original.map((text, index) => ({ text, origin: "operator_statement" as const,
+      source_digest: canonicalJsonDigest(text), source_id: `operator_context:${index}` })),
+    ...(input.conversation?.turns.filter(turn => turn.kind === "clarification").flatMap((turn, index) =>
+      // Retire the exact answered question's conversation projection. The same
+      // text in a different question, original request or Source is not erased.
+      input.retiredAnswers?.some(answer => answer.question === turn.question && answer.answer === turn.answer) ? [] : [{ text: turn.answer,
+        origin: "operator_statement" as const, source_digest: canonicalJsonDigest(turn.answer), source_id: `operator_answer:${index}` }]) ?? []),
+    ...(source ? [{ text: source.text, origin: "policy_source" as const, source_digest: source.digest,
+      source_id: input.conversation!.policySources!.id, source_version: source.version },
+      ...(input.conversation?.policySources?.operator_messages ?? []).map((text, index) => ({ text,
+        origin: "operator_statement" as const, source_digest: canonicalJsonDigest(text), source_id: `operator_message:${index}` }))] : []),
+  ].filter(statement => !isConfirmedMeaningIndex(statement));
 }
 
 function sameTarget(left: ReadMeaningTarget, right: ReadMeaningTarget): boolean {
@@ -112,21 +144,24 @@ function object(value: unknown): value is Record<string, any> { return !!value &
 function retainedMeaning(target: ReadMeaningTarget, records: CurrentReadEvidenceRecords | undefined): {
   answer?: Answer; references: CurrentReadEvidenceReference[]; status?: CurrentReadEvidence["status"];
   progression?: CurrentReadEvidence["progression"]; reason?: string;
+  pending?: boolean;
 } {
   if (!records) return { references: [] };
   const questions = records.questions.map(parseOperatorQuestion).filter(question => question.kind === "attributed_meaning"
     && question.continuation === "read_mapping" && question.target.resource === target.resource && question.target.field === target.field);
   const handoffs = parseOwnerHandoffs([...records.handoffs]);
   const latest = questions.filter(question => !questions.some(other => other.handoff_id === question.handoff_id && other.revision > question.revision));
-  const history = records.history;
-  const answers = [...(history?.state.clarified_targets ?? [])];
-  const retired = new Set((history?.state.reviewed_replacements ?? []).map(edge => edge.previous_index));
-  const pending = history?.pending_question;
-  if (pending?.kind === "clarification" && pending.decision?.state === "answered") {
-    if (pending.replacement?.confirmed) retired.add(pending.replacement.previous_index);
-    answers.push({ ...pending.request, answer: pending.decision.answer });
-  }
-  const currentAnswers = answers.filter((_answer, index) => !retired.has(index));
+  const histories = [records.history, records.checkpoint].filter((history): history is ReadWorkloadAssistanceCheckpoint => !!history);
+  const currentAnswers = histories.flatMap(history => {
+    const answers = [...history.state.clarified_targets];
+    const retired = new Set((history.state.reviewed_replacements ?? []).map(edge => edge.previous_index));
+    const pending = history.pending_question;
+    if (pending?.kind === "clarification" && pending.decision?.state === "answered") {
+      if (pending.replacement?.confirmed) retired.add(pending.replacement.previous_index);
+      answers.push({ ...pending.request, answer: pending.decision.answer });
+    }
+    return answers.filter((_answer, index) => !retired.has(index));
+  });
   const source = activePolicySource(records.source);
   let stale = false, unsupported = false;
   const found: Array<{ answer: Answer; references: CurrentReadEvidenceReference[] }> = [];
@@ -150,7 +185,7 @@ function retainedMeaning(target: ReadMeaningTarget, records: CurrentReadEvidence
         answer_id: q.raw_answer.id, handoff_id: h.id };
       if (!source || source.digest !== index.source_digest) { stale = true; continue; }
       const workload = records.workloads.find(workload => workload.analysis.status === "ready" && workload.analysis.candidate
-        && workload.analysis.candidate_digest && workload.generated_boundary_digest === history?.boundary_digest
+        && workload.analysis.candidate_digest && histories.some(history => workload.generated_boundary_digest === history.boundary_digest)
         && workload.source.meaning_evidence?.some(evidence => sameTarget(evidence, target)
           && evidence.reference.kind === "answered_clarification" && evidence.reference.text === q.raw_answer!.text
           && evidence.reference.source_digest === canonicalJsonDigest(q.raw_answer!.text)
@@ -163,6 +198,20 @@ function retainedMeaning(target: ReadMeaningTarget, records: CurrentReadEvidence
       found.push({ answer: { ...target, question: q.presentation!.text, answer: q.raw_answer.text }, references: [nativeReference,
         { kind: "workload", analysis_id: workload.analysis_id, analysis_digest: workload.analysis_digest, candidate_digest: workload.analysis.candidate_digest }] });
     }
+  }
+  // Native questions are append-ordered; revisions replace only their own
+  // handoff. A newer question for this exact target must not resurrect an old
+  // indexed Yes, including when it belongs to a new handoff. Other targets do
+  // not participate in this decision.
+  const newest = latest.at(-1);
+  if (newest && !found.some(item => item.references.some(ref => ref.kind === "operator_answer"
+    && ref.question_id === newest.id && ref.revision === newest.revision))) {
+    const h = handoffs.find(handoff => handoff.id === newest.handoff_id);
+    if (h && h.scope_digest === newest.scope_digest && h.context_digest === newest.context_digest) return {
+      pending: true, status: stale ? "stale" : "missing", references: newest.raw_answer ? [{ kind: "operator_answer", question_id: newest.id,
+        revision: newest.revision, answer_id: newest.raw_answer.id, handoff_id: h.id }] : [],
+      ...(newest.raw_answer && !newest.disposition ? { progression: newest.confirmation ? "confirmed_awaiting_mapping" as const : "raw_captured" as const } : {}),
+      reason: "The latest native question for this target remains pending; an earlier mapping is not its answer." };
   }
   if (new Set(found.map(item => item.answer.answer)).size > 1) return { status: "conflicting", references: found.flatMap(item => item.references), reason: "Current native Read answers disagree; no reviewed replacement selects one." };
   if (found.length) return found[0]!;
