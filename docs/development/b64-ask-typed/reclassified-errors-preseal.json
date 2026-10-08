@@ -1,0 +1,27 @@
+{
+  "state": "PRESEAL_NO_PRODUCT_EDITS",
+  "current_pin": "7a9264c82b1ddf927441a7e464ab48530b700fa4",
+  "immutable_main_pin": "46c40f65",
+  "contract_pin": "a6f16baa",
+  "contract_path": "docs/development/b64-legitimate-independent/RECLASSIFICATIONS.json",
+  "original49": "closed; unchanged",
+  "new_reclassified_ids": [
+    "I00415",
+    "I00416",
+    "I03593"
+  ],
+  "new_remaining_typed": 3,
+  "new_remaining_delete": 0,
+  "source_sha256": {
+    "apps/runner/src/scoped-explore.ts": "0f1f62b1092a02833629b3e772da465ca1443418d39bec305c2dc999694bb2d0",
+    "apps/runner/src/ask-mcp-gateway.ts": "b945774612478b8839d3d9167841095e903337639fb1df19cce91b414c5b4e70"
+  },
+  "fixture": "apps/runner/src/ask-reclassified-errors.test.ts",
+  "fixture_sha256": "35a355455d654cbd94f7f93d77e24372d786c466920dcb5b9d4aaf1ea7cfc8a7",
+  "cases": 13,
+  "design": "Database cause exact known driver code only; unknown code/message honest unavailable cause, no raw text or credentials emitted. Outer EXPLORE_SOURCE_UNAVAILABLE unchanged; existing reservation release/audit/currentness paths untouched. MCP structured error_code or thrown McpError InvalidParams supplies validation decision; prose-only SDK/vendor error becomes generic MCP_TOOL_REFUSED with raw diagnostic withheld, generic thrown failure MCP_TOOL_FAILED. SDK loses typed code when converting input errors to text: honest unknown deliberately supersedes old lexical invalidarguments oracle; real runtime still refuses before SOURCE. No new wrapper/schema validator/authority/API. Existing structured results/local presentation/provider withholding preserved.",
+  "api": "No exported function/signature/schema changes; honest unknown error-code behavior changes specified. Existing MCP_TOOL_ARGUMENTS_INVALID retained for actual typed result/protocol failures.",
+  "slot": 3,
+  "controls": "Actual scopedruntime normal fixture activation + scripted executor; real Ask gateway with actual MCP client typed/prose envelopes; actual SDK invalid input also checked. No SOURCE/provider/network calls. Retain roots/raw outputs.",
+  "independent_review": "R1 required; no delegate/R2 approval"
+}
