@@ -1,0 +1,14 @@
+{
+  "head": "9b0aafc3",
+  "scope": "Two typed producer reachability reproductions covering the underlying handler gaps in ten provisional rows, not ten executed positive journeys",
+  "cases": {
+    "values": ["B64-READ-MIG-115", "B64-READ-MIG-118", "B64-READ-MIG-124", "B64-READ-MIG-206", "B64-READ-MIG-207", "B64-READ-MIG-208", "B64-READ-MIG-209", "B64-READ-MIG-210", "B64-READ-MIG-211"],
+    "mapping_relationship": ["B64-READ-MIG-123"]
+  },
+  "observed": "Actual v2 request/structural inventory reaches provider. Existing value_request or relationship_support clarification is rejected READ_SCOPE_PROTOCOL_INVALID twice; existing handler called zero times, no saved Read proposal. Strict tool has no admitted typed adapter for either capability.",
+  "classification": "confirmed_mapping_adapter_reachability_gaps; retained original safety tests still require typed successors",
+  "evidence": "/var/tmp/synapsor-b64-read-owned/evidence/typed-assistance-gaps-characterized.log",
+  "characterization": { "pass": 2, "positive_assistance_completed": 0 },
+  "harness_note": "First characterization asserted an incorrect guessed refusal-code suffix; actual READ_SCOPE_PROTOCOL_INVALID was inspected and recorded, with the original trace retained.",
+  "next": "Finite typed assistance request bound to a requirement/target and existing consumed completion; reuse existing consent/relationship handlers and counters. Independent preseal before implementation. No English classification or sampling bypass."
+}
