@@ -25,5 +25,15 @@
   ],
   "merge": "Product/tests auto-merged; only lane handoff conflict resolved retaining currentness handoff during guidance import",
   "next": "Main affected integrated controls after reviewer slot release; provenance16 and Actionv2 independent work continues",
-  "limits": "No full/installed/public Action/freeze acceptance"
+  "limits": "No full/installed/public Action/freeze acceptance",
+  "main_affected_validation": {
+    "pin": "faf786d9 (integrated product693204ad)",
+    "passed": 10,
+    "failed": 0,
+    "filtered": 140,
+    "seconds": 10.09,
+    "types_exit": 0,
+    "log": "/var/tmp/synapsor-b64-main-owned/evidence/read-integrated-6932-ten.log"
+  },
+  "open_safety_contract": "Read owner45c317f2 reproduced four ready-analysis approved-value bypass cases; fifth foreign-field case structurally blocked and explicitly reclassified. R1cc126828 independent before: eq/in positives2PASS, mixed unapproved/neq negatives2FAIL. Shared finite guard repair in progress, no release acceptance."
 }
