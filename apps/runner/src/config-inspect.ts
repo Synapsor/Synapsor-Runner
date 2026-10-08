@@ -145,7 +145,22 @@ export async function configCommand(
 ): Promise<number> {
   const [subcommand] = args;
   if (subcommand === "init") return configInit(args.slice(1), dependencies);
-  if (subcommand === "validate") return configValidate(args.slice(1));
+  if (subcommand === "validate") {
+    try { return await configValidate(args.slice(1)); }
+    catch (error) {
+      if (!(error instanceof Error)) throw error;
+      // Only this direct read-only command owns these facts. The shared
+      // validator can also run inside setup after earlier work has happened.
+      throw Object.assign(new Error(error.message, { cause: error }), {
+        ...("code" in error && typeof error.code === "string" ? { code: error.code } : {}),
+        recovery: {
+          state_preserved: "Configuration files and the source database were not changed.",
+          source_database_changed: false,
+          next_action: `Correct the reported configuration, then run ${cliCommandName()} config validate --help.`,
+        },
+      });
+    }
+  }
   if (subcommand === "show") return configShow(args.slice(1));
   if (subcommand === "migrate") return configMigrate(args.slice(1));
   if (subcommand === "model-output") return configModelOutput(args.slice(1));

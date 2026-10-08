@@ -4,8 +4,16 @@
   "before": {
     "command": "offline vitest cli-recovery-binding.test.ts --maxWorkers=1 --minWorkers=1",
     "result": "0PASS3FAIL",
-    "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/cli-recovery-before.json"
+    "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/cli-recovery-before.json",
+    "pin": "1cb81e8f"
   },
   "contract": "Public CLI must project actual typed Error.recovery; untyped prose does not prove no writes or safe retry. Existing configValidate read-only operation remains authoritative for its unchanged-state fact; generic filesystem errors are not granted that fact.",
-  "review": "R2 preseal requested; no independent after verdict yet"
+  "review": "R2 preseal requested; no independent after verdict yet",
+  "typed_projection": "Chat7b71fdbc adopted unchanged as79da8986",
+  "after": {
+    "focused": "4PASS0FAIL159filtered; new3 publicbinding + oldconfigJSON assertion unchanged",
+    "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/cli-recovery-after.json",
+    "owner": "Direct configCommand validate dispatch only; shared configValidate/config-domain/files untouched because also called after earlier guided-start work. Wrapper preserves cause/message/code."
+  },
+  "status": "DEV_IMPLEMENTED_INDEPENDENT_REVIEW_PENDING"
 }

@@ -364,9 +364,9 @@ export async function runCliProcess(argv: string[]): Promise<number> {
           message,
         },
         recovery: {
-          state_preserved: errorStatePreserved(message),
-          source_database_changed: errorSourceDatabaseChanged(message),
-          next_action: errorNextAction(message, argv),
+          state_preserved: errorStatePreserved(error),
+          source_database_changed: errorSourceDatabaseChanged(error),
+          next_action: errorNextAction(error, argv),
         },
       }, null, 2)}\n`);
     }
