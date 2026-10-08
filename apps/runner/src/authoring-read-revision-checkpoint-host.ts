@@ -1,16 +1,22 @@
+import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { AskError } from "./model-ask.js";
 import { consumeBoundaryReadRevisionResult, type BoundaryAuthoringReadRevision } from "./boundary-authoring-resume.js";
 import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionDecisionAnswer,
   type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
-import type { ModelReadBoundaryRevisionResult } from "./read-boundary-revision-model.js";
+import type { ModelReadBoundaryRevisionResult, ReadRevisionScopePreview } from "./read-boundary-revision-model.js";
 import { activePolicySource, PolicySourceChangedError, type PolicySourceSession } from "./authoring-policy-source.js";
 import { createOwnerHandoff, answerOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringReadCheckpoint,
-  assertAuthoringReadCheckpoint, authoringReadDecisionCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+  assertAuthoringReadCheckpoint, authoringReadDecisionCheckpoint, type AuthoringQuestionCompletion, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { rememberModelAuthoringClarification, type ModelAuthoringConversation } from "./model-authoring-conversation.js";
 import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+
+import { createReadScopeQuestion, proposeReadScopeReview } from "./authoring-read-scope-question.js";
+import { readScopeConsumption } from "./authoring-read-scope-binding.js";
+import { resolveReadScopeProposal } from "./read-structured-scope.js";
+import type { OperatorQuestion } from "./authoring-operator-question.js";
 
 type Digest = `sha256:${string}`;
 export type ReadRevisionCheckpointAccess = {
@@ -20,6 +26,10 @@ export type ReadRevisionCheckpointAccess = {
   currentCandidate(): Promise<{ candidate_digest: Digest }>;
   readRevision(): BoundaryAuthoringReadRevision | undefined;
   readInstruction(): string | undefined;
+  /** Actual current preview, resolved again under the existing protected save.
+   * Scope-only unresolved results use the unchanged candidate. */
+  scopePreview?(permit: ProjectAuthorityMutationPermit, result: ModelReadBoundaryRevisionResult): Promise<ReadRevisionScopePreview>;
+  readQuestions?(): OperatorQuestion[];
   readHandoffs(): AuthoringOwnerHandoff[];
   readRecovery(): AuthoringTransportState | undefined;
   readConversation(): ModelAuthoringConversation | undefined;
@@ -35,19 +45,42 @@ export type ReadRevisionCheckpointAccess = {
  * Resume CAS/rollback and the later guarded disabled save keep their owners. */
 export function createReadRevisionCheckpointHost({ access }: { access: ReadRevisionCheckpointAccess }) {
   const persist = async (checkpoint: ReadBoundaryRevisionCheckpoint | undefined,
-    currentBoundary: ExplorationBoundaryDraft, accepted?: ModelReadBoundaryRevisionResult) => {
+    currentBoundary: ExplorationBoundaryDraft, accepted?: ModelReadBoundaryRevisionResult, completion?: AuthoringQuestionCompletion) => {
     // A complete parsed result is known consumption, not a committed mutation.
     // Persist that distinction so a declined/failed save cannot replay the
     // already consumed producer on reopen. The actual guarded save clears it.
     if (!checkpoint) {
       if (!accepted) throw access.checkpointFailure("The Read revision result");
       await access.mutate(async permit => {
-        await access.contextDigest(permit);
+        const context = await access.contextDigest(permit);
         const current = await access.currentCandidate();
         if (!access.readRevision() || explorationBoundaryCandidateDigest(currentBoundary) !== current.candidate_digest) {
           throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The consumed revision belongs to another current candidate.");
         }
-        access.install({ revision: consumeBoundaryReadRevisionResult(access.readRevision()!) });
+        let scopeQuestion: OperatorQuestion | undefined;
+        if (accepted.read_scope) {
+          if (!completion || !access.scopePreview || !access.readQuestions)
+            throw access.checkpointFailure("The typed Read revision scope");
+          const preview = await access.scopePreview(permit, accepted);
+          const exact = resolveReadScopeProposal(accepted.read_scope.proposal, { expectedBinding: preview.scope.binding,
+            references: preview.scope.references, catalog: preview.scope.catalog, ...(preview.analysis ? { analysis: preview.analysis } : {}) });
+          if (canonicalJsonDigest(exact) !== canonicalJsonDigest(accepted.read_scope))
+            throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The typed scope belongs to another preview or analysis.");
+          const previous = [...access.readQuestions()].reverse().find(q => q.kind === "read_scope"
+            && q.read_scope?.mode === "review" && q.scope_digest === access.scopeDigest());
+          scopeQuestion = createReadScopeQuestion({ id: randomUUID(), revision: previous ? previous.revision + 1 : 1,
+            scope_digest: access.scopeDigest(), context_digest: context,
+            read_scope: { mode: "review", record: exact, completion, ...(previous ? { predecessor_id: previous.id } : {}) } });
+          // Missing mapping is durable pending work, not invented analysis or a
+          // confirmable interpretation. The later mapping owns its successor.
+          if (accepted.read_scope_state === "analyzed_proposal")
+            scopeQuestion = proposeReadScopeReview(scopeQuestion, preview.scope.binding, preview.analysis, preview.scope);
+          else if (accepted.read_scope_state !== "pending_mapping") throw access.checkpointFailure("The typed Read scope status");
+          access.install({ recovery: authoringReadCheckpoint(access.readRecovery(), completion, readScopeConsumption(scopeQuestion.read_scope!)) });
+          access.readQuestions().push(scopeQuestion);
+        }
+        access.install({ revision: { ...consumeBoundaryReadRevisionResult(access.readRevision()!),
+          ...(scopeQuestion ? { scope_question_id: scopeQuestion.id } : {}) } });
         await access.save(permit, "The consumed Read revision result");
       });
       return;

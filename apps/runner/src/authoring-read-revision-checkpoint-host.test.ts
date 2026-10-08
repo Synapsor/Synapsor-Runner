@@ -17,7 +17,9 @@ const question = { question: "Should order status stay visible or become private
 const answer = "Keep status private to Runner with no model analysis.";
 const revision = { resource_changes: [{ resource: "public.orders", field_exposure: [{ field: "status", exposure: "runner_only", model_operations: "none" }] }] };
 const response = (value: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "owned_revision_host", name: "runner__submit_read_boundary_revision", arguments: JSON.stringify(value) }] } });
-type State = { revision?: BoundaryAuthoringReadRevision; handoffs: AuthoringOwnerHandoff[]; recovery?: AuthoringTransportState; conversation: ModelAuthoringConversation };
+import { parseOperatorQuestions, type OperatorQuestion } from "./authoring-operator-question.js";
+
+type State = { questions?: OperatorQuestion[]; revision?: BoundaryAuthoringReadRevision; handoffs: AuthoringOwnerHandoff[]; recovery?: AuthoringTransportState; conversation: ModelAuthoringConversation };
 function harness() {
   const boundary = generatedBoundary(), sources = newPolicySourceSession();
   sources.snapshots.push(policyTextSnapshot(Buffer.from("The owner chooses the status field's visibility."), "declared-rules.txt")); sources.active = 1;
@@ -38,6 +40,7 @@ function harness() {
     contextDigest: async got => { expect(got).toBe(permit); events.push("context"); return context(); },
     scopeDigest: () => canonicalJsonDigest("declared current Read-edit scope"), currentCandidate: async () => ({ candidate_digest: candidate }),
     readRevision: () => state.revision, readInstruction: () => currentInstruction, readHandoffs: () => state.handoffs,
+    readQuestions: () => state.questions ??= [],
     readRecovery: () => state.recovery, readConversation: () => state.conversation,
     install: update => { for (const key of ["revision", "recovery"] as const) if (Object.prototype.hasOwnProperty.call(update, key)) Object.assign(state, { [key]: update[key] }); },
     appendSourceMessage: append,
@@ -170,3 +173,45 @@ function generatedBoundary(): ExplorationBoundaryDraft {
       groupable_fields: [], aggregate_measures: [], count_distinct_fields: [], time_bucket_fields: {}, kept_out_fields: ["tenant_id", "principal_id"], relationships: [], minimum_cohort_size: 5, suppression_aware_totals: true }] },
     budgets: structuredClone(DEFAULT_REVIEWED_EXPLORATION_BUDGETS), unresolved_decisions: [] };
 }
+
+
+describe("typed Read revision result retention", () => {
+  it.each(["pending", "preview_changed", "save_fault"] as const)("preserves actual consumed scope through %s", async mode => {
+    const h = harness();
+    const scope = { binding: { request_digest: canonicalJsonDigest(instruction), source_digest: canonicalJsonDigest("policy"),
+      catalog_digest: canonicalJsonDigest(h.boundary.pack), meaning_digest: canonicalJsonDigest("meaning"),
+      applicability_digest: canonicalJsonDigest("this-job"), operation_digest: canonicalJsonDigest("edit") },
+      references: [{ id: "job", kind: "request" as const, digest: canonicalJsonDigest(instruction), text: instruction }],
+      catalog: { resources: [{ id: "public.orders", fields: [{ id: "status" }] }], relationships: [] } };
+    const proposal = { protocol: "synapsor.read-scope.v1", applicability: "read_requested", original_request: "job", requirements: [{
+      id: "order-status", references: ["job"], intended_use: "Show order status", disposition: "unresolved", targets: [],
+      unresolved: "Which status should be shown?" }] };
+    h.access.scopePreview = async () => ({ scope: mode === "preview_changed" ? { ...scope,
+      binding: { ...scope.binding, operation_digest: canonicalJsonDigest("different current edit") } } : scope });
+    if (mode === "save_fault") h.fault.subject = "The consumed Read revision result";
+    let calls = 0;
+    const run = () => withAuthoringGenerationRecovery(async () => {
+      configureAuthoringGenerationRecovery({ available: () => true, read: () => h.state().recovery,
+        current: async () => h.context(), write: async value => h.setRecovery(value), progress: () => {} });
+      return h.run(async request => { calls++; expect(JSON.stringify(request.body)).toContain("job");
+        return response({ read_scope: proposal }); },
+        { structuredScope: { protocol: "synapsor.read-scope.v1", current: () => scope } });
+    });
+    if (mode !== "pending") {
+      await expect(run()).rejects.toThrow(mode === "save_fault" ? "OWNED_NATIVE_ACK_LOST" : "CHECKPOINT_STALE");
+      expect(h.state().revision?.result_received).toBeUndefined(); expect(h.state().questions ?? []).toEqual([]);
+      expect(h.state().recovery?.operations.at(-1)?.read_checkpoint).toBeUndefined();
+    } else {
+      await run();
+      const q = h.state().questions!.at(-1)!;
+      expect(q.read_scope?.record.proposal).toEqual(proposal);
+      expect(q.proposal).toBeUndefined(); expect(q.confirmation).toBeUndefined(); expect(q.raw_answer).toBeUndefined();
+      expect(q.read_scope?.record.analysis_digest).toBeUndefined();
+      expect(h.state().revision).toMatchObject({ result_received: true, scope_question_id: q.id });
+      expect(h.state().revision?.saved_read_digest).toBeUndefined();
+      expect(parseOperatorQuestions(h.state().questions, h.state().handoffs, h.state().recovery)).toEqual([q]);
+      expect(h.saves.at(-1)?.state.questions).toEqual([q]);
+    }
+    expect(calls).toBe(1);
+  });
+});

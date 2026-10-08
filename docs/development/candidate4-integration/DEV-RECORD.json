@@ -283,7 +283,7 @@
       "change": "same live checkpoint parser includes pending_action_addition.retained_action.checkpoint; historical dispositions untouched"
     },
     "last_usage_check": {
-      "used_percent": 29,
+      "used_percent": 31,
       "pause_threshold_used_percent": 95
     },
     "native_scope_host_wip": {
@@ -307,6 +307,13 @@
       "tests": "Actual producer+host+nativeCAS 1PASS/8filtered; affected Resume/workload78PASS; types0.",
       "logs": "/var/tmp/synapsor-b64-main-owned/evidence/scope-envelope-{after,affected,types}.log",
       "review": "R2 unchanged controls pending; no public/OS acceptance claimed"
+    },
+    "typed_revision_scope_host": {
+      "adapter": "d514555e integrated16d52aa6",
+      "change": "Actual consumed revision retains native Read scope question under existing protected owner. Protected preview re-resolved; pending mapping has no proposed interpretation/confirmation; analyzed proposals require actual compatible analysis; producer completion checkpoints scope exactly. Native revision pointer is not a saved Read or policy acceptance.",
+      "tests": "170PASS (revisionproducer82,revisionhost13,Resume75); types0",
+      "logs": "/var/tmp/synapsor-b64-main-owned/evidence/typed-revision-{host,types}.log",
+      "open": "Public wiring/current preview ports and independent native-CAS acceptance pending"
     }
   }
 }

@@ -152,6 +152,8 @@ export type BoundaryAuthoringResumeAction = {
 
 /** Exact pending Read request and inert producer state, never accepted access. */
 export type BoundaryAuthoringReadRevision = {
+  /** Exact consumed typed proposal; pending mapping is not a saved Read. */
+  scope_question_id?: string;
   instruction: string;
   provenance: "operator" | "guided";
   privacy_only: boolean;
@@ -758,6 +760,12 @@ export function assertBoundaryAuthoringResumeState(
       || !q.read_scope.record.analysis_digest)
       throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The Read analysis has no exact native scope review.");
   }
+  const revisedScope = (value.pending_read_revision_state as BoundaryAuthoringReadRevision | undefined)?.scope_question_id;
+  if (revisedScope) {
+    const q = (value.operator_questions as OperatorQuestion[] | undefined)?.find(q => q.id === revisedScope);
+    if (!value.authoring_protocol || q?.kind !== "read_scope" || q.read_scope?.mode !== "review")
+      throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The consumed Read revision has no native typed scope proposal.");
+  }
   assertReadAssistanceHandoff(value);
   const checkpoints = [(value.action as BoundaryAuthoringResumeAction | undefined)?.checkpoint,
     (value.pending_action_revision as BoundaryAuthoringActionRevision | undefined)?.checkpoint];
@@ -992,7 +1000,7 @@ function assertReadAssistanceHandoff(value: {
 }
 
 function normalizeReadRevisionState(value: unknown): BoundaryAuthoringReadRevision {
-  if (!isRecord(value) || Object.keys(value).some(key => !["instruction", "provenance", "privacy_only", "vocabulary_only", "interpretation_instruction", "checkpoint", "checkpoint_history", "result_received", "saved_read_digest", "terminal_reason"].includes(key))
+  if (!isRecord(value) || Object.keys(value).some(key => !["instruction", "provenance", "privacy_only", "vocabulary_only", "interpretation_instruction", "checkpoint", "checkpoint_history", "result_received", "saved_read_digest", "terminal_reason", "scope_question_id"].includes(key))
     || typeof value.instruction !== "string" || !["operator", "guided"].includes(value.provenance as string) || typeof value.privacy_only !== "boolean"
     || value.vocabulary_only !== undefined && value.vocabulary_only !== true
     || value.result_received !== undefined && value.result_received !== true
@@ -1001,6 +1009,8 @@ function normalizeReadRevisionState(value: unknown): BoundaryAuthoringReadRevisi
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The pending Read revision request is invalid.");
   }
   reviewedReadRequestText(value.instruction, "Read revision request");
+  if (value.scope_question_id !== undefined && (typeof value.scope_question_id !== "string" || !/^[a-f0-9-]{36}$/u.test(value.scope_question_id) || value.result_received !== true))
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: A typed Read revision needs its consumed native scope question.");
   if (value.saved_read_digest !== undefined) {
     reviewedDigest(value.saved_read_digest, "committed Read");
     if (value.result_received !== true) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: A recorded Read save requires its consumed result disposition.");
