@@ -50,16 +50,23 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
       && !questions.some(next => next.read_scope?.predecessor_id === q.id)).map(q => q.id);
   };
   const project = (boundary: ExplorationBoundaryDraft, structuralReview: Awaited<ReturnType<typeof loadBoundaryReviewContext>>,
-    answerQuestionIds = answerIds()) => {
-    const state = snapshot();
+    answerQuestionIds = answerIds(), state = snapshot(),
+    native?: Parameters<typeof projectAuthoringReadScopeContext>[0]["native"]) => {
     return projectAuthoringReadScopeContext({ resume: state.resume, boundary, structuralReview, sources: state.sources,
-      records: { questions: state.questions, handoffs: state.handoffs, generation: state.generation }, answerQuestionIds });
+      records: { questions: state.questions, handoffs: state.handoffs, generation: state.generation }, answerQuestionIds, native });
   };
   const context = async (boundary: ExplorationBoundaryDraft, answerQuestionIds = answerIds(), permit?: ProjectAuthorityMutationPermit) => {
     await input.ports.assertCurrent(permit);
-    const current = await loadBoundaryReviewContext(input.projectRoot);
-    const projected = project(boundary, current, answerQuestionIds);
+    const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot();
+    const selected = state.read?.scope_question_id;
+    const stored = selected && state.read ? await readStoredReadWorkloadAnalysis({
+      projectRoot: input.projectRoot, analysisId: state.read.analysis_id }) : undefined;
+    if (stored && stored.analysis_digest !== state.read!.analysis_digest)
+      return unavailable("The exact saved Read scope analysis");
+    const projected = project(boundary, current, answerQuestionIds, state,
+      selected && stored ? { question_id: selected, analysis: stored.analysis } : undefined);
     await input.ports.assertCurrent(permit);
+    if (snapshot().revision !== state.revision) return unavailable("The coherent native Read scope projection");
     return projected;
   };
   const host = createReadScopeHost({ access: {
