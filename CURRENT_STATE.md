@@ -1,15 +1,15 @@
-1. ACTIVE structural B59/B60/B61; reboot recovered, paid CLOSED; Owner pauses explicitly; no usage monitoring.
-2. T0=2026-10-07T21:51:08Z; scope Oct9T21:51Z/delivery Oct10T21:51Z unchanged; candidate4 + one conditional replacement only.
-3. Frozen candidates/jobs/holds preserved; no replay, no same-connection live edit; protected exited containers untouched.
-4. Main B60 root e9f59609: exact durable coverage-consumer ACK + shared entry adapters; boundary20100→20072; privatepushed/types0.
-5. B60 public before817f6ff0 ready-v6 coverage1/mapping0; afteraef reachesmapping/confirmation,2vs1 consent assertion pending independent contract verdict.
-6. B60 helper b60_public_routes: actual setup/Review/edit/Resume/Replace-cancel + originalstudio/supplemental proof; existing assertions unchanged.
-7. Reviewer2 a9c98431: ACK static scopedaccept; public/native durable route evidence pending; same eight-group seal, paid CLOSED.
-8. Integration consents6c runtime2ae33a76 + accepted B61 test-only2c39faa4; early full INTERRUPTED powerloss, originallog preserved50 reportedfailures.
-9. Triage f55f454f: B59 threefile representative regressions beforePASS/afterFAIL; three120s timeoutcases passclean; no overallfullverdict.
-10. B59fix helper: exact current reviewed-request port; independent triage reviewer judges missingrootfacts separately; no semantic inference or relaxed assertions.
-11. B61 native scopedaccept + supplement2a09 integrated; actual Luna runner_ledger remainsUNKNOWN; P3 native staleInputroot continuation open.
-12. Main exact13file B60 affected suite3workers active; no otherfull; next acceptB59/B60→compose→cleanfull/type/liveDB/offline/package/size.
-13. Tester reboot0activeoperations, unchanged ledger/hashes; needs exactinstalled finalpin for composedLuna; all paid closed.
-14. Luna≤35USD total; upper15.27063125 inclhold1.2693125; available19.72936875; soleTester01a117fd; max2heavy/8workers/free≥8GiB.
-15. Evidence: docs/development/b60-production-host/; early-full-triage1652/DEV-RECORD.json; E/b60-public-receipt-proof1650/HANDOFF.md; checkpoint privatebackup only.
+1. CONTROLLING Owner foundation completion: general authoring/evidence/receipt/consent ownership before demo date; paid CLOSED; candidate3 untouched.
+2. Existing scope closes2026-10-09T21:51:08Z, delivery2026-10-10T21:51:08Z; ONE conditional48h OFFLINE extension available, NOT activated; no candidate/money reset.
+3. Main integrates accepted B59/B60/B61 predecessor; current merge29c0f53e into ca224d41, B60 producta570/teste4/helper93e6 independently finite ACCEPT.
+4. B60 saved6P/studio3P/nativecoldOS5 scoped; root684P1oldharnessF→targeted1P; all original failures retained, not whole685PASS or installed proof.
+5. Main owns production contract/receipt host/shared boundary; audit TRANSITIVE effects, coherent checked records, exact acknowledged Source/Resume saves; no line-count target.
+6. B59 owner b59_regression_fix: derived current Read evidence resolver across mapping/correction/Review/edit/Resume, native supportingrefs/statuses; no secondstore/lexical bypass.
+7. early_full_triage independently pre-seals Read sequence controls; liveDBprep41d09 held, no final fixtures; B59 first estimate4–6h plus qualification.
+8. b60_public_routes owns actual2-vs1 consent trace/implementation; R2 independent receipt/consent/restart controls; scopes/purposes/priorgrants must establish necessity, not hashdifference.
+9. Sequence matrix: confirmedmeaning→omission→unrelatededit→restartReview; raw→mapping; Replace/cancel; drift/conflict; concurrent saves; interrupted Source/ResumeACK; applicableconsent reuse.
+10. B61 accepted source_db atomic receipt/reconcile stays separate; actual Luna runner_ledger/legacy UNKNOWN, no replay/mode/grant expansion.
+11. Final full/liveDB/offline/package/size deferred until foundation source settles; max2heavy/8workers; owned0700 HOME/TMP+decoy/free8GiB; no allocationmeter.
+12. Luna total35USD, upperledger15.27063125 inclhold1.2693125, remaining19.72936875; sole Tester; focused paid edit→one full paid rehearsal only after accepted candidate4/admission.
+13. Candidate4 requires foundation+composed workflows+settled gates+independent installed acceptance; provisional Oct8 late afternoon/evening PDT, refine after proofs, never rush freeze.
+14. Current contract/details docs/development/adr-b51-shared-input-interaction.md + candidate4-integration/DEV-RECORD.json + b60-production-host/OWNERSHIP.md; historical conflicting stops/growth targets superseded.
+15. Next: finish predecessor merge/typecheck, Main effects/restart audit; owners implement finite successor with independent verdict; privatebackup eachcheckpoint, Owner controls pause.

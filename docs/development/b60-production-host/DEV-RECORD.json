@@ -1,0 +1,88 @@
+{
+  "status": "PUBLIC_AND_NATIVE_FOCUSED_COMPLETE_FINAL_INDEPENDENT_VERDICT_PENDING",
+  "base": "04497a793e6345f6d8e75a291e78b5a19a1b99e2",
+  "branch": "codex/b60-production-host-20261008",
+  "owner_amendment": "7b17dfc0",
+  "before": "aaf0c788: Source excerpts2000/2001/16000 all fail AUTHORING_QUESTION_INVALID; original capture preserved",
+  "changes": [
+    "Production receipt host owns target nomination/current applicability/configuration/predecessor/Source projection recovery/typed outcome",
+    "Outer setup/Review/edit/Resume adapters provide narrow current record, existing protected writer and existing business-host ports",
+    "Receipt domain adapter owns native question identity/configuration binding/finite mapping pool; shared host retains raw/default-No/history/protected-save flow",
+    "No receiptRequirementPending mirror or boolean result; Source refusal response identity remains distinct from full prepared-review key",
+    "Exact Source sections remain <=2000 characters and preserve whitespace/UTF16 pairs; target limit16000/envelope limit unchanged",
+    "The existing coverage failure record retains its full typed resolution; receipt dispatch is authorized by that current resolution instead of every historical target nomination. No receipt-specific flag or alternate truth owner.",
+    "Shared host checks native question kind at reopen and protected adoption, so an unrelated generic owner cannot consume a retained receipt proposal."
+  ],
+  "commands": "isolated HOME/TMP corepack pnpm typecheck; vitest run receipt-requirement-host / business-statement-host / boundary-structured-authoring.integration maxWorkers1 minWorkers1 testTimeout20000 hookTimeout20000; vitest receipt-requirement-process maxWorkers1",
+  "results": {
+    "types": "0",
+    "existing_initial_affected": "38 pass / 0 fail",
+    "production_and_shared_host": "16 pass / 0 fail",
+    "actual_fresh_OS_process": "5 pass / 0 fail; raw answer, proposal, confirmation, Source projection, acknowledgement; actual native Source/Resume writers, network-unshared child PIDs",
+    "repeated_model_calls": "Exactly one mapping per question across each interrupted/cold/reused continuation; no words/consent replay",
+    "broader_affected": "b611 first7files494P3F preserved; current typed dispatch corrected099 exact12files644P0F0S/657.75sec, original assertions/provider counts unchanged",
+    "independent": "Reviewer2 sealed eight groups active: native wrong-owner/competing saves/Replace-cancel/five fresh OS boundaries scoped controls closed; public compatibility and final verdict pending",
+    "domain_ownership": "98cdb37f wrong-owner before1F; native ownership guard after34P/types0; attempted receipt-to-Source append refused before presentation/adoption"
+  },
+  "logs": "/var/tmp/synapsor-main-b60-20261007-owned/evidence/production-host-*.log",
+  "limitations": [
+    "Fresh-process fixture uses the production host and native writers through narrow declared-metadata ports; it is not a whole installed public CLI or database-effect proof",
+    "Existing public structured Review callback and ordinary host regressions pass; independent public setup/edit/Resume route checks still pending",
+    "No full suite/final package/freeze/installed or paid qualification claimed",
+    "Initial affected command named three nonexistent files; actual matched7-file result is reported; corrected names included in next affected run."
+  ],
+  "runtime_head": "a5706ef7de2933477fb8c7c8d6adaa9e1ce8894b",
+  "post_reboot_route_fix": {
+    "before": "public fixture817f6ff0 ready-v6: completed refused coverage1, receipt mappings0; ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION; unchanged test preserved",
+    "cause": "Coverage saved the completed unaccepted submission in Source but only canonical-report success acknowledged its recovery consumer. The receipt host was reached, and correctly refused a new question over handled/uncheckpointed output.",
+    "design": "Shared producer acknowledgement uses the actual decoded completion identity plus exact producer episode/context/submission, only after the guarded durable Source submission save and a currentness recheck. Native recovery writer separately CAS-saves Resume. It marks only that consumed turn checkpointed; no acceptance, new allowance, question, copied response or historical output is minted. Partial/unknown and unrelated handled output remain fenced.",
+    "results": "types0; three exact-consumer controls PASS (unrelated handled retained, wrong producer refused unchanged, cold JSON cannot acknowledge); initial unit fixture invalid UUID3F retained then corrected test-only UUID; public successor pending",
+    "boundary_lines": 20100
+  },
+  "route_extraction": {
+    "owner": "authoring-policy-decision-route: thin current typed-resolution/waiting-kind adapters to existing receipt host; no engine/authority/records",
+    "boundary_lines_before": 20100,
+    "boundary_lines_after": 20072,
+    "types": 0,
+    "public_status": "ACK successor reachesmapping+confirmation, unchanged expectedboundedconsents1 sees2 across differentbefore/aftermeaningcontexts; independentcontractjudgmentpending; originalfinalreuse/countchecksuntouched",
+    "proof_scope": "Real publicsetup/Review/edit/Resume/Replace-cancel and studio underconstruction; notyetaccepted",
+    "affected": "exacte9f59609:13files778P0F0S,types0,310.07sec; fixedsource"
+  },
+  "planned_route_consumer": {
+    "before": "helper01f97f8d real planner ordinaryResume: native PLANNING_ACCEPTED1, coverage1, receiptmapping0, ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION; resume-native-v1 retained",
+    "cause": "planned review-only returns into saved Review before normal planning persistence; unlike clarification, planned result discarded actual decoded completion sidecar",
+    "fix": "Every actually decoded planned routing sequence carries its host-only completion. Existing planning Resume CAS saves conversation and checkpoints only those exact owned turns before dispatch. Shared consumed-turn checkpoint also underlies durable Source producer ACK. No receipt-specific branch, no new schema or authority, no historical/partial/unknown promotion. Completed correction turns are included from actual returned objects.",
+    "validation": "types0, generation+planning200P, boundary-cli443P; actual native planner Resume1P. Fault successor2P includes native competing CAS.",
+    "boundary_size": "20078; +6 for generic completion protected-save wiring over routeextraction20072, net-22 vs20100"
+  },
+  "pre_action_assessment_route": {
+    "before": "studio-edit-b59-v2: original studio editPASS; supplemental receipt editFAIL ACTION_WORK_UNIT_SOURCE_ASSESSMENT_INCOMPLETE after realtyped OBLIGATION_RECEIPT_REQUIREMENT_UNESTABLISHED, no receipt question",
+    "fix": "Existing complete-assessment consumers use shared typed pending-decision adapter once, existing host and protected ports, then recheck only after saved meaning; complete report still required and all old assessment refusals remain. Applies before/after confined repair, not specific receipt/table/fixture logic. Native Action/Source currentness checked around every assessment.",
+    "types": 0,
+    "public_successor": "studio-edit-route-v3: receipt question/mapping/confirmation1/1/1 and native Source/Resume saved; later Action validate callback requires inspection, edit not saved. Under diagnosis; no PASS.",
+    "boundary_lines": 20097,
+    "line_accounting": "includes acceptedB59fiveportlines; genericassessmentportwiring+14. Compared owner20100 still-3. No receiptif or copiedselection."
+  },
+  "planned_checkpoint_failure": {
+    "before": "independent staticR2 thennative52455ce4 planner-race-before-v1 0P1F: actualPLANNING_ACCEPTED\u2192competing nativeResume\u2192publicreturns0 silently, noSETUPNEEDSATTENTION; competingrecordretained, noadditionalprovider inthisprefix",
+    "fix": "Generic planning catch propagates any failure after a validated planned result before the planned break. It cannot reuse that result for dispatch or open a fresh planner fallback after its protected checkpoint failed.",
+    "after": "Exact native race + healthy actual Resume2P0F/12.41sec; competing record preserved, error surfaced, no downstream dispatch; helper97cb2dfc/types0; planner-race-after-v1. Independent adjudication pending.",
+    "boundary_lines_root": 20093,
+    "independent": "R2 a600979c23checks/10hashes scoped ACCEPT"
+  },
+  "current_program_input_binding": {
+    "before": "studio-edit-route-v3 receipt1/1/1 saved; Source2 Input review skipped because singleton edit resumeAction omitted intended_outcomes. Diagnostic-v5 exact SOURCE_INPUT_REQUIREMENT_PENDING from Action validation; historical partial operation untouched.",
+    "fix": "Use the exact retained program record selected by native Resume persistence for Input initial and live agenda readers. Existing Input host performs fresh Source2 review/defaultNo confirmation, preserving old records. No inferred meaning or receipt-specific logic.",
+    "after": "helper93e6cb09: saved route6P, supplemental studio setup/edit+original unchanged-Source edit3P, types0. v6 original copied Input/report counts failed1P1F preserved; R2 independently requires currentSource2 root/child/raw mapping/review and before/after receipt coverage contexts; only supplemental counts corrected with stronger exact identities.",
+    "root_affected": "a570 types0,684P1F/5files. Failure is old test callback rejecting the existing Sep14 saved-job menu; a35 correctly surfaces that assertion instead of swallowing it. R2 contract adjudication accepted exact continue/review/pause menu handling with original planner1/snapshot/noactivation assertions and added exact pendingrequest/client/conversation preservation. e4f48eeb targeted successor1P/442filtered/5.55sec, product unchanged. Original failure/diagnostic retained; not reported as a rerun of all685.",
+    "line_count": "20093 root; 20098 with accepted B59 current-record ports (under original20100)."
+  },
+  "public_binding_packet": {
+    "head": "93e6cb09",
+    "product": "a5706ef7 = helper ee71fa53 product bytes",
+    "saved_routes": "6P0F: saved Review, below-planner Resume, actual planner Resume, cancel-return, declined Replace-return, competing native planner CAS",
+    "studio": "3P0F: original unchanged-Source edit, supplemental ordinary setup, supplemental Source2 edit",
+    "tests": "ecbe89ea; supplemental-only counts independently adjudicated and exact records strengthened; original validated_reuse/provider-count controls unchanged",
+    "types": 0
+  }
+}

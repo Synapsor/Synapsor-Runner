@@ -8,26 +8,28 @@ import { createBusinessStatementHost, type BusinessStatementRecordUpdate } from 
 import type { BusinessStatementInteraction, BusinessStatementResponse } from './authoring-business-statement-interaction.js';
 import { assertOperatorQuestionsAdvance, parseOperatorQuestions } from './authoring-operator-question.js';
 import { newPolicySourceSession, policyTextSnapshot, savePolicySources, loadPolicySources } from './authoring-policy-source.js';
-import { receiptRequirementCheckpoint } from './authoring-receipt-requirement-host.js';
+import { createReceiptRequirementHost, receiptRequirementCheckpoint, type ReceiptRequirementAnswerReview } from './authoring-receipt-requirement-host.js';
 import { currentReceiptRequirement, receiptRequirementDependencies, receiptRequirementPreparedContext,
   receiptRequirementQuestionContext, receiptRequirementSourceBinding } from './authoring-receipt-requirement.js';
 import { withProjectAuthorityMutation } from './project-authority-mutation.js';
+import { receiptBusinessStatementAdapter, receiptRequirementMaterial } from './authoring-receipt-decision-adapter.js';
 import type { ProviderHttpInput } from './model-ask.js';
 import { authoringDestination } from './authoring-policy-source.js';
 import { ensurePreparedPolicyCoverage } from './authoring-prepared-policy-review.js';
+import { coverageResponseContext } from './authoring-coverage-feedback.js';
 import { createModelAuthoringConversation } from './model-authoring-conversation.js';
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, {recursive:true,force:true}); });
-async function fixture(options:{failConfirmationProjectionOnce?:boolean}={}) {
+async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceText?:string;productionHost?:boolean;nominateTarget?:boolean}={}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'receipt-host-')); roots.push(root);
-  const source = policyTextSnapshot(Buffer.from('Describe a change as complete only from its trusted completion receipt.'), 'declared-policy.txt');
+  const source = policyTextSnapshot(Buffer.from(options.sourceText ?? 'Describe a change as complete only from its trusted completion receipt.'), 'declared-policy.txt');
   const sources = newPolicySourceSession(); sources.snapshots = [source]; sources.active = source.version;
   await savePolicySources(root, sources);
   const store = canonicalJsonDigest('declared local store'), scope = canonicalJsonDigest('declared current job');
   const draft = { read: {source:'lab'}, actions: [{name:'Change a plan',outcome:'lab.change',effect:{writeback:'supervised',operation:'update',
     target_resource:'lab.plans',primary_key:'id',conflict_key:'version'}}], runner_evidence: {runtime_contract:{
-      receipt_configuration:{status:'current',modes:[{source:'lab',authority:'runner_ledger'}]},
+      receipt_configuration:{status:'current',digest:canonicalJsonDigest('declared current configuration'),modes:[{source:'lab',authority:'runner_ledger'}]},
       receipts:{ledger:'local',observed:false},onboarding_reader:{engine:'postgres',fingerprint:'declared metadata'}}} };
   const dependency = receiptRequirementDependencies(draft), binding = receiptRequirementSourceBinding(source,sources.id,store,1,1);
   const file = path.join(root,'native-port.json');
@@ -38,32 +40,55 @@ async function fixture(options:{failConfirmationProjectionOnce?:boolean}={}) {
   const checkpoint = receiptRequirementCheckpoint({projectRoot:root,sources,store,start:1,end:1,currentDraft:prepared,questions:()=>state.questions!,
     assertCurrent:async()=>{ expect(canonicalJsonDigest(await loadPolicySources(root,sources.id))).toBe(canonicalJsonDigest(sources)); },
     acknowledge:async()=>{events.push('Source acknowledgment');await fs.writeFile(file,JSON.stringify(state));} });
-  const invoke = (interact:(view:BusinessStatementInteraction)=>Promise<BusinessStatementResponse>) => createBusinessStatementHost({
-    question:'What establishes completion, and how should an unapplied request be described?',stage:'authority_review',assertCurrent:async()=>{},
-    receiptDecision:{target:{phase:'receipt_requirement',resource:source.digest,field:'lines:1-1',outcomes:['lab.change']},material:[source.text],
-      evidence:[{id:'receipt-source-range',digest:binding},{id:'receipt-meaning-dependencies',digest:dependency}],
-      selection:{source:'lab',mode:'runner_ledger',dependencies_digest:dependency},
-      // Prepared responder reads only the actual wire question and captured
-      // operator words. It has no fixture state, oracle or expected mapping.
-      session:{provider:'openai',model:'declared-offline-model',apiKey:'inert-controlled-credential',dependencies:{requestJson:async request=>{
+  const modelSession: import('./action-tui.js').ActionModelSuggestionSession = {provider:'openai',model:'declared-offline-model',apiKey:'inert-controlled-credential',dependencies:{requestJson:async request=>{
         requests.push({ ...request, body: structuredClone(request.body) });
         const q = JSON.parse(findQuestionText(request.body));
         const clear = /completion receipt/u.test(q.raw_answer) && /pending or approved/u.test(q.raw_answer);
         return {status:200,body:{status:'completed',output:[{type:'function_call',call_id:randomUUID(),name:'runner__propose_operator_decision',
           arguments:JSON.stringify({question_id:q.question_id,revision:q.revision,answer_id:q.answer_id,status:'proposal',
             disposition:clear?'proposed':'pending',...(clear?{value:{kind:'receipt_requirement',completion_basis:'applied_change_receipt',unapplied_status:'pending_or_approved'}}:{})})}]}};
-      }}}},
+      }}};
+  const invoke = (interact:(view:BusinessStatementInteraction)=>Promise<BusinessStatementResponse>, domain?:ReceiptRequirementAnswerReview|null) => createBusinessStatementHost({
+    question:domain?.question ?? 'What establishes completion, and how should an unapplied request be described?',stage:'authority_review',assertCurrent:domain?.assertCurrent ?? (async()=>{}),
+    decision:domain===null ? undefined : domain?.decision ?? receiptBusinessStatementAdapter({target:{phase:'receipt_requirement',resource:source.digest,field:'lines:1-1',outcomes:['lab.change']},material:receiptRequirementMaterial({start:1,end:1,source_excerpt:source.text}),
+      evidence:[{id:'receipt-source-range',digest:binding},{id:'receipt-meaning-dependencies',digest:dependency}],
+      selection:{source:'lab',mode:'runner_ledger',dependencies_digest:dependency},
+      // Prepared responder reads only the actual wire question and captured
+      // operator words. It has no fixture state, oracle or expected mapping.
+      session:modelSession}),
     access:{readQuestions:()=>state.questions!,readHandoffs:()=>state.handoffs!,readRecovery:()=>state.recovery,
-      readConversationTurns:()=>state.conversationTurns,readCheckpointDigest:()=>undefined,scopeDigest:()=>scope,contextDigest:async()=>context(),
+      readConversationTurns:()=>state.conversationTurns,readCheckpointDigest:()=>undefined,scopeDigest:()=>scope,contextDigest:permit=>domain?.contextDigest(permit) ?? Promise.resolve(context()),
       mutate:operation=>withProjectAuthorityMutation(root,operation),install:update=>{state={...state,...update};},
       save:async(_permit,_stage,subject)=>{parseOperatorQuestions(state.questions,state.handoffs!,state.recovery);
         assertOperatorQuestionsAdvance(saved.questions!,state.questions!); await fs.writeFile(file,JSON.stringify(state));saved=structuredClone(state);
         if(options.failConfirmationProjectionOnce && state.questions?.at(-1)?.confirmation){
           options.failConfirmationProjectionOnce=false;throw new Error('Declared interruption after native confirmation save');}
-        events.push(subject);await checkpoint.saved(_permit);},
+        events.push(subject);await (domain?.afterSave ?? checkpoint.saved)(_permit);},
       appendSourceStatement:async()=>{throw new Error('Receipt answers must stay separate from Source text.');},
       prepareReadDecision:async()=>({}),checkpointFailure:subject=>new Error(subject)},interact}).review();
-  return {root,source,sources,prepared,invoke,requests,events,checkpoint,inspect:()=>structuredClone(state),
+  const attemptKey=canonicalJsonDigest('declared whole prepared review key');
+  if(options.nominateTarget) {
+    const responseContext=coverageResponseContext(source.digest,prepared(),[]);
+    sources.coverage_episodes=[{id:randomUUID(),context:attemptKey,started_at:'2026-10-07T23:15:45.188Z',submissions:[{
+      number:1,reserved_at:'2026-10-07T23:15:45.188Z',completed_at:'2026-10-07T23:15:46.188Z',validated:false,
+      tentative:{status:'unaccepted_generation',context:responseContext,raw_response:{passages:[{start:1,end:1,
+        disposition:'implemented',responsibility:'runner',draft_paths:['/runner_evidence/runtime_contract/receipt_configuration']}] }},
+      diagnostic:JSON.stringify({context:responseContext,findings:[{component:'/passages/0',
+        typed_reason:'receipt_configuration.source_requirement_unestablished'}]}),
+    }]}];
+    await savePolicySources(root,sources);
+  }
+  const productionInvoke=(interact:(view:BusinessStatementInteraction)=>Promise<BusinessStatementResponse>)=>createReceiptRequirementHost({
+    projectRoot:root,modelSession,businessContext:{references:[]},attemptKey,
+    readSources:()=>sources,readQuestions:()=>state.questions!,readHandoff:()=>state.handoffs!.at(-1),
+    scopeDigest:()=>scope,storeDigest:()=>store,currentDraft:prepared as never,refreshEvidence:async()=>{events.push('Evidence refresh');},
+    readConfiguration:async()=>draft.runner_evidence.runtime_contract.receipt_configuration as never,
+    questionContext:async()=>{expect(canonicalJsonDigest(await loadPolicySources(root,sources.id))).toBe(canonicalJsonDigest(sources));return context();},
+    mutate:operation=>withProjectAuthorityMutation(root,operation),
+    acknowledgeResume:async()=>{events.push('Source acknowledgment');await fs.writeFile(file,JSON.stringify(state));},
+    assertGenerationAdmission:()=>{events.push('Generation admission');},reviewAnswer:review=>invoke(interact,review),
+  }).review();
+  return {root,source,sources,prepared,invoke,invokeWithoutDecision:(interact:(view:BusinessStatementInteraction)=>Promise<BusinessStatementResponse>)=>invoke(interact,null),productionInvoke,requests,events,checkpoint,draft,inspect:()=>structuredClone(state),
     restart:async()=>{state=JSON.parse(await fs.readFile(file,'utf8'));saved=structuredClone(state);Object.assign(sources,await loadPolicySources(root,sources.id));}};
 }
 function findQuestionText(value:unknown):string {
@@ -155,4 +180,61 @@ it('finishes only a missing Source projection after a durable native confirmatio
   expect(currentReceiptRequirement(f.source,{start:1,end:1},f.prepared(),f.sources)?.mode).toBe('runner_ledger');
   expect(f.inspect()).toEqual(native);expect(f.requests).toHaveLength(1);
   expect(native.questions!.at(-1)?.budget?.iterations_used).toBe(1);
+});
+
+it.each([2_000,2_001,16_000])('preserves the full %i-character Source target within native question material limits',async length=>{
+  const text='R'.repeat(length-2)+' Z';
+  const f=await fixture({sourceText:text});
+  expect(await f.invoke(respond(clear))).toBe(clear);
+  const material=f.inspect().questions![0]!.material;
+  expect(material.every(entry=>entry.length<=2_000)).toBe(true);
+  expect(material.filter(entry=>entry.startsWith('Attached Source lines '))
+    .map(entry=>entry.slice(entry.indexOf('\n')+1)).join('')).toBe(text);
+  expect(f.requests).toHaveLength(1);
+  expect(f.sources.receipt_requirement_reviews!.at(-1)!.source_excerpt).toBe(text);
+});
+
+it('the production owner distinguishes no target, pending, confirmed, reused and a configuration prerequisite',async()=>{
+  const absent=await fixture();
+  expect(await absent.productionInvoke(async()=>{throw new Error('No target must not ask');})).toEqual({kind:'no_target'});
+  expect(absent.requests).toHaveLength(0);expect(absent.inspect().questions).toHaveLength(0);
+  const f=await fixture({nominateTarget:true});
+  expect(await f.productionInvoke(respond(clear,false))).toMatchObject({kind:'pending'});
+  expect(f.requests).toHaveLength(1);await f.restart();
+  expect(await f.productionInvoke(async view=>view.kind==='pending'
+    ?{kind:'pending',binding:view.binding,choice:'review'}:respond('unused')(view))).toEqual({kind:'saved',disposition:'confirmed'});
+  expect(f.requests).toHaveLength(1);const native=f.inspect();
+  expect(await f.productionInvoke(async()=>{throw new Error('Reuse must not ask');})).toEqual({kind:'saved',disposition:'reused'});
+  expect(f.inspect()).toEqual(native);expect(f.requests).toHaveLength(1);
+  f.draft.runner_evidence.runtime_contract.receipt_configuration.status='absent' as 'current';
+  expect(await f.productionInvoke(async()=>{throw new Error('Configuration is not operator meaning');}))
+    .toMatchObject({kind:'blocked',code:'receipt_configuration_unestablished'});
+  expect(f.inspect()).toEqual(native);expect(f.requests).toHaveLength(1);
+});
+it('the production owner completes only the missing Source projection after the native confirmation save',async()=>{
+  const f=await fixture({nominateTarget:true,failConfirmationProjectionOnce:true});
+  await expect(f.productionInvoke(respond(clear))).rejects.toThrow('Declared interruption after native confirmation save');
+  await f.restart();const native=f.inspect();
+  expect(await f.productionInvoke(async()=>{throw new Error('Recovery must not prompt or map');}))
+    .toEqual({kind:'saved',disposition:'projection_recovered'});
+  expect(f.inspect()).toEqual(native);expect(f.requests).toHaveLength(1);
+});
+it.each([2_000,2_001,16_000])('production target nomination and mapping preserve a %i-character Source',async length=>{
+  const text='R'.repeat(length-4)+' 😀';
+  const f=await fixture({nominateTarget:true,sourceText:text});
+  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed'});
+  expect(f.sources.receipt_requirement_reviews!.at(-1)!.source_excerpt).toBe(text);
+  const entries=f.inspect().questions!.at(-1)!.material.filter(entry=>entry.startsWith('Attached Source lines '));
+  expect(entries.every(entry=>entry.length<=2_000)).toBe(true);
+  expect(entries.map(entry=>entry.slice(entry.indexOf('\n')+1)).join('')).toBe(text);
+  expect(entries.every(entry=>!/[\uD800-\uDBFF]$/u.test(entry))).toBe(true);
+  expect(f.requests).toHaveLength(1);
+});
+
+it('refuses a cached receipt proposal when reopened through an unrelated generic statement owner',async()=>{
+  const f=await fixture();await f.invoke(respond(clear,false));const before=f.inspect(),history=structuredClone(f.sources);
+  await expect(f.invokeWithoutDecision(async view=>view.kind==='pending'
+    ?{kind:'pending',binding:view.binding,choice:'review'}:respond('unused')(view)))
+    .rejects.toThrow('POLICY_SOURCE_CHANGED');
+  expect(f.inspect()).toEqual(before);expect(f.sources).toEqual(history);expect(f.requests).toHaveLength(1);
 });

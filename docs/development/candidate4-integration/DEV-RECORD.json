@@ -1,5 +1,5 @@
 {
-  "status": "B59_B61_SCOPED_ACCEPTED_AND_COMPOSED_B60_PENDING",
+  "status": "ACCEPTED_B59_B60_B61_PREDECESSOR_COMPOSED_FOUNDATION_SUCCESSOR_REQUIRED",
   "base": "04497a793e6345f6d8e75a291e78b5a19a1b99e2",
   "runtime_head": "2ae33a766b2d10959337d5b84635c32f32fb6ac4",
   "accepted": {
@@ -34,6 +34,15 @@
         "Wrong scope, ambient native destination, absent proof outcomes and top-level altered digest/version typed controls are observed. Exhaustive malformed/conflicting whole-evidence bodies and APPLY-only/current-identity refusal are not live Source-mutation/whole CLI controls; retain original finite coverage limits.",
         "Runtime product attribution follows immutable command heads and exact byte equivalence, not a frozen installed artifact. DEV-RECORD root source_sha256 is historical impact metadata, not current runtime source hashes; this report records current exact hashes."
       ]
+    },
+    "B60": {
+      "runtime": "a5706ef7",
+      "root_packet": "29c0f53e",
+      "test_only_harness": "e4f48eeb",
+      "public_packet": "93e6cb09",
+      "independent_report": "b60-a570-e4f4-final-finite-independent-review.json",
+      "sha256": "5a24754c8e698b9434385416765c1bd13cb9fc506c6db90a257f8d8e14af153c",
+      "scope": "Predecessor finite behavior+ownership accepted: publicsaved6/studio3/nativehostcoldOS5; planningfailedcheckpointstop; strict unchangedSource/reusecounts. New controlling foundation checks are NOT implied by this predecessor verdict."
     }
   },
   "composition_checks": {
@@ -119,5 +128,32 @@
     "triage": "f55f454f; threefile representative B59 beforePASS/afterFAIL; all3timeouts unchangedcleanPASS",
     "b61_supplement": "independentlyaccepted2a09 nowcherried2c39faa4 tests/docs only",
     "next": "await B59 scopedfix+review and B60 genuine publicproof before clean full; no assertions relaxed"
+  },
+  "foundation_control": {
+    "owner_direction": "Complete authoring foundation before demo qualification; demo date movable",
+    "contract": "docs/development/adr-b51-shared-input-interaction.md controlling foundation section",
+    "owners": {
+      "main": "integration/productioncontract/B60transitiveeffects sharedhotspot",
+      "B59": "b59_regression_fix currentRead derivedevidence resolver",
+      "consent": "b60_public_routes actual2vs1 authorization+budgettrace",
+      "independent": "early_full_triage B59; Reviewer2 receipt/consent/ACK/coldprocess"
+    },
+    "remaining": [
+      "sharedRead evidence resolver/nativebindings and originalflowcounterexamples",
+      "transitive receipt effects/coherent checkedrecord audit",
+      "actualconsent grant/episodebudget ownership and repeatedentry",
+      "actualproduction coverageSource\u2192ResumeACK freshprocess cuts",
+      "composedworkflow + finalsettledgates + independentinstalledacceptance"
+    ],
+    "window": {
+      "scope_close": "2026-10-09T21:51:08Z",
+      "delivery_end": "2026-10-10T21:51:08Z",
+      "conditional_offline_extra_hours": 48,
+      "extra_activated": false,
+      "extra_deadline_if_activated_once": "2026-10-12T21:51:08Z",
+      "paid_extension": false
+    },
+    "paid": "CLOSED; Luna35total, upperledger15.27063125 incl1.2693125hold; no newsample/candidate",
+    "estimate": "Provisional Oct8lateafternoon/eveningPDT, refine after first resolver/consentproofs; no architecture deferral fordate"
   }
 }

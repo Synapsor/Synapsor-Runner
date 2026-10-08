@@ -68,7 +68,7 @@ describe("public structured Boundary authoring integration", () => {
           await review.assertReviewCurrent(); await review.assertEvidenceCurrent();
           expect(review.currentDraft().runner_evidence.action_revision?.review_record_digest).toBe(authority.digest);
           // A pending/declined shared-host result is never a complete Review.
-          return false;
+          return {kind:'pending' as const};
         },
         session: {confirm: async () => mode !== "declined_episode", chooseResource: async () => undefined, editFieldTiers: async () => undefined,
           promptText: async () => undefined, chooseOption: async () => mode === "declined_ownership" ? "back" : "assign",

@@ -1,4 +1,5 @@
 import { currentBoundaryJobReadRequests } from './boundary-job-read-requests.js';
+import { reviewPolicyWithPendingDecision, policyReviewNextStep, policyDecisionAllowsSavedReview, resumePolicyDecision, resolvePolicyDecision, reviewPolicyWithDecision } from './authoring-policy-decision-route.js';
 import { createReadRevisionCheckpointHost } from "./authoring-read-revision-checkpoint-host.js";
 import { createReadAssistanceCheckpointHost } from "./authoring-read-assistance-checkpoint-host.js";
 import { presentAuthoringRecovery } from "./authoring-interrupted-step-review.js";
@@ -7,7 +8,7 @@ import { saveAuthoringRecoveryResume } from "./authoring-recovery-resume.js";
 import { createAuthoringRecoveryHost } from "./authoring-recovery-host.js";
 import { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
 export { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
-import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, authoringActionCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, authoringInterruptedRecoveryNeeded, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringConsumedTurnCheckpoint, type AuthoringQuestionCompletion, authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, authoringActionCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, authoringInterruptedRecoveryNeeded, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import { type OperatorQuestion } from "./authoring-operator-question.js";
 import { operatorBusinessContext, operatorBusinessLabel, operatorBusinessReadback, presentOperatorClarification,
@@ -24,7 +25,7 @@ import { presentSourceInputInteraction, presentVersionInteraction, presentReadMe
   rememberRequestedActionRevision, presentUnchangedActionRequest } from "./authoring-question-presenter.js";
 import { createReadMeaningHost } from "./authoring-read-meaning-host.js";
 import { createBusinessStatementHost } from "./authoring-business-statement-host.js";
-import { receiptRequirementCheckpoint } from './authoring-receipt-requirement-host.js';
+import { createReceiptRequirementHost, type ReceiptRequirementResult } from './authoring-receipt-requirement-host.js';
 import { currentReceiptRequirement, receiptRequirementDependencies, receiptRequirementQuestionContext,
   receiptRequirementReviewTarget, receiptRequirementSourceBinding, receiptRequirementQuestionTarget, pendingReceiptRequirement } from './authoring-receipt-requirement.js';
 import { prepareReadBusinessStatementDecision } from "./authoring-business-statement-read-decision.js";
@@ -4535,6 +4536,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   // Read edits and metadata recovery recompile saved outcomes, not an unfinished agenda.
   let retainedReadEdit: { action?: BoundaryAuthoringResumeAction; addition?: BoundaryAuthoringActionAddition } | undefined = pendingReadRevision
     ? { action: structuredClone(resumeAction), addition: structuredClone(pendingActionAddition) } : undefined;
+  const currentProgramAction = () => retainedReadEdit ? retainedReadEdit.action : preserveProgramRevisionAgenda ? programRevisionAgenda : resumeAction;
   // A prepared business edit may outlive a separate disabled Read review.
   // Keep its acknowledged request while the existing unchanged-AST path
   // revalidates dependencies; this is not permission to apply that edit.
@@ -4568,7 +4570,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     return {context,store};
   };
   const ensureInputPolicyAgenda = async (preserveCurrentReview = false, savedRoot?: OperatorQuestion) => {
-    const sources=authoringConversation?.policySources,outcomes=resumeAction?.intended_outcomes,source=activePolicySource(sources);
+    const sources=authoringConversation?.policySources,outcomes=currentProgramAction()?.intended_outcomes,source=activePolicySource(sources);
     if(actionWorkflow!=='program'||!sources||!source||!outcomes?.length){
       if(savedRoot)throw new PolicySourceChangedError();
       return;
@@ -4582,7 +4584,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           readHandoffs:()=>ownerHandoffs,
           readRecovery:()=>generationRecovery,
           readConversationTurns:()=>authoringConversation?.turns,
-          readOutcomes:()=>resumeAction?.intended_outcomes,
+          readOutcomes:()=>currentProgramAction()?.intended_outcomes,
           scopeDigest:ownerQuestionScope,
           contextDigest:(permit,sourceContext,savedSourceContext)=>ownerQuestionContext(permit,'input_policy',sourceContext,savedSourceContext),
           assertResumeCurrent:permit=>assertAuthoringResumeCurrent(undefined,false,permit),
@@ -4624,7 +4626,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     return sourceInputFidelity(source,sources,store,[draft]).findings;
   };
   const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage, permit?: ProjectAuthorityMutationPermit,
-    acknowledgeGeneration = true): Promise<void> => {
+    acknowledgeGeneration: boolean | AuthoringQuestionCompletion = true): Promise<void> => {
     assertRunning();
     if (!input.authoringChat
       || !currentResumeBinding
@@ -4659,7 +4661,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         conversation: authoringConversation?.turns,
         // A pre-dispatch controller snapshot reserves existing limits. It is
         // not a consumer acknowledgement of a response or uncertain save.
-        generationRecovery: acknowledgeGeneration ? authoringTransportCheckpoint(generationRecovery) : generationRecovery,
+        generationRecovery: typeof acknowledgeGeneration === 'object'
+          ? authoringConsumedTurnCheckpoint(generationRecovery, acknowledgeGeneration)
+          : acknowledgeGeneration ? authoringTransportCheckpoint(generationRecovery) : generationRecovery,
         ownerHandoffs,
         operatorQuestions,
         readAssistanceCheckpoint: readAssistanceCheckpoint ?? null,
@@ -4681,8 +4685,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         ...((retainedReadEdit ? retainedReadEdit.addition : pendingActionAddition)
           ? { pendingActionAddition: retainedReadEdit ? retainedReadEdit.addition : pendingActionAddition } : {}),
         ...(resumeRead ? { read: resumeRead } : {}),
-        ...((retainedReadEdit ? retainedReadEdit.action : preserveProgramRevisionAgenda ? programRevisionAgenda : resumeAction)
-          ? { action: retainedReadEdit ? retainedReadEdit.action : preserveProgramRevisionAgenda ? programRevisionAgenda : resumeAction } : {}),
+        ...(currentProgramAction() ? { action: currentProgramAction() } : {}),
         ...(activeResume ? { previous: activeResume } : {}),
       });
       assertRunning();
@@ -4839,21 +4842,20 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     handoff?: AuthoringOwnerHandoff; businessContext: OperatorBusinessContext;
     producerQuestionDigest?: `sha256:${string}`;
     privateCorrection?: boolean;
-    receiptDecision?: Parameters<typeof createBusinessStatementHost>[0]['receiptDecision'];
-    receiptSaved?(permit: ProjectAuthorityMutationPermit): Promise<void>;
+    decision?: Parameters<typeof createBusinessStatementHost>[0]['decision'];
+    contextDigest?(permit?: ProjectAuthorityMutationPermit): Promise<`sha256:${string}`>;
+    afterSave?(permit: ProjectAuthorityMutationPermit): Promise<void>;
     assertCurrent(permit?: ProjectAuthorityMutationPermit): Promise<void>; prompt(displayed: string): Promise<string | undefined>;
   }): Promise<string | undefined> => createBusinessStatementHost({
     question: options.question, stage: options.stage, handoff: options.handoff,
     producerQuestionDigest: options.producerQuestionDigest, privateCorrection: options.privateCorrection,
-    receiptDecision: options.receiptDecision,
+    decision: options.decision,
     assertCurrent: options.assertCurrent,
     access: {
       readQuestions: () => operatorQuestions, readHandoffs: () => ownerHandoffs,
       readRecovery: () => generationRecovery, readConversationTurns: () => authoringConversation?.turns,
       readCheckpointDigest: () => pendingReadRevisionState?.checkpoint?.digest,
-      scopeDigest: ownerQuestionScope, contextDigest: (permit, consumer) => options.receiptDecision && authoringConversation?.policySources
-        ? ownerQuestionContext(permit, consumer, receiptRequirementQuestionContext(authoringConversation.policySources), authoringConversation.policySources)
-        : ownerQuestionContext(permit, consumer), mutate: mutateOwnerHandoff,
+      scopeDigest: ownerQuestionScope, contextDigest: (permit, consumer) => options.contextDigest ? options.contextDigest(permit) : ownerQuestionContext(permit, consumer), mutate: mutateOwnerHandoff,
       install: update => {
         if (update.questions) operatorQuestions = update.questions;
         if (update.handoffs) ownerHandoffs = update.handoffs;
@@ -4866,7 +4868,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       save: async (permit, stage, subject) => {
         await persistAuthoringResume(stage, permit);
         if (resumePersistenceBlocked) throw checkpointSaveFailure(subject);
-        await options.receiptSaved?.(permit);
+        await options.afterSave?.(permit);
       },
       appendSourceStatement: async (permit, answer) => {
         const sources = authoringConversation?.policySources;
@@ -4887,81 +4889,27 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     modelSession: ActionModelSuggestionSession; attemptKey?: string;
     receiptSources: string[]; refreshEvidence(): Promise<void>;
     assertReviewCurrent?(permit?: ProjectAuthorityMutationPermit): Promise<void>;
-  }): Promise<boolean> => {
-    const sources = authoringConversation?.policySources, source = activePolicySource(sources);
-    if (!sources || !source || !review.modelSession) return false;
-    const handoff = ownerHandoffs.at(-1), waiting = handoff?.state === 'waiting';
-    const store = scopedDisclosureStoreDigest(undefined, review.context.bundle.mutation_bindings.authoring);
-    if (!store) return false;
-    const savedQuestion = waiting ? operatorQuestions.filter(q => q.handoff_id === handoff.id).at(-1)
-      : operatorQuestions.filter(q => q.kind === 'receipt_requirement' && q.scope_digest === ownerQuestionScope()
-        && receiptRequirementQuestionTarget(q,source,sources.id,store)).at(-1);
-    if (waiting && savedQuestion && savedQuestion.kind !== 'receipt_requirement') return false;
-    const retained = savedQuestion && sources.receipt_requirement_reviews?.filter(r => r.question.id === savedQuestion.id).at(-1);
-    const target = retained ?? (savedQuestion && receiptRequirementQuestionTarget(savedQuestion, source, sources.id, store))
-      ?? pendingReceiptRequirement(source,review.currentDraft(),sources)
-      ?? receiptRequirementReviewTarget(source, sources.coverage_episodes ?? [], review.attemptKey,
-        coverageResponseContext(source.digest, review.currentDraft(), sources.operator_messages ?? []));
-    if (!target || retained && (retained.source_session !== sources.id || retained.source_digest !== source.digest)) return false;
-    await review.refreshEvidence();
-    const draft = review.currentDraft();
-    const configuration = draft.runner_evidence.runtime_contract.receipt_configuration;
-    const modes = configuration?.modes ?? [], selected = modes[0];
-    if (!store || configuration?.status !== 'current' || !selected || !['runner_ledger', 'source_db'].includes(selected.authority)
-      || modes.some(mode => mode.source !== draft.read.source || mode.authority !== selected.authority)) {
-      input.authoringChat?.checkpoint('Receipt setup needs review', [
-        'Current receipt storage is not established for this exact program. Inspect its supported execution setup; a business answer cannot select storage or establish its guarantees.',
-        'The rule, draft and answer history remain saved.'], 'warning');
-      return false;
-    }
-    if (!waiting && currentReceiptRequirement(source, target, draft, sources)) return true;
-    const dependencies = receiptRequirementDependencies(draft), binding = receiptRequirementSourceBinding(source, sources.id, store, target.start, target.end);
-    const predecessor = operatorQuestions.filter(q => q.kind === 'receipt_requirement'
-      && q.evidence.find(e => e.id === 'receipt-source-range')?.digest === binding
-      && q.receipt_selection?.dependencies_digest === dependencies && q.scope_digest === ownerQuestionScope()).at(-1);
-    const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
-      await review.assertReviewCurrent?.(permit);
-      await ownerQuestionContext(permit, 'policy_clarification', receiptRequirementQuestionContext(sources), sources);
-      const currentConfiguration = await authoringReceiptConfiguration(input.projectRoot,
-        review.receiptSources, process.env);
-      if (canonicalJsonDigest(currentConfiguration) !== canonicalJsonDigest(configuration)
-        || receiptRequirementDependencies(review.currentDraft()) !== dependencies) throw new PolicySourceChangedError();
-    };
-    const checkpoint = receiptRequirementCheckpoint({ projectRoot: input.projectRoot, sources, store,
-      start: target.start, end: target.end, currentDraft: review.currentDraft, questions: () => operatorQuestions, assertCurrent,
-      acknowledge: async permit => {
+  }): Promise<ReceiptRequirementResult> => {
+    const businessContext = operatorBusinessContext(review.context.candidate.pack.resources);
+    const result = await createReceiptRequirementHost({ projectRoot: input.projectRoot,
+      modelSession: review.modelSession, businessContext, attemptKey: review.attemptKey,
+      readSources: () => authoringConversation?.policySources, readQuestions: () => operatorQuestions,
+      readHandoff: () => ownerHandoffs.at(-1), scopeDigest: ownerQuestionScope,
+      storeDigest: () => scopedDisclosureStoreDigest(undefined, review.context.bundle.mutation_bindings.authoring),
+      currentDraft: review.currentDraft, refreshEvidence: review.refreshEvidence,
+      readConfiguration: () => authoringReceiptConfiguration(input.projectRoot, review.receiptSources, process.env),
+      assertReviewCurrent: review.assertReviewCurrent,
+      questionContext: (permit, sources) => ownerQuestionContext(permit, 'policy_clarification', receiptRequirementQuestionContext(sources), sources),
+      mutate: mutateOwnerHandoff, acknowledgeResume: async permit => {
         await persistAuthoringResume('authority_review', permit);
         if (resumePersistenceBlocked) throw checkpointSaveFailure('The receipt requirement decision');
-      } });
-    if (savedQuestion?.confirmation && savedQuestion.receipt_selection?.dependencies_digest === dependencies) {
-      // Resume may have acknowledged the real explicit decision before the
-      // cross-file Source projection failed. Finish only that missing write;
-      // no answer, confirmation or provider turn is replayed.
-      await mutateOwnerHandoff(async permit => {
-        const current = await ownerQuestionContext(permit,'policy_clarification',receiptRequirementQuestionContext(sources),sources);
-        if (savedQuestion.scope_digest !== ownerQuestionScope() || savedQuestion.context_digest !== current)
-          throw new PolicySourceChangedError();
-        await checkpoint.saved(permit);
-      });
-      return Boolean(currentReceiptRequirement(source,target,review.currentDraft(),sources));
-    }
-    assertAuthoringGenerationAdmission();
-    const answer = await reviewBusinessAnswer({
-      question: 'What establishes that a change is complete, and how should an unapplied request be described?',
-      stage: 'authority_review', businessContext: operatorBusinessContext(review.context.candidate.pack.resources), assertCurrent,
-      prompt: async displayed => input.authoringChat?.readOperator?.(displayed, () => assertCurrent(), { recordPolicyAnswer: false, preserveWhitespace: true }),
-      receiptDecision: { session: review.modelSession, businessContext: operatorBusinessContext(review.context.candidate.pack.resources),
-        target: { phase: 'receipt_requirement', resource: source.digest, field: `lines:${target.start}-${target.end}`,
-          outcomes: draft.actions.filter(a => a.effect?.writeback === 'supervised').map(a => a.outcome).sort() },
-        material: [`Attached Source lines ${target.start}-${target.end}: ${target.source_excerpt}`,
-          'Describe the required business evidence of completion. Runner supplies the existing receipt location separately in its readback.',
-          'Your interpretation grants no access, storage change, atomicity guarantee or claim that a change has already completed.'],
-        evidence: [{ id: 'receipt-source-range', digest: binding as `sha256:${string}` },
-          { id: 'receipt-meaning-dependencies', digest: dependencies as `sha256:${string}` }],
-        selection: { source: draft.read.source, mode: selected.authority as 'runner_ledger' | 'source_db', dependencies_digest: dependencies as `sha256:${string}` },
-        ...(predecessor ? { predecessor } : {}) }, receiptSaved: checkpoint.saved,
-    });
-    return Boolean(answer && currentReceiptRequirement(source, target, review.currentDraft(), sources));
+      }, assertGenerationAdmission: assertAuthoringGenerationAdmission,
+      reviewAnswer: options => reviewBusinessAnswer({ ...options, stage: 'authority_review', businessContext,
+        prompt: async displayed => input.authoringChat?.readOperator?.(displayed, () => options.assertCurrent(),
+          { recordPolicyAnswer: false, preserveWhitespace: true }) }),
+    }).review();
+    if (result.kind === 'blocked') input.authoringChat?.checkpoint('Receipt setup needs review', [...result.lines], 'warning');
+    return result;
   };
   // The model conversation is populated only after this menu. Read the saved
   // source session itself so a confirmed interpretation remains publicly
@@ -5175,9 +5123,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let sourceReviewOutcome: BoundaryAssistOutcome | undefined;
   const runSavedPolicyReview = async (request = "Review attached rules and unresolved decisions", confirmedReviewRequest?: string) => {
     const waiting = ownerHandoffs.at(-1);
-    const pendingReceiptQuestion = waiting?.state === 'waiting'
-      && operatorQuestions.some(question => question.handoff_id === waiting.id && question.kind === 'receipt_requirement');
-    if (waiting?.state === "waiting" && !pendingReceiptQuestion) return boundaryAssistResult({ tone: "warning", title: "Saved owner question is still pending.",
+    if (!policyDecisionAllowsSavedReview(waiting, operatorQuestions)) return boundaryAssistResult({ tone: "warning", title: "Saved owner question is still pending.",
       lines: [ownerHandoffs.at(-1)!.question, "Use Resume the interrupted job to inspect and answer this exact question in its current context. A new Review cannot replace its meaning or clear the wait."] });
     if (!activeResume || !authoringConversation?.policySources || !selectedResumeModel || revalidateSavedJob) {
       return boundaryAssistResult({ tone: "warning", title: "Saved review context is unavailable.",
@@ -5424,10 +5370,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     // pinned review. Explicit Review retains its own current-candidate checks.
     selectCurrentReviewContext ||= selected === "review_rules";
     const waitingOwner = ownerHandoffs.at(-1);
-    const resumeReceiptQuestion = waitingOwner?.state === 'waiting'
-      && operatorQuestions.some(question => question.handoff_id === waitingOwner.id && question.kind === 'receipt_requirement');
     selectedPolicyReview ||= selected === "review_rules" || selected === "resume" && !revalidateSavedJob
-      && (waitingOwner?.state !== "waiting" || resumeReceiptQuestion)
+      && policyDecisionAllowsSavedReview(waitingOwner, operatorQuestions)
       && !availableResume?.pending_job_revision && !availableResume?.pending_read_revision && !availableResume?.pending_action_revision
       && !availableResume?.pending_action_removal
       && Boolean(availableResume?.pending_policy_review);
@@ -6279,6 +6223,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             }),
           );
           if (jobPlan.state === "clarification") handoff = await persistOwnerQuestion(jobPlan.question, "planning", jobPlan.completion);
+          else if (jobPlan.completion) {
+            await persistAuthoringResume("planning", undefined, jobPlan.completion);
+            if (resumePersistenceBlocked) throw checkpointSaveFailure("The completed planning turn");
+          }
           }
           if (jobPlan.state === "clarification" && modelTurn >= 2) {
             return boundaryAssistResult({ tone: "warning", title: "Planning clarification limit reached.",
@@ -6329,6 +6277,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         }
       } catch (error) {
         assertRunning(error);
+        if (jobPlan?.state === "planned") throw error;
         planningFailure = error;
       }
       if (jobPlan?.state === "planned") break;
@@ -7087,12 +7036,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let policyAttemptKey: string | undefined;
   let policyReport: { key: string; report: PolicyCoverage } | undefined;
   const clientDutyReviewState: NonNullable<PreparedPolicyReviewState["clientDutyReview"]> = {};
-  let policyFailure: string | undefined;
+  let policyFailure: { message: string; resolution?: ReturnType<typeof operatorReviewResolution> } | undefined;
   let receiptConfigurationEvidence: Parameters<typeof policyCoverageDraft>[0]["receiptConfiguration"];
   let executionReviewEvidence: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
   let countingDomain: CountingOutcomeDomain | undefined;
   let policySourceInspection: Awaited<ReturnType<typeof inspectPolicyReviewSource>> | undefined;
-  let receiptRequirementPending = false;
   const currentPolicyCoverageDraft = (authority: ActionRuleAuthorityReviewSubjectV1 | undefined = semanticActionAuthorityDraft) => policyCoverageDraft({ client: intendedClient, read: context.candidate, decisions: context.bundle.decisions,
     requestedRead:{jobIntent:(canonicalJobIntent ?? jobIntent)!,readIntent:mappedReadIntent,
       ...(pendingJobRevision ? {pendingJobRevision} : {}),...(workload ? {workload} : {})},
@@ -7211,11 +7159,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     catch (error) {
       assertRunning(error);
-      policyFailure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
+      policyFailure = {message: redactCliErrorMessage(error instanceof Error ? error.message : String(error))};
       policyReport = undefined;
-      if (reportedSourceCounterFailure !== policyFailure) {
-        reportedSourceCounterFailure = policyFailure;
-        input.authoringChat.rememberDetails(reviewingSourceCounters ? "SOURCE COUNTER REVIEW PENDING" : "SAVED REVIEW PREREQUISITE UNAVAILABLE", [policyFailure,
+      if (reportedSourceCounterFailure !== policyFailure.message) {
+        reportedSourceCounterFailure = policyFailure.message;
+        input.authoringChat.rememberDetails(reviewingSourceCounters ? "SOURCE COUNTER REVIEW PENDING" : "SAVED REVIEW PREREQUISITE UNAVAILABLE", [policyFailure.message,
           "The saved rules and active authority are unchanged. Reopen this job after resolving the source review or checkpoint prerequisite."]);
       }
       return undefined;
@@ -7249,7 +7197,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         }, progress: runWithProgress, state, force });
       policyAttemptKey = state.attemptKey;
       policyReport = state.report;
-      if (result.report) { policyFailure = undefined; receiptRequirementPending = false; }
+      if (result.report) policyFailure = undefined;
       return result;
     } catch (error) {
       assertRunning(error);
@@ -7261,19 +7209,12 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           'A competing source or review changed during save. Reopen current Review; no stale result was saved.')
         :unknownReviewResolution();
       const publicPlan=operatorReviewResolution(resolved.plan);
-      receiptRequirementPending = publicPlan.options.some(option => option.operation === 'receipt_requirement_review' && option.availability === 'available');
-      policyFailure = redactCliErrorMessage(resolved.message);
-      input.authoringChat.rememberDetails("RULES COVERAGE UNAVAILABLE", [policyFailure,
+      policyFailure = {message: redactCliErrorMessage(resolved.message), resolution: publicPlan};
+      input.authoringChat.rememberDetails("RULES COVERAGE UNAVAILABLE", [policyFailure.message,
         `Next supported step: ${publicPlan.recommended??'inspect the saved review'}.`,
         "The draft and source snapshot remain saved. No rule was dropped and no authority was activated."]);
-      input.authoringChat.checkpoint("Rules check remains pending", [policyFailure,
-        publicPlan.recommended==='scoped_correction'
-          ? "A bounded correction may be available within the existing review episode; the complete replacement must validate."
-          : publicPlan.recommended==='source_transaction_scope_review'
-            ? "Use the exact local source-outcome scope decision. Another model opinion cannot establish owner meaning."
-            : publicPlan.recommended==='receipt_requirement_review'
-              ? "Review the completion rule in ordinary business language, then confirm its exact applicability. Existing receipt storage is supplied separately; another model opinion cannot establish your meaning."
-            : "Inspect the saved review and its actual prerequisite before starting another model episode."], "warning");
+      input.authoringChat.checkpoint("Rules check remains pending", [policyFailure.message,
+        policyReviewNextStep(publicPlan)], "warning");
       return { source, key: state.attemptKey ?? "", draftRecord: currentPolicyCoverageDraft(proposedAuthority), report: undefined };
     }
   };
@@ -7300,6 +7241,20 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         throw new ActionWorkUnitSourcePendingError("currentness");
       }
     };
+    const checkSourceCoverage = (proposed: ActionRuleAuthorityReviewSubjectV1) => reviewPolicyWithPendingDecision({
+      check: async () => { await assertSourceCurrent(); const result = await ensurePolicyCoverage(false, proposed, currentAuthority);
+        await assertSourceCurrent(); return result; },
+      resolution: () => policyFailure?.resolution,
+      review: () => reviewReceiptRequirement({context, currentDraft: () => currentPolicyCoverageDraft(proposed),
+        modelSession: modelAssistSession!, attemptKey: policyAttemptKey,
+        receiptSources: proposed.authority.rules.map(rule => rule.rule.source),
+        refreshEvidence: () => refreshPolicyCoverageEvidence(proposed),
+        assertReviewCurrent: async permit => {
+          if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, {permit});
+          await reloadReadReviewForModelRevision(input.projectRoot, context, currentAuthority);
+        },
+      }),
+    });
     await assertSourceCurrent();
     const savedRepair = checkpoint?.source_repair ?? (pendingActionRevision?.checkpoint ?? resumeAction?.checkpoint)?.source_repair;
     let originalPrepared: ReturnType<typeof currentPolicyCoverageDraft>;
@@ -7318,7 +7273,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         originalPreparedDraft: originalPrepared, expectedCoverageContextKey: originalKey,
         currentSourceSessionDigest: canonicalJsonDigest(sources) }).assessment;
     } else {
-      const checked = await ensurePolicyCoverage(false, currentAuthority, currentAuthority);
+      const checked = await checkSourceCoverage(currentAuthority);
       if (!checked?.report) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
       originalPrepared = structuredClone(checked.draftRecord); originalKey = checked.key as `sha256:${string}`;
       const assessmentInput = { context: workContext(), currentAction: before, preparedDraft: originalPrepared,
@@ -7355,7 +7310,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         await assertSourceCurrent();
         const proposed = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, revised.compiled, undefined,
           { nextBoundary: context.candidate, inspection: actionInspection! });
-        const checked = await ensurePolicyCoverage(false, proposed, currentAuthority);
+        const checked = await checkSourceCoverage(proposed);
         if (!checked?.report) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
         const current = assessActionWorkUnitSource({ context: workContext(), currentAction: revised.compiled.draft,
           preparedDraft: checked.draftRecord, report: checked.report, expectedReportDigest: canonicalJsonDigest(checked.report),
@@ -10558,7 +10513,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         `Rules: ${current.source.name} v${current.source.version}`,
         `Source fingerprint: ${current.source.digest}`,
         "The model's coverage check did not finish; this is not an accepted review.",
-        policyFailure ?? "No valid coverage report was returned.",
+        policyFailure?.message ?? "No valid coverage report was returned.",
         "The same draft and complete rules remain saved. Viewing this record makes no model request and changes no authority.",
         "Return to the pending review for one explicit bounded retry. /rules remains available to inspect the saved source.",
       ]);
@@ -10705,8 +10660,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const chat = input.authoringChat;
     if (!chat?.readOperator || !modelAssistSession) return undefined;
     let handoff = ownerHandoffs.at(-1);
-    const receiptQuestion = handoff?.state === 'waiting' && operatorQuestions.filter(q => q.handoff_id === handoff!.id).at(-1)?.kind === 'receipt_requirement';
-    if (receiptQuestion) return await reviewCurrentReceiptRequirement() ? { answer: '', question: handoff!.question } : undefined;
+    const resumedDecision = await resumePolicyDecision({handoff, questions: operatorQuestions, review: reviewCurrentReceiptRequirement});
+    if (resumedDecision.handled) return resumedDecision.answer;
     if (handoff?.state === "waiting") {
       if (handoff.consumer !== "policy_clarification" || handoff.scope_digest !== ownerQuestionScope()) {
         throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Inspect the saved question before replacing it with a rules clarification.");
@@ -10767,10 +10722,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     let current = await ensurePolicyCoverage();
     let retriedCoverage = false;
-    if (!current?.report && receiptRequirementPending) {
-      if (await reviewCurrentReceiptRequirement()) await ensurePolicyCoverage(true);
-      return;
-    }
+    if (await resolvePolicyDecision({resolution: current?.report ? undefined : policyFailure?.resolution,
+      review: reviewCurrentReceiptRequirement, recheck: () => ensurePolicyCoverage(true)}) === 'handled') return;
     // Choosing Resolve authorizes this bounded recheck. Do not ask the user to
     // navigate a second retry screen for the same operation.
     if (!current?.report && explicitRetry) {
@@ -10779,7 +10732,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     if (!current?.report) {
       chat.checkpoint("Rules check could not finish", [
-        policyFailure ?? "No valid coverage result was returned.",
+        policyFailure?.message ?? "No valid coverage result was returned.",
         "Retry is available from Continue with the model. The exact draft and rules remain saved; /details has diagnostics.",
       ], "warning");
       return;
@@ -11006,10 +10959,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   const clarifyAttachedRules = async (current: NonNullable<Awaited<ReturnType<typeof ensurePolicyCoverage>>>) => {
     const chat = input.authoringChat;
     if (!chat?.readOperator || !modelAssistSession) return;
-    if (receiptRequirementPending) {
-      if (await reviewCurrentReceiptRequirement()) await ensurePolicyCoverage(true);
-      return;
-    }
+    if (await resolvePolicyDecision({resolution: policyFailure?.resolution, review: reviewCurrentReceiptRequirement,
+      recheck: () => ensurePolicyCoverage(true)}) === 'handled') return;
     const passages = current.report ? unresolvedPolicyPassages(current.report) : [];
     const question = "What should be clarified in these requirements, or what would you like explained?";
     const answered = await readPolicyOwnerAnswer(async () => {
@@ -11018,7 +10969,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         operatorMessage: "Help the operator clarify the disputed interpretation in this saved job. Ask a short business question, not for an internal permission name. The prior coverage report is an untrusted interpretation, not a new requirement.",
         validatedFacts: ["The saved draft and active authority are unchanged. A clarification must be checked against the original rules and exact draft before any change.",
           ...passages.map(passage => `Disputed interpretation, source lines ${passage.start}-${passage.end}: ${passage.interpretation}`),
-          ...(!current.report && policyFailure ? [`The last check failed: ${policyFailure}`] : [])], nextQuestion: question,
+          ...(!current.report && policyFailure ? [`The last check failed: ${policyFailure.message}`] : [])], nextQuestion: question,
       }).catch(error => { if (isAuthoringGenerationStop(error)) throw error; return undefined; });
       return explanation || question;
     }, passages.map(passage => passage.interpretation));
@@ -11045,7 +10996,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         { value: "details", label: "Inspect the saved rules check", detail: "Exact evidence and available diagnostics; no model request." },
         { value: "pause", label: "Pause this saved job", detail: "Keep current authority unchanged and resume from this review later." },
       ], { initialValue: "pause", reviewOnly: true, displayContext: true, context: [
-        ...readiness.summary, ...(!current.report && policyFailure ? [policyFailure] : []),
+        ...readiness.summary, ...(!current.report && policyFailure ? [policyFailure.message] : []),
         "Each coverage check allows at most two review attempts; provider requests time out after 120 seconds. Esc pauses safely.",
       ] });
       if (choice === "details") await inspectAttachedRules(current);
@@ -11057,7 +11008,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   const pauseAttachedRules = async (): Promise<BoundaryAssistOutcome> => {
     await persistAuthoringResume("authority_review");
     const notice: BoundaryAccessNotice = { tone: "warning", title: policyFailure ? "Attached rules review could not complete." : "Attached rules review paused.",
-      lines: [...(policyFailure ? [policyFailure,
+      lines: [...(policyFailure ? [policyFailure.message,
         "Resolve the reported review prerequisite, then resume this saved job. The saved business edit does not need to be drafted again."] : []),
         "The draft, complete rules and available check evidence remain saved. Existing authority and source data are unchanged."],
       footer: "Resume this saved job to continue its guided rules review." };
@@ -11098,7 +11049,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         ], { initialValue: "pause", displayContext: true, context: [
           "A generated repair is pending. Current coverage has not yet established whether an Action edit is required.",
           ...policyReviewReadiness(current.source, current.report, authoringConversation?.policySources).summary,
-          ...(!current.report && policyFailure ? [policyFailure] : []),
+          ...(!current.report && policyFailure ? [policyFailure.message] : []),
           "Rechecking or clarifying changes no program or authority and does not waive a requirement.",
         ] });
         if (choice === "continue_edit") return true;
@@ -12358,7 +12309,7 @@ async function reviewSavedBoundaryPolicyInner(input: {
     modelSession: ActionModelSuggestionSession; attemptKey?: string; receiptSources: string[];
     assertReviewCurrent(permit?: ProjectAuthorityMutationPermit): Promise<void>;
     assertEvidenceCurrent(): Promise<void>;
-  }): Promise<boolean>;
+  }): Promise<ReceiptRequirementResult>;
   /** Native successful writer handoff, distinct from adopting a disk revision. */
   readResume?(): BoundaryAuthoringResumeState;
   onResumeSaved?(resume: BoundaryAuthoringResumeState): void;
@@ -12684,24 +12635,16 @@ async function reviewSavedBoundaryPolicyInner(input: {
         savedResume(next);
       },
     });
-    let checked: Awaited<ReturnType<typeof ensurePreparedPolicyCoverage>>;
-    try { checked = await check(); }
-    catch (error) {
-      if (!(error instanceof ReviewResolutionError) || error.plan.recommended !== 'receipt_requirement_review'
-        || !input.reviewReceiptRequirement) throw error;
-      // Exactly one existing-host decision, then the ordinary complete review.
-      // Pending/declined answers never buy another review episode or clear work.
-      const ready = await input.reviewReceiptRequirement({ context, currentDraft,
-        modelSession: input.modelSession, attemptKey: state.attemptKey,
+    const checked = await reviewPolicyWithDecision({check,
+      review: input.reviewReceiptRequirement ? () => input.reviewReceiptRequirement!({ context, currentDraft,
+        modelSession: input.modelSession!, attemptKey: state.attemptKey,
         receiptSources: authority?.authority.rules.map(rule => rule.rule.source) ?? [],
         assertReviewCurrent: assertCurrent,
         assertEvidenceCurrent: () => assertPolicyReviewSourceCurrent(sourceInspection, input.schemaInspector),
-      });
-      currentResume();
-      if (!ready) throw error;
-      await assertCurrent();
-      checked = await check();
-    }
+      }) : undefined,
+      acknowledgeCurrent: currentResume, assertCurrent,
+      presentBlocked: lines => input.session.rememberDetails?.('Receipt setup needs review', [...lines]),
+    });
     if (checked.report) {
       const section = policyCoverageSection(source, checked.report, checked.draftRecord);
       input.session.rememberDetails?.(section.title, reviewSectionLines(section));

@@ -7119,7 +7119,13 @@ describe("boundary operator-plane CLI", () => {
     });
     const session: BoundaryReviewInteractiveSession = { chooseResource: async () => undefined, editFieldTiers: async () => undefined,
       promptText: async () => "Keep all existing settings and business rules unchanged.",
-      chooseOption: async (title, choices) => {
+      chooseOption: async (title, choices, options) => {
+        if (title === "CHOOSE THE SAVED JOB OPERATION") {
+          expect(choices.map(choice => choice.value)).toEqual(["continue", "review", "pause"]);
+          expect(options).toMatchObject({ initialValue: "continue", reviewOnly: true,
+            context: expect.arrayContaining(["Saved request: Keep all existing settings and business rules unchanged."]) });
+          return "continue";
+        }
         expect(title).toBe("START BOUNDARY DRAFTING");
         expect(choices.find(choice => choice.value === "model")?.label).toContain("Draft a change with");
         return "model";
@@ -7143,6 +7149,9 @@ describe("boundary operator-plane CLI", () => {
         boundaryAuthoringChatFactory: () => chat,
       });
       expect(modelBoundaryJobPlanner.mock.calls.length, JSON.stringify(vi.mocked(chat.streamCheckpoint).mock.calls)).toBe(1);
+      expect(await readBoundaryAuthoringResumeState(root, boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(root)).bundle)))
+        .toMatchObject({ status: "ready", value: { pending_job_revision: "Keep all existing settings and business rules unchanged.",
+          intended_client: "claude-code", conversation: expect.arrayContaining(conversation) } });
       expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(context.bundle.candidate_digest);
       expect((await loadPolicySources(root, policy.id)).snapshots).toEqual(policy.snapshots);
       await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
@@ -17816,8 +17825,14 @@ describe("saved review operation dispatch and persistence", () => {
       expect((await loadPolicySources(root,sources.id)).operator_messages).toEqual(changed.operator_messages);
     } finally {await fixture.dispose();}
   });
-  it.each(["context-renew", "context-decline", "context-auto", "context-race", "menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop", "maintenance", "maintenance-missing", "maintenance-source-race", "model-review", "model-resume", "model-review-edit", "model-cancel", "model-declined", "fallback-review", "fallback-edit", "fallback-pause", "captured-contract", "receipt", "receipt-source-race", "client-declined", "client-source-race"])("reviews without entering editors: %s", async mode => {
+  it.each(["context-renew", "context-decline", "context-auto", "context-race", "menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop", "maintenance", "maintenance-missing", "maintenance-source-race", "model-review", "model-resume", "model-review-edit", "model-cancel", "model-declined", "fallback-review", "fallback-edit", "fallback-pause", "captured-contract", "receipt-ready", "receipt-ready-resume", "receipt-ready-native-resume", "receipt-ready-native-resume-race", "receipt-ready-cancel-return", "receipt-ready-replace-return", "receipt", "receipt-source-race", "client-declined", "client-source-race"])("reviews without entering editors: %s", async mode => {
     const receipt = mode.startsWith("receipt");
+    const receiptReady = mode.startsWith("receipt-ready");
+    const nativeReceiptResumeRace = mode === "receipt-ready-native-resume-race";
+    const nativeReceiptResume = mode === "receipt-ready-native-resume" || nativeReceiptResumeRace;
+    const receiptResume = mode === "receipt-ready-resume" || nativeReceiptResume;
+    const receiptReturn = mode === "receipt-ready-cancel-return" || mode === "receipt-ready-replace-return";
+    let receiptReturned = false;
     const maintenance = mode.startsWith("maintenance"), changingModel = mode.startsWith("model-");
     const solCapture = mode === "captured-contract" ? JSON.parse(await fs.readFile(new URL("./fixtures/review-operation-sol-capture.json", import.meta.url), "utf8")) : undefined;
     const fixture = await staleSemanticRevalidationFixture({ outcomes: [solCapture?.arguments.action_outcome ?? "maintenance.complete_visit"], atomicUpdates: maintenance, ...(receipt ? { writeback: "supervised" as const } : {}) });
@@ -17826,12 +17841,37 @@ describe("saved review operation dispatch and persistence", () => {
       const initial = await loadBoundaryReviewContext(root);
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: initial.draft, candidate: initial.candidate,
         confirmedDecisions: initial.candidate.unresolved_decisions, actor: "test-reviewer", reason: "Fixture's existing disabled Read review.", revision: 1 }));
-      const context = await loadBoundaryReviewContext(root);
+      let context = await loadBoundaryReviewContext(root);
       const binding = { boundary_name: context.candidate.pack.name,
         generation_lock_fingerprint: context.bundle.authority.generation_lock_fingerprint,
         schema_fingerprint: context.bundle.authority.schema_fingerprint,
         role_posture_fingerprint: context.bundle.authority.role_posture_fingerprint };
       let authority = (await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"))!;
+      if (receiptReady) {
+        // This fixture creates disabled authority, not a deployed runtime file.
+        // Declare local configuration only; no worker, writer, activation or URL value.
+        const config = { version: 1, mode: "review", storage: { sqlite_path: path.join(root, ".synapsor/local.db") },
+          capabilities: [], trusted_context: { provider: "environment" }, action_rules: { project_root: root },
+          sources: Object.fromEntries([...new Set(authority.authority.catalog.resources.map(r => r.source))].map(source =>
+            [source, { engine: "postgres", read_url_env: "DATABASE_URL", receipts: { authority: "runner_ledger" } }])) };
+        const configPath = path.join(root, "synapsor.actions.runner.json");
+        await fs.writeFile(configPath, JSON.stringify(config), { mode: 0o600 });
+        expect((await loadRuntimeConfigFromFile(configPath)).supervised_worker?.enabled).not.toBe(true);
+        const actual = await (await import("./authoring-receipt-configuration.js")).authoringReceiptConfiguration(root, Object.keys(config.sources));
+        expect(actual.status).toBe("current");
+        expect(actual.modes).toEqual(Object.keys(config.sources).sort().map(source => ({ source, authority: "runner_ledger", explicitly_configured: true })));
+        // Native preview/import reads and validates the actual disabled files;
+        // no snapshot, activation or repository identity is supplied by the test.
+        const migration = await import("./control-policy-project-migration.js");
+        const selection = { projectRoot: root, config: loadRuntimeConfigFromFile(configPath), storePath: config.storage.sqlite_path };
+        const preview = await migration.previewProjectControlPolicyMigration(selection);
+        expect(preview.status).toBe("ready");
+        const migrated = await migration.migrateProjectControlPoliciesFromProject({ ...selection, actor: "fixture_operator", preview });
+        await migrated.binding.close();
+        context = await loadBoundaryReviewContext(root);
+        expect(context.bundle.mutation_bindings.authoring).toBeDefined();
+        expect(canonicalJsonDigest(await readActionRuleAuthorityDraft(root, authority.authority.name))).toBe(canonicalJsonDigest(authority));
+      }
       const counting = mode === "unknown" || mode === "declined" || mode === "choice-save-race";
       if (counting) {
         const draft = actionRuleModelDraftFromAuthority({ authority: authority.authority, outcome: authority.reviews[0]!.outcome,
@@ -17849,6 +17889,7 @@ describe("saved review operation dispatch and persistence", () => {
       }
       const source = newPolicySourceSession();
       source.snapshots = [policyTextSnapshot(Buffer.from(counting ? "The approved work uses the shared allowance described by its owner."
+        : receiptReady ? "Keep the saved human-reviewed visit follow-up. Require evidence that a requested change has completed; distinguish an unapplied request."
         : receipt ? "Keep the saved human-reviewed visit follow-up. Request a stored Runner-ledger receipt."
         : maintenance ? "Keep the saved atomic visit job. The source owner must maintain the conflict counter on every updated row."
         : "Keep the saved human-reviewed visit follow-up and its existing eligibility."), "current-rules.txt")];
@@ -17883,6 +17924,10 @@ describe("saved review operation dispatch and persistence", () => {
       await writeBoundaryAuthoringResumeState(root, resume, { expectedRevisionDigest: null });
       const authorityBefore = canonicalJsonDigest(authority), readBefore = canonicalJsonDigest(context.candidate);
       const menus: string[] = [], notices: string[][] = []; let choices = 0, confirmations = 0, episodeConfirmations = 0, providerCalls = 0, plannerCalls = 0;
+      let receiptMappings = 0, receiptConfirmations = 0, coverageCalls = 0;
+      let receiptReads = 0, receiptReplacements = 0, receiptPlannerWireCalls = 0;
+      let competingPlanningResume: typeof resume | undefined;
+      const receiptAnswer = "A change is complete only with an applied-change completion receipt. An unapplied request remains pending or approved.";
       let choiceSaveInterleaved = false;
       const competingNote = "Retain this independently saved owner decision.";
       // The completed competing write is scheduled at the outside-lock provider
@@ -17909,6 +17954,7 @@ describe("saved review operation dispatch and persistence", () => {
             }
             return mode === "client-declined" ? "back" : "assign";
           }
+          if (title === "SETUP NEEDS ATTENTION" && nativeReceiptResumeRace) return "pause";
           if (title === "SETUP NEEDS ATTENTION" && mode.startsWith("context-")) return "pause";
           if (title === "START BOUNDARY DRAFTING" && mode.startsWith("context-")) return mode === "context-auto" ? "resume" : "review_rules";
           if (title === "START BOUNDARY DRAFTING" && changingModel && !restarted) return "choose_model";
@@ -17919,13 +17965,22 @@ describe("saved review operation dispatch and persistence", () => {
             expect(options.map(o=>o.value)).toEqual(["review", "edit", "details", "back"]);
             return mode === "fallback-review" ? "review" : mode === "fallback-edit" ? "edit" : "back";
           }
-          if (title === "START BOUNDARY DRAFTING") return restarted || ["menu", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "receipt", "receipt-source-race", "client-declined", "client-source-race"].includes(mode) ? "review_rules" : "resume";
+          if (receiptReturn && title === "SAVED BUSINESS STATEMENT") {
+            expect(receiptReturned).toBe(true); expect(options.some(option => option.value === "replace")).toBe(true);
+            receiptReplacements++; return "replace";
+          }
+          if (title === "START BOUNDARY DRAFTING" && receiptResume && !restarted) return "resume";
+          if (title === "START BOUNDARY DRAFTING") return restarted || receiptReady || ["menu", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "receipt", "receipt-source-race", "client-declined", "client-source-race"].includes(mode) ? "review_rules" : "resume";
           if (title === "CHOOSE THE SAVED JOB OPERATION") return ["semantic-question", "genuine-noop"].includes(mode) ? "continue" : "review";
           if (title === "REVIEW OR UNFINISHED EDIT?") return ["unrelated-edit", "model-review-edit"].includes(mode) ? "keep" : "review";
           if (title === "REVIEW COUNTED AUTOMATIC APPROVALS") { choices++; return "boundary"; }
-          throw new Error(`Unexpected review-only menu: ${title}`);
+          throw new Error(`Unexpected review-only menu: ${title}; ${receiptReady ? JSON.stringify({notices, menus, providerCalls, receiptMappings}) : ""}`);
         },
         confirm: async (title, options) => {
+          if (receiptReady && title === "Record this exact statement for the current question?") {
+            expect(options?.defaultValue).toBe(false); receiptConfirmations++;
+            return mode !== "receipt-ready-replace-return" || receiptReturned;
+          }
           if (title === "Run a new bounded model review?") {
             episodeConfirmations++;
             expect(options?.defaultValue).toBe(false);
@@ -17954,6 +18009,17 @@ describe("saved review operation dispatch and persistence", () => {
         modelDiscovery: { discoverHostedModels: async () => ["gpt-selected-review"] },
         modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "captured-only", dependencies: { requestJson: async request => {
           providerCalls++;
+          const questionLine = modelVisibleUserText(request.body).split("\n").find(line => line.startsWith("Current question: "));
+          if (receiptReady && questionLine) {
+            const question = JSON.parse(questionLine.slice("Current question: ".length));
+            expect(question.raw_answer).toBe(receiptAnswer);
+            receiptMappings++;
+            return { status: 200, body: { output: [{ type: "function_call", call_id: "receipt-meaning", name: "runner__propose_operator_decision", arguments: JSON.stringify({
+              question_id: question.question_id, revision: question.revision, answer_id: question.answer_id,
+              status: "proposal", disposition: "proposed", value: { kind: "receipt_requirement", completion_basis: "applied_change_receipt", unapplied_status: "pending_or_approved" },
+            }) }] } };
+          }
+          coverageCalls++;
           const messages = (request.body as { input: Array<{ content?: string }> }).input;
           const prefix = "Current draft (JSON pointer root): ";
           const line = messages.flatMap(message => (message.content ?? "").split("\n")).find(line => line.startsWith(prefix));
@@ -17984,6 +18050,13 @@ describe("saved review operation dispatch and persistence", () => {
               jobIntent: current.value.job_intent, provider: "openai", model: "gpt-test", policySourceSession: source.id,
               pendingJobRevision: "A genuine competing edit.", action: current.value.action, previous: current.value }), { expectedRevisionDigest: current.value.revision_digest });
           }
+          if (receiptReady) {
+            const complete = { passages: [
+              { start: 1, end: 1, disposition: "implemented", responsibility: "runner", interpretation: "The saved human-reviewed visit behavior is unchanged.", draft_paths: ["/actions/0"] },
+              { start: 1, end: 1, disposition: "implemented", responsibility: "runner", interpretation: "The requested Runner-ledger receipt records applied completion separately from unapplied requests.", draft_paths: ["/runner_evidence/runtime_contract/receipt_configuration"] },
+            ] };
+            return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage", arguments: JSON.stringify(coverageCalls === 1 ? complete : derivedScopedResponse(request, complete)) }] } };
+          }
           if (receipt) {
             const prefix = "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup";
             const business = { start: 1, end: 1, disposition: "implemented", responsibility: "runner", interpretation: "The saved human-reviewed visit behavior is unchanged.", draft_paths: ["/actions/0"] };
@@ -18013,6 +18086,36 @@ describe("saved review operation dispatch and persistence", () => {
         } } },
         modelBoundaryJobPlanner: async args => {
           plannerCalls++;
+          if (nativeReceiptResume) {
+            const planned = await planModelBoundaryJob({ ...args,
+            session: { ...args.session, dependencies: { requestJson: async request => {
+              receiptPlannerWireCalls++;
+              const text = modelVisibleUserText(request.body);
+              expect(text).toContain(exact);
+              const stateLine = text.split("\n").find(line => line.startsWith("Current reviewed state: "));
+              expect(stateLine).toBeDefined();
+              const state = JSON.parse(stateLine!.slice("Current reviewed state: ".length));
+              expect(state.read.exact_reusable_revision_count).toBeGreaterThan(0);
+              expect(state.actions).toHaveLength(1);
+              return { status: 200, body: { output: [{ type: "function_call", call_id: "actual-receipt-resume-plan",
+                name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", operation: "review_rules",
+                  read_mode: "reuse", action_mode: "reuse", summary: "Recheck the current saved rules against the attached policy without changing rules or authority." }) }] } };
+            } } } });
+            if (nativeReceiptResumeRace) {
+              // The real planner has completed. A separate native writer wins
+              // immediately before the production planning checkpoint's CAS.
+              const current = await readBoundaryAuthoringResumeState(root, binding);
+              if (current.status !== "ready") throw new Error("Native planning race lost its saved Resume");
+              const competing = buildBoundaryAuthoringResumeState({ binding, stage: current.value.stage,
+                jobIntent: current.value.job_intent, provider: "openai", model: "gpt-test", policySourceSession: source.id,
+                pendingJobRevision: "Retain this independently saved planning change.", action: current.value.action, previous: current.value });
+              await writeBoundaryAuthoringResumeState(root, competing, { expectedRevisionDigest: current.value.revision_digest });
+              const saved = await readBoundaryAuthoringResumeState(root, binding);
+              if (saved.status !== "ready") throw new Error("Competing native planning save missing");
+              competingPlanningResume = saved.value;
+            }
+            return planned;
+          }
           if (changingModel) expect(args.session.model).toBe("gpt-selected-review");
           if (solCapture) {
             let attempts = 0;
@@ -18038,13 +18141,62 @@ describe("saved review operation dispatch and persistence", () => {
         },
         modelActionRuleGenerator: noEdit, modelReadBoundaryRevisionGenerator: noEdit, modelReadWorkloadGenerator: noEdit,
         modelAuthoringNarrator: noEdit, boundaryAuthoringChatFactory: () => ({ ...testBoundaryAuthoringChat(session),
+          ...(receiptReady ? { readOperator: async (_defaultValue: string, assertCurrent?: () => Promise<void>) => {
+            await assertCurrent?.(); receiptReads++;
+            return mode === "receipt-ready-cancel-return" && !receiptReturned ? undefined : receiptAnswer;
+          } } : {}),
           streamCheckpoint: async (title, lines) => { notices.push([title, ...(lines ?? [])]); } }),
       });
       expect(await run()).toBe(0);
+      if (nativeReceiptResumeRace) {
+        const diagnostic = JSON.stringify({ menus, notices, providerCalls, coverageCalls, receiptMappings, receiptReads, ownershipReviews });
+        expect(competingPlanningResume).toBeDefined();
+        const after = await readBoundaryAuthoringResumeState(root, binding);
+        expect(after.status).toBe("ready");
+        if (after.status !== "ready") throw new Error("Competing native Resume lost");
+        expect(after.value, diagnostic).toEqual(competingPlanningResume);
+        expect(notices.flat().join("\n"), diagnostic).toContain("BOUNDARY_AUTHORING_RESUME_CHANGED");
+        expect(menus, diagnostic).toContain("SETUP NEEDS ATTENTION");
+        expect(providerCalls, diagnostic).toBe(0);
+        expect(coverageCalls).toBe(0); expect(receiptMappings).toBe(0); expect(receiptReads).toBe(0);
+        expect(episodeConfirmations).toBe(0); expect(ownershipReviews).toBe(0);
+        expect(receiptPlannerWireCalls).toBe(1); expect(plannerCalls).toBe(1);
+        expect(noEdit).not.toHaveBeenCalled();
+        expect(JSON.stringify(await loadPolicySources(root, source.id))).toBe(sourceInitial);
+        expect(canonicalJsonDigest(await readActionRuleAuthorityDraft(root, authority.authority.name))).toBe(authorityBefore);
+        expect(canonicalJsonDigest((await loadBoundaryReviewContext(root)).candidate)).toBe(readBefore);
+        return;
+      }
+      if (receiptReturn) {
+        const pending = await readBoundaryAuthoringResumeState(root, binding);
+        expect(pending.status).toBe("ready"); if (pending.status !== "ready") throw new Error("receipt wait missing");
+        expect(pending.value.completed_policy_reviews).toBeUndefined();
+        expect(pending.value.pending_policy_review?.operation).toBe("review_rules");
+        const priorQuestion = pending.value.operator_questions?.filter(q => q.kind === "receipt_requirement").at(-1);
+        expect(priorQuestion?.disposition).toBe(mode === "receipt-ready-cancel-return" ? "cancelled" : "declined");
+        expect(priorQuestion?.confirmation).toBeUndefined();
+        expect(receiptMappings).toBe(mode === "receipt-ready-cancel-return" ? 0 : 1);
+        expect(coverageCalls).toBe(1); expect(episodeConfirmations).toBe(1);
+        const pendingSources = await loadPolicySources(root, source.id);
+        expect(pendingSources.receipt_requirement_reviews?.some(review => review.decision === "confirmed")).not.toBe(true);
+        receiptReturned = true;
+        expect(await run()).toBe(0);
+        const resumed = await readBoundaryAuthoringResumeState(root, binding);
+        expect(resumed.status).toBe("ready"); if (resumed.status !== "ready") throw new Error("receipt return missing");
+        const history = resumed.value.operator_questions?.filter(q => q.kind === "receipt_requirement") ?? [];
+        expect(history.find(q => q.id === priorQuestion!.id)).toEqual(priorQuestion);
+        expect(history.at(-1)?.revision).toBe(priorQuestion!.revision + 1);
+        expect(history.at(-1)?.raw_answer?.text).toBe(receiptAnswer);
+        expect(receiptReads).toBe(2); expect(receiptReplacements).toBe(1);
+      }
       const loaded = await readBoundaryAuthoringResumeState(root, binding); expect(loaded.status).toBe("ready"); if (loaded.status !== "ready") throw new Error("resume missing");
       resume = loaded.value;
       const stored = await loadPolicySources(root, source.id);
-      expect(episodeConfirmations).toBe(providerCalls > 0 ? 1 : 0);
+      // R2 independently confirmed the native contract: recording the receipt
+      // meaning changes the exact coverage subject. The old refused episode
+      // stays saved; a second episode needs distinct consent. Historical ready-v7
+      // and v8 preserve the copied one-episode assertion's failure.
+      expect(episodeConfirmations, receiptReady ? JSON.stringify({ providerCalls, coverageCalls, receiptMappings, receiptConfirmations, menus, notices, questions: resume.operator_questions, episodes: stored.coverage_episodes, receiptReviews: stored.receipt_requirement_reviews }) : undefined).toBe(providerCalls > 0 ? receiptReady ? 2 : 1 : 0);
       expect(canonicalJsonDigest(await readActionRuleAuthorityDraft(root, authority.authority.name))).toBe(authorityBefore);
       expect(canonicalJsonDigest((await loadBoundaryReviewContext(root)).candidate)).toBe(readBefore);
       expect(noEdit).not.toHaveBeenCalled();
@@ -18102,7 +18254,7 @@ describe("saved review operation dispatch and persistence", () => {
           expect(stored.coverage).toBeUndefined();
         }
       } else {
-        expect(resume.pending_policy_review).toBeUndefined(); expect(resume.completed_policy_reviews).toHaveLength(1);
+        expect(resume.pending_policy_review, receiptReady ? JSON.stringify({providerCalls, coverageCalls, receiptMappings, receiptConfirmations, notices, menus, questions: resume.operator_questions, receiptReviews: stored.receipt_requirement_reviews}) : undefined).toBeUndefined(); expect(resume.completed_policy_reviews).toHaveLength(1);
         if (mode === "context-renew") {
           expect(confirmations).toBe(1);
           expect(resume.completed_policy_reviews![0]!.request.prior_contexts).toEqual([{ source_session: source.id,
@@ -18120,7 +18272,12 @@ describe("saved review operation dispatch and persistence", () => {
           && p.draft_paths.includes("/actions/0"))).toBe(true);
         else expect(stored.coverage?.passages[0]?.disposition).toBe("implemented");
         if (counting) { expect(choices).toBe(2); expect(confirmations).toBe(2); expect(stored.counting_decisions).toHaveLength(2); }
-        if (receipt) {
+        if (receiptReady) {
+          expect(receiptMappings, JSON.stringify({ providerCalls, coverageCalls, notices, menus, coverage: stored.coverage, reviews: stored.receipt_requirement_reviews })).toBe(mode === "receipt-ready-replace-return" ? 2 : 1);
+          expect(receiptConfirmations).toBe(mode === "receipt-ready-replace-return" ? 2 : 1);
+          expect(stored.receipt_requirement_reviews?.at(-1)).toMatchObject({ decision: "confirmed", verified: false });
+          expect(stored.operator_messages).toEqual(source.operator_messages);
+        } else if (receipt) {
           expect(providerCalls).toBe(2);
           expect(stored.coverage!.passages.find(p => p.obligation_assessment?.family === "receipt_setup")?.disposition).toBe("needs_decision");
           expect(notices.flat().join("\n")).toContain("Receipt/execution setup pending");
@@ -18131,15 +18288,16 @@ describe("saved review operation dispatch and persistence", () => {
           expect(notices.flat().join("\n")).toContain("Independent external-writer and production assurance remain unverified");
         }
         if (changingModel) { expect(resume.model.name).toBe("gpt-selected-review"); expect(stored.approvals.some(a=>a.destination === authoringDestination({provider: "openai", model: "gpt-selected-review"}))).toBe(true); }
-        const calls = providerCalls; restarted = true;
+        const calls = providerCalls, consentCalls = episodeConfirmations; restarted = true;
         expect(await run()).toBe(0);
         const after = await readBoundaryAuthoringResumeState(root, binding); if (after.status !== "ready") throw new Error("restart missing");
         expect(after.value.completed_policy_reviews, JSON.stringify({notices: notices.filter(n => n[0]?.includes("complete") || n.some(l => l.includes("CHANGED") || l.includes("not the current"))), menus})).toHaveLength(2);
         expect(after.value.completed_policy_reviews?.[1]?.activity).toBe("validated_reuse");
         expect(providerCalls).toBe(calls); expect(choices).toBe(counting ? 2 : 0); expect(ownershipReviews).toBe(1);
-        expect(episodeConfirmations).toBe(1);
+        expect(episodeConfirmations).toBe(consentCalls);
       }
-      expect(plannerCalls).toBe(["no-change", "typed-review", "redundant-source", "maintenance", "maintenance-missing", "maintenance-source-race", "model-resume", "fallback-review", "captured-contract"].includes(mode) ? 1 : 0);
+      expect(receiptPlannerWireCalls).toBe(nativeReceiptResume ? 1 : 0);
+      expect(plannerCalls).toBe(["receipt-ready-resume", "receipt-ready-native-resume", "no-change", "typed-review", "redundant-source", "maintenance", "maintenance-missing", "maintenance-source-race", "model-resume", "fallback-review", "captured-contract"].includes(mode) ? 1 : 0);
     } finally { await fixture.dispose(); }
   });
 });
@@ -18384,8 +18542,8 @@ describe("public saved-job connection recovery control", () => {
       }
     } finally { await f.dispose(); }
   });
-  it.each(["missing-root-fact", "native-legacy-association", "native-unconfirmed-association", "native-literal-retention", "native-no-confirm", "native-cancel-confirm", "native-source-cas", "native-answer-too-large", "native-remap-failed", "native-history-full", "native-index-save-failed", "native-meaning-retention", "native-source-drift", "native-competing", "native-decline", "native-blank-cancel", "native-replace-yes", "native-blank", "native-replace-no", "pause", "answer", "decline", "blank", "blank-cancel", "replace-no", "replace-yes", "replace-source-drift", "replace-competing", "decline-source-drift", "decline-competing", "source-drift", "competing", "registered-refusal", "diagnostic-refusal", "checkpoint-failed", "checkpoint-noop", "read-ack-race", "resume-ack-race"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async rawMode => {
-    const mode = ["missing-root-fact", "native-meaning-retention", "native-literal-retention"].includes(rawMode) ? "answer" : rawMode.replace(/^native-/u, "");
+  it.each(["native-legacy-association", "native-unconfirmed-association", "native-literal-retention", "native-no-confirm", "native-cancel-confirm", "native-source-cas", "native-answer-too-large", "native-remap-failed", "native-history-full", "native-index-save-failed", "native-meaning-retention", "native-source-drift", "native-competing", "native-decline", "native-blank-cancel", "native-replace-yes", "native-blank", "native-replace-no", "pause", "answer", "decline", "blank", "blank-cancel", "replace-no", "replace-yes", "replace-source-drift", "replace-competing", "decline-source-drift", "decline-competing", "source-drift", "competing", "registered-refusal", "diagnostic-refusal", "checkpoint-failed", "checkpoint-noop", "read-ack-race", "resume-ack-race"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async rawMode => {
+    const mode = ["native-meaning-retention", "native-literal-retention"].includes(rawMode) ? "answer" : rawMode.replace(/^native-/u, "");
     const native = rawMode.startsWith("native-");
     const expectedMeaning = rawMode === "native-literal-retention"
       ? "  The scheduled or completed stage of the selected visit. 🧭  " : "The scheduled or completed stage of the selected visit.";
@@ -18395,8 +18553,7 @@ describe("public saved-job connection recovery control", () => {
     try {
       const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
       const source = newPolicySourceSession();
-      source.snapshots = [policyTextSnapshot(Buffer.from("The visit status describes the selected visit's current stage."
-        + (rawMode === "missing-root-fact" ? "" : " public.service_visits contains selected visits.")), "visit-stages.txt")];
+      source.snapshots = [policyTextSnapshot(Buffer.from("The visit status describes the selected visit's current stage."), "visit-stages.txt")];
       source.active = 1; source.approvals = [{ digest: source.snapshots[0]!.digest,
         destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
       if (mode === "history-full") source.operator_messages = Array.from({ length: 64 }, (_, i) => `Existing statement ${i}.`);
@@ -18412,7 +18569,6 @@ describe("public saved-job connection recovery control", () => {
       const replacing = mode.startsWith("replace");
       let reopened = false, sawWaiting = 0, sawAnswer = false, answerAfterBlank = false, declinePrompts = 0, replaceConfirmed = false, replacePrompts = 0;
       const requestJson = vi.fn(async (wire: { body: Record<string, unknown> }) => {
-        if (rawMode !== "missing-root-fact") expect(JSON.stringify(wire.body)).toContain("public.service_visits contains selected visits.");
         if (requestJson.mock.calls.length > (replacing ? 3 : 2)) throw new AskError("ASK_CANCELLED", "End this owned mapping control before a separate review", 499);
         const saved = await readBoundaryAuthoringResumeState(f.root, binding);
         if (requestJson.mock.calls.length === 2) {
@@ -18622,18 +18778,6 @@ describe("public saved-job connection recovery control", () => {
         return;
       }
       expect(final.status).toBe("ready"); if (final.status !== "ready") return;
-      if (rawMode === "missing-root-fact") {
-        // A confirmed field explanation cannot invent a resource-root association.
-        // Preserve the original pre-B59 failure as a substantive pending control.
-        expect(sawAnswer).toBe(true); expect(requestJson).toHaveBeenCalledTimes(2);
-        expect(final.value.read_assistance).toMatchObject({ stage: "waiting",
-          pending_question: { kind: "clarification", request: { resource: "public.service_visits",
-            reason_binding: { kind: "requested_read_scope" } } },
-          state: { clarified_targets: [{ resource: "public.service_visits", field: "status", answer: expectedMeaning }] } });
-        expect(final.value.read).toBeUndefined(); expect(noAction).not.toHaveBeenCalled();
-        expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
-        return;
-      }
       if (mode.endsWith("-association")) {
         expect((await loadPolicySources(f.root, source.id)).operator_messages ?? []).toEqual([]);
         expect(requestJson).toHaveBeenCalledTimes(2);

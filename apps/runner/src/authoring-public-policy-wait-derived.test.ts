@@ -33,13 +33,14 @@ const jsonLine=(text:string,prefix:string):any=>{
 };
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
 
-async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=false, positiveInput=false, editInputBaseline=false, activationPresentation=false) {
+async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=false, positiveInput=false, editInputBaseline=false, activationPresentation=false, receiptEntry?: "setup" | "edit") {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),`owned-public-policy-wait-${control}-`));
   const resumeFile=path.join(root,".synapsor/boundary-authoring/resume.json");
   const inspection=ownedProgramInspection();
   const inspect=async()=>structuredClone(inspection);
-  const intent="studio.pack_parcel_1 records caller-supplied units from 1 to 10 for an available parcel; refuse unavailable parcels. Propose only; one human parcel_reviewer decides." +
-    (positiveInput ? " Require a caller-supplied operator_note with the exact bounds confirmed by the current owner; never trim or store it as a Source effect." : "");
+  const intent=("studio.pack_parcel_1 records caller-supplied units from 1 to 10 for an available parcel; refuse unavailable parcels. Propose only; one human parcel_reviewer decides." +
+    (positiveInput ? " Require a caller-supplied operator_note with the exact bounds confirmed by the current owner; never trim or store it as a Source effect." : ""))
+    .replace("Propose only;", receiptEntry ? "Use separately approved supervised execution;" : "Propose only;");
   const inputIntents=PUBLIC_INPUT_FACTS.outcomes.map(outcome=>intent.replace("studio.pack_parcel_1",outcome));
   const job=`Prepare ${positiveInput ? "both independent studio.pack_parcel_1 and studio.pack_parcel_2 Actions" : "studio.pack_parcel_1"} in the attached rules. Read parcel labels and units. studio.parcels is the parcel register; studio.parcels.label is the public parcel name; studio.parcels.units is the unit count.`;
   const lines=["Derived parcel proposal program.",
@@ -56,6 +57,13 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       PUBLIC_INPUT_FACTS.outcomes.map((outcome,index)=>`${outcome} uses ${PUBLIC_INPUT_FACTS.reviewClasses[index]}`).join("; ") + "; both initially require one parcel_reviewer.";
     initialLines.push(PUBLIC_INPUT_FACTS.sourceClause);
   }
+  const receiptClause="Require evidence that a requested change has completed; distinguish a request that has not been applied.";
+  const receiptAnswer="A change is complete only with an applied-change completion receipt. An unapplied request remains pending or approved.";
+  if (receiptEntry) {
+    initialLines[0]+=" Supplemental supervised receipt case; the original proposal-only studio fixture is unchanged.";
+    initialLines[3]=initialLines[3]!.replace("proposes only", "uses separately approved supervised execution");
+    if (receiptEntry === "setup") initialLines.push(receiptClause);
+  }
   const sourceFile=path.join(root,"derived-policy-wait-rules.txt");await fs.writeFile(sourceFile,initialLines.join("\n"));
   let stage:"initial"|"question"|"restart"|"explicit_review"|"edit"="initial",transcript="",requests=0,actionPhase=0,questionNarrations=0;
   let sourceId:string|undefined,questionReads=0,clarifyChosen=false,injected=false,expectedWaiting:any,competingSaved:any,baseline:any;
@@ -64,6 +72,8 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
   const inputActionPhases=new Map<number,number>();
   const inputSnapshots:any[]=[];
   let editPhase=0,editSaveConfirmations=0;
+  let receiptReads=0,receiptMappings=0,receiptConfirmations=0,receiptResolves=0;
+  const receiptSnapshots:any[]=[];
   const editSnapshots:any[]=[];
   const activationSnapshots:any[]=[];
   let nestedEntered=false,nestedReads=0,nestedDeclines=0,nestedStartRequests=0,nestedAuthorityBefore:any,cachedActivationAttempts=0;
@@ -99,6 +109,13 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
     }
   };
   const read=async()=>{
+    if (receiptEntry) {
+      const saved=await readResume().catch(()=>undefined);
+      const q=saved?.operator_questions?.filter((q:any)=>q.kind==="receipt_requirement").at(-1);
+      if (q && !q.raw_answer && saved.owner_handoffs?.at(-1)?.state==="waiting") {
+        receiptReads++;receiptSnapshots.push({stage:"question",entry:stage,question:q});return receiptAnswer;
+      }
+    }
     if(versionAnswerPending) {versionAnswerPending=false;return lines[4];}
     if(inputAnswerPending) {
       inputAnswerPending=false;inputPrompts++;
@@ -160,6 +177,10 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       else if(choice.message==="REVIEW CHANGED-RECORD PROTECTION") {expect(choice.initialValue).toBe("pending");expect(transcript).toContain("studio.parcels.version");selected="confirm";}
       else if(choice.message==="Record this planned counter maintenance for the current setup?") {expect(choice.initialValue).toBe("no");expect(transcript.replace(/\s+/gu," ")).toContain(lines[4]);selected="yes";}
       else if(choice.title==="REVIEW DECLARED TEXT INPUT BOUNDS")selected="none";
+      else if(receiptEntry && choice.message==="Record this exact statement for the current question?") {
+        expect(choice.initialValue).toBe("no");receiptConfirmations++;
+        receiptSnapshots.push({stage:"readback",entry:stage,resume:await readResume()});selected="yes";
+      }
       else if(choice.message==="Save this exact disabled Action edit?" && stage==="edit") {
         expect(choice.initialValue).toBe("no");expect(transcript.replace(/\s+/gu," ")).toContain(PUBLIC_INPUT_FACTS.editRequest);
         expect(transcript).toContain("/approval/required_approvals: 1 -> 2");
@@ -208,8 +229,11 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
           selected=control==="client_keep" ? "back" : undefined;
         } else selected="assign";
       }
+      else if(receiptEntry && choice.title==="FINISH BOUNDARY REVIEW" && values.includes("resolve") && receiptResolves===0) {
+        receiptResolves++;selected="resolve";
+      }
       else if(choice.title==="FINISH ATTACHED RULES REVIEW") {
-        selected=stage==="question" && !clarifyChosen ? "clarify" : "pause";if(selected==="clarify")clarifyChosen=true;
+        selected=receiptEntry && receiptResolves++ === 0 ? "resolve" : stage==="question" && !clarifyChosen ? "clarify" : "pause";if(selected==="clarify")clarifyChosen=true;
       } else if(choice.title==="SETUP NEEDS ATTENTION" || values.includes("pause") && !values.includes("yes"))selected="pause";
       else if(activationPresentation && choice.title==="REVIEW CHANGE REQUESTS") {
         expect(choice.message).toBe("Allow the reviewed change requests and approval rules? Database execution has a separate review.");
@@ -266,7 +290,12 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       // existing Source-owner operating fact remains unverified and is given
       // only at the real raw-answer prompt, followed by explicit confirmation.
       const current=jsonLine(text,"Current question: ");
-      if(positiveInput && current.kind==="input_bounds") {
+      if(receiptEntry && current.kind==="receipt_requirement") {
+        expect(current.raw_answer).toBe(receiptAnswer);expect(current.answer_id).toEqual(expect.any(String));
+        receiptMappings++;name="runner__propose_operator_decision";
+        args={question_id:current.question_id,revision:current.revision,answer_id:current.answer_id,status:"proposal",disposition:"proposed",
+          value:{kind:"receipt_requirement",completion_basis:"applied_change_receipt",unapplied_status:"pending_or_approved"}};
+      } else if(positiveInput && current.kind==="input_bounds") {
         expect(current.target.outcomes).toEqual(PUBLIC_INPUT_FACTS.outcomes);
         name="runner__propose_operator_decision";
         if(current.source_binding) {
@@ -333,6 +362,9 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       const actionIndex=positiveInput ? inputIntents.indexOf(currentIntent)+1 : 1;
       if(positiveInput)expect(actionIndex).toBeGreaterThan(0);
       const draft=ownedProgramDraft(actionIndex),{schema_version:_version,verification,effect,approval,...rule}=draft;
+      if(receiptEntry) {
+        expect(text).toContain("supervised");effect.writeback="supervised";
+      }
       if(positiveInput) {
         const contract=jsonLine(text,"Current work-unit contract: ");
         expect(contract.identity.intended_outcome).toBe(draft.outcome);
@@ -423,6 +455,12 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
           }
         }
       }
+      if(receiptEntry && (receiptEntry==="setup" || stage==="edit")) {
+        expect(text).toContain(receiptClause);
+        passages.push({start:8,end:8,disposition:"implemented",responsibility:"runner",
+          interpretation:"The configured Runner-ledger receipt separates applied completion from unapplied requests.",
+          draft_paths:["/runner_evidence/runtime_contract/receipt_configuration"]});
+      }
       for(const passage of passages)for(const pointer of passage.draft_paths)expect(references).toContain(pointer);
       args={passages};reports.push({stage,draft_digest:canonicalJsonDigest(draft),accepted:!!accepted,messages,passages,
         ...(stage==="edit" ? {reviewed_approvals:draft.actions.map((action:any)=>({outcome:action.outcome,...action.approval}))} : {})});
@@ -460,6 +498,16 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
   vi.spyOn(globalThis,"fetch").mockImplementation(async()=>fail("External network forbidden"));
   try {
     await onboard(["db","--project-root",root,"--from-env","OWNED_POLICY_WAIT_READ_URL","--schema","studio","--json"],{interactive:false,schemaInspector:inspect});
+    if(receiptEntry) {
+      const setup=await loadBoundaryReviewContext(root);
+      const source=setup.candidate.source;
+      const config={version:1,mode:"review",storage:{sqlite_path:path.join(root,".synapsor/local.db")},capabilities:[],
+        trusted_context:{provider:"environment"},action_rules:{project_root:root},
+        sources:{[source]:{engine:"postgres",read_url_env:"OWNED_POLICY_WAIT_READ_URL",receipts:{authority:"runner_ledger"}}}};
+      await fs.writeFile(path.join(root,"synapsor.actions.runner.json"),JSON.stringify(config),{mode:0o600});
+      const actual=await (await import("./authoring-receipt-configuration.js")).authoringReceiptConfiguration(root,[source]);
+      expect(actual.status).toBe("current");expect(actual.modes).toEqual([{source,authority:"runner_ledger",explicitly_configured:true}]);
+    }
     if(control==="client_keep" || control==="client_cancel") {
       const setup=await loadBoundaryReviewContext(root);
       failures.push({title:"OWNED_CLIENT_TEST_SETUP_READBACK",draft:setup.draft,candidate:setup.candidate});
@@ -477,6 +525,10 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
     expect((await listActionRuleAuthorityDrafts(root))[0],transcript+"\nDIAGNOSTIC_REQUESTS_MENUS_FAILURES="+JSON.stringify({responses,menus,failures})).toBeDefined();
     if(positiveInput) {
       const sources=await loadPolicySources(root,sourceId!),authority=(await listActionRuleAuthorityDrafts(root))[0]!;
+      if(receiptEntry==="setup") {
+        expect(receiptReads,transcript).toBe(1);expect(receiptMappings,transcript).toBe(1);expect(receiptConfirmations,transcript).toBe(1);
+        expect(sources.receipt_requirement_reviews?.at(-1)).toMatchObject({decision:"confirmed",verified:false});
+      }
       const inputQuestions=initiallySaved.operator_questions.filter((q:any)=>q.kind==="input_bounds"),rootQuestion=inputQuestions.find((q:any)=>q.source_binding),child=inputQuestions.at(-1);
       expect(inputPrompts,transcript).toBe(1);expect(inputConfirmations,transcript).toBe(1);expect(clientDutyPrompts,transcript).toBe(1);
       expect(child).toMatchObject({id:inputBeforeConfirmation.id,raw_answer:inputBeforeConfirmation.raw_answer,proposal:inputBeforeConfirmation.proposal,
@@ -523,25 +575,44 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       if(editInputBaseline) {
         const before={resume:initiallySaved,sources,authority,read:await loadBoundaryReviewContext(root),requests,inputPrompts,inputConfirmations};
         editSnapshots.push({stage:"reviewed-disabled-baseline",...before});
-        stage="edit";answers.push(PUBLIC_INPUT_FACTS.editRequest);
+        stage="edit";
+        if(receiptEntry==="edit") {
+          const replacement=path.join(root,"supplemental-studio-receipt-edit.txt");
+          await fs.writeFile(replacement,[...initialLines,receiptClause].join("\n"));
+          answers.push(`/attach ${replacement}`);
+        }
+        answers.push(PUBLIC_INPUT_FACTS.editRequest);
         expect(await boundaryReviewCommand(["--project-root",root,"--access","--job-first"],inspect,outer,undefined,options)).toBe(0);
         const after={resume:await readResume(),sources:await loadPolicySources(root,sourceId!),authority:(await listActionRuleAuthorityDrafts(root))[0]!,read:await loadBoundaryReviewContext(root)};
         editSnapshots.push({stage:"post-edit-public-return",...after});
         expect(editSaveConfirmations,transcript).toBe(1);expect(editPhase).toBe(2);
-        expect(inputPrompts).toBe(before.inputPrompts);expect(inputConfirmations).toBe(before.inputConfirmations);
-        expect(after.resume.operator_questions).toEqual(before.resume.operator_questions);
-        expect(after.resume.owner_handoffs).toEqual(before.resume.owner_handoffs);
-        expect(after.sources.input_policy_reviews).toEqual(before.sources.input_policy_reviews);
-        expect(after.sources.snapshots).toEqual(before.sources.snapshots);
+        // R2 independently adjudicated v6: a newly attached Source needs its
+        // own Input decision. The unchanged-Source edit still asks nothing.
+        expect(inputPrompts).toBe(before.inputPrompts+(receiptEntry==="edit" ? 1 : 0));
+        expect(inputConfirmations).toBe(before.inputConfirmations+(receiptEntry==="edit" ? 1 : 0));
+        if(receiptEntry==="edit") {
+          expect(receiptReads,transcript).toBe(1);expect(receiptMappings,transcript).toBe(1);expect(receiptConfirmations,transcript).toBe(1);
+          expect(after.sources.receipt_requirement_reviews?.at(-1)).toMatchObject({decision:"confirmed",verified:false});
+          for(const prior of before.resume.operator_questions) expect(after.resume.operator_questions.find((q:any)=>q.id===prior.id)).toEqual(prior);
+        } else {
+          expect(after.resume.operator_questions).toEqual(before.resume.operator_questions);
+          expect(after.resume.owner_handoffs).toEqual(before.resume.owner_handoffs);
+        }
+        if(receiptEntry==="edit") expect(after.sources.input_policy_reviews!.slice(0,before.sources.input_policy_reviews!.length)).toEqual(before.sources.input_policy_reviews);
+        else expect(after.sources.input_policy_reviews).toEqual(before.sources.input_policy_reviews);
+        if(receiptEntry==="edit") {
+          expect(after.sources.snapshots.slice(0,before.sources.snapshots.length)).toEqual(before.sources.snapshots);
+          expect(activePolicySource(after.sources)!.text).toBe([...initialLines,receiptClause].join("\n"));
+        } else expect(after.sources.snapshots).toEqual(before.sources.snapshots);
         expect(after.sources.application_assignments!.slice(0,before.sources.application_assignments!.length)).toEqual(before.sources.application_assignments);
         // Normal Source assessment and final changed-candidate review each
         // have their own exact draft subject; old ownership remains history.
         expect(after.sources.application_assignments).toHaveLength(before.sources.application_assignments!.length+2);
         for(const assignment of after.sources.application_assignments!.slice(before.sources.application_assignments!.length))
-          expect(assignment).toMatchObject({source_digest:before.sources.coverage!.source_digest,
+          expect(assignment).toMatchObject({source_digest:receiptEntry==="edit" ? activePolicySource(after.sources)!.digest : before.sources.coverage!.source_digest,
             contract_digest:before.sources.coverage!.client_duties!.contract_digest,
             obligations:before.sources.application_assignments!.at(-1)!.obligations,owner:"client_application",verified:false});
-        expect(after.sources.application_assignments!.at(-1)).toMatchObject({source_digest:before.sources.coverage!.source_digest,
+        expect(after.sources.application_assignments!.at(-1)).toMatchObject({source_digest:receiptEntry==="edit" ? activePolicySource(after.sources)!.digest : before.sources.coverage!.source_digest,
           draft_digest:after.sources.coverage!.draft_digest,contract_digest:before.sources.coverage!.client_duties!.contract_digest,
           obligations:before.sources.application_assignments!.at(-1)!.obligations,owner:"client_application",verified:false});
         expect(after.read.candidate).toEqual(before.read.candidate);
@@ -566,9 +637,40 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
         expect(after.sources.coverage!.client_duties).toEqual(before.sources.coverage!.client_duties);
         expect(after.sources.coverage!.passages.find(passage=>passage.disposition==="overridden")).toMatchObject({start:4,end:4,operator_override:PUBLIC_INPUT_FACTS.editRequest});
         expect(after.sources.operator_messages!.filter(message=>message===PUBLIC_INPUT_FACTS.editRequest)).toHaveLength(1);
-        expect(reports.filter(report=>report.stage==="edit").map(report=>report.reviewed_approvals.map((approval:any)=>approval.required_approvals))).toEqual([[1,1],[2,1]]);
+        // The appended receipt clause first refuses the baseline until its
+        // meaning is confirmed, then reviews that baseline and the changed rule.
+        expect(reports.filter(report=>report.stage==="edit").map(report=>report.reviewed_approvals.map((approval:any)=>approval.required_approvals)))
+          .toEqual(receiptEntry==="edit" ? [[1,1],[1,1],[2,1]] : [[1,1],[2,1]]);
         expect(policyReviewReadiness(activePolicySource(after.sources)!,after.sources.coverage,after.sources).ready,transcript).toBe(true);
-        expect(responses.filter(response=>response.stage==="edit"&&response.current_operator_question?.kind==="input_bounds")).toEqual([]);
+        const editInputResponses=responses.filter(response=>response.stage==="edit"&&response.current_operator_question?.kind==="input_bounds");
+        if(receiptEntry==="edit") {
+          // Two actual submissions, not two raw answers: one root request for
+          // missing information and one child mapping of the fresh exact answer.
+          expect(editInputResponses).toHaveLength(2);
+          const rootRequest=editInputResponses[0].current_operator_question,childRequest=editInputResponses[1].current_operator_question;
+          const rootQuestion=after.resume.operator_questions.find((q:any)=>q.id===rootRequest.question_id)!;
+          const child=after.resume.operator_questions.find((q:any)=>q.id===childRequest.question_id)!;
+          const currentSource=activePolicySource(after.sources)!;
+          expect(rootQuestion.source_binding).toMatchObject({source_session:after.sources.id,source_digest:currentSource.digest,lines:8});
+          expect(rootQuestion.target.outcomes).toEqual(PUBLIC_INPUT_FACTS.outcomes);
+          expect(rootQuestion.raw_answer).toBeUndefined();expect(rootQuestion.confirmation).toBeUndefined();
+          expect(rootQuestion.budget).toEqual({iterations_used:2,tool_calls_used:2,correction_used:false});
+          expect(child.budget_owner_id).toBe(rootQuestion.id);expect(child.revision).toBe(rootQuestion.revision+1);
+          expect(child.target).toEqual(rootQuestion.target);expect(child.context_digest).toBe(rootQuestion.context_digest);
+          expect(child.evidence).toEqual(rootQuestion.evidence);
+          expect(child.raw_answer.text).toBe(PUBLIC_INPUT_FACTS.rawAnswer);
+          expect(childRequest.answer_id).toBe(child.raw_answer.id);expect(childRequest.raw_answer).toBe(PUBLIC_INPUT_FACTS.rawAnswer);
+          expect(child.proposal).toMatchObject({question_id:child.id,revision:child.revision,answer_id:child.raw_answer.id,disposition:"proposed"});
+          expect(child.confirmation).toMatchObject({decision:"new_attributed_decision",proposal_digest:canonicalJsonDigest(child.proposal)});
+          expect(after.sources.input_policy_reviews).toHaveLength(before.sources.input_policy_reviews!.length+1);
+          expect(after.sources.input_policy_reviews!.at(-1)).toMatchObject({source_session:after.sources.id,source_digest:currentSource.digest,
+            agenda_digest:rootQuestion.source_binding.agenda_digest,outcomes:PUBLIC_INPUT_FACTS.outcomes,decision:"confirmed",verified:false,
+            question_reference:{id:child.id,revision:child.revision,digest:child.digest,proposal_digest:child.confirmation.proposal_digest,
+              root_id:rootQuestion.id,root_digest:rootQuestion.digest,basis:"operator_answer",answer_id:child.raw_answer.id}});
+          const replies=editInputResponses.map(response=>JSON.parse(response.reply.body.output[0].arguments));
+          expect(replies[0]).toMatchObject({question_id:rootQuestion.id,revision:rootQuestion.revision,status:"needs_information"});
+          expect(replies[1]).toMatchObject({question_id:child.id,revision:child.revision,answer_id:child.raw_answer.id,status:"proposal"});
+        } else expect(editInputResponses).toEqual([]);
         expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
         expect(await fs.readFile(path.join(root,".synapsor/exploration-boundary.active.json")).catch(()=>undefined)).toBeUndefined();
         expect(failures.filter(entry=>entry.title==="SETUP NEEDS ATTENTION"),transcript).toEqual([]);
@@ -719,7 +821,7 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
   } finally {
     const evidenceRoot=process.env.OWNED_PUBLIC_POLICY_WAIT_EVIDENCE;
     if(evidenceRoot) {const persisted=await Promise.allSettled([readResume(),listActionRuleAuthorityDrafts(root),sourceId ? loadPolicySources(root,sourceId) : Promise.resolve(undefined)]);
-      await fs.mkdir(evidenceRoot,{recursive:true});await fs.writeFile(path.join(evidenceRoot,`${control}-${randomUUID()}.json`),JSON.stringify({origin:activationPresentation ? "IMPLEMENTER_PUBLIC_AUTHORED_ACTION_DEFAULT_NO" : editInputBaseline ? "IMPLEMENTER_PUBLIC_INPUT_SELECTED_BASELINE_EDIT_DISABLED" : positiveInput ? "IMPLEMENTER_PUBLIC_INPUT_ONBOARDING_DISABLED" : "IMPLEMENTER_DERIVED_PUBLIC_POLICY_WAIT",control,positiveInput,editInputBaseline,activationPresentation,transcript,publicOutput:stdout.mock.calls.map(([chunk])=>String(chunk)).join(""),menus,failures,responses,reports,questionSnapshots,inputSnapshots,editSnapshots,activationSnapshots,injected,
+      await fs.mkdir(evidenceRoot,{recursive:true});await fs.writeFile(path.join(evidenceRoot,`${control}-${randomUUID()}.json`),JSON.stringify({origin:activationPresentation ? "IMPLEMENTER_PUBLIC_AUTHORED_ACTION_DEFAULT_NO" : editInputBaseline ? "IMPLEMENTER_PUBLIC_INPUT_SELECTED_BASELINE_EDIT_DISABLED" : positiveInput ? "IMPLEMENTER_PUBLIC_INPUT_ONBOARDING_DISABLED" : "IMPLEMENTER_DERIVED_PUBLIC_POLICY_WAIT",control,positiveInput,editInputBaseline,activationPresentation,transcript,publicOutput:stdout.mock.calls.map(([chunk])=>String(chunk)).join(""),menus,failures,responses,reports,questionSnapshots,inputSnapshots,editSnapshots,activationSnapshots,receiptEntry,receiptReads,receiptMappings,receiptConfirmations,receiptSnapshots,injected,
         persisted:persisted.map((result,index)=>({kind:["resume","disabled_actions","sources"][index],...(result.status==="fulfilled" ? {value:result.value} : {error:String(result.reason)} )}))},null,2));}
     await fs.rm(root,{recursive:true,force:true});
   }
@@ -778,3 +880,10 @@ it.each(["nested_review_role_after_response","nested_review_role_client_back"] a
   "public saved review retains pending coverage when reader role changes during a response or ownership wait: %s",async control=>{
     const result=await publicPolicyWait(control);expect(result.provider_calls).toBe(0);
   },30_000);
+
+// Supplemental capability is explicit in Source and fixture configuration; the
+// original studio proposal-only setup/activation rows above remain unchanged.
+it.each(["setup", "edit"] as const)("supplemental studio public receipt binding through %s",async entry=>{
+  const result=await publicPolicyWait("healthy",false,true,entry==="edit",false,entry);
+  expect(result.provider_calls).toBe(0);
+},30_000);

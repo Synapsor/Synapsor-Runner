@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { AskError, completedAuthoringQuestion, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, secureAskJsonRequest,
   type ProviderHttpInput, type ProviderHttpResult, type AskToolCallResult } from "./model-ask.js";
-import { authoringReadCheckpoint, assertAuthoringReadCheckpoint, authoringReadDecisionCheckpoint, assertAuthoringReadDecision, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, assertAuthoringQuestionHandoff, authoringGenerationCurrentnessCode, authoringGenerationHandled, authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
+import { acknowledgeAuthoringProducer, authoringQuestionCompletion, authoringReadCheckpoint, assertAuthoringReadCheckpoint, authoringReadDecisionCheckpoint, assertAuthoringReadDecision, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, assertAuthoringQuestionHandoff, authoringGenerationCurrentnessCode, authoringGenerationHandled, authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
   recoverAuthoringGeneration, prepareAuthoringManualRecovery, permitAuthoringManualRecovery,
   prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, createAuthoringHostEpisodeBudget,
   beginAuthoringProducerInvocation, authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
@@ -1161,5 +1161,48 @@ describe("B33 exact completed consumer handoff", () => {
       await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest))).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
     }
     expect(f.sends()).toBe(1);
+  });
+});
+
+
+describe("durable producer consumption", () => {
+  const producer = {consumer:"policy_coverage" as const, episode_id:"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    context_digest:canonicalJsonDigest("coverage-context"), submission_number:1};
+  it("acknowledges exactly the consumed refused submission, leaving another handled turn fenced", async () => {
+    const f=await fixture("success"),m=memory(f.endpoint);
+    await enter(m,async()=>{
+      const old=await recoverAuthoringGeneration({...input(f.endpoint),authoringInput:{...producer,submission_number:2}},secureAskJsonRequest);
+      await authoringGenerationHandled([old]);
+      const current=await recoverAuthoringGeneration({...input(f.endpoint),authoringInput:producer},secureAskJsonRequest);
+      await authoringGenerationHandled([current]);
+      const completion=authoringQuestionCompletion([current])!;
+      // The producer has already durably recorded its unaccepted submission.
+      await acknowledgeAuthoringProducer(completion,producer);
+      expect(m.read().operations.map(op=>op.state)).toEqual(["handled","checkpointed"]);
+      expect(m.read().operations[0]!.checkpoint_seen).toBeUndefined();
+      expect(m.read().operations[1]!.question_handoff).toBeUndefined();
+      expect(m.read().operations[1]!.producer_input).toEqual(producer);
+    });
+    expect(f.sends()).toBe(2);
+  });
+  it("rejects a different producer record without changing recovery state", async () => {
+    const f=await fixture("success"),m=memory(f.endpoint);
+    await enter(m,async()=>{
+      const result=await recoverAuthoringGeneration({...input(f.endpoint),authoringInput:producer},secureAskJsonRequest);
+      await authoringGenerationHandled([result]);
+      const completion=authoringQuestionCompletion([result])!,before=structuredClone(m.read());
+      await expect(acknowledgeAuthoringProducer(completion,{...producer,submission_number:2})).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+      expect(m.read()).toEqual(before);
+    });
+  });
+  it("saved completion JSON cannot acknowledge a historical response on cold resume", async () => {
+    const f=await fixture("success"),m=memory(f.endpoint);
+    const completion=await enter(m,async()=>{
+      const result=await recoverAuthoringGeneration({...input(f.endpoint),authoringInput:producer},secureAskJsonRequest);
+      await authoringGenerationHandled([result]);return authoringQuestionCompletion([result])!;
+    });
+    const before=structuredClone(m.read());
+    await expect(enter(m,()=>acknowledgeAuthoringProducer(structuredClone(completion),producer))).rejects.toThrow();
+    expect(m.read()).toEqual(before);
   });
 });

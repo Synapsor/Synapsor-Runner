@@ -19,7 +19,7 @@ import { associateCountingComponents, resolveCountingComparison } from "./author
 import { resolveSourceCounterObligation, sourceCounterMaintenanceReferences, SOURCE_COUNTER_CLASSIFICATION_GUIDANCE } from "./authoring-counter-maintenance-review.js";
 import { stripVTControlCharacters } from "node:util";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { AskError, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, type AskToolDefinition, type AskToolGateway } from "./model-ask.js";
+import { AskError, completedAuthoringQuestion, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, type AskToolDefinition, type AskToolGateway } from "./model-ask.js";
 import type { ModelAuthoringNarrationSession } from "./model-authoring-narration.js";
 import { modelAuthoringHistory } from "./model-authoring-conversation.js";
 import { activePolicySource, isDeferredPolicyDeployment, isDeferredSourceReadback, isDeferredSourceCounterMaintenance, policyTextLines, validApplicationObligations, type PolicyTextSnapshot, type PolicyCoverage, type PolicyPassage, type CoverageReviewEpisode, type PolicySourceSession } from "./authoring-policy-source.js";
@@ -848,7 +848,7 @@ export async function reviewPolicyCoverage(input: {
   retainedDutyPlan?: RetainedDutyPlan;
   episode?: { authoringInput?: (number: number) => import("./model-provider-transport.js").ProviderHttpInput["authoringInput"];
     beforeSubmission: (number: number) => Promise<void>;
-    afterSubmission: (number: number, feedback: CoverageFeedback | undefined, accepted: boolean, tentative?: NonNullable<CoverageReviewEpisode["submissions"][number]["tentative"]>) => Promise<void> };
+    afterSubmission: (number: number, feedback: CoverageFeedback | undefined, accepted: boolean, tentative?: NonNullable<CoverageReviewEpisode["submissions"][number]["tentative"]>, completion?: import("./authoring-generation-recovery.js").AuthoringQuestionCompletion) => Promise<void> };
 }): Promise<PolicyCoverage> {
   if (activePolicySource(input.session.conversation?.policySources)?.digest !== input.source.digest) {
     throw new Error("POLICY_TEXT_EGRESS_REQUIRED: Coverage must use the active, explicitly approved source snapshot.");
@@ -1022,7 +1022,7 @@ export async function reviewPolicyCoverage(input: {
           'Reopen current Review; no stale correction was sent.');
       await input.episode?.beforeSubmission(attempt + 1);
       report = undefined; feedback = undefined; submissionEvidence = undefined;
-      await runAskProviderTurn({ configuration: {...configuration,authority_digest:authorityDigest}, authorityDigest, gateway, tools, signal: new AbortController().signal,
+      const turn = await runAskProviderTurn({ configuration: {...configuration,authority_digest:authorityDigest}, authorityDigest, gateway, tools, signal: new AbortController().signal,
         ...(input.episode?.authoringInput ? {authoringInput:input.episode.authoringInput(attempt + 1)} : {}),
         dependencies: session.dependencies, history: modelAuthoringHistory(session.conversation, session),
         question: [repairScope ? "Correct ONLY the nominated unaccepted region using the scoped tool envelope. The full report will be revalidated; no retained passage is certified." : "Review every nonblank source line against this actual draft. Return all dispositions, not just successes.",
@@ -1104,7 +1104,7 @@ export async function reviewPolicyCoverage(input: {
         }
         throw error;
       });
-      await input.episode?.afterSubmission(attempt + 1, feedback, !!report, submissionEvidence);
+      await input.episode?.afterSubmission(attempt + 1, feedback, !!report, submissionEvidence, turn ? completedAuthoringQuestion(turn) : undefined);
       if (report) return report;
     }
     const finalFeedback=feedback??{context:contextIdentity,findings:[],limited:false,

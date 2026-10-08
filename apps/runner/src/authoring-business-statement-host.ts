@@ -4,10 +4,7 @@ import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type Au
 import { authoringQuestionAnswerCheckpoint, authoringTransportCheckpoint, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, leaveOperatorQuestionPending,
   operatorQuestionReadback, presentOperatorQuestion, proposeOperatorAnswer, reopenOperatorQuestion,
-  operatorQuestionEpisode, parseOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
-import { runOperatorQuestionModel, consumedOperatorQuestionFailure } from './authoring-operator-question-model.js';
-import type { ActionModelSuggestionSession } from './action-tui.js';
-import type { OperatorBusinessContext } from './authoring-operator-presentation.js';
+  type OperatorQuestion } from "./authoring-operator-question.js";
 import { PolicySourceChangedError } from "./authoring-policy-source.js";
 import { isUnknownReadMeaning } from "./read-meaning-evidence.js";
 import { validateReadPrerequisiteBusinessAnswer } from "./read-prerequisite-model.js";
@@ -43,6 +40,22 @@ export type BusinessStatementHostAccess = {
   checkpointFailure(subject: string): Error;
 };
 
+/** A domain adapter supplies a typed question and mapping to the existing
+ * raw-answer/default-No/protected-save lifecycle. It cannot install session
+ * state, choose a caller revision, or perform a save outside these ports. */
+export type BusinessStatementDecisionAdapter = {
+  kind: OperatorQuestion['kind'];
+  appendToSource: boolean;
+  createQuestion(identity: Pick<OperatorQuestion, 'id' | 'handoff_id' | 'scope_digest' | 'context_digest' | 'evidence'>): OperatorQuestion;
+  replacementQuestion(next: OperatorQuestion, previous: OperatorQuestion): OperatorQuestion;
+  canReview(question: OperatorQuestion): boolean;
+  mapAnswer(ports: {
+    readQuestion(): OperatorQuestion;
+    saveQuestion(next: OperatorQuestion, expected: Digest, completedModel?: boolean): Promise<void>;
+    assertCurrent(): Promise<void>;
+  }): Promise<'proposed' | 'pending'>;
+};
+
 /** Existing Action attributed testimony and its shared Read-edit adapters.
  * The producer still interprets the answer; confirmation is not policy proof,
  * a disabled draft, permission or a completed program. No allowance is owned here. */
@@ -52,16 +65,10 @@ export function createBusinessStatementHost(input: {
   handoff?: AuthoringOwnerHandoff; producerQuestionDigest?: Digest; privateCorrection?: boolean;
   assertCurrent(permit?: ProjectAuthorityMutationPermit): Promise<void>;
   interact(view: BusinessStatementInteraction): Promise<BusinessStatementResponse>;
-  /** Bounded receipt interpretation adapter, using this same raw-answer,
-   * default-No, protected-save and retained-answer interaction owner. */
-  receiptDecision?: {
-    session: ActionModelSuggestionSession; businessContext?: OperatorBusinessContext;
-    target: OperatorQuestion['target']; material: string[]; evidence: OperatorQuestion['evidence'];
-    selection: NonNullable<OperatorQuestion['receipt_selection']>;
-    predecessor?: OperatorQuestion;
-  };
+  decision?: BusinessStatementDecisionAdapter;
 }) {
   const access = input.access;
+  const questionKind = input.decision?.kind ?? 'attributed_meaning';
   let savedHandoff: AuthoringOwnerHandoff;
   const latestQuestion = () => access.readQuestions().filter(q => q.handoff_id === savedHandoff.id)
     .sort((a, b) => a.revision - b.revision).at(-1);
@@ -118,6 +125,7 @@ export function createBusinessStatementHost(input: {
       || savedHandoff.context_digest !== current)
       throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The question's Source, permissions or job changed. Its answer was not accepted; inspect the saved context before continuing.");
     const confirming = question && access.readQuestions().find(q => q.id === question.id);
+    if (confirming && confirming.kind !== questionKind) throw new PolicySourceChangedError();
     if (question && (!confirming || confirming.digest !== question.digest || confirming.handoff_id !== savedHandoff.id
       || confirming.raw_answer?.text !== answer || confirming.proposal?.disposition !== "proposed" || confirming.disposition))
       throw new PolicySourceChangedError();
@@ -127,7 +135,7 @@ export function createBusinessStatementHost(input: {
       ...(read.decisions ? { readDecisions: read.decisions } : {}), ...(read.recovery ? { recovery: read.recovery } : {}),
     });
     // The private prerequisite never appends this raw statement to policy Source.
-    if (testimony && savedHandoff.consumer !== "read_revision_prerequisite" && confirming?.kind !== "receipt_requirement")
+    if (testimony && savedHandoff.consumer !== "read_revision_prerequisite" && input.decision?.appendToSource !== false)
       await access.appendSourceStatement(permit, answer);
     const acceptedContext = await access.contextDigest(permit, savedHandoff.consumer);
     const next = answerOwnerHandoff(savedHandoff, answer, acceptedContext);
@@ -168,34 +176,26 @@ export function createBusinessStatementHost(input: {
     let q = latestQuestion();
     if (!q) {
       const read = h.consumer.startsWith("read_revision_"), privateRead = h.consumer === "read_revision_prerequisite";
-      const receipt = input.receiptDecision, previous = receipt?.predecessor;
-      let created = createOperatorQuestion({ id: randomUUID(), revision: previous ? previous.revision + 1 : 1, handoff_id: h.id,
-        kind: receipt ? "receipt_requirement" : "attributed_meaning", scope_digest: h.scope_digest, context_digest: h.context_digest,
-        target: receipt?.target ?? { phase: privateRead ? input.privateCorrection ? "read_prerequisite_correction" : "read_prerequisite" : read ? "read_revision" : "action_rule_components",
-          ...(read ? { resource: "current-reviewed-read-edit" } : {}), outcomes: [] },
-        material: receipt?.material ?? ["This records only your statement for this exact question. Runner must still map and validate the resulting disabled draft.",
-          "It does not override the attached policy, prove database behavior, grant access or enable execution."],
+      const identity = { id: randomUUID(), handoff_id: h.id, scope_digest: h.scope_digest, context_digest: h.context_digest,
         evidence: [{ id: "current-owner-question", digest: h.digest },
-          ...(input.producerQuestionDigest ? [{ id: "action-producer-question", digest: input.producerQuestionDigest }] : []),
-          ...(receipt?.evidence ?? [])],
-        ...(receipt ? { receipt_selection: receipt.selection, assistedLocalConsumer: true } : {}),
-        continuation: receipt ? "receipt_requirement_review" : read ? "read_mapping" : "action_rule_review" });
-      if (receipt) {
-        const { digest: _digest, ...body } = created;
-        const continued = { ...body,
-          ...(previous ? { budget_owner_id: previous.budget_owner_id ?? previous.id, budget: previous.budget! } : {}) };
-        created = parseOperatorQuestion({ ...continued, digest: canonicalJsonDigest(continued) });
-      }
+          ...(input.producerQuestionDigest ? [{ id: "action-producer-question", digest: input.producerQuestionDigest }] : [])] };
+      const created = input.decision ? input.decision.createQuestion(identity) : createOperatorQuestion({ ...identity, revision: 1,
+        kind: "attributed_meaning", target: { phase: privateRead ? input.privateCorrection ? "read_prerequisite_correction" : "read_prerequisite" : read ? "read_revision" : "action_rule_components",
+          ...(read ? { resource: "current-reviewed-read-edit" } : {}), outcomes: [] },
+        material: ["This records only your statement for this exact question. Runner must still map and validate the resulting disabled draft.",
+          "It does not override the attached policy, prove database behavior, grant access or enable execution."],
+        continuation: read ? "read_mapping" : "action_rule_review" });
       await saveQuestion(presentOperatorQuestion(created, h.question));
       q = latestQuestion()!;
     }
+    if (q.kind !== questionKind) throw new PolicySourceChangedError();
     if (q.disposition || q.terminal_failure) {
       // A cancelled prompt may have no words yet. Answering it again still
       // retains the old question and the existing receipt allowance.
       const canReplace = Boolean(q.raw_answer) || q.disposition === 'cancelled' && !q.terminal_failure;
       const response = await exchange({ kind: "pending", binding: binding(), lines: operatorQuestionReadback(q),
         defaultValue: "keep", canReplace,
-        ...(q.kind === 'receipt_requirement' ? { canReview: !q.terminal_failure && q.proposal?.disposition === 'proposed' } : {}) });
+        ...(input.decision ? { canReview: input.decision.canReview(q) } : {}) });
       const choice = response.kind === "pending" ? response.choice : "keep";
       if (choice === "replace" && canReplace) {
         const previous = q;
@@ -209,11 +209,7 @@ export function createBusinessStatementHost(input: {
           evidence: [{ id: "current-owner-question", digest: savedHandoff.digest },
             ...previous.evidence.filter(e => e.id !== "current-owner-question")], continuation: previous.continuation,
           ...(previous.receipt_selection ? { receipt_selection: previous.receipt_selection } : {}) });
-        if (previous.kind === "receipt_requirement") {
-          const { digest: _digest, ...body } = next;
-          const continued = { ...body, budget_owner_id: previous.budget_owner_id ?? previous.id, budget: previous.budget! };
-          next = parseOperatorQuestion({ ...continued, digest: canonicalJsonDigest(continued) });
-        }
+        if (input.decision) next = input.decision.replacementQuestion(next, previous);
         await saveQuestion(presentOperatorQuestion(next, savedHandoff.question));
       } else {
         if (choice !== "review") return undefined;
@@ -235,29 +231,10 @@ export function createBusinessStatementHost(input: {
     }
     if (input.handoff?.consumer === "read_revision_prerequisite") validateReadPrerequisiteBusinessAnswer(raw);
     if (!q.proposal) {
-      if (q.kind === "receipt_requirement") {
-        const episode = operatorQuestionEpisode({ read: () => latestQuestion()!, save: (next, expected) => saveQuestion(next, expected) });
-        let result;
-        try {
-          result = await runOperatorQuestionModel({ question: q, stage: 'answer-map', session: input.receiptDecision!.session,
-            businessContext: input.receiptDecision!.businessContext, episodeBudget: episode,
-            reserveCorrection: () => episode.reserveCorrection(), authorityGuard: async digest => { await assertCurrent(); return digest; },
-            egressAcknowledged: true });
-        } catch (error) {
-          const failure = consumedOperatorQuestionFailure(error, q, 'answer-map');
-          if (failure) {
-            const current = latestQuestion()!, { digest: _digest, ...body } = current;
-            const stopped = { ...body, terminal_failure: { code: 'ASK_TOOL_ARGUMENTS_INVALID' as const, stage: 'answer-map' as const,
-              completion: failure.completion, recorded_at: new Date().toISOString() } };
-            await saveQuestion(parseOperatorQuestion({ ...stopped, digest: canonicalJsonDigest(stopped) }), current.digest, true);
-          }
-          throw error;
-        }
-        const current = latestQuestion()!;
-        if (result.state === 'question') throw new PolicySourceChangedError();
-        const next = proposeOperatorAnswer(current, result.proposal);
-        await saveQuestion(result.state === 'pending' ? leaveOperatorQuestionPending(next, 'unknown') : next, current.digest, true);
-        if (result.state === 'pending') return undefined;
+      if (input.decision) {
+        if (q.kind !== input.decision.kind) throw new PolicySourceChangedError();
+        const disposition = await input.decision.mapAnswer({ readQuestion: () => latestQuestion()!, saveQuestion, assertCurrent });
+        if (disposition === 'pending') return undefined;
       } else await saveQuestion(proposeOperatorAnswer(q, { question_id: q.id, revision: q.revision,
         answer_id: q.raw_answer!.id, disposition: "proposed", value: { kind: "attributed_meaning" } }), q.digest);
       q = latestQuestion()!;

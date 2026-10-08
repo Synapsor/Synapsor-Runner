@@ -10,7 +10,7 @@ import { activePolicySource } from "./authoring-policy-source.js";
 import { authoringClientChoices, isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
 import {
   askToolSurfaceDigest,
-  completedAuthoringQuestion,
+  completedAuthoringQuestionSequence,
   completedContentError,
   resolveAskProviderConfiguration,
   runAskProviderTurn,
@@ -91,6 +91,8 @@ export type BoundaryJobPlan = {
   /** Fixed outcomes by default; discretionary only for an existing legacy revision. */
   action_strategy?: "discretionary" | "rule_derived";
   summary: string;
+  /** Actual completed routing consumer, not model-supplied authority. */
+  completion?: AuthoringQuestionCompletion;
   correction_used: boolean;
   authority_granted: false;
   source_database_changed: false;
@@ -288,7 +290,7 @@ export async function planModelBoundaryJob(input: {
   beginAuthoringProducerInvocation();
   let correctionUsed = authoringInterruptedProducerCorrections().correction_used;
   let generationStop: AskError | undefined;
-  let questionCompletion: AuthoringQuestionCompletion | undefined;
+  const consumedTurns: Awaited<ReturnType<typeof runAskProviderTurn>>[] = [];
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
       responseDiagnostic = undefined;
@@ -308,7 +310,7 @@ export async function planModelBoundaryJob(input: {
           question,
         ].join("\n") : question;
         const turn = attempt ? await withAuthoringProducerCorrection("semantic", () => run(prompt)) : await run(prompt);
-        questionCompletion = completedAuthoringQuestion(turn);
+        consumedTurns.push(turn);
         if (!resolution) failure = planningErrorDiagnostic(new Error(issue));
       } catch (error) {
         if (isAuthoringGenerationStop(error)) generationStop = error;
@@ -328,7 +330,8 @@ export async function planModelBoundaryJob(input: {
   if (generationStop) throw generationStop;
   if (!resolution) throw new BoundaryJobPlanningError(diagnostic);
   const result = { ...resolution, correction_used: correctionUsed } as BoundaryJobPlan;
-  if (result.state === "clarification" && questionCompletion) result.completion = questionCompletion;
+  const completion = completedAuthoringQuestionSequence(consumedTurns);
+  if (completion) result.completion = completion;
   const remembered = result.state === "clarification"
     ? result.question
     : result.summary;

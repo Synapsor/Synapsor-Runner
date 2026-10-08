@@ -12,7 +12,7 @@ import { planCoverageResolution } from './authoring-review-resolution.js';
 import { currentReceiptRequirement, pendingReceiptRequirement, receiptRequirementReviewTarget } from './authoring-receipt-requirement.js';
 import { CoverageReceiptConfigurationError } from './authoring-coverage-feedback.js';
 import { randomUUID } from "node:crypto";
-import { authoringInterruptedProducerInput } from "./authoring-generation-recovery.js";
+import { acknowledgeAuthoringProducer, authoringInterruptedProducerInput } from "./authoring-generation-recovery.js";
 import { retainedSourceRecoveryEpisode } from "./authoring-recovery-source.js";
 import type { CoverageReviewEpisode } from "./authoring-policy-source.js";
 import { reviewClientDutyOwnership, type ClientDutyReviewState } from "./authoring-client-duties.js";
@@ -301,12 +301,21 @@ export async function ensurePreparedPolicyCoverage(input: {
         if(number!==e.submissions.length+1 || number>3) pending('episode_exhausted','POLICY_COVERAGE_EPISODE_EXHAUSTED',
           'The bounded episode has no remaining submissions. Prior attempts remain saved.');
         e.submissions.push({number,reserved_at:new Date().toISOString()});
-      });},afterSubmission:async(number,feedback,accepted,tentative)=>saveEpisode(e=>{
+      });},afterSubmission:async(number,feedback,accepted,tentative,completion)=>{
+        await saveEpisode(e=>{
         const submission=e.submissions[number-1]!;
         submission.completed_at=new Date().toISOString(); submission.validated=accepted;
         if(feedback) submission.diagnostic=JSON.stringify(feedback);
         if(tentative) submission.tentative=structuredClone(tentative);
-      })}});
+        });
+        // Source and Resume are separate protected saves. A failed/uncertain
+        // Source save cannot reach this exact live-consumer acknowledgement.
+        if (completion) {
+          await assertCurrent();
+          await acknowledgeAuthoringProducer(completion, {consumer:"policy_coverage", episode_id:episode.id,
+            context_digest:key, submission_number:number});
+        }
+      }}});
   };
   const report = reused ?? await (input.progress ? input.progress(input.subjectLocation === "active" ? "Checking attached rules against this active published subject" : "Checking attached rules against this exact draft", produce) : produce());
   const staged = structuredClone(sources);
