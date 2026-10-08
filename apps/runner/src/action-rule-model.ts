@@ -2783,6 +2783,17 @@ function parsePhaseSubmission(
   }, ...(changedFields ? { changed_fields: changedFields } : {}) };
 }
 
+/** Reconstruct only an actually closed native compiled proposal. The caller
+ * separately verifies its consumed generation and re-runs the full compiler. */
+export function actionRuleModelDraftFromCheckpoint(value: ActionRuleAuthoringCheckpoint): ActionRuleModelDraftV1 {
+  const checkpoint = parseActionRuleAuthoringCheckpoint(value);
+  const closed = checkpoint.logical_turns?.at(-1)?.completed;
+  if (checkpoint.pending_question || checkpoint.pending_version || closed?.kind !== "compiled_draft"
+    || closed.material_digest !== actionLogicalTurnMaterialDigest(checkpoint))
+    throw new Error("ACTION_RULE_MODEL_CHECKPOINT_NOT_COMPILED: The saved producer has no exact closed compiled proposal.");
+  return assembleDraft(structuredClone(checkpoint.components) as Partial<Record<PhaseName, PhaseSubmission>>);
+}
+
 function assembleDraft(submissions: Partial<Record<PhaseName, PhaseSubmission>>): ActionRuleModelDraftV1 {
   const verification = submissions.verification as VerificationSubmission | undefined;
   const effect = submissions.effect as EffectSubmission | undefined;

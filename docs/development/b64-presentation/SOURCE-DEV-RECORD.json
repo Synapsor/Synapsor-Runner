@@ -1,0 +1,39 @@
+{
+  "status": "INDEPENDENT_REVIEW_PENDING",
+  "base": "60e7375f",
+  "files": [
+    "authoring-typed-parameter-source.ts",
+    "authoring-typed-parameter-source.test.ts",
+    "action-rule-model.ts narrow pure checkpoint assembler export"
+  ],
+  "tests": {
+    "pass": 2,
+    "fail": 0,
+    "skip": 0,
+    "workers": 1
+  },
+  "types": 0,
+  "commands": [
+    "tsc -b --pretty false",
+    "vitest authoring-typed-parameter-source.test.ts maxWorkers1 minWorkers1 testTimeout20000 hookTimeout20000"
+  ],
+  "evidence": [
+    "/var/tmp/synapsor-b64-native-parameter-owned/out/source-first.json",
+    "/var/tmp/b64-source-types-first.log"
+  ],
+  "provenance": [
+    "Actual authority writer -> exact reader identity -> actual authority reconstruction/compiler",
+    "Actual generateModelActionRuleDraft with finite declared responder -> actual native completion/checkpoint -> native Resume CAS -> cold file load -> source resolution",
+    "No synthetic completion; 5 actual scripted producer requests; bwrap network isolation; no provider access"
+  ],
+  "contract": "Pure loaded-record resolver avoids Resume recursion; file adapter reads actual authority/Resume. Exact refs and native consumed material checked independently of normalized candidate hash. Full current compiler context; no latest fallback/mutation/transport replay.",
+  "limits": [
+    "Compiler context and Runner business-line projector supplied by owning native context; caller must recheck freshness/CAS under permit",
+    "File positive checkpoint test covers action.checkpoint; enumerated pending revision and retained action routes await independent controls",
+    "No public CLI typed edit/source adoption/activation proof yet"
+  ],
+  "open": [
+    "Independent NS01-08 review",
+    "Main native Resume validation/currentness/public wiring"
+  ]
+}
