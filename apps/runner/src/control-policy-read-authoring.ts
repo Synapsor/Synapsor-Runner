@@ -4,7 +4,7 @@ import { AUTO_BOUNDARY_VERSION, EXPLORATION_BOUNDARY_VERSION, GENERATION_LOCK_VE
   type AutoBoundaryBuild, type ExplorationBoundaryDraft, type GenerationLock } from "./auto-boundary.js";
 import { normalizeStoredBoundaryReviewProgress, type BoundaryReviewProgress } from "./boundary-review-domain.js";
 import { BOUNDARY_REVIEW_PROGRESS_VERSION, readReviewOriginSchema } from "./boundary-review-progress-types.js";
-import { OPERATOR_POLICY_RECORD_VERSION } from "./control-policy-record.js";
+import { OPERATOR_READ_POLICY_RECORD_VERSION } from "./control-policy-record.js";
 
 
 export const READ_REVIEW_PROTOCOL = "synapsor.read-review.v2" as const;
@@ -61,7 +61,7 @@ const entrySchema = z.object({
   catalog: catalogSchema.optional(),
 }).strict();
 export const readAuthoringDocument = z.object({
-  schema_version: z.literal(OPERATOR_POLICY_RECORD_VERSION), type: z.literal("read_authoring"),
+  schema_version: z.literal(OPERATOR_READ_POLICY_RECORD_VERSION), type: z.literal("read_authoring"),
   review_protocol: z.literal(READ_REVIEW_PROTOCOL),
   selected_boundary_id: identity.nullable(), entries: z.array(entrySchema).max(128),
   rescan_report: z.record(z.unknown()).optional(),

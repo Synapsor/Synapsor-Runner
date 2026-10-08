@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ControlPolicyKey, ControlPolicyRevision } from "@synapsor-runner/proposal-store";
 
 export const OPERATOR_POLICY_RECORD_VERSION = "synapsor.stored-operator-authority/v1";
+export const OPERATOR_READ_POLICY_RECORD_VERSION = "synapsor.stored-operator-authority/v2";
 export const OPERATOR_READ_SELECTION_KEY: ControlPolicyKey = { scope: { level: "operator" }, kind: "management", name: "read_selection" };
 export const OPERATOR_READ_AUTHORING_KEY: ControlPolicyKey = { scope: { level: "operator" }, kind: "management", name: "read_authoring" };
 export const OPERATOR_EXECUTION_POLICY_KEY: ControlPolicyKey = { scope: { level: "operator" }, kind: "execution", name: "supervised_worker" };

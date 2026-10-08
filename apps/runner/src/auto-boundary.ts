@@ -51,7 +51,7 @@ import type { ControlPolicyPointer, ControlPolicyRevision } from "@synapsor-runn
 import { assertGovernedReadActivationDecision, type GovernedReadActivationDecision } from "./control-policy-activation.js";
 import { openBoundProjectControlPolicies, assertProjectControlPolicyBinding, commitImmutableControlPolicies,
   type BoundProjectPolicyStore } from "./control-policy-store.js";
-import { OPERATOR_POLICY_RECORD_VERSION, OPERATOR_READ_SELECTION_KEY, OPERATOR_READ_AUTHORING_KEY, assertOperatorPolicyRecord,
+import { OPERATOR_READ_POLICY_RECORD_VERSION, OPERATOR_READ_SELECTION_KEY, OPERATOR_READ_AUTHORING_KEY, assertOperatorPolicyRecord,
   assertReadAuthoringBindings, type ReadAuthoringBindings, storedOperatorPolicyRecord } from "./control-policy-record.js";
 
 export const AUTO_BOUNDARY_VERSION = "synapsor.auto-boundary.v1";
@@ -3033,7 +3033,7 @@ async function withStoredReadPolicies<T>(projectRoot: string, supplied: BoundPro
     for (const revision of snapshot.active) {
       if (revision.kind === "management" && revision.name !== OPERATOR_READ_SELECTION_KEY.name) continue;
       const content = revision.content as Record<string, unknown>;
-      if (!content || typeof content !== "object" || content.schema_version !== OPERATOR_POLICY_RECORD_VERSION) throw invalidStoredRead();
+      if (!content || typeof content !== "object" || content.schema_version !== OPERATOR_READ_POLICY_RECORD_VERSION) throw invalidStoredRead();
       if (revision.kind === "read") {
         if (content.type !== "read" || Object.keys(content).sort().join(",") !== "boundary,generation_lock,schema_version,type") throw invalidStoredRead();
         const boundary = content.boundary as ActivatedExplorationBoundary;
@@ -3058,7 +3058,7 @@ async function withStoredReadPolicies<T>(projectRoot: string, supplied: BoundPro
 function storedReadKey(name: string) { return { scope: { level: "operator" as const }, kind: "read" as const, name }; }
 function storedReadSelection(selected: string | null): ControlPolicyRevision {
   const policy = { type: "read_selection", selected_name: selected };
-  return storedOperatorPolicyRecord(OPERATOR_READ_SELECTION_KEY, canonicalJsonDigest(policy), { schema_version: OPERATOR_POLICY_RECORD_VERSION, ...policy });
+  return storedOperatorPolicyRecord(OPERATOR_READ_SELECTION_KEY, canonicalJsonDigest(policy), { schema_version: OPERATOR_READ_POLICY_RECORD_VERSION, ...policy });
 }
 function storedPointer(revision: ControlPolicyRevision): ControlPolicyPointer {
   return { scope: revision.scope, kind: revision.kind, name: revision.name, revision_id: revision.revision_id };
@@ -3336,7 +3336,7 @@ async function writeActivatedExplorationBoundarySetUnlocked(
     await assertRuntimeReadDiscoveryFits(projectRoot, boundaries);
     assertStoredExplorationPolicy(active, lock);
     const revision = storedOperatorPolicyRecord(storedReadKey(active.pack.name), active.activation.digest,
-      { schema_version: OPERATOR_POLICY_RECORD_VERSION, type: "read", boundary: active, generation_lock: lock });
+      { schema_version: OPERATOR_READ_POLICY_RECORD_VERSION, type: "read", boundary: active, generation_lock: lock });
     const selection = storedReadSelection(active.pack.name);
     await commitStoredReadPolicies(binding, current, [revision, selection], [
       ...current.boundaries.filter((boundary) => !boundaries.some((next) => next.pack.name === boundary.pack.name))
@@ -3393,7 +3393,7 @@ function assertStoredReadActivationReview(binding: BoundProjectPolicyStore, curr
   assertReadAuthoringBindings(review.expected, { repository_id: binding.repository_id, deployment_id: binding.deployment_id,
     project_id: binding.project_id, epoch: current.epoch, revision_id: record.revision_id });
   const content = record.content;
-  if (!isRecord(content) || content.schema_version !== OPERATOR_POLICY_RECORD_VERSION || content.type !== "read_authoring"
+  if (!isRecord(content) || content.schema_version !== OPERATOR_READ_POLICY_RECORD_VERSION || content.type !== "read_authoring"
     || !Array.isArray(content.entries)) throw invalidStoredReadReview();
   const { schema_version: _version, ...policy } = content;
   assertOperatorPolicyRecord(record, OPERATOR_READ_AUTHORING_KEY, canonicalJsonDigest(policy));
@@ -3405,7 +3405,7 @@ function assertStoredReadActivationReview(binding: BoundProjectPolicyStore, curr
     || canonicalJsonDigest(entry.candidate_lock ?? null) !== canonicalJsonDigest(lock)) throw invalidStoredReadReview();
   const draft = current.drafts.find((item) => item.kind === "read" && item.name === review.candidate.pack.name);
   const expected = storedOperatorPolicyRecord(storedReadKey(review.candidate.pack.name), explorationBoundaryCandidateDigest(review.candidate),
-    { schema_version: OPERATOR_POLICY_RECORD_VERSION, type: "read", boundary: review.candidate, generation_lock: lock });
+    { schema_version: OPERATOR_READ_POLICY_RECORD_VERSION, type: "read", boundary: review.candidate, generation_lock: lock });
   if (!draft || canonicalJsonDigest(draft) !== canonicalJsonDigest(expected)) throw invalidStoredReadReview();
 }
 
@@ -3576,7 +3576,7 @@ export async function loadGenerationLockSnapshot(
 
 function generationLockInAuthoringRecord(record: ControlPolicyRevision, fingerprint: `sha256:${string}`): GenerationLock | undefined {
   const content = record.content;
-  if (!isRecord(content) || content.schema_version !== OPERATOR_POLICY_RECORD_VERSION || content.type !== "read_authoring"
+  if (!isRecord(content) || content.schema_version !== OPERATOR_READ_POLICY_RECORD_VERSION || content.type !== "read_authoring"
     || !Array.isArray(content.entries)) throw invalidStoredRead();
   const { schema_version: _version, ...policy } = content;
   assertOperatorPolicyRecord(record, OPERATOR_READ_AUTHORING_KEY, canonicalJsonDigest(policy));

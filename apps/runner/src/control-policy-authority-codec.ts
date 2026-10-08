@@ -7,7 +7,7 @@ import { MAX_ACTIVE_EXPLORATION_BOUNDARIES, assertStoredExplorationPolicy, explo
 import { parseStoredActionRuleAuthority, type ActionRuleAuthorityActivationV1,
   type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 import type { ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
-import { OPERATOR_POLICY_RECORD_VERSION, OPERATOR_READ_SELECTION_KEY, OPERATOR_READ_AUTHORING_KEY, OPERATOR_EXECUTION_POLICY_KEY,
+import { OPERATOR_POLICY_RECORD_VERSION, OPERATOR_READ_POLICY_RECORD_VERSION, OPERATOR_READ_SELECTION_KEY, OPERATOR_READ_AUTHORING_KEY, OPERATOR_EXECUTION_POLICY_KEY,
   storedOperatorPolicyRecord } from "./control-policy-record.js";
 import { operatorExecutionDocument, parseOperatorExecutionPolicy,
   type StoredOperatorExecutionPolicy } from "./control-policy-execution.js";
@@ -16,9 +16,9 @@ import { readAuthoringDocument, parseReadAuthoringDocument, type StoredReadAutho
 
 const VERSION = OPERATOR_POLICY_RECORD_VERSION;
 const name = z.string().min(1).max(256);
-const readSelection = z.object({ schema_version: z.literal(VERSION), type: z.literal("read_selection"),
+const readSelection = z.object({ schema_version: z.literal(OPERATOR_READ_POLICY_RECORD_VERSION), type: z.literal("read_selection"),
   selected_name: name.nullable() }).strict();
-const readDocument = z.object({ schema_version: z.literal(VERSION), type: z.literal("read"),
+const readDocument = z.object({ schema_version: z.literal(OPERATOR_READ_POLICY_RECORD_VERSION), type: z.literal("read"),
   boundary: z.record(z.unknown()), generation_lock: z.record(z.unknown()) }).strict();
 const actionDocument = z.object({ schema_version: z.literal(VERSION), type: z.literal("action"),
   authority: z.record(z.unknown()) }).strict();
@@ -36,7 +36,9 @@ type ValidationContext = { runtimeConfig?: RuntimeConfig };
 /** Encodes exact validated authority. Actor/time, disabled state, generation
  * provenance and content identity survive independently of authority digests. */
 export function encodeOperatorAuthority(input: StoredOperatorAuthority, context: ValidationContext = {}): ControlPolicyRevision {
-  const content = { schema_version: VERSION, ...structuredClone(input) };
+  const version = input.type === "read" || input.type === "read_selection" || input.type === "read_authoring"
+    ? OPERATOR_READ_POLICY_RECORD_VERSION : VERSION;
+  const content = { schema_version: version, ...structuredClone(input) };
   const parsed = parseDocument(content, context);
   return storedOperatorPolicyRecord(keyFor(parsed), authorityDigest(parsed), content);
 }
