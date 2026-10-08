@@ -202,7 +202,7 @@
     "branch": "codex/b64-authoring-protocol-20261008",
     "base": "7e0ab607",
     "initial_contract": "540edca1",
-    "status": "IMPLEMENTATION_INITIAL_INTERFACE_ACCEPTED_NO_RELEASE_CLAIM",
+    "status": "OWNER_ACCOUNT_SWITCH_PAUSE",
     "existing_paid_admission": "CLOSED",
     "owner_instructions": [
       "278bb60b-def9-47f2-b425-0e481dc78ad2",
@@ -214,6 +214,23 @@
       "typed fields + protected persistence + public routes",
       "consent ownership + compatibility",
       "composed and settled gates + independent installed"
-    ]
+    ],
+    "pause_product_pin": "2e6c10c8",
+    "completed": {
+      "protocol": "001d1f8f/7b3450e6;107P then81P/types0; independent7P and oldnative reader nonmutating refusal",
+      "presentation": "79ac1a3a -> 6e2eefe7;148affectedP/types0;39independentP, no native lifecycle claim",
+      "action": "2e6c10c8 WIP; explicit B64mode narration + strict server schema + checkpointv2;307P1skip/types0; independent successor not run",
+      "skip_reason": "SYNAPSOR_LIVE_AUTHORING_PROVIDER absent; paid CLOSED"
+    },
+    "evidence_root": "/var/tmp/synapsor-b64-main-owned/evidence",
+    "next": [
+      "Review Action2e6 independently",
+      "ReadScope native OperatorQuestionv2 and actual record proof",
+      "unconfirmed typed input persistence/currentness/domain/public integration",
+      "typed Action clarification/edit/completion remaining routes",
+      "explicit public/old-installed compatibility",
+      "consent/ACK inherited failures then composed and settled acceptance"
+    ],
+    "no_public_protocol_enablement": true
   }
 }
