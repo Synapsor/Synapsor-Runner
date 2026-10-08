@@ -8,7 +8,12 @@
     "pin": "1cb81e8f"
   },
   "contract": "Public CLI projects typed Error.recovery only; untyped prose does not prove no writes or safe retry. Direct configCommand validate owns its read-only result. Shared validators do not grant facts about earlier caller effects.",
-  "review": "R2 preseal requested; no independent after verdict yet",
+  "review": {
+    "f1d24456": "R2 SCOPED ACCEPT: same immutable24 controls before6PASS18FAIL -> after24PASS0FAIL; types0 at both. Includes unchanged documented JSON assertion and2 unmocked actual CLI subprocesses. WholeCLI limits retained.",
+    "report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-f1-cli-recovery-binding-after-independent-v1.json",
+    "sha256": "48a2723439b66c8ad53b3787caac763f5dd0b5437648646e9c8630259aaef2a6",
+    "7f9009f5": "Role successor independent8-control review pending; recovery:[] additionally challenged."
+  },
   "typed_projection": "Chat7b71fdbc adopted unchanged as79da8986",
   "after": {
     "focused": "4PASS0FAIL159filtered; new3 publicbinding + oldconfigJSON assertion unchanged",

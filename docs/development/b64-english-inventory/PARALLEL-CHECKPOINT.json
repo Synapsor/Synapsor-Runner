@@ -1,6 +1,6 @@
 {
-  "recorded_at": "2026-10-08T20:52:42.531971+00:00",
-  "main_pin": "150f6c10",
+  "recorded_at": "2026-10-08T21:16:09.057846+00:00",
+  "main_pin": "7f9009f5",
   "owner_map": "LANES.json",
   "paid": "CLOSED",
   "main_hooks": {
@@ -20,7 +20,7 @@
     "independent_acceptance": "Scoped Read19e5161c / Main binding93603e62",
     "integration": "a5502d42",
     "main_checks": "41PASS; types0; public instrumentation remains open",
-    "public_revision": "Original768 failure preserved. Adapter227 actualpostcommitbinding R1accepted9b037809 (before1F\u219224PASS/types0), integrated32a3281f; thinMainwrapper150f6c10 Main24PASS/types0. Pending mapping typed admission API in Readownerdev/R1preseal; MainpublichookOPEN."
+    "public_revision": "Original768 failure preserved. Adapter227 actualpostcommitbinding R1accepted9b037809/integrated32a3281f, thin wrapper150f6c10 Main24PASS/types0. Prospective mapping d9246353/native795646d8 owner13PASS/types0; R1 resumed exact presealed independent review. Main public integration OPEN."
   },
   "privacy": {
     "pin": "583c0738",
@@ -32,7 +32,8 @@
     "pin": "9a7f1c7e",
     "owner_report": "331PASS4FAIL/types0 original full; separate unchanged-product fixture ports4PASS43filtered/types0. No combined single-run claim.",
     "independent_acceptance": "R2 source scoped38ce42d6; actual caller and GP01 budget still open",
-    "latest_owner_pin": "444573cf"
+    "latest_owner_pin": "444573cf",
+    "cli": "Typed error projection79da + actualcallerf1d independently acceptedR2: same24 before6P18F ->24P/types0. Role successor7f Main11P/types0 independentpending; broad175P2F retained, demo launcher fix selected1P."
   },
   "ask": {
     "before_pin": "546830b3",
@@ -44,7 +45,7 @@
   "b65": {
     "native_pin": "49233e92",
     "pg": "Native cases recorded; fresh30then25 fails intended50 limit, fresh30then10 passes; existing approved10 refuses stale. Qualified fresh Source URL reconcile twice passes separately from retained unknown history.",
-    "mysql": "14 native component PASS; public writer admission blocked by contradictory parent UPDATE privilege checks. No public race or PG transfer.",
+    "mysql": "B66 repaired exact column grants; independently reviewed/public native both30/40 ordersPASS, actual lockwait/oneeffect/receipt. Loser dependency stale, not hardlimit; fresh55 remains.",
     "runtime_before": "96ed4b7b actual native SQLite receipt boundary1PASS1FAIL; independent receipt-only repair review pending",
     "runtime_review": {
       "reviewer_pin": "43f37854",
@@ -56,8 +57,8 @@
       "report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b65-96ed-dc9-ledger-receipt-independent-v1.json",
       "successor": "e94f8a03 complete exact actual claim/receipt repair independent21PASS0FAIL0SKIP scoped native helper acceptance ac2f0847; prior failed draft remains historical"
     },
-    "native_resume": "MySQL public still blocked exact excess grant; stricter actual public apply refuses ACTION_RULE_AUTHORITY_STALE before Source; signed-human reviewed approval+separate executor1effect/receipt. No product patch, no PG transfer.",
-    "source_qualification": "R2a316 scopedSOURCE+ARTIFACT ACCEPT025native6PASS mechanics, ownerexecution notindependentrerun; report1f71515b; noqualifierrepair,9db1P1F remains",
+    "native_resume": "Completed B66public checks; no owned native containers running. More Source-effect qualification remains necessary.",
+    "source_qualification": "025 native6PASS lock mechanics/R2 scopedsource+artifactaccepted. New8bca receipt-trigger BEFORE2case strict0/constructionreviewaccepted; originalnative running slot1. Product safe-bootstrap/authority/phase design not yet approved.",
     "pg_final": "e428fabb11newnative rows scopedPASS onoriginal2887; notB66transfer; outsidebypass70 andfresh55 findingsremain"
   },
   "limits": {
