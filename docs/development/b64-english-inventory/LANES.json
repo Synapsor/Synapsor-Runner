@@ -38,10 +38,10 @@
     }
   },
   "heavy_slots": {
-    "1": "Action next finite focused group max2; announce start/end",
-    "2": "B65 runtime bounded activated hard-limit repair, max2",
-    "3": "Main released R2 persistence20PASS; guard only bounded Node checks, no suite",
-    "4": "Read six-site finite before group next, Privacy metadata21PASS completed"
+    "1": "Action finite public hard-limit/retirement controls; sole editor",
+    "2": "B65 runtime finite native hard-limit controls",
+    "3": "R1 independent Ask3 then Privacy revision20 finite after release",
+    "4": "Chat new9 finite before/after max1"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -1207,7 +1207,7 @@
       "pin": "a733ccec",
       "typed": 23,
       "delete": 0,
-      "source": "ScopedR2sourceaccepted; auto15/vocab6/index2 remain; subsequentemptyreduce5b56pendingseed128PASS sourcefix, nativeportsinreview",
+      "source": "Original23typed pendingbroadercoherentacceptance; newI00054/55 retiredpredicates proposeddelete; I00371 exactPK implementation829 independentlysourceverified,notMainintegrated. Scopef3852PASS, vocabulary463021PASS owner; native/publicports pending.",
       "reclassified_open": {
         "typed": [
           "I00371"
@@ -1218,7 +1218,7 @@
         ]
       },
       "with_reclassifications": {
-        "typed": 24,
+        "typed": 23,
         "delete": 2
       },
       "audit_reclassified_ids": [
@@ -1267,18 +1267,11 @@
       ]
     },
     "read": {
-      "pin": "d4562eb6",
-      "typed": 6,
+      "pin": "a1744329",
+      "typed": 0,
       "delete": 0,
-      "open_ids": [
-        "I00059",
-        "I00060",
-        "I00061",
-        "I00062",
-        "I00063",
-        "I00064"
-      ],
-      "source": "Original57:46delete+5typed source closed; six successor active. Native/public obligations separate, no whole public claim."
+      "open_ids": [],
+      "source": "R2scoped178PASS/build0:all57originalRead11typed+46deleteclosed onownedbranch. Last6 notMainintegrated; native/public11Mainhook sites separate."
     },
     "main": {
       "pin": "d565098e",
@@ -1349,5 +1342,11 @@
     },
     "evidence": "../b64-legitimate-independent/VERDICT.json",
     "note": "Privacy requests deletion disposition for I00054/55 because the typed metadata replacement removes both predicates; original audit retained. I00371 owner implementation829 exists but is not Main integrated."
+  },
+  "ci_guard": {
+    "core": "d3226538",
+    "verdict": "d169d640 scopedACCEPT21PASS",
+    "allowlist": "69c08271 exact365 accepted, no blanket exemptions",
+    "repository_gate": "NOT_PASS, practical candidate/allowance coverage open"
   }
 }

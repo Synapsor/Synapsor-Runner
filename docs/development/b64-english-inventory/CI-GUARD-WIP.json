@@ -1,18 +1,18 @@
 {
-  "status": "IN_REVIEW_NOT_EXIT_ACCEPTED",
+  "status": "CORE_SCOPED_ACCEPTED_ALLOWANCE_COVERAGE_OPEN",
   "owner_exit": "All canonical250typed+66delete plus independent reclassifications must close; no deferral",
   "guard": "scripts/check-authoring-language.mjs; CI+main test+release gate",
-  "controls": "19PASS0FAIL including original4 independent assertions unchanged; original13PASS2FAIL preserved at3ed4f497",
+  "controls": "Independent d169d640 scopedcoreACCEPT:21PASS0FAIL incl6 unchangedindependent controls. Both originalfailure packets preserved.",
   "runtime_note": "Initial repository scanner stopped cleanly due redundant printing; cached declaration rendering then completed. No product tests or Source operation involved.",
   "independent_audit": "R1 all141 completed a6f16baa:101legitimate/25typedreclassifications/15retired; exact allowance acceptance separate",
-  "allowlist": "empty, no historical decision grandfathered; current repository scan fails closed",
+  "allowlist": "365 exact independent expression/owner fingerprints accepted69c08271; 100/101 legitimate IDs mapped; one declaration-only anchor; no wholeowner/file exemption.",
   "counts_warning": "40224 conservative syntax/dependency candidates across571files, NOT decision-site counts. Exact legitimate allowances pending; currentrepositorycheck remainsred.",
   "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/language-guard-lookup-scan.json",
   "open": [
-    "Independent guard review",
-    "Complete141legitimate audit",
-    "Populate only exact reviewed legitimate allowances",
-    "Close canonical and reclassified decisions"
+    "Practical candidate/allowance coverage, without blanket exemptions",
+    "Close original316 and25 reclassified decision sites",
+    "Main integration and composed regressions"
   ],
-  "guard_repair": "Actual typed symbol consumer graph binds helpers/import aliases; dictionary definition is a candidate when used by nonnumeric indexing; ordinary output objects/numeric branches alone excluded. No automatic English/formal exemption."
+  "guard_repair": "Actual typed symbol consumer graph binds helpers/import aliases; dictionary definition is a candidate when used by nonnumeric indexing; ordinary output objects/numeric branches alone excluded. No automatic English/formal exemption.",
+  "remaining": "40224 candidate historical934 scan minus365 exactreviewed =39859 unreviewed syntax/dependency nodes, NOT English decision count. Latestd322 receiver extension not yet rescanned; no green repository CI claim."
 }

@@ -1,0 +1,1703 @@
+{
+  "source_pin": "934ad542ac17ed2f99e76fe38484704d6186af70",
+  "scanner_pin": "934ad542ac17ed2f99e76fe38484704d6186af70",
+  "scan_path": "/var/tmp/synapsor-b64-main-owned/evidence/language-guard-lookup-scan.json",
+  "scan_sha256": "604a73c3685095da6ecbbc087cdbbd574a42cf9ca4cbfc61c854ff156b84d498",
+  "source_audit_pin": "a6f16baa612b715a8c404e46bc869e6673cca291",
+  "reviewed_annotations": 101,
+  "broad_scan_candidates": 40224,
+  "entries": [
+    {
+      "annotation_id": "I00065",
+      "file": "apps/runner/src/authoring-manual-read.ts",
+      "reviewed_anchors": [
+        92
+      ],
+      "fingerprints": [
+        "1ad3e495b816e66c07ae1c7c870eb5d08d015449eb044b5d16eed1f81a26272f",
+        "f06963866a92fd377f03e06d3f1ab180acdb1d8ed4c76033b2dd21950bc2fc83"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00066",
+      "file": "apps/runner/src/authoring-manual-read.ts",
+      "reviewed_anchors": [
+        93
+      ],
+      "fingerprints": [
+        "b04d12e465620d2d57e2b1f3fffce2ab881e5a52a95a5395d311f31dc0acfba4"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00067",
+      "file": "apps/runner/src/authoring-manual-read.ts",
+      "reviewed_anchors": [
+        96
+      ],
+      "fingerprints": [
+        "581e6ffb33aa5fb2cc17d666e255dcee5a6f4d54ddfb14c0ca68fb6b410b1a28",
+        "3024b80f8de0ba3846200679ddbfc58ef2407e053d6c94baf880324229a2cfca"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00068",
+      "file": "apps/runner/src/authoring-manual-read.ts",
+      "reviewed_anchors": [
+        97
+      ],
+      "fingerprints": [
+        "31012bbc2649b6d56527b2f8d3bd37a7739ed60dd02d80f2f0d99cb0c2600619",
+        "92fd94cb08997b9fd489cf2c18744acaaf43cc08a641310e76ed276fc38c5650"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00069",
+      "file": "apps/runner/src/authoring-manual-read.ts",
+      "reviewed_anchors": [
+        103
+      ],
+      "fingerprints": [
+        "687c6a71490eb193edebe1171c6076debf1e3a742a8182e810af4847755499eb",
+        "25c94db0b19c45f9cc0b63c103bcdcf26add7b58dcfdf04a86795aea18daf7ca"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00071",
+      "file": "apps/runner/src/read-workload-model.ts",
+      "reviewed_anchors": [
+        1424
+      ],
+      "fingerprints": [
+        "9ff9111d3df27d4d77576f8df763f3c22ff4ec44ef6eee60d945d5191ca4ae39",
+        "f45730372af594082781f63ddd556e7ec0211f7cae9509465ac0153447c4dfc0"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00072",
+      "file": "apps/runner/src/read-workload-model.ts",
+      "reviewed_anchors": [
+        1459
+      ],
+      "fingerprints": [
+        "5e2f1b9d1a452091c6c9408ca63850e6c1389ad6684904be78b71f4c3f553a7c",
+        "789c56e4f426d1934cbb70574fef83be1f5b49e174dae71c50e484bcf3cb5992"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00073",
+      "file": "apps/runner/src/read-workload-diagnostics.ts",
+      "reviewed_anchors": [
+        17
+      ],
+      "fingerprints": [
+        "f8f38fdff1de9a04c8e2816344749a7e793b4d11e5e16bf300de12119e80d4a1",
+        "b90653d571422be2e37b197fbb1bb307339fb85d391b1121a7303d9a7380e55a"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00074",
+      "file": "apps/runner/src/read-workload-diagnostics.ts",
+      "reviewed_anchors": [
+        18
+      ],
+      "fingerprints": [
+        "662c9a8bc8f704c2f3e5958ef2d69d19b0f443177a13d2d4fb300e4fd2d640ee",
+        "5a058ea5274d19c05f464bdce788475c90b0c65004a97096b2d8252cca863d74"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00075",
+      "file": "apps/runner/src/read-workload-diagnostics.ts",
+      "reviewed_anchors": [
+        19
+      ],
+      "fingerprints": [
+        "16bb5da2ab20f7239d3b7beba46ea7513883c0ecb3446e5b3fc605350e836c33",
+        "ed90eadd414162465def8b6b82a182130645b6ccdb6e2d262771d9abfcf4eb31"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00076",
+      "file": "apps/runner/src/read-workload-diagnostics.ts",
+      "reviewed_anchors": [
+        20
+      ],
+      "fingerprints": [
+        "a77f59af08df3763b019a1597be358a0eb2d90431f713554d179a74c5cf2966b",
+        "70dba4340fa6a7e5b6e65e10fe040579489292f680895c816c603016743ad8f7"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00077",
+      "file": "apps/runner/src/read-workload-diagnostics.ts",
+      "reviewed_anchors": [
+        21
+      ],
+      "fingerprints": [
+        "b7e26db36ab968110e4daa0d4704ac3646195b79ba1948dd9701a80a45986450",
+        "0b68c15c56f8a09dc9f5f989669919ee4ab3610a70bc39961ad5029c1acb31a7"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00078",
+      "file": "apps/runner/src/read-workload-assist.ts",
+      "reviewed_anchors": [
+        631
+      ],
+      "fingerprints": [
+        "1955ef0b37b39bb04db977f38559b8825c1d7659e43706663e39358f970c43f3",
+        "1d20bd59b72a9318f7ec5657c6c50c37677c35d00c5e96f78b264c966bf6cd50"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00079",
+      "file": "apps/runner/src/read-workload-assist.ts",
+      "reviewed_anchors": [
+        632
+      ],
+      "fingerprints": [
+        "3e1bce0a24b1ecf5185b4e4dad07dd25127ae24dd8711a215dbeda3c847ebde5",
+        "e7cba22ff43d8b9425fe96f73cf7defa59a9d9123e4a5de190cdc6980cce37ef"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00080",
+      "file": "apps/runner/src/read-workload-assist.ts",
+      "reviewed_anchors": [
+        1059
+      ],
+      "fingerprints": [
+        "f39998e70ec201e6a98309793b05fc471d59edc9cca560b02c52ca124df87b85"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00081",
+      "file": "apps/runner/src/read-workload-assist.ts",
+      "reviewed_anchors": [
+        1062
+      ],
+      "fingerprints": [
+        "a6365176eeb762cd7b5b1551bc01634f8e76595fa38676f5bf8682e0d3345ed1",
+        "5c9feccb57e80bf469861f1ab9002dc1953f0a79223802975bdd51fbd092af7d"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00082",
+      "file": "apps/runner/src/read-workload-assist.ts",
+      "reviewed_anchors": [
+        1063
+      ],
+      "fingerprints": [
+        "bb6deb27e5e6a39dda88c8ebfd5f739618b222ee0799be121e45f12247339026",
+        "f1911df5bd23e17d0fa35cd2d794ee9949916a747c49045a6b438290e4ed5322"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00083",
+      "file": "apps/runner/src/read-workload-assist.ts",
+      "reviewed_anchors": [
+        1224
+      ],
+      "fingerprints": [
+        "050213ac6b4c6265f9ab0f7cb58343d45c1534b68731e23dcd10f86ebfdb0f05",
+        "b279ba6d4483c8fb3224fba8513cd12092024854a1946c1b7bffd4c5c9f01f78",
+        "f82473960e7eb9cf844a3ad3d3330c4795945f7a8e22909b98362385010d2fdb"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00084",
+      "file": "apps/runner/src/read-workload-assist.ts",
+      "reviewed_anchors": [
+        1225
+      ],
+      "fingerprints": [
+        "43bc0e3dd382facb6dbd126f75e9ee2efea9cc3566c6b8774f11876312be93d7",
+        "7f6d17fcd3862e122d2100f0dac22173234c663f898e58abd527091b1d7b76e0"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00085",
+      "file": "apps/runner/src/read-workload-assist.ts",
+      "reviewed_anchors": [
+        1228
+      ],
+      "fingerprints": [
+        "c3d509783165075026a7f961bae8d3bc4d9892bfeee8a958a932dafdcb187fa7",
+        "c589e87fcfbb16f4092610bec224188b707fe1fb259262b451ae4041fff1ffed"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00086",
+      "file": "apps/runner/src/read-prerequisite.ts",
+      "reviewed_anchors": [
+        412
+      ],
+      "fingerprints": [
+        "0c1451739b2ead7b0140db7bbf6cbabd6c4dff2a1397f00161f2ca2459e5e3cd",
+        "4002b46cbce8f8295ec7c1837812e8acb55e0a5225380e9e139d4805a9dfc5ae"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00087",
+      "file": "apps/runner/src/read-prerequisite.ts",
+      "reviewed_anchors": [
+        683
+      ],
+      "fingerprints": [
+        "2ad016c69d8a02d985a6a13126de1ead323691aa21e48ad04a999ce102343dc9",
+        "7fe926bb11c55c01c3e8a9fdec2a6c7afd020a4eb093e1b135f5e33e49e44cb0"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00088",
+      "file": "apps/runner/src/read-prerequisite.ts",
+      "reviewed_anchors": [
+        695
+      ],
+      "fingerprints": [
+        "b7b5663054fc493e6ab3a1accb315fde2fde209154a021b231db31134d1fcb9e",
+        "a7377b15bffbd4d4486495afdd32750da855d8caa9148a648dc2b7e628360803"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00089",
+      "file": "apps/runner/src/read-boundary-privacy-review.ts",
+      "reviewed_anchors": [
+        62
+      ],
+      "fingerprints": [
+        "c87a83c50dc3d9504f45b1a51b8b0b14d567ceaf8128e7565af22063979b323d",
+        "d9d640788d5de2d9f649734b9fc8345bdb173439143806f4e3510854aeb2bcf1",
+        "19841b0167a80871b7249f6a046d86dc2f2d9fecf9410ec8f711e24eadb69c48"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00090",
+      "file": "apps/runner/src/read-boundary-review-view.ts",
+      "reviewed_anchors": [
+        232
+      ],
+      "fingerprints": [
+        "447cedbdfa1ec22d0a930350c6e3d34405d06dc7610c153039f47ea82a521a60"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00091",
+      "file": "packages/mcp-server/src/protected-read-runtime.ts",
+      "reviewed_anchors": [
+        247
+      ],
+      "fingerprints": [
+        "689713ebd3e0f6a54ce3bb14669e01541e68b0b98444987d56e70875cb1c6d65",
+        "61178216018daf960fa5029804a03c79d1fc58ab511b4ac16f9a78e1cb163814"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00092",
+      "file": "packages/mcp-server/src/protected-read-runtime.ts",
+      "reviewed_anchors": [
+        386
+      ],
+      "fingerprints": [
+        "64600bfdc6f3ad9e6836f470e3a250b56e2289001496c2d747ef2deaa8f5c9cf",
+        "f783dafd1d956d8895432e3b85ed565a635232e252c0d85ff4dc010f43c72e24"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00093",
+      "file": "packages/mcp-server/src/read-planning.ts",
+      "reviewed_anchors": [
+        247
+      ],
+      "fingerprints": [
+        "d9948e62a7438d7a1819f636f111e0fdd4ff562d35f9501524bddd5eb0dc2c7d",
+        "bae703ea15957e1527df5dbb8300201ff12878f86ac78fd613937146cb25140f"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00094",
+      "file": "packages/mcp-server/src/read-planning.ts",
+      "reviewed_anchors": [
+        453
+      ],
+      "fingerprints": [
+        "a04bc4555b93dc84e0ad821c973ed7a8cf1fb24d004207ebec824b07b4f95545",
+        "5b677409e03b1358bc3efdc2f91be91205aad7cc5fa5f7d6a4792b48a33bab55"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00301",
+      "file": "apps/runner/src/auto-boundary.ts",
+      "reviewed_anchors": [
+        5532
+      ],
+      "fingerprints": [
+        "d6dd25955817d3122c44f1621969e4db514baaa956ad99124bcb5a3fd6777f06",
+        "6a994702588818b31e8e2756dab503625168fdfc26c953685a3575dfcf37477c"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00315",
+      "file": "apps/runner/src/auto-boundary.ts",
+      "reviewed_anchors": [
+        6601
+      ],
+      "fingerprints": [
+        "34ada9150af98a2dda0563868bbf4620c5c0fd384762a8d35e3bef60879e4890"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00316",
+      "file": "apps/runner/src/auto-boundary.ts",
+      "reviewed_anchors": [
+        6663
+      ],
+      "fingerprints": [
+        "4b36f8ed6237f06b746b84e627c7693362f228dc1aa9de83da4a3de8b3b9650b"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00317",
+      "file": "apps/runner/src/auto-boundary.ts",
+      "reviewed_anchors": [
+        6664
+      ],
+      "fingerprints": [
+        "41de67da2b434121b6d8b061502743bcf0d98c5921b750b99e4efe4ae323c861"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00318",
+      "file": "apps/runner/src/auto-boundary.ts",
+      "reviewed_anchors": [
+        6667
+      ],
+      "fingerprints": [
+        "b69229190203a162dd6332fd8c53dd115c283416e660fac98ccc171717829a8c",
+        "69b581b885b0df26a7da149d17523b7fb96d231c2cb80372ce3da9770d1bf00c"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00360",
+      "file": "apps/runner/src/instant-first-value.ts",
+      "reviewed_anchors": [
+        90
+      ],
+      "fingerprints": [
+        "3727546df36fe1c0de7954e050f5fde5bb27e9a140e6f9cdd4140b0013986376",
+        "81cf6b10ba550c168c0e15c9dafbbb46430e20896461534cca477fb36187ad3b"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00361",
+      "file": "apps/runner/src/instant-first-value.ts",
+      "reviewed_anchors": [
+        91
+      ],
+      "fingerprints": [
+        "11bd4d1c0cd415d64bd19619e5eaa3910b1f1c1120b29fd0c79235b6a031caf4",
+        "d382fbff91a1bccccbbdd3a8d08fca03ce11f0f8eca49e7119633a7903132069"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00362",
+      "file": "apps/runner/src/instant-first-value.ts",
+      "reviewed_anchors": [
+        97
+      ],
+      "fingerprints": [
+        "baa6734ef8745485f79ad87440baed7d26d49dc16b9a2978504060c40ddee8cb",
+        "83e47395ef53a2aa722c7fd5e95d88ca88da89a8461621860c6595e3f64c2b51"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00363",
+      "file": "apps/runner/src/instant-first-value.ts",
+      "reviewed_anchors": [
+        98
+      ],
+      "fingerprints": [
+        "0cc24f87fac8bf94e8504b0b071430368c3af506f9ff847cf95565b4de3f7138",
+        "664a0fbeaa4f0814407dfd28f29acce075f492b17c2a93e043af718205bb8663"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00364",
+      "file": "apps/runner/src/instant-first-value.ts",
+      "reviewed_anchors": [
+        99
+      ],
+      "fingerprints": [
+        "9aa13df9c22950a4fbbb0df8ee85eff7d5849d5088f14289829961628bc7761f"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00365",
+      "file": "apps/runner/src/instant-first-value.ts",
+      "reviewed_anchors": [
+        100
+      ],
+      "fingerprints": [
+        "22d94eff0078014ad36dd6c90b64d049d7585c9012aaba5cfcdc89fb0f940eae",
+        "7c1a7f565b123144163d983076be19875418642e8a82792b9ad627c822deb592",
+        "c987d3ca19a2ec3c6fac46163ed5cdf6e9974ca3d510c95125d7b1e0e349144c"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00366",
+      "file": "apps/runner/src/onboarding.ts",
+      "reviewed_anchors": [
+        206
+      ],
+      "fingerprints": [
+        "7a8d0ced98b4e429964f6b5c5a26852c574be1ec8a8026c15c1c754ae5bf3338",
+        "788ef3fb47765b84e23e48762c58e5b16b58efcd2118d6889833377150b8e7ee"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00367",
+      "file": "apps/runner/src/onboarding.ts",
+      "reviewed_anchors": [
+        231
+      ],
+      "fingerprints": [
+        "f9820f7508627584a78bc3ea5fdcabdcdc846e2dfa68e5d6209caec350a5569b",
+        "90f48e125769d656317ba87afbce7eed33c8b06753c27992e6a7f22b72af8f69"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00368",
+      "file": "apps/runner/src/onboarding.ts",
+      "reviewed_anchors": [
+        499
+      ],
+      "fingerprints": [
+        "60b678271646377f1e4692872d847c5e0597cfc8e88b95c64c0854b244465756",
+        "8256824b489a73f67579f5d5ff8431befe040c0d1ef575657acd81c80e88561a"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00369",
+      "file": "apps/runner/src/onboarding.ts",
+      "reviewed_anchors": [
+        523
+      ],
+      "fingerprints": [
+        "d4717b066945b67c9490da6bc3e4990175ac2f82045265e4d24405fe1d2484d6",
+        "eb594ae0ef4456904e624b75e43f27c3359d781cb101595818ecb623840f2f25"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00370",
+      "file": "apps/runner/src/onboarding.ts",
+      "reviewed_anchors": [
+        539
+      ],
+      "fingerprints": [
+        "9c0e474762d537ab62e7ed99091fedf10d133f27b7b51e6b700bc9297b6a7040",
+        "168a87a90bf4e814c5d1fcc3f11ee925e69d6e908a03462ed91a2f772988abd8"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00378",
+      "file": "apps/runner/src/schema-candidates.ts",
+      "reviewed_anchors": [
+        37
+      ],
+      "fingerprints": [
+        "108d7ac72f1faeb99f0e8380966a6371616d4e8dfd0947c86c05a98f976303bd"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00379",
+      "file": "apps/runner/src/schema-candidates.ts",
+      "reviewed_anchors": [
+        390
+      ],
+      "fingerprints": [
+        "76442d1574fbdd0dc5f866be3014f59b118c48cfd5ccec1741a2852d34ce06ee"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00380",
+      "file": "apps/runner/src/schema-candidates.ts",
+      "reviewed_anchors": [
+        1015
+      ],
+      "fingerprints": [
+        "64da94cb7d95cf35c07b37a057c524ab1d000280d1c1219b4de98c275aaf59c3"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00387",
+      "file": "apps/runner/src/schema-candidates.ts",
+      "reviewed_anchors": [
+        1356
+      ],
+      "fingerprints": [
+        "c25874a66cfd3b3a500f9d4a80fb056bb1b583643e9c3294d1892a67a15880cc",
+        "418dc7b7c275a32fb6d0a30a4e4b3f8ccf765928f38485edb5ce5bb1b05d5db3",
+        "59cd70353285908b77bac5fb6ff39f0c5e22f8d04f056d20f7d82db5707b643c"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00388",
+      "file": "apps/runner/src/schema-candidates.ts",
+      "reviewed_anchors": [
+        1357
+      ],
+      "fingerprints": [
+        "041ecff365ef32aeaf3c8719776239a4fa94839f4df96a9ed74bc10cd08fe6aa",
+        "92d843990eb8a49c3bed3b0bfd7a45f8f3b17c9f4b544c1e562a462c6fd86c38",
+        "73ed0fb3a764f87eeb8b96e182dd933916732f21a54d608f5df53bcb1883f05c"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00404",
+      "file": "apps/runner/src/scoped-explore.ts",
+      "reviewed_anchors": [
+        4244
+      ],
+      "fingerprints": [],
+      "status": "no_exact_scanner_candidate_at_reviewed_anchor"
+    },
+    {
+      "annotation_id": "I00405",
+      "file": "apps/runner/src/scoped-explore.ts",
+      "reviewed_anchors": [
+        4245
+      ],
+      "fingerprints": [
+        "1450b3bf4d9f0888bea7a2c3e0c73eb6b18b58dab1b871336459c0aef50c52db",
+        "11fd71aa5a2c4c4b1d550ea14b4decb19df4e6752eb5b0743e381602ebbb3cf8"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00406",
+      "file": "apps/runner/src/scoped-explore.ts",
+      "reviewed_anchors": [
+        4246
+      ],
+      "fingerprints": [
+        "2467b50269d90b387dbf69a9b73dc09f94247f8b75f29a02c09ea5003216973d",
+        "8572f550ced7e362a6ac8aa10a8d3125ae4dbe3b9323b1209a761c2f8af12310"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00407",
+      "file": "apps/runner/src/scoped-explore.ts",
+      "reviewed_anchors": [
+        4248
+      ],
+      "fingerprints": [
+        "9e48e90398d75a17946516ac98eee142f3c08426a264d12a73f24b29010ceb76",
+        "ade83c8e16bb4c42abfbe92ce6bd4c1661422b36e3fc7f607f90a7f7355abc7a"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00408",
+      "file": "apps/runner/src/scoped-explore.ts",
+      "reviewed_anchors": [
+        4251
+      ],
+      "fingerprints": [
+        "cac87bed80426e3193c33ffb5f926701f7577821ddc6fd1b44dba3f003f5442a"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00409",
+      "file": "apps/runner/src/scoped-explore.ts",
+      "reviewed_anchors": [
+        4252
+      ],
+      "fingerprints": [
+        "5063b76bb2b9538663ed8fcd06bd0475e98b6dfaf2f33be4f2ec82c66ab490b0"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00410",
+      "file": "apps/runner/src/scoped-explore.ts",
+      "reviewed_anchors": [
+        4253
+      ],
+      "fingerprints": [
+        "a9ef4ef6b7ddca2fdeee100636bfa4e6f9aeee4bb1edbebb2d67169a18e46d58"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00411",
+      "file": "apps/runner/src/scoped-explore.ts",
+      "reviewed_anchors": [
+        4254
+      ],
+      "fingerprints": [
+        "f364fd1a116ee032976bd0d3f34ce7f4be07cc7ee7756614316a63d1f245eb52"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00412",
+      "file": "apps/runner/src/scoped-explore.ts",
+      "reviewed_anchors": [
+        4255
+      ],
+      "fingerprints": [
+        "11f6a422b53026b479047f30e6385bde3ca6fb373d0c1c5f14bf4f5c688dd498"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I00413",
+      "file": "apps/runner/src/scoped-explore.ts",
+      "reviewed_anchors": [
+        4260
+      ],
+      "fingerprints": [
+        "6e2e190cadbcc134e9b83f5d928430beab88a9a2ee58a6e579449d19f47d6b76"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I01963",
+      "file": "apps/runner/src/action-tui.ts",
+      "reviewed_anchors": [
+        4289,
+        4290,
+        4292
+      ],
+      "fingerprints": [
+        "ac2ee01dd3a8afca1fe8de6107128fefee46b753952f587a2373f1d270281dc0",
+        "a1153cb38878ce6c03c62a88c1ce5435607319a8adc97b01797b8facf9b152e2",
+        "ee5b4910d86f19770bcce1c04b49c4fc322048dada54fd0c8e441da55bc78c77",
+        "dcac9bc7b6814a296b12a4d1c57a71046dc000320f3f64ab413a3f62c42d00a7",
+        "8fa0206b40808718269e0538ab7cba6014fbba3ffdded65221ce93139c26f8c2",
+        "a3207e5bca3589076c4bbcf3295038da38eefee85c13fac27ad73b216620b9b9"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I01964",
+      "file": "apps/runner/src/action-tui.ts",
+      "reviewed_anchors": [
+        2652
+      ],
+      "fingerprints": [
+        "9e17c17b0dee2d47bbf8af0f521bf6f8b27a63d9715c58fca578d1238d1cb221",
+        "91359430bf115b91a94beb812e1d934dd059688c2ae895bf6c1e38ac652d49fa"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I01965",
+      "file": "apps/runner/src/action-tui.ts",
+      "reviewed_anchors": [
+        3067,
+        3068,
+        3069,
+        3070,
+        3072,
+        3073,
+        3074,
+        3075,
+        3076,
+        3077,
+        3078,
+        3079,
+        3080
+      ],
+      "fingerprints": [
+        "7310d1667e43510f9dd2eacffb5402f1cac6e3a61bda432c0395c1df082181b9",
+        "3d2d080ac932a30dcd47b5d4319144d46e8fe0fa2627955514331515f703d2bc",
+        "c86d872438fcd28b785ea7f3b4246e5c1a3e1d75599340ea75db4dee48a1975c",
+        "c0e60388eb7f32fc4d48364b8ec874f68a7395ceaf732fef17bd1435abae1a15",
+        "c9ddf6836368e4c0e28c98300d4f84889910c531264e29aab9521b656396bb7c",
+        "0d9d5be68642be00b7e50340ed9f67d25c3ffecfbf8a131847942b44bee1760b"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I01966",
+      "file": "packages/action-rules/src/discovery.ts",
+      "reviewed_anchors": [
+        21
+      ],
+      "fingerprints": [
+        "3a9a6ad656f8eedfb9c5e4dcc18b8bcdb7e49d07ea181464b31988a64a17d0cb",
+        "cfe37370e66e88846315eb5fb97d681fa9703f5f4a8601775c9540679e34821e",
+        "b72e25975b14f83c1c1059cb25d62c36288c393ee77c7378533241ae760a035d",
+        "4e145f10659b7d886354b226490611defad1b4b532965bf2c3a8a25bedae8556"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02054",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "reviewed_anchors": [
+        127,
+        129,
+        133
+      ],
+      "fingerprints": [
+        "6c8fed516cca805e3230ed190eef2ec53b58822055e064fd84d439235f9f5158",
+        "1b1804b3f2961e8312e12e3dd26a8412bfce262854b608688afd5b0e9ca7fa18",
+        "caea89fc9cfda198c21713f931f3f187b4501a81a2b055427e272cb7220c4ee4",
+        "bcf9c6b5f7fd0f23a9644f3b8dea35030afd45ea43af233031c221bb18f042b8"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02055",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "reviewed_anchors": [
+        191,
+        195,
+        199
+      ],
+      "fingerprints": [
+        "93298a81930f856a097ab6b6dbab2557845e5a2abc0e6457d74a5a359388d21c",
+        "712c96b4c8c6a89ca78b62cb7f8dcec5c9eda667eb19ca647e3c8420e1ad79c6",
+        "17d0755573f9fdedff1546f1fb667805c6bbbc3354c1dba85bc9ef246ad51a15"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02056",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "reviewed_anchors": [
+        387,
+        388,
+        389,
+        390,
+        392,
+        393,
+        394,
+        395
+      ],
+      "fingerprints": [
+        "efe5b2adb461b3367f315860bc961909e86c87bc27dc4879615913f82be2a3fa",
+        "1e24cace213a55113b14f16bd4c0e3876c1ec33aa8977e02a1f4dbbb17c1052d",
+        "590d0ec1f1f8e278734b63fb97bb84143540947683161cb52b7dfc7ebbce3819",
+        "7477f735df511e72275238074a17cc8c70ae05a4c4ce4fb2bd58a1e2b40505ab",
+        "9f4e493d5e62e91486c9ab60260c68b9aa027610cb1044ade8a407727f184df7",
+        "6c0fefb03613d91bc2223359d25ba4511a2cf1714d4d9fe2189ecae6e76414fe",
+        "85ae820edc01d01e5947db886a16a134d831225bfa1ecc57a8e6bca12a545b69",
+        "bb707fb2a99083b0c5ed2a5dd9ebb6f19cfc78719d27aab69a022b8ad63ec899",
+        "5e5d6dd313a32d26dfcd0efc3d0a63ea26fa5ef802e1cc17ef2a509ff1af76a5",
+        "81bfab449750bc57fc94d4fbea9d750004a9925247f8fc385e6a9c0c848aa3e4",
+        "465c17a3af5de82a9abecbf0593479ddc234039b041185e42e7dd9cdb723ca1b",
+        "5056ba8f33e921f9d8c228f67faaa94ba4945123f531153f4696d8714a119ba1",
+        "15ccbc79ca5963e67db1f9cb6d188ba6cd477ad3f543edfc37e491b7c45b4805",
+        "218e743625e4f3fc502cc42317375db0d60ab9474efe8b91342778820411a9e8"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02058",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "reviewed_anchors": [
+        708
+      ],
+      "fingerprints": [
+        "7935a92b6566812dddfdbf14611a7f10fe5cf46ebed7c23493f2e9204d816427",
+        "2542def36447c2c037fcb77d305c3b388f411580ef470a9a40859a6b68d22ad5",
+        "cb0b2d6bbedb9fd3e35bb2eb76d3bff484901ea5c81d95fe1f8a32e6e8894d85",
+        "eb59f5bf4c40288f3445a6ac504e02b3677065cb963bd2c8e4a9c6e0062cf10e",
+        "75bee590ac623891659cb8bff074e9150d82ffa0dfe14ee296eecee0071d89e9"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02059",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "reviewed_anchors": [
+        727,
+        728,
+        729,
+        733,
+        734,
+        736,
+        737,
+        738,
+        741,
+        742,
+        743,
+        744,
+        745,
+        750,
+        755,
+        756,
+        760,
+        765,
+        766
+      ],
+      "fingerprints": [
+        "c47a0974b59a546f8258718fd76c86f7962fdec3428af0eef0bbe1311970de33",
+        "62c8bfee6e5fd662b8a4a06b974a8df55215810632631aac10780502cc76dcc0",
+        "3bb344b005853a51c1bee6206618bf773b184dd96190fc340896000136f929fd",
+        "127ae0fd84015b0e377eaf68f697a0c3f9c5422c1b095f363ee71e7bbbdbd480",
+        "5aaebef43f8ebec0b584bd84eb775776659aa5dc8ddd639795d5e323b8382a61",
+        "0c13272e3301699f5278402f0183ae0836eac92302d731396c6186de0e93d7cd",
+        "bd00178abdec69379a1bafe388e4deacf5ef081e3eb432eb4ddeaea89eb39715",
+        "346159089e5842f3ef1e614dffb9ed3eeee112766ed8ab4f8f0fb329999774fa",
+        "bebada01b4353b09ab266812b4c11a081ec7cbcafb937202e855e375330007b9",
+        "affc313e72457617a68a0c759641714efd71d1ec16695d49971a34f493250b72",
+        "8021fb7277418feade54ddcf69a8f202c567e8441da63b03e0b6da7251fbf1d5",
+        "721203c0509af7693f7f0857f9397abbcc7322f92a2fe13ec912a2e5fa39bdbb"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02062",
+      "file": "apps/runner/src/authoring-operator-presentation.ts",
+      "reviewed_anchors": [
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        47,
+        48,
+        49,
+        50,
+        51
+      ],
+      "fingerprints": [
+        "ef90aeecebd51c5526ced874b356e0ad505b8d195f276defaccc0db99d580c96",
+        "6440666444451482a10e97508cc6b0b0b3015affdd479113fc31d36694ca41b5",
+        "2393f7f5bfa78b972ae3cc957f1726c3b3e36e22045d41a03ce1ee631b392979",
+        "f774d09c3f9cc7c6fc30d32a0032382ca5940402b454f534e5013a04048dfee1",
+        "a9cf25d043057e3d9cae4f469a0f00af9a9ec91d23c8f9a94e1a6feef5c7b1c2",
+        "ccab558be2ddb1c022c1e413280b77db8c6b084ee6eacc901bc3d8a24813b046",
+        "2af9c615c17775f082716401052788ad57407080c3118fb43df4e8587cf1fdc0",
+        "527a852835e54faef011b7819883102dbc05fc5841816cadf92429bc0f5d6eba",
+        "cb88a11bb83720d9af00cd6e07eab92b7e67a4ad07ff24a47897e3d76b7e5b14",
+        "4a2cb715e51b365f7ea9dc31e893e6eed2525cac9da6a545b85bd953b75a7fd6",
+        "e82aa45a5ebdb2cdc85b8da6fb4b7b971df4f24a65b5160e7440b19786e9af73",
+        "57d0911d1bf4bba1d11eb17b3a4c5112b3c1b9f10d0eb3d4186d79bd989b3af3",
+        "27b6e23ac25361dcabb5566e7828c322332f3e5330252e315b3a8bbeeb76331f",
+        "b77c5a68c5fdab6d6fd9cb169c042ca9d96a89cb89ae08cda24270f844ca0236"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02063",
+      "file": "apps/runner/src/authoring-operator-presentation.ts",
+      "reviewed_anchors": [
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117
+      ],
+      "fingerprints": [
+        "0363fb16c2043bc64c7b8e8b48856f368229935f1108e0d45df0b9e2cf38d473",
+        "c4248d17e8542fb02a08f99ef63292ae85e08ca06d3cb004a6e0bce2a1c7c47b",
+        "d906604d0dd915588445beff5376edd3860ac5278bc874c38ffc37f47799fc00",
+        "171973b081773ae0eabce240280f1dcb6ea47d6d78ef5346274bbe3513dd74cc",
+        "d9e635d49dc154eb2228026fbca7c9960e3e4f2a4a7e7ea0b8cb006bc300866b",
+        "06e39e3838afe3c16249f80f23481452519762421f927e7cb5a46fc070e174b6",
+        "d1e1a4086f8d1bba287cdf76400be5103a2cfc623a700965f90227d868697672"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02071",
+      "file": "apps/runner/src/model-ask.ts",
+      "reviewed_anchors": [
+        575,
+        576,
+        577,
+        579,
+        580,
+        581,
+        583,
+        584,
+        586,
+        587,
+        588,
+        589,
+        591,
+        592,
+        594,
+        595
+      ],
+      "fingerprints": [
+        "6ca086b782958ad4bb40c436f03004fa9a063ac3f0953d86f41bbd5d282ccca5",
+        "fcb214b4280d3f9a2eba2ac7238d6d51e8e69b3c14e6acc8645bb4e1d2b4f675",
+        "e037e7795e547f4ed328c0783e09963995ada82cf686c7f91dd38e91dd561b2c",
+        "32760338b1b59129050df8de05ca2b7fd29977c03c39ccb22eb96af697e21e4e",
+        "f268d6ace10bdd55e97bff4a24847323174ac9639db5bf8f32cc0f341f9dc764",
+        "300837ddf5b3d00149e95fcd79f09dea368934ad5d6f062fbe29399b578b627f",
+        "83a036974198936c4f59049fc9a4d8e83615065a9a61f33781a456220505c5bf",
+        "2c611368ddba550619ccfcfcb6219b26c88b2bc02bb637e76fbecb7887b1c328",
+        "c92dcdc45241f8ef983dc5c5cf1f5a353db2b193e4d19ddafa85fc1d6f0de0bd"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02073",
+      "file": "apps/runner/src/model-ask.ts",
+      "reviewed_anchors": [
+        1443,
+        1444,
+        1446
+      ],
+      "fingerprints": [
+        "b01bbe97897f6776b68d40bf087db08cb1909d1a64a4108b130274a31c1c0ebc"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02082",
+      "file": "packages/schema-inspector/src/sensitivity.ts",
+      "reviewed_anchors": [
+        356,
+        357,
+        358,
+        359,
+        360,
+        361,
+        365,
+        366,
+        369,
+        370,
+        373,
+        374,
+        377,
+        378,
+        383,
+        384,
+        387,
+        388,
+        391,
+        392,
+        393,
+        394,
+        395,
+        396,
+        397
+      ],
+      "fingerprints": [
+        "231592e17c244c4204d8d08d8467da30afdb243e1ed08a45c30ed0c4d2fd293c",
+        "8c4aa3dc1d77a1b95013b3a3c313d231e4e86acfc066623d44ac4186a426f3d5",
+        "6497a9898163431994bf30731b52f5317e7771465cc6fd8d75fd52ab62ac7fd5",
+        "c77fe9f15f91af5b5732baa6501a87d1bcc7ccc8ca66da6bff3c8950d1c663fa",
+        "1f2800dd581fef9dd47e02dfe5d4deae9de6823a1f5c57e3f4bee5bb99365f41",
+        "2f2b348673c27a3f8349608bcbc7e726ceba29411f1d454bf13740cbc8a0eb7d",
+        "64115b4993e05b832cca4ac38f4e90c375c07d1b35ede357cdfcdd66299ad75b",
+        "1e66c5763fb488dd8a54b2964f75454a285a34b3fe2975fe71f9585d58e23d4c",
+        "944fb4b0889b43fb1994ea6c77da7fb63d57d7122b8f31aab80d653a9f664d32",
+        "d666df61c70ad78c385c4d5bbf34c1b7f160a841cfbb5a0866104102019a7840",
+        "55ce411309fca755370eb9a18abe323a0f6f20eacca03585f4cee9b6ced80851",
+        "26af0297a1efe0a9289e6933e57f92ec905679e671828ed3d0fa0b4415fe7477",
+        "3b97bb7dc87cf33a96716a02557999552e52e75a3d5abd58c90e2f4d64a5e2c2",
+        "2b8545ac70d9032d14e4734627540df94dc242e495d96a518d6d86e6c40c0b9d",
+        "1ea4eeadf8afd21407dcfd5379d53b8e74c8e55865f1fbb15dd77421bf4449a8",
+        "afa5064bb932ae0f33c490985b37443bb54de9226c2a468b93707edd9ec28650",
+        "5c54d84979e0bb9919f3df20fd427a5072882356a0a6569b0ed665cda22d1b31",
+        "37549a8f28a5ff2f95d80609a8d16d615a45b5df6bb9f3cc621ceb6f93c212ed",
+        "a952935c8bcc3a060821f08b6438b0113b96d69416b6ca50d994d51519d3c7c3",
+        "804483385749fa71054faa9c524cb7db295b950465923730e10d1ab47177bed0",
+        "773a439731cfea1f7bc8964dbd76e1975e69b16f0b239aeed593b763b7610fb8",
+        "c38300e0273e975e2331c13019cf77b2b9ab4033766fa6d1e69c8bd8d2db5db6",
+        "b315cab9bab7f60e4cc81afdee8cf07b0950f5157b75552fd81aa09050f3f132",
+        "5fd07cbb7ad5166cf93be49530e49d9b3b448f877a781504f080e5e80f6b39d1",
+        "3224cb4cb509c8a219d19523ffea15b67c99776e2b1c13be50cb61e97212802a",
+        "a0abf8567648d361a0c32af0fb8cafeee80f38f8de842e84a359f410b29f689d"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02086",
+      "file": "packages/worker-core/src/mcp-audit.ts",
+      "reviewed_anchors": [
+        1108,
+        1109,
+        1110
+      ],
+      "fingerprints": [
+        "285cd0d0dfb8ec91b06c8c11a74df9c8e787cbabb24e2854c872135e028b11c0",
+        "12db3924cb6fbb831056403a7c01a8e22b30dc73c02d546090f0a89a7a51ef5f",
+        "caf0fb0e7627b544e98179c676a3a011637a9668e0cc617b7928444ab5ad43dc",
+        "e763598c0b1490d6a356455c89d67360e8265bd66c4f8a724e4ce35e9874bfa5",
+        "df8b10bfbc9deab67973e36cf38e2e91add1e3c14c1889eb0ec72db6dfeb2ebf",
+        "9a33c0b16a3b8f622dc116a041b2ab0d5baaaaaf0456875d9ac2d65e8d52e1a9"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02088",
+      "file": "packages/mcp-server/src/model-output-policy.ts",
+      "reviewed_anchors": [
+        1,
+        3,
+        5,
+        6,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        19,
+        20,
+        21,
+        22,
+        25,
+        26,
+        27,
+        29,
+        30,
+        32,
+        33,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        45,
+        46,
+        47,
+        48,
+        50,
+        52,
+        53,
+        54,
+        58,
+        59
+      ],
+      "fingerprints": [
+        "f759c9354b9f98dfb1e2bfc28d22a0fffd39f4df02b40111974d3e3363fb49c9",
+        "fec6c620aae0939b0976daef24f6c32af5447c0262ba4346ed963e3faf25108e",
+        "63c8b302780f300b376f9290a80b7ce358f8e24f4d59f0ecd10ad5e2a6023047",
+        "26d0ca2aa3b69387c70a6f01f042b46ac1d73e113c82ef2be2028215abe3a92b",
+        "92593ce980eadc369388de780318538a9346f6055a357e2f790d5bb820f423b9",
+        "4937bd383e5802520a4d87e35c33fc349f7f59e5922d7a7560707cad314ce142",
+        "c1298e3784ccc88d810ca76e88c0086074b8fd9c2fe554ff7a858aff4fa0baf7",
+        "227f03010a9e2536af9759217f274bf28724cf8268582ed99076e341840df3fd",
+        "26d40e99ea0a24a68b19b38e063bc537b356fe6fd62e5f74d3b49edf9533f07e"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02090",
+      "file": "apps/runner/src/authoring-principal-scope-host.ts",
+      "reviewed_anchors": [
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        83
+      ],
+      "fingerprints": [
+        "28ddd824e940720a92395d0ffa77094189bf59170d29f34bd092eedf2857ed3a",
+        "a651f2785d322fbebaa64cde69a0f76de268c257b8bc5c65238128e9ccaf314c",
+        "3c16d5ff42848161909fb3930ae28eb8edc03fb6b188188265b9e0ff4872701a",
+        "c3574782aff52079a90a95d6c16591f583e0a5ab4ccee44aeb01b8c29e88a5e6",
+        "8a89aebeb35dce630bb237d98aedc17c7f2c1c36c31bb300b9c005703286f2e6",
+        "fc3f8851c0976d6c49e7f7cb7c7c47d04dab106bc848ecbc59ba5e20ae12d61c",
+        "a3d490def8221a624543aad9c0bc8c6c875c1181148712db532fb5d0a524962e",
+        "5ba081e0a348f7a64eb4d895c0869e81df6d4810fe2441701c198f2527af225a",
+        "444dd3a631b01ca8ea91606780cdf1ded9905d6dd2a22203f841cee02f1ed408",
+        "61a30cdf4ef3db14669036edad79bc64c88c075cd3826cb5fa4aaace6b35b6e6",
+        "a538631a154e6e4d2388b20434387ad73bc42341d6c10e5d10b13bdd3ac02e74"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02091",
+      "file": "apps/runner/src/authoring-manual-read.ts",
+      "reviewed_anchors": [
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "fingerprints": [
+        "1ad3e495b816e66c07ae1c7c870eb5d08d015449eb044b5d16eed1f81a26272f",
+        "f06963866a92fd377f03e06d3f1ab180acdb1d8ed4c76033b2dd21950bc2fc83",
+        "b04d12e465620d2d57e2b1f3fffce2ab881e5a52a95a5395d311f31dc0acfba4",
+        "581e6ffb33aa5fb2cc17d666e255dcee5a6f4d54ddfb14c0ca68fb6b410b1a28",
+        "3024b80f8de0ba3846200679ddbfc58ef2407e053d6c94baf880324229a2cfca",
+        "31012bbc2649b6d56527b2f8d3bd37a7739ed60dd02d80f2f0d99cb0c2600619",
+        "92fd94cb08997b9fd489cf2c18744acaaf43cc08a641310e76ed276fc38c5650",
+        "687c6a71490eb193edebe1171c6076debf1e3a742a8182e810af4847755499eb",
+        "25c94db0b19c45f9cc0b63c103bcdcf26add7b58dcfdf04a86795aea18daf7ca"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02092",
+      "file": "apps/runner/src/explore-audit-presentation.ts",
+      "reviewed_anchors": [
+        35
+      ],
+      "fingerprints": [
+        "1f3626cf4dcf4b5b1c0860a789f43b5f59c04e9a4b2afc14bd7713b31f25b214"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02095",
+      "file": "packages/mcp-server/src/policy-management.ts",
+      "reviewed_anchors": [
+        90,
+        91,
+        93,
+        94,
+        95,
+        96,
+        98,
+        99,
+        100,
+        101,
+        102,
+        104
+      ],
+      "fingerprints": [
+        "bd3c65ec9a15f22f8a831a53c152642c409417a3a31750777fd789221cb83f93",
+        "8e3bf4d72e6909643cecba123d5421cab0228104f1bb04dd718847c6f1e360ed",
+        "e7d08e2b99dce062743a51bf76198747aed2ce51a9e06b656f5b47e357bcba84",
+        "b80c88f262ecf2126e0816a8e5a472b1d86b0ce2705b5c85c6200a06cd82fe39",
+        "cb978fd678707b8f76d30991ec6f472a13123a381a5657d9389534bf8bbb9765",
+        "e4b0b50c85c1d4bc7847fedbcee163f2cfabe45f8a3481f68a52eec70198c466",
+        "90207a988a6197a6966c1e3a98850a4a23850cb1d27efd60be33b28eabedf3f8",
+        "d1d8fe3fa0df5c50c07e8c204a49893a8c4cde46ac81d50418c19f0e126b4367",
+        "7432c2e8968ac93f8b55ffcbed664b917aee7e9e59e90bf0d6310b5525643325",
+        "13dba27b98d4d76e343defb9297f2bef7aa967ff2128075296dc21a9ad702e6d"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02096",
+      "file": "packages/proposal-store/src/query-builders.ts",
+      "reviewed_anchors": [
+        234,
+        235,
+        236,
+        237,
+        238
+      ],
+      "fingerprints": [
+        "1739a2d12e9308ce17551aaca2352e3a351772ec2704c1f1f711c5609ec0114f",
+        "fc85fa808baa0d651169bac222f046f3fc52f14e4d265cddec70928eb719bf52",
+        "a523d941d58dd6efc9fecf6de5ed6107dabf94bbba2fd2f6f058594983e4b831",
+        "5799779be58c6333a7c48a58053bce67875f929a87512190cd4a0a0bb669ae43"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02098",
+      "file": "packages/mcp-server/src/result-evidence.ts",
+      "reviewed_anchors": [
+        88,
+        89
+      ],
+      "fingerprints": [
+        "e46f8cf8b7c2e46df28ac1c8a6550cf588a32b84c64b42e2951d71f045956cd9",
+        "c2fe9ce84cc5049fcf3e5ecb4431071e10f04edbb9f9e6ecf922e17c5255809a"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I02099",
+      "file": "packages/mcp-server/src/http-security.ts",
+      "reviewed_anchors": [
+        278,
+        279,
+        280,
+        281
+      ],
+      "fingerprints": [
+        "15e8444d135161aabeb074b0c6c97f746ef028d17315079b0bdd4d66712edd51",
+        "b60010bb6e7b4afccde3b6dcabf7834b455d56f54e4c6a73becbd1e263ff613f",
+        "cfc81a9e80ccac4073705ebf05084f478c16d44a83b7cb2ce4d36cf028f88e85",
+        "80a0bec4192b84daefd2c1d95a2fab1e1956d448fc3cddb3672133ff19e2b68c"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03526",
+      "file": "apps/runner/src/authoring-permission-presentation.ts",
+      "reviewed_anchors": [
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24
+      ],
+      "fingerprints": [
+        "6510ad2c64128801dcd5490614701eb0223a42355d75f783fabe3129196e7ba5",
+        "e4f8b06d2ae51158390368de93258594fc4e71dd78785030e614eacd35a03a46",
+        "31e2eeb95949f261cf4218a93e0c6b0d09072166bc91e00475546e03c77edc7e",
+        "ab4744d9ed973676f137b184b575dc8dcf0da12696740b2514d43b1ef0d68bc4",
+        "75c24c312584558ef1d10ba4719c483669acffbfa0d9396a181b6d772e734237",
+        "f0a9e71b66df75d840ccbf6abca0916db20e407becb2ba64c56c3fc0964e8135",
+        "48ae809ca71868e92d5e53bad820a9e02949db4ae5dda19c0f699f92b0a33edd",
+        "3632d93e1a41b9b7af19b487176de3aa489970f0cf21ff4117a5746af20c5106",
+        "c59b5dcc16d1b524781bd2fcf4c08783d506bc9094df2758a3e572530359e3b6",
+        "327f16cf9d05d23a5595fece771890a8e84f33ec3eabafcafd967c6ab2828dc6",
+        "d3dc7caa260730f740e193b782e4f8c22bcd7d08c2ecf4f77c7fba4ac853a047"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03535",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "reviewed_anchors": [
+        15286,
+        15290,
+        15291,
+        15293,
+        15294,
+        15295,
+        15296,
+        15297,
+        15299,
+        15300,
+        15302,
+        15303
+      ],
+      "fingerprints": [
+        "ef8b1c72dff7969f53e55fafb250ee48ef7f1720e6ef0a6d848de97ca3ba74be",
+        "f038fee3451c16cdb6e8a59d1ac230806cb5d4e5b4b58abbc57dbb6e41b5dcd5",
+        "dc4a537b98d9f086f9d3f39268fb4f59affb9c194f8753e9667de6efc487ca95",
+        "cdcf59f414947f332703fa5cc5d698ed9ccb85e7861bc4eeeb4bccc5183254da",
+        "a0b0686d84845d4bac72623989588ef7d0895b0cea4975466bdbba11ed9e6bfe",
+        "5c088571b27bfb362781694599079fbb1938bf8b3d3dde5f32996e8f2664ba8d",
+        "4d03deb7efb22566566dcc7badc5e822b22d27fb9a27a79470ade07bddd41c25",
+        "317a26bc79f7c0e42777f6cc22b75fc9132f8eb3c521c84b280fbcfdddda2aab",
+        "96ca72cb4e284834f03ed861a829dc12eb999793dea692ee28d5bbe1e9ec7e4b",
+        "3056cfb64d2a0a24d0df35873a3809ab4d745c4eb85682cb0326daa65c6e509e",
+        "807aa42446a7e7587c4cedd6ad4bc25912266998e712ad2ef3bfd1b39f476f80",
+        "3e10995c8f7aa08e50222c9760f9fe8a4e0ceeb556cb1c0f2694c7ef84c196a6",
+        "66da1d86ad2aab12b958f2f45bc321e342a70b3a975fcbe09edd017a8c008f52"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03536",
+      "file": "apps/runner/src/boundary-authoring-resume.ts",
+      "reviewed_anchors": [
+        1448,
+        1450,
+        1453,
+        1454,
+        1455
+      ],
+      "fingerprints": [
+        "2f27bb10f694126ea20364bc5befa8bb179bf80fcf4c74c65514d4dcc7f2760b",
+        "56f2bc8157e3960de2f761e19ec94e5448a3ae32d75d035d5f90e2f00bb10de4",
+        "b7a4861dfc44fa6d7fcfc95a0f079ac9fb33afb63b4ded3be3974b712aa0ac34",
+        "3e873e4d1027b6ec1d5878be4d311d9e0dae5f45e2cda68c7ad7d5e2edc692c8"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03541",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "reviewed_anchors": [
+        4080,
+        4081,
+        4082,
+        4083,
+        4084,
+        4085,
+        4086,
+        4087,
+        4089,
+        4091,
+        4092,
+        4095,
+        4096
+      ],
+      "fingerprints": [
+        "218ab02304d948d58ad7d36c8978ff4d566be1ca9b8b04e7bc5857adc388a8b9",
+        "b4d14485dc06cba88ec4fbe7da9d90b6464b9ff9c7f706f628e600de3db96d38",
+        "008b4d4b8853a20ffdc5b4648f2033e7a47e05c328eb70d01da6a69e5efdd998",
+        "6ded02013fd603c68922bcc4f59729f1919ac21bf50737818bf7fa9d4616b870",
+        "a9f6874edd9b042dec3368c911404f9a8237b17795e73ce00d3bc5677c3a764a",
+        "0eb3d443b35323d78adad672bd0adbc3a9ce85c5ce14fe1b373e548244a347d0",
+        "94facded62e69379daab61da49dcbe3863099dfb06c7af2f00d174a5f36a76b5",
+        "c8ab3d94859318b7d2b3825a887ef358fe0a4ad0d0f4d88a82a888fab1386df8",
+        "90d8e7d166bee547c2123dfbbd02d993a64ff19a60d131590a98773e870cc68c"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03545",
+      "file": "apps/runner/src/local-ui.ts",
+      "reviewed_anchors": [
+        9746,
+        9747,
+        9749,
+        9750,
+        9751,
+        9752,
+        9753
+      ],
+      "fingerprints": [
+        "97abf304542d08639170baebc070a25f1ee649cc05f63e8bb5aba3ef1d939b15",
+        "1d04c7b63ea902e5ab1ca8902da9f9068a147fd0e9b4aa675cee5c6dbdcf6cb4",
+        "8645b05e0d4e2f9401985ed21c86372127e67dba498a23ad62bd1e344a9b613f",
+        "2d43b3a520302f233ef31ca55bf337bc59a3d4b137f223a7c8e97649cfa4d854",
+        "5a7dd62908507ba67e6f903a83e0d2fea3a7614f5dcf60f65acbff0147236fc8",
+        "e85271897dc06a51f0eb6432347e10d57f33bc09f49b9a6b32cdd09de3f1aedf",
+        "484854a457c08000fd5dbe2e7eca3339b22b3876b6ae3b76bd3342715628977f",
+        "387d786cbc92c578b8b472d402f681895ca39229c1d9d3c958f82730d8c16fc0",
+        "65b5b3feb49188fb5f430c9d4430e8b221d4d5049e9628b830c813e2721756d8",
+        "dea5bfdff0a20a7f90d5a3b140cd6a12fff07b3e579b10f8819dc46cc9b791f8",
+        "098cb6bfde1ca52fb8677660a35896e162786872cde21e469938d514662db3ad"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03549",
+      "file": "apps/runner/src/runtime-doctor.ts",
+      "reviewed_anchors": [
+        768,
+        769
+      ],
+      "fingerprints": [
+        "3dacc264cdfdea299aa013bdb5b2378d85f80ce55bf3dc3a353e579e1b3eb67a",
+        "e120568c9a7047731cc004c4100b81ed4893b12baa2fd29f33ab5220122ac497",
+        "a9b1ed9a3ae18d9612316a96509788da3889b0f18bcdb20ec8cc0e8e5422d55a",
+        "81dad9f6ec5522f23dc0f71be600f99a5ebb6555c5b11686b06180c06c361b65"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03551",
+      "file": "apps/runner/src/worker-policy.ts",
+      "reviewed_anchors": [
+        42,
+        43,
+        45,
+        46,
+        48,
+        49,
+        51,
+        52
+      ],
+      "fingerprints": [
+        "405550dfb35e2ab8a2dc454fafe885bad05841bb82a70c653e246a90eaee1da1",
+        "93c8ad06e86bbe99b750963692c5f08df98d959ffe2bdf0240483cf7df8c0248",
+        "404523470b56f3253c56167c8a8235c00d897d45ddcc8470e1c9bbc20a7f6e30",
+        "ed1dc71ca928a9cc5ff71d1fd9e0508bd43fc240cbb20ec75031a25edfb25499",
+        "42d1b6ab9008266cb50c3d9fbcb9233b0d8a5b429f358a2e1283f90131a22ed3",
+        "16e47de6d446bcc0909f86f366b7e8032ba0cb65e3fe0f93ce7ba88de72ea0c9",
+        "a99f6c93176cfa330ae1bb59b3a6759be291a87bb539746d4e9d0ad298a36fd4",
+        "03a42d1cd6ba6b45331575abefd9c14354c9f730993a7d008171564f5ededca7"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03555",
+      "file": "apps/runner/src/cli-logging.ts",
+      "reviewed_anchors": [
+        54,
+        55
+      ],
+      "fingerprints": [
+        "aa9bc264e4e8f83c299a3952c6c39ffc87a6ebf6ec0435f49dd5f9eb2ad7496f",
+        "9028a48bb135499d34e37a6192c9d38ce6ff1b2804df10ff43444f8885734383",
+        "8c9f2d0c9e6f958310957d0435e071cc81da18f8caa12a2905a319b29a3ef6c7",
+        "96403898bfc4931043254b8618f7a89568daff40c88af8d30e2894a58c55adac"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03557",
+      "file": "apps/runner/src/cli-files.ts",
+      "reviewed_anchors": [
+        40,
+        41
+      ],
+      "fingerprints": [
+        "fde4e8d150c0f91af1c3483af5764358d304dea1ae7b98af4a5f8d666739b057",
+        "0ac7f1f8101fb84f4d44f86be3e7f45c8819118575caae20715e30594bfb7e04",
+        "76fd3abe11e759b958e10c9ee8cbb32ddf56ee4675b294ad3edca58f0618f570",
+        "05409832d65e761f2a5f3daec84fe0caa5a1cd0a866cd070f2871e4d396caf23"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03561",
+      "file": "apps/runner/src/analytics-shell-render.ts",
+      "reviewed_anchors": [
+        665,
+        666
+      ],
+      "fingerprints": [
+        "907f06bbbc38f0bbfbdddc421a0c050a87631aefae1d44afcadf27d9528ae357",
+        "9120282b80c7c42603b2f2c9e490b5db9cbad830371e775ea04ea54253ab8c64",
+        "047c489442dfaf8926dbbec25e9b79b1b19abb8c69f60d900ebb61c01bfc313e",
+        "94e80c927b69ecd3f1464848e6f007599c2b31b272aa57e40fe853ee5dc1575b"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03563",
+      "file": "apps/runner/src/analytics-shell.ts",
+      "reviewed_anchors": [
+        2456,
+        2457,
+        2458
+      ],
+      "fingerprints": [
+        "f398c48ba947dcf63989464d2b2d18f69e20b5f0c905a95f75a7e60684a25886",
+        "47af02bc3e8a2300d71aee29677a278cacaf88551cb27a74a24a4f83227cf56f",
+        "7b95c3f695dba2024d93f5d2cd78ab5ce58c0e58b38031d7b5632cbff04c1fb9",
+        "5a79b00a07c7c1faaaaa066c87b64ba4130e4a64803a71397968f15cefcb0ace"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03567",
+      "file": "apps/runner/src/contract-testing.ts",
+      "reviewed_anchors": [
+        148,
+        149,
+        150
+      ],
+      "fingerprints": [
+        "80645569f9e6f3efa5bb7ac6f1fb667a82498fe7ce07fbedb58577e881814f87",
+        "c81cd5e3d0c80c86a562e0aabf9e2c1d83622154969f39c1c07ee47d219b6708",
+        "cc00671fc645f7459c058ad5647729e0143359dc7f33c9d4c6d447e1aac9b286"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03570",
+      "file": "apps/runner/src/proposal-formatting.ts",
+      "reviewed_anchors": [
+        801
+      ],
+      "fingerprints": [
+        "b3312fc92e1d9fed0097115a836bf0308aaf788c3d3325f20363c51efe32d792",
+        "f1ea631f3199940ea69195e1d92634ee59499aa7c96c1858171b5262392ef64d",
+        "29a0df10c9c826ceb0be0e59dc5cd52efb3b8a01a95e1637073b02abfe33203a"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03571",
+      "file": "apps/runner/src/proposal-formatting.ts",
+      "reviewed_anchors": [
+        937
+      ],
+      "fingerprints": [
+        "5a122829817bb32548d6b55026f0a203101a366f6c4c47be39a880c365504e75",
+        "daa2f0fbf28f869c35035ffc150c10e3eb17eceab550e4044b9aaaf087dec327"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03572",
+      "file": "apps/runner/src/first-run-doctor.ts",
+      "reviewed_anchors": [
+        77
+      ],
+      "fingerprints": [
+        "996b745e1b26801eb99c742c15e701459c6c3a30b0590f3fed6d8183e05c1432",
+        "4d1273cc2574cc57ac19c04cc65a26870cd578c4acb1bd0e4db22aacd7237498"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03576",
+      "file": "apps/runner/src/terminal-prose.ts",
+      "reviewed_anchors": [
+        5
+      ],
+      "fingerprints": [
+        "62694bd6389ee71da54c643e540fa06914b5951e9e31407c6e2a4b03a230281e",
+        "834f26724956238b23a68401195259412149d8c5fa15c5169a437a07f88b4352"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03577",
+      "file": "apps/runner/src/verified-action-review.ts",
+      "reviewed_anchors": [
+        693
+      ],
+      "fingerprints": [
+        "8bb2e4a446a500e96f4a40c8066e8369a74973042bfb8bb1168138865427a10e",
+        "61bac0a2c79d42e82889637637cf561e69566a97aa17631ed91d20e839799036",
+        "4e6cb9aedd646f382e8eac5b890e951454fd0235ccab22ad74307f4dd8a14692"
+      ],
+      "status": "exact_expression_mapped"
+    },
+    {
+      "annotation_id": "I03596",
+      "file": "apps/runner/src/scoped-explore-boundary-set.ts",
+      "reviewed_anchors": [
+        469,
+        472,
+        473,
+        475,
+        476,
+        477,
+        478,
+        479,
+        480,
+        483,
+        484,
+        485,
+        486,
+        487,
+        488,
+        492,
+        493
+      ],
+      "fingerprints": [
+        "a766a7038a50c316e4c40f2de48a7e3e9dbc14e795f4106d3735b87012e18b12",
+        "f15fc78150e14c3f434f482c2a53645eb129b3fd544bdadf4ffc8147707fac25",
+        "4ba4778c01088ba050d26c1b517e6b05cd1f2d566dc2061b596fb4c7d89b5f69",
+        "3701f79724df80b9071f415d96c66a527188e9adce0bceb4bedebd179f0df59a",
+        "e461281c2268aa6779cf45b00db34d40712582cf231adddbd63162d178d7922a",
+        "8e2b9fb1a1682ae967a655d0b9359a144775d81b60487ede96c844b5e11f10f2",
+        "5d26d69302bc46a657e48e3a442a5aacea75a91657d8ca0ab62d2960979e0437"
+      ],
+      "status": "exact_expression_mapped"
+    }
+  ],
+  "rejected": [
+    {
+      "fingerprint": "b53af3a40a91a0f0e5eb0405d1ba3e433144d70caafba1d4cf69252d2959168f",
+      "file": "packages/mcp-server/src/model-output-policy.ts",
+      "line": 48,
+      "column": 7,
+      "kind": "indexed_lookup",
+      "owner_digest": "c3aaf5e0ef9ea40f2922e308be77aa145365c93b91b912500d99bab2c633290e",
+      "expression_digest": "c0bdc2a2646b23e8abe61e495b87b9fcc34911d12f14815be6b0a18300a079ec",
+      "excerpt": "output[key]",
+      "occurrence": 0,
+      "syntax_kind": "indexed_lookup",
+      "anchor_line": 48,
+      "full_expression": "output[key]",
+      "owner_name": "projectAuthorityMetadataForModel",
+      "annotation_ids": [
+        "I02088"
+      ],
+      "reason": "Indexed/computed use is not separately approved by this original exact-expression review."
+    }
+  ],
+  "counts": {
+    "accepted_fingerprints": 365,
+    "mapped_annotations": 100,
+    "unmapped_annotations": 1,
+    "rejected": 1,
+    "other_candidates_not_approved": 39859
+  }
+}

@@ -27,10 +27,18 @@ script. Code review remains necessary for changes to the scanner and allowlist.
 Static syntax analysis cannot prove the absence of arbitrary obfuscated or
 external language interpretation.
 
-The first allowlist is intentionally empty pending the independent audit and exact-allowance review.
-Therefore the repository check currently fails closed. This is **not** a green
-B64 gate or a claim that every syntactic candidate is English logic. The audit
-must produce exact legitimate entries; retirement lanes must close all real
-decisions. No known English decision may be whitelisted to make CI pass.
-Use `node scripts/check-authoring-language.mjs --report /owned/path/report.json`
-for a diagnostic report; this retains the same failing exit status.
+The first allowlist contains 365 independently reviewed exact fingerprints
+mapped from 100 of the 101 legitimate audit IDs (one ID is only a declaration
+anchor). See the independent mapping record under
+`docs/development/b64-legitimate-independent`. None of the 25 reclassified or
+15 retired IDs receives an allowance. Consumer/declaration ranges are not
+blanket-approved. The guard core passed all 21 controls under independent review
+at d169d640; practical allowance coverage remains a separate open task.
+
+The repository check still fails closed on unmatched candidates. This is not a
+green B64 gate or a claim that every unmatched syntactic candidate is English
+logic. Bounded detector refinements and exact legitimate review must distinguish
+formal code from the remaining language decisions. No decision may be permitted
+merely to make CI pass. Use
+`node scripts/check-authoring-language.mjs --report /owned/path/report.json`
+for diagnostics; the report option retains the same failing exit status.
