@@ -7,6 +7,7 @@ import {
 } from "./auto-boundary.js";
 import { readGuidedOnboardingState } from "./guided-project.js";
 import type { AskToolGateway, AskToolTrace } from "./model-ask.js";
+import type { ExploreAnalysisOperation } from "./scoped-explore.js";
 import { cliPrivacyReviewInstructions } from "./privacy-review-guidance.js";
 
 export type ReviewedAskResourceSummary = {
@@ -70,78 +71,12 @@ export async function readReviewedAskAccessSummary(
   };
 }
 
-export async function resolveAskAccessGuidance(input: {
-  projectRoot: string;
-  question: string;
-  toolCalls?: AskToolTrace[];
-}): Promise<AskAccessGuidance | undefined> {
-  const normalizedQuestion = normalizedSearchText(input.question);
+export async function resolveAskAccessGuidance(input: { projectRoot: string; question: string; toolCalls?: AskToolTrace[] }): Promise<AskAccessGuidance | undefined> {
   const [draft, activeBoundaries] = await Promise.all([
     readGeneratedBoundaryDraft(input.projectRoot).catch(() => undefined),
     loadActivatedExplorationBoundaries(input.projectRoot).catch(() => []),
   ]);
-  const refusalGuidance = resolveRefusalAccessGuidance({
-    toolCalls: input.toolCalls ?? [],
-    draft,
-    activeBoundaries,
-  });
-  if (refusalGuidance) return refusalGuidance;
-  if (!normalizedQuestion || !draft) return undefined;
-
-  const resources = draft.pack.resources;
-  const keptOutMatch = resources.some((resource) =>
-    resource.kept_out_fields.some((field) => phraseMatches(normalizedQuestion, field)));
-  if (keptOutMatch) return undefined;
-
-  if (asksForDerivedFormula(normalizedQuestion)) {
-    return {
-      kind: "reviewed_view_required",
-      title: "A reviewed metric is needed",
-      message: "This question requires a derived formula or a relationship shape that Scoped Explore will not improvise. Define it in a reviewed database view or named capability, rescan, and then review that narrow surface.",
-      next_action: "Create a reviewed view or named metric, then run /access to rescan and review it.",
-    };
-  }
-
-  const matches = resources.flatMap((resource) => {
-    const fields = candidateVisibleFields(resource);
-    const matchingField = fields.find((field) => phraseMatches(normalizedQuestion, field));
-    const resourceMatch = phraseMatches(normalizedQuestion, resource.table)
-      || phraseMatches(normalizedQuestion, resource.id);
-    return matchingField || resourceMatch
-      ? [{ resource, matchingField, score: (matchingField ? 8 : 0) + (resourceMatch ? 4 : 0) }]
-      : [];
-  }).sort((left, right) => right.score - left.score || left.resource.id.localeCompare(right.resource.id));
-  const target = matches[0];
-  if (!target) return undefined;
-
-  const temporal = asksForTimeComparison(normalizedQuestion);
-  if (activeCandidateCanAnswer({
-    activeBoundaries,
-    targetId: target.resource.id,
-    matchingField: target.matchingField,
-    temporal,
-  })) return undefined;
-  const targetResourceIsActive = activeBoundaries.some((boundary) =>
-    boundary.pack.resources.some((resource) => resource.id === target.resource.id));
-  const root = bestCandidateRoot(resources, target.resource.id, temporal);
-  const candidatePath = root
-    ? candidatePathSummary(root, target.resource.id, resources, temporal)
-    : undefined;
-  const label = businessLabel(target.resource.table);
-  const fieldLabel = target.matchingField ? businessLabel(target.matchingField) : undefined;
-  return {
-    kind: "review_candidate",
-    title: targetResourceIsActive
-      ? `${fieldLabel ?? label} needs another reviewed analytical path`
-      : `${fieldLabel ?? label} is not in the active boundary`,
-    message: candidatePath
-      ? `Runner found a source-proven, many-to-one candidate path for ${fieldLabel ?? label}. It remains disabled until a human reviews the tables, fields, relationship path, scope, and limits.`
-      : `${label} exists in the generated draft but is not active. A human must review its fields, scope, and limits before an agent can query it.`,
-    ...(candidatePath ? { candidate_path: candidatePath } : {}),
-    review_resource: root?.id ?? target.resource.id,
-    ...(target.matchingField ? { review_field: target.matchingField } : {}),
-    next_action: "Use /access in the CLI or Review or expand access in Workbench. Nothing is activated automatically.",
-  };
+  return resolveRefusalAccessGuidance({ toolCalls: input.toolCalls ?? [], draft, activeBoundaries });
 }
 
 function resolveRefusalAccessGuidance(input: {
@@ -218,8 +153,9 @@ function resolveRefusalAccessGuidance(input: {
       boundary.pack.resources.some((candidate) => candidate.id === resource));
   const activeResource = activeBoundary?.pack.resources.find((candidate) => candidate.id === resource);
   const generatedResource = input.draft?.pack.resources.find((candidate) => candidate.id === resource);
-  const permission = operationPermission(operation);
-  if (permission && generatedResource && operationAvailable(generatedResource, field, operation)) {
+  const typedOperation = readAnalysisOperation(details.analysis_operation);
+  const permission = typedOperation ? operationPermission(typedOperation) : undefined;
+  if (permission && generatedResource && typedOperation && operationAvailable(generatedResource, field, typedOperation)) {
     const fields = reviewedOperationFields(activeResource, permission.key, field);
     const command = `synapsor-runner boundary review resource ${resource} ${permission.flag} ${fields.join(",")} --actor <reviewer> --reason '<reason>' --apply`;
     return {
@@ -234,7 +170,7 @@ function resolveRefusalAccessGuidance(input: {
     };
   }
 
-  if (operation === "group" && activeResource
+  if (typedOperation?.kind === "group" && activeResource
     && exactGroupingReviewable(activeResource, field)) {
     const command = `synapsor-runner boundary review resource ${resource} `
       + `--allow-exact-grouping ${field} --actor <reviewer> --reason '<reason>' --apply`;
@@ -250,7 +186,7 @@ function resolveRefusalAccessGuidance(input: {
     };
   }
 
-  const related = operation === "group"
+  const related = typedOperation?.kind === "group"
     ? relatedGroupingAlternative(activeBoundary, activeResource, field)
     : undefined;
   if (related) {
@@ -291,7 +227,7 @@ function exactGroupingReviewable(
   if ((resource.relationships ?? []).some((relationship) =>
     relationship.local_columns?.includes(field)
     || relationship.proof?.links.some((link) => link.source_columns.includes(field)))) return false;
-  return field.toLowerCase() !== "id" && !/_id$/i.test(field);
+  return true;
 }
 
 type ReviewedOperationKey =
@@ -334,51 +270,39 @@ function reviewPath(
   ].join(" -> ");
 }
 
-function operationPermission(operation: string): {
-  key: ReviewedOperationKey;
-  flag: string;
-  label: string;
-} | undefined {
-  if (operation === "select" || operation === "return") {
-    return { key: "selectable_fields", flag: "--visible-fields", label: "Return values" };
-  }
-  if (operation === "sort") {
-    return { key: "sortable_fields", flag: "--sort-fields", label: "Sort" };
-  }
-  if (operation === "group") {
-    return { key: "groupable_fields", flag: "--group-fields", label: "Group totals" };
-  }
-  if (operation === "sum" || operation === "avg") {
-    return { key: "aggregate_measures", flag: "--measure-fields", label: "Totals and averages" };
-  }
-  if (operation === "count_distinct") {
-    return { key: "count_distinct_fields", flag: "--count-distinct-fields", label: "Count unique" };
-  }
-  if (operation.startsWith("filter operator ")) {
-    return { key: "filterable_fields", flag: "--filter-fields", label: "Filter" };
-  }
-  if (operation === "time comparison" || operation.endsWith(" time bucket")) {
-    return { key: "time_bucket_fields", flag: "--time-fields", label: "Time buckets" };
-  }
-  return undefined;
+function readAnalysisOperation(value: unknown): ExploreAnalysisOperation | undefined {
+  if (!isRecord(value) || typeof value.kind !== "string") return undefined;
+  const keys = Object.keys(value);
+  const simple = ["select", "sort", "group", "count_distinct", "derived_measure", "time_window", "time_comparison"];
+  if (simple.includes(value.kind) && keys.length === 1) return value as ExploreAnalysisOperation;
+  const argument = value.kind === "filter" ? "operator" : value.kind === "time_bucket" ? "bucket" : value.kind === "measure" ? "function" : undefined;
+  if (!argument || keys.length !== 2 || !keys.every(key => key === "kind" || key === argument)
+    || typeof value[argument] !== "string" || !value[argument] || value[argument].length > 64) return undefined;
+  return value as ExploreAnalysisOperation;
 }
 
-function operationAvailable(
-  resource: ReviewedBoundaryResource,
-  field: string,
-  operation: string,
-): boolean {
+function operationPermission(operation: ExploreAnalysisOperation): { key: ReviewedOperationKey; flag: string; label: string } | undefined {
+  switch (operation.kind) {
+    case "select": return { key: "selectable_fields", flag: "--visible-fields", label: "Return values" };
+    case "sort": return { key: "sortable_fields", flag: "--sort-fields", label: "Sort" };
+    case "group": return { key: "groupable_fields", flag: "--group-fields", label: "Group totals" };
+    case "measure": return { key: "aggregate_measures", flag: "--measure-fields", label: "Reviewed measures" };
+    case "count_distinct": return { key: "count_distinct_fields", flag: "--count-distinct-fields", label: "Count unique" };
+    case "filter": return { key: "filterable_fields", flag: "--filter-fields", label: "Filter" };
+    case "time_bucket": case "time_window": case "time_comparison": return { key: "time_bucket_fields", flag: "--time-fields", label: "Time buckets" };
+    default: return undefined;
+  }
+}
+
+function operationAvailable(resource: ReviewedBoundaryResource, field: string, operation: ExploreAnalysisOperation): boolean {
   const permission = operationPermission(operation);
   if (!permission) return false;
-  if (permission.key === "filterable_fields") {
-    const expectedOperator = operation.slice("filter operator ".length);
-    return resource.filterable_fields[field]?.some((candidate) => candidate === expectedOperator) === true;
-  }
-  if (permission.key === "time_bucket_fields") {
-    if (operation === "time comparison") return Boolean(resource.time_bucket_fields[field]?.length);
-    const bucket = operation.slice(0, -" time bucket".length);
-    return resource.time_bucket_fields[field]?.some((candidate) => candidate === bucket) === true;
-  }
+  if (operation.kind === "filter") return resource.filterable_fields[field]?.some(candidate => candidate === operation.operator) === true;
+  if (operation.kind === "measure") return resource.aggregate_measures.includes(field)
+    && resource.aggregate_measure_functions?.[field]?.some(candidate => candidate === operation.function) === true;
+  if (operation.kind === "time_bucket") return resource.time_bucket_fields[field]?.some(candidate => candidate === operation.bucket) === true;
+  if (operation.kind === "time_comparison" || operation.kind === "time_window") return Boolean(resource.time_bucket_fields[field]?.length);
+  if (permission.key === "time_bucket_fields" || permission.key === "filterable_fields") return false;
   return resource[permission.key].includes(field);
 }
 
@@ -641,35 +565,15 @@ function candidateVisibleFields(
   ]).filter((field) => !resource.kept_out_fields.includes(field));
 }
 
-function asksForDerivedFormula(question: string): boolean {
-  return /\b(rate|ratio|percentage|percent|conversion|average order value)\b/.test(question);
-}
 
-function asksForTimeComparison(question: string): boolean {
-  return /\b(change|changed|growth|growing|grew|trend|week|month|day|period|over time)\b/.test(question);
-}
 
-function phraseMatches(question: string, value: string): boolean {
-  const phrase = normalizedSearchText(value.split(".").at(-1) ?? value);
-  if (!phrase) return false;
-  if (` ${question} `.includes(` ${phrase} `)) return true;
-  const terms = new Set(question.split(" ").map(singularTerm));
-  return phrase.split(" ").every((term) => terms.has(singularTerm(term)));
-}
 
-function normalizedSearchText(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
-function singularTerm(value: string): string {
-  if (value.endsWith("ies") && value.length > 4) return `${value.slice(0, -3)}y`;
-  if (value.endsWith("s") && !value.endsWith("ss") && value.length > 3) return value.slice(0, -1);
-  return value;
-}
+
+
+
+
+
 
 function safeIdentifier(value: unknown): string | undefined {
   return typeof value === "string" && /^[A-Za-z_][A-Za-z0-9_.-]{0,255}$/.test(value)

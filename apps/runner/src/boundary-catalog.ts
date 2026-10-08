@@ -665,9 +665,7 @@ function reviewedRelationshipQuestions(source: BoundaryResource, target: Boundar
   if (!group) return [];
   const measure = source.aggregate_measures
     .filter((field) => !source.kept_out_fields.includes(field))
-    .filter((field) => measureUsefulness(field) > 0)
-    .sort((left, right) => measureUsefulness(right) - measureUsefulness(left)
-      || left.localeCompare(right))[0];
+    .sort((left, right) => left.localeCompare(right))[0];
   const time = Object.keys(source.time_bucket_fields).find((field) =>
     !source.kept_out_fields.includes(field));
   const sourcePlural = reviewedResourceLabel(source).toLowerCase();
@@ -685,9 +683,8 @@ function reviewedTableQuestions(resource: BoundaryResource): string[] {
   const hidden = hiddenFields(resource);
   const groups = resource.groupable_fields.filter((field) => !hidden.has(field));
   const measures = resource.aggregate_measures
-    .filter((field) => !hidden.has(field) && measureUsefulness(field) > 0)
-    .sort((left, right) => measureUsefulness(right) - measureUsefulness(left)
-      || left.localeCompare(right));
+    .filter((field) => !hidden.has(field))
+    .sort((left, right) => left.localeCompare(right));
   const times = Object.keys(resource.time_bucket_fields).filter((field) => !hidden.has(field));
   const pluralNoun = reviewedResourceLabel(resource).toLowerCase();
   const group = groups[0];
@@ -717,40 +714,14 @@ function reviewedTableQuestions(resource: BoundaryResource): string[] {
 }
 
 function reviewedMetricPhrase(resource: BoundaryResource, measure?: string): string {
-  const pluralNoun = reviewedResourceLabel(resource).toLowerCase();
-  if (!measure) return `number of ${pluralNoun}`;
-  const sourceNoun = singularize(pluralNoun);
-  const normalized = reviewedFieldLabel(resource, measure)
-    .toLowerCase()
-    .replace(/\s+cents?$/, "")
-    .trim();
-  const metric = normalized === "total"
-    ? "value"
-    : normalized.replace(/^total\s+/, "") || "value";
-  return `total ${sourceNoun} ${metric}`;
+  return measure ? `sum of ${reviewedFieldLabel(resource, measure)}` : `number of ${reviewedResourceLabel(resource)}`;
 }
 
 function reviewedDimensionPhrase(resource: BoundaryResource, field: string): string {
-  const resourceWords = singularize(reviewedResourceLabel(resource).toLowerCase()).split(/\s+/);
-  const fieldWords = reviewedFieldLabel(resource, field).toLowerCase().split(/\s+/);
-  if (/^(?:name|title|label|display name)$/.test(fieldWords.join(" "))) {
-    return resourceWords.join(" ");
-  }
-  let overlap = Math.min(resourceWords.length, fieldWords.length);
-  while (overlap > 0) {
-    const resourceSuffix = resourceWords.slice(resourceWords.length - overlap).join(" ");
-    const fieldPrefix = fieldWords.slice(0, overlap).join(" ");
-    if (resourceSuffix === fieldPrefix) break;
-    overlap -= 1;
-  }
-  if (overlap > 0) return [...resourceWords, ...fieldWords.slice(overlap)].join(" ");
-  if (fieldWords.length > 1) return fieldWords.join(" ");
-  return [...resourceWords, ...fieldWords].join(" ");
+  return `${reviewedResourceLabel(resource)} / ${reviewedFieldLabel(resource, field)}`;
 }
 
-function metricForTrend(metric: string): string {
-  return metric.startsWith("number of ") ? `the ${metric}` : metric;
-}
+function metricForTrend(metric: string): string { return metric; }
 
 function hiddenFields(resource: BoundaryResource): Set<string> {
   return new Set([
@@ -1086,21 +1057,9 @@ function humanizeIdentifier(value: string): string {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function singularize(value: string): string {
-  if (value.endsWith("ies") && value.length > 3) return `${value.slice(0, -3)}y`;
-  if (value.endsWith("sses")) return value.slice(0, -2);
-  if (value.endsWith("s") && !value.endsWith("ss")) return value.slice(0, -1);
-  return value;
-}
 
-function measureUsefulness(field: string): number {
-  const normalized = field.toLowerCase();
-  if (normalized === "id" || normalized.endsWith("_id") || normalized === "version") return -100;
-  if (/(amount|revenue|price|cost|balance|fee|discount|total|subtotal|tax|quantity|duration|usage|count)/.test(normalized)) {
-    return 100;
-  }
-  return 0;
-}
+
+
 
 function unique<T>(values: T[]): T[] {
   return [...new Set(values)];

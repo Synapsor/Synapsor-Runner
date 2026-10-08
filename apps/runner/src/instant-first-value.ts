@@ -56,7 +56,7 @@ export function buildInstantFirstValue(
   return {
     resource: resource.id,
     question: trend
-      ? `How did ${trendMeasureLabel(measure!, counted)} change by ${time!.bucket}?`
+      ? `How did ${(resource.field_metadata?.[measure!]?.label ?? words(measure!))} change by ${time!.bucket}?`
       : grouped
         ? `Which ${plural(grouped)} have the most ${plural(counted)}?`
         : `How many reviewed ${plural(counted)} are in scope?`,
@@ -81,18 +81,9 @@ export function buildInstantFirstValue(
   };
 }
 
-function trendMeasureLabel(measure: string, resource: string): string {
-  if (/^total(?:_|$)/.test(measure)) return `${singular(resource)} totals`;
-  if (/^amount(?:_|$)/.test(measure)) return `${singular(resource)} amount`;
-  return words(measure).replace(/ cents$/, "");
-}
 
-function singular(value: string): string {
-  if (value.endsWith("ies")) return `${value.slice(0, -3)}y`;
-  if (value.endsWith("ses")) return value.slice(0, -2);
-  if (value.endsWith("s")) return value.slice(0, -1);
-  return value;
-}
+
+
 
 function words(value: string): string {
   return value

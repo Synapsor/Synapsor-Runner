@@ -517,12 +517,12 @@ export function catalogContractSizeError(kind: "entry" | "response", measured: n
 }
 
 function terms(text: string): string[] { return text.normalize("NFKC").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []; }
-// Grammar words, never business verbs (approve/reject, remove/restore, etc.).
-const SEARCH_GRAMMAR_WORDS = new Set(["a", "an", "the", "for", "of", "to", "with", "please"]);
+// Preserve every caller token. Search matches disclose literal coverage;
+// no English grammar word is silently discarded.
 function searchTerms(text: string): string[] {
   return [...new Set(searchSequence(text))];
 }
-function searchSequence(text: string): string[] { return terms(text).filter(token => !SEARCH_GRAMMAR_WORDS.has(token)); }
+function searchSequence(text: string): string[] { return terms(text); }
 function compareIds(a: string, b: string): number { return a < b ? -1 : a > b ? 1 : 0; }
 function budgetError(): McpRuntimeError { return catalogError("CATALOG_SESSION_LIMIT", "This session reached its discovery limit. Use the already reviewed shortlist; further catalog disclosure requires a new authorized session."); }
 function catalogError(code: string, message: string): McpRuntimeError { return new McpRuntimeError(code, message); }

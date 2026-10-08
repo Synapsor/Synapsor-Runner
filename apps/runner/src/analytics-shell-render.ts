@@ -112,7 +112,7 @@ export function renderAnalyticsTurn(
   const withheldFromModel = turn.tool_calls.some((call) => call.model_withheld_values === true);
   const suppressedShareWarning = turn.answer_source === "runner"
     ? undefined
-    : populationShareWarning(explanation, successfulData);
+    : populationShareWarning(successfulData);
   const rule = "-".repeat(Math.max(32, Math.min(72, width)));
   const boundaryOnly = analyses.filter((analysis) =>
     analysis.tool === "app.explore_data"
@@ -201,91 +201,18 @@ export function renderAnalyticsTurn(
   return lines.join("\n");
 }
 
-function populationShareWarning(
-  answer: string,
-  analyses: AnalyticsAnalysis[],
-): string | undefined {
+function populationShareWarning(analyses: AnalyticsAnalysis[]): string | undefined {
   if (!analyses.some((analysis) => suppressedGroupCount(analysis.result) > 0)) return undefined;
-  if (!/(?:\bshares?\b|\bpercent(?:age|ages|s)?\s+of\b|%\s+of\b)/i.test(answer)) return undefined;
   return "Runner note: at least one group was withheld, so an exact share of the complete population is unavailable. Percentages calculated from the displayed rows describe only the returned non-suppressed subtotal.";
 }
 
-export function modelAnswerForDisplay(
-  answer: string,
-  analyses: AnalyticsAnalysis[],
-  accessGuidance?: AskAccessGuidance,
-): string {
-  const successfulData = analyses.some((analysis) =>
-    analysis.tool !== "app.describe_data"
-    && analysis.status === "ok"
-    && analysis.result.ok !== false);
-  const rows = analyses
-    .filter((analysis) => analysis.status === "ok" && analysis.result.ok !== false)
-    .flatMap((analysis) => resultRows(analysis.result));
-  const finish = (value: string): string => successfulData
-    ? polishSuccessfulModelInterpretation(value, rows)
-    : value;
-  if (rows.length < 3) return finish(conciseBoundaryLimitation(answer, analyses, accessGuidance));
-
-  const lines = answer.split(/\r?\n/);
-  const matches = lines.map((line) => matchingResultRows(line, rows));
-  const uniqueMatches = lines.map((line) => matchingUniqueResultRows(line, rows));
-  const repeatedUniqueListing = lines.filter((line, index) =>
-    /^[-*\u2022]\s+/.test(line.trim()) && uniqueMatches[index]! > 0).length >= 3;
-  const removable = matches.map((matchedRows, index) => {
-    const line = lines[index]!.trim();
-    return matchedRows >= 4 || (/^[-*\u2022]\s+/.test(line) && (
-      matchedRows > 0 || (repeatedUniqueListing && uniqueMatches[index]! > 0)
-    ));
-  });
-  const duplicateRows = matches.reduce((total, matchedRows, index) =>
-    total + (removable[index] ? Math.max(matchedRows, uniqueMatches[index]!) : 0), 0);
-  if (duplicateRows < 3) return finish(conciseBoundaryLimitation(answer, analyses, accessGuidance));
-
-  const duplicateLeadIns = lines.map((line, index) => {
-    if (!/:\s*$/.test(line.trim())) return false;
-    let next = index + 1;
-    while (next < lines.length && lines[next]!.trim() === "") next += 1;
-    return removable[next] === true;
-  });
-  const kept = lines.filter((line, index) => {
-    if (removable[index] || duplicateLeadIns[index]) return false;
-    return !/\b(?:results?|rows?|breakdown|summary interpretation)[^.!?]*:\s*$/i.test(line.trim());
-  });
-  const cleaned = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
-  return finish(conciseBoundaryLimitation(cleaned || answer, analyses, accessGuidance));
+export function modelAnswerForDisplay(answer: string, analyses: AnalyticsAnalysis[], accessGuidance?: AskAccessGuidance): string {
+  // Narration remains untrusted. Actual typed result/guidance determines the
+  // boundary notice; English words never decide which model claims survive.
+  return conciseBoundaryLimitation(answer, analyses, accessGuidance);
 }
 
-function polishSuccessfulModelInterpretation(
-  answer: string,
-  rows: Array<Record<string, unknown>>,
-): string {
-  const withoutRowListings = answer
-    .split(/(?<=[.!?])\s+/)
-    .filter((sentence) => !(
-      matchingResultRows(sentence, rows) >= 3
-      && /\b(?:exact|returned|rows?|breakdown|weekly sums?)\b/i.test(sentence)
-    ))
-    .join(" ");
-  return withoutRowListings
-    .trim()
-    .replace(
-      /^I (?:ran|used|queried|grouped|aggregated)\b[^.]*\.\s*/i,
-      "",
-    )
-    .replace(
-      /^Returned\b[^.]*\.\s*/i,
-      "",
-    )
-    .replace(/(^|\s)(?:Strongest trend|Interpretation|Summary):\s*/gi, "$1")
-    .replace(/(^|[.!?]\s+)([a-z])/g, (_match, prefix: string, letter: string) =>
-      `${prefix}${letter.toUpperCase()}`)
-    .replace(
-      /\s+(?:Would you like|If you (?:would like|want))[^?]*\?\s*$/i,
-      "",
-    )
-    .trim();
-}
+
 
 function conciseBoundaryLimitation(
   answer: string,
@@ -301,53 +228,13 @@ function conciseBoundaryLimitation(
     : `${accessGuidance.title}. The active reviewed boundary cannot answer this question, so Runner did not execute a data query.`;
 }
 
-function matchingResultRows(
-  line: string,
-  rows: Array<Record<string, unknown>>,
-): number {
-  const normalizedLine = normalizeResultComparison(line);
-  return rows.filter((row) => {
-    const tokens = unique(Object.values(row).flatMap(resultComparisonTokens));
-    return tokens.filter((token) => normalizedLine.includes(token)).length >= 2;
-  }).length;
-}
 
-function matchingUniqueResultRows(
-  line: string,
-  rows: Array<Record<string, unknown>>,
-): number {
-  const normalizedLine = normalizeResultComparison(line);
-  const rowTokens = rows.map((row) =>
-    unique(Object.values(row).flatMap(resultComparisonTokens)));
-  const tokenFrequency = new Map<string, number>();
-  for (const tokens of rowTokens) {
-    for (const token of tokens) {
-      tokenFrequency.set(token, (tokenFrequency.get(token) ?? 0) + 1);
-    }
-  }
-  return rowTokens.filter((tokens) => tokens.some((token) =>
-    tokenFrequency.get(token) === 1 && normalizedLine.includes(token))).length;
-}
 
-function resultComparisonTokens(value: unknown): string[] {
-  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return [];
-  const raw = String(value);
-  const tokens = [normalizeResultComparison(raw)];
-  if (typeof value === "number") {
-    tokens.push(normalizeResultComparison(new Intl.NumberFormat("en-US").format(value)));
-  }
-  if (typeof value === "string") {
-    const timestamp = Date.parse(value);
-    if (Number.isFinite(timestamp)) {
-      tokens.push(normalizeResultComparison(new Date(timestamp).toISOString().slice(0, 10)));
-    }
-  }
-  return tokens.filter((token) => token.length >= 2);
-}
 
-function normalizeResultComparison(value: string): string {
-  return value.toLowerCase().replace(/[,\s]/g, "");
-}
+
+
+
+
 
 function renderAccessGuidance(
   guidance: AskAccessGuidance | undefined,
@@ -520,19 +407,11 @@ function minimumCohortRecoveryPath(analysis: AnalyticsAnalysis): string {
   })}\nUntil activation, Ask keeps the previous minimum group size.`;
 }
 
-function minimumCohortQuestionShapeHint(
-  analysis: AnalyticsAnalysis,
-  minimumCohort: number | undefined,
-): string | undefined {
-  if (analysis.plan?.kind !== "aggregate" || analysis.plan.dimensions?.length !== 1) {
-    return undefined;
-  }
+function minimumCohortQuestionShapeHint(analysis: AnalyticsAnalysis, minimumCohort: number | undefined): string | undefined {
+  if (analysis.plan?.kind !== "aggregate" || analysis.plan.dimensions?.length !== 1) return undefined;
   const dimension = analysis.plan.dimensions[0]!;
   if ("numeric_band" in dimension) return undefined;
-  const field = dimension.field;
-  if (!/(^id$|_id$|(^|_)name$)/i.test(field)) return undefined;
-  const label = businessLabel(field).toLowerCase();
-  return `This question groups records into one row per ${label}; any entity with fewer than ${minimumCohort ?? "the reviewed minimum"} records is withheld. Try a coarser reviewed grouping, or review this table's minimum group size.`;
+  return `This question groups records into one row per ${businessLabel(dimension.field)}; any group with fewer than ${minimumCohort ?? "the reviewed minimum"} records is withheld. Try a coarser reviewed grouping, or review this table's minimum group size.`;
 }
 
 export function renderTable(

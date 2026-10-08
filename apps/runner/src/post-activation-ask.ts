@@ -438,7 +438,7 @@ export async function runPostActivationAskHandoff(
         for (const entry of pending) {
           const notice = await reviewSemanticSupervisedExecution({ projectRoot: input.projectRoot,
             active: active.activation, activeReads: reads, outcome: entry.rule.outcome, session, env });
-          if (notice) write([notice.title, ...notice.lines.filter((line) => !line.startsWith("Run: ")), ""].join("\n"));
+          if (notice) write([notice.title, ...notice.lines, ""].join("\n"));
         }
       }
     } catch (error) {

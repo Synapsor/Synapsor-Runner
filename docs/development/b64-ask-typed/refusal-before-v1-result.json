@@ -1,0 +1,39 @@
+{
+  "pin": "da6f17d3075346ad8a4efc3caaffb634b0aa84a6",
+  "exit": 1,
+  "elapsed_seconds": 2.627,
+  "memory_available_bytes": 20787523584,
+  "disk_available_bytes": 83690479616,
+  "slot": 2,
+  "workers": 1,
+  "runtime": "/var/tmp/synapsor-b64-ask-owned/refusal-before-v1",
+  "test_sha256": {
+    "apps/runner/src/ask-refusal-contract.test.ts": "cef8c46682c1702ca8773dd1a9b1f65c8db6516754e28a8715c47226aae9ac60"
+  },
+  "numTotalTests": 4,
+  "numPassedTests": 0,
+  "numFailedTests": 4,
+  "numPendingTests": 0,
+  "failures": [
+    {
+      "file": "ask-refusal-contract.test.ts",
+      "name": "B64 Ask exact typed refusal diagnostics AD01 filter carries actual typed operation metadata without parsing its human label",
+      "message": "AssertionError: expected { \u2026(4) } to have property \"analysis_operation\" with value { kind: 'filter', operator: 'eq' }\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b64-ask-typed/apps/runner/src/ask-refusal-contract.test.ts:18:27\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:861:59\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)"
+    },
+    {
+      "file": "ask-refusal-contract.test.ts",
+      "name": "B64 Ask exact typed refusal diagnostics AD02 time bucket carries actual typed operation metadata without parsing its human label",
+      "message": "AssertionError: expected { \u2026(4) } to have property \"analysis_operation\" with value { kind: 'time_bucket', bucket: 'week' }\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b64-ask-typed/apps/runner/src/ask-refusal-contract.test.ts:18:27\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:861:59\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:1"
+    },
+    {
+      "file": "ask-refusal-contract.test.ts",
+      "name": "B64 Ask exact typed refusal diagnostics AD03 exact grouping non-key id spelling carries actual typed operation metadata without parsing its human label",
+      "message": "AssertionError: expected { \u2026(4) } to have property \"analysis_operation\" with value { kind: 'group' }\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b64-ask-typed/apps/runner/src/ask-refusal-contract.test.ts:18:27\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:861:59\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at runSuite "
+    },
+    {
+      "file": "ask-refusal-contract.test.ts",
+      "name": "B64 Ask exact typed refusal diagnostics AD04 absent typed operation refuses automatic enablement guidance even if the old label looks parseable",
+      "message": "AssertionError: expected 'review_candidate' to be 'reviewed_view_required' // Object.is equality\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b64-ask-typed/apps/runner/src/ask-refusal-contract.test.ts:26:28\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/reviewer-consents6d/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    }
+  ]
+}

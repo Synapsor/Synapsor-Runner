@@ -2052,7 +2052,7 @@ function validateRowPlan(
   const orderBy = input.order_by === undefined ? undefined : recordArray(input.order_by, "order_by", 0, 3).map((order) => {
     assertKeys(order, ["field", "direction"], "order_by item");
     const field = requiredString(order.field, "order_by.field");
-    if (!resource.sortable_fields.includes(field)) throw fieldError(resource, field, "sort");
+    if (!resource.sortable_fields.includes(field)) throw fieldError(resource, field, "sort", { kind: "sort" });
     return { field, direction: direction(order.direction) };
   });
   const maximumRowsByCells = Math.max(1, Math.floor(
@@ -2088,7 +2088,7 @@ function validateAggregatePlan(
       assertKeys(measure, ["derived_measure"], "reviewed derived measure");
       const name = requiredString(measure.derived_measure, "measure.derived_measure");
       if (!resource.derived_measures?.some((definition) => definition.name === name)) {
-        throw fieldError(resource, name, "reviewed derived measure");
+        throw fieldError(resource, name, "reviewed derived measure", { kind: "derived_measure" });
       }
       return { derived_measure: name };
     }
@@ -2102,16 +2102,16 @@ function validateAggregatePlan(
     const field = optionalString(measure.field, "measure.field");
     if (fn === "count" && field !== undefined) throw planError("count does not accept a field");
     if (fn === "count" && relation !== undefined) throw planError("count measures the reviewed subject entity and cannot switch counted entity through a relationship");
-    if (fn === "count_distinct" && (!field || !target.count_distinct_fields.includes(field))) throw fieldError(target, field ?? "(missing)", "count_distinct");
+    if (fn === "count_distinct" && (!field || !target.count_distinct_fields.includes(field))) throw fieldError(target, field ?? "(missing)", "count_distinct", { kind: "count_distinct" });
     if (CONTRIBUTOR_AWARE_MEASURE_FUNCTIONS.has(fn as AggregateMeasureFunction)
       && (!field
         || !target.aggregate_measures.includes(field)
         || !reviewedNumericAggregateFunctions(target, field).some((reviewed) => reviewed === fn))) {
-      throw fieldError(target, field ?? "(missing)", fn);
+      throw fieldError(target, field ?? "(missing)", fn, { kind: "measure", function: fn });
     }
     if (PRESENCE_MEASURE_FUNCTIONS.has(fn as AggregateMeasureFunction)
       && (!field || !target.presence_measure_fields?.includes(field))) {
-      throw fieldError(target, field ?? "(missing)", fn);
+      throw fieldError(target, field ?? "(missing)", fn, { kind: "measure", function: fn });
     }
     return {
       function: fn as BaseAggregateMeasure["function"],
@@ -2161,7 +2161,7 @@ function validateAggregatePlan(
         );
         if (relationshipRequired) throw relationshipRequired;
       }
-      throw fieldError(target, field, "group");
+      throw fieldError(target, field, "group", { kind: "group" });
     }
     return { field, ...(relation ? { relationship: relation } : {}) };
   });
@@ -2172,7 +2172,7 @@ function validateAggregatePlan(
     const target = relation ? relationshipResource(resource, relation, boundary) : resource;
     const field = requiredString(input.time_bucket.field, "time_bucket.field");
     const bucket = requiredString(input.time_bucket.bucket, "time_bucket.bucket") as TimeBucket;
-    if (!target.time_bucket_fields[field]?.includes(bucket)) throw fieldError(target, field, `${bucket} time bucket`);
+    if (!target.time_bucket_fields[field]?.includes(bucket)) throw fieldError(target, field, `${bucket} time bucket`, { kind: "time_bucket", bucket });
     return { field, bucket, ...(relation ? { relationship: relation } : {}) };
   })();
   if (dimensions.length === 0 && !timeBucket) {
@@ -2296,7 +2296,7 @@ function validateFilters(input: unknown, root: BoundaryResource, boundary: Activ
     }
     const op = requiredString(filter.op, "filter.op") as Operator;
     const operators = resource.filterable_fields[field];
-    if (!operators?.includes(op)) throw fieldError(resource, field, `filter operator ${op}`);
+    if (!operators?.includes(op)) throw fieldError(resource, field, `filter operator ${op}`, { kind: "filter", operator: op });
     const value = filter.value;
     if (op === "in") {
       if (!Array.isArray(value) || value.length < 1 || value.length > MAX_IN_VALUES || value.some((item) => !isScalar(item))) {
@@ -2324,7 +2324,7 @@ function validateTimeWindow(
     : undefined;
   const target = relationship ? relationshipResource(root, relationship, boundary) : root;
   const field = requiredString(input.field, "time_window.field");
-  if (!target.time_bucket_fields[field]) throw fieldError(target, field, "time window");
+  if (!target.time_bucket_fields[field]) throw fieldError(target, field, "time window", { kind: "time_window" });
   if (input.window !== undefined) {
     assertKeys(
       input,
@@ -2381,7 +2381,7 @@ function validateComparison(
   const relationship = optionalString(input.relationship, "comparison.relationship");
   const resource = relationship ? relationshipResource(root, relationship, boundary) : root;
   const field = requiredString(input.field, "comparison.field");
-  if (!resource.time_bucket_fields[field]) throw fieldError(resource, field, "time comparison");
+  if (!resource.time_bucket_fields[field]) throw fieldError(resource, field, "time comparison", { kind: "time_comparison" });
   if (input.window !== undefined || input.compare_to !== undefined) {
     assertKeys(input, ["field", "relationship", "window", "compare_to"], "relative comparison");
     assertReviewedUtcRelativeTime(boundary);
@@ -3586,7 +3586,7 @@ function reviewedDerivedMeasure(
   name: string,
 ): ExplorationDerivedMeasure {
   const definition = resource.derived_measures?.find((candidate) => candidate.name === name);
-  if (!definition) throw fieldError(resource, name, "reviewed derived measure");
+  if (!definition) throw fieldError(resource, name, "reviewed derived measure", { kind: "derived_measure" });
   return definition;
 }
 
@@ -4117,21 +4117,12 @@ function suggestedAggregateQuestions(
 ): Array<Record<string, unknown>> {
   const dimension = suggestedDimension(resource, resource.groupable_fields);
   const measure = [...resource.aggregate_measures]
-    .filter((field) => suggestedMeasureUsefulness(resource, field) >= 0)
-    .sort((left, right) => suggestedMeasureUsefulness(resource, right)
-      - suggestedMeasureUsefulness(resource, left)
-      || left.localeCompare(right))[0];
+    .sort((left, right) => left.localeCompare(right))[0];
   const resourceLabel = (resource.label ?? businessLabel(resource.table)).toLowerCase();
   const measureLabel = measure
-    ? labels[measure]?.toLowerCase().replace(/\s+cents$/, "")
+    ? labels[measure]
     : undefined;
-  const measureQuestionSubject = measureLabel
-    ? measureLabel === "total"
-      ? `total ${resourceLabel}`
-      : measureLabel.startsWith("total ")
-        ? measureLabel
-        : `total ${measureLabel}`
-    : undefined;
+  const measureQuestionSubject = measureLabel ? `sum of ${measureLabel}` : undefined;
   const timeField = Object.keys(resource.time_bucket_fields)[0];
   const questions: Array<Record<string, unknown>> = [];
   const relationship = resource.relationships[0];
@@ -4196,22 +4187,7 @@ function suggestedAggregateQuestions(
     .slice(0, 3);
 }
 
-function suggestedMeasureUsefulness(resource: BoundaryResource, field: string): number {
-  const normalized = field.toLowerCase();
-  if (field === resource.primary_key
-    || normalized === "id"
-    || normalized.endsWith("_id")
-    || normalized === "version"
-    || normalized.endsWith("_version")
-    || normalized.endsWith("_key")
-    || normalized.endsWith("_code")) {
-    return -1;
-  }
-  if (/(amount|revenue|price|cost|balance|fee|discount|total|subtotal|tax|quantity|duration|usage|count)/.test(normalized)) {
-    return 100;
-  }
-  return 10;
-}
+
 
 function suggestedAggregateQuestionIsExecutable(
   resource: BoundaryResource,
@@ -4252,30 +4228,14 @@ function suggestedAggregateQuestionIsExecutable(
   }
 }
 
-function suggestedDimension(
-  resource: BoundaryResource,
-  fields: string[],
-  allowGenericLabel = false,
-): string | undefined {
-  const semanticallyGrounded = fields.filter((field) => {
+function suggestedDimension(resource: BoundaryResource, fields: string[], _allowGenericLabel = false): string | undefined {
+  return [...fields].sort((left, right) => left.localeCompare(right)).find((field) => {
     const status = exploreFieldSemanticStatus(resource, field);
     return status !== "opaque_identifier" && status !== "coded_values";
   });
-  const meaningful = semanticallyGrounded.find((field) =>
-    !/^(?:name|title|label|display_name)$/i.test(field));
-  return meaningful ?? (allowGenericLabel ? semanticallyGrounded[0] : undefined);
 }
 
-function dimensionSubject(resource: BoundaryResource, field: string): string {
-  if (/^(?:name|title|label|display_name)$/i.test(field)) {
-    return (resource.label ?? businessLabel(resource.table)).toLowerCase();
-  }
-  const label = reviewedFieldLabel(resource, field).toLowerCase();
-  if (label.endsWith("status")) return `${label}es`;
-  if (label.endsWith("category")) return `${label.slice(0, -1)}ies`;
-  if (label.endsWith("s")) return label;
-  return `${label}s`;
-}
+function dimensionSubject(resource: BoundaryResource, field: string): string { return reviewedFieldLabel(resource, field); }
 
 function reviewedFieldLabel(resource: BoundaryResource, field: string): string {
   return resource.field_metadata?.[field]?.label ?? businessLabel(field);
@@ -6080,7 +6040,7 @@ function relationshipResource(root: BoundaryResource, id: string, boundary: Acti
 }
 
 function assertSubsetAllowed(values: string[], allowed: string[], resource: BoundaryResource, operation: string): void {
-  for (const value of values) if (!allowed.includes(value)) throw fieldError(resource, value, operation);
+  for (const value of values) if (!allowed.includes(value)) throw fieldError(resource, value, operation, { kind: "select" });
 }
 
 function assertTypedLiteral(resource: BoundaryResource, field: string, value: Scalar): void {
@@ -6476,7 +6436,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function fieldError(resource: BoundaryResource, field: string, operation: string): ScopedExploreError {
+export type ExploreAnalysisOperation =
+  | { kind: "select" | "sort" | "group" | "count_distinct" | "derived_measure" | "time_window" | "time_comparison" }
+  | { kind: "filter"; operator: string }
+  | { kind: "time_bucket"; bucket: string }
+  | { kind: "measure"; function: string };
+
+function fieldError(resource: BoundaryResource, field: string, operation: string, analysisOperation: ExploreAnalysisOperation): ScopedExploreError {
   const keptOut = resource.kept_out_fields.includes(field);
   const reviewableVisibleOperation = operation === "count_distinct"
     && resource.selectable_fields.includes(field)
@@ -6505,6 +6471,7 @@ function fieldError(resource: BoundaryResource, field: string, operation: string
       resource: resource.id,
       field,
       operation,
+      analysis_operation: analysisOperation,
     },
   );
 }
@@ -6522,7 +6489,7 @@ function exactGroupingReviewable(resource: BoundaryResource, field: string): boo
   if ((resource.relationships ?? []).some((relationship) =>
     relationship.local_columns?.includes(field)
     || relationship.proof?.links.some((link) => link.source_columns.includes(field)))) return false;
-  return field.toLowerCase() !== "id" && !/_id$/i.test(field);
+  return true;
 }
 
 function relationshipRequiredForGrouping(
