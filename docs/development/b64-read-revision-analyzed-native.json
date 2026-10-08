@@ -1,0 +1,36 @@
+{
+  "status": "DEV component, independent/public acceptance pending",
+  "preseal": "R1 e8cc4097 ANALYZED-PRESEAL.json",
+  "before": {
+    "pin": "dcd8356f",
+    "result": "0 PASS / 1 FAIL",
+    "cause": "native.commitAnalyzedRevisionScope missing",
+    "evidence": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/native-revision-analyzed-before.json"
+  },
+  "after": {
+    "result": "39 PASS / 0 FAIL",
+    "types": "PASS",
+    "evidence": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/native-revision-analyzed-affected.json",
+    "preserved_intermediates": [
+      "after1 failed canonical undefined hashing for intentionally cleared pending state; fixed explicit null digest encoding",
+      "guards1 3PASS2FAIL: old-scope pointer fault correctly rejected by native parser; changed hostile fault to well-formed altered history to exercise adapter ACK; existing review fixture used wrong revision property, corrected actual mutation_bindings.review_revision",
+      "corrected two fixtures guards2 2PASS; original positive/safety assertions retained"
+    ]
+  },
+  "api": {
+    "commitAnalyzedRevisionScope": "({boundary,questionId,savedReadDigest,analysis:{analysis_id,analysis_digest}}) -> acknowledged proposed successor id; loads actual stored analysis itself, checks current candidate and exact consumed analysis payload",
+    "save_ports": "read?: exact new native Read pointer preserving prior assistance_history; completedReadRevision?:{question_id} transient only, clears pending instruction/state in same protected CAS",
+    "restore": "Native scope question is always resolved/reviewed; previously recorded workload.review is not a new scope Yes. Already native-confirmed scope returns directly."
+  },
+  "guarantees": [
+    "Shares protected commit successor implementation with pending branch; actual current result_received/commit/source/native completion verified",
+    "No representative settings-only analysis, reviewed marker, fake completion or extra mapping call",
+    "Same real revision completion/material, new current-context question; actual loaded analysis and preserved controller history",
+    "Immutable full intended question/read/revision/generation ACK digests captured before cloned save inputs; faulty committed state preserved and rejected",
+    "Wrong analysis/no ACK/mutated durable history refuse; existing review marker still actual grouped default-No\u2192No pending"
+  ],
+  "open": [
+    "Main public wiring and independent e8 variants remain necessary",
+    "Future Replace after analyzed technical revision may need an explicit native lineage/invocation contract because original full producer history is intentionally preserved; not tested/waived and never silently rehashed or reset"
+  ]
+}

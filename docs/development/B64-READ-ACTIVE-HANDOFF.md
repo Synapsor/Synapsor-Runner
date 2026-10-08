@@ -9,7 +9,7 @@
 9. New prospective versioned scope_invocation_binding stays in existing checkpoint; missing field refuses special admission, no old hash inference/reset/migration.
 10. Actual prior Read analysis/pointer/history retained; separate pending revision pointer binds native consumed question and current saved candidate.
 11. New ordinary mapping retains spent history and creates exact predecessor plus unconfirmed proposal; no revision replay/oldYes.
-12. Final checkpoint actual before predecessor refusal→33PASS/types0; b64-read-revision-checkpoint-admission.json; 795 native adapter13PASS, ACK repair2ae/57 independently pending.
+12. Core d924/795+ACK2ae/57 R1 ddf9 ACCEPT22PASS; finalcheckpoint e7 R1 db9 ACCEPT28PASS; analyzed successor affected39PASS/types0 awaiting independent e8 seal verdict.
 13. Independent R1 PM01–09 preseal92caf4d0; prospective compatibility/counters/cancel review pending, no public acceptance claim.
-14. Main wiring: native preview/pending selection/commit successor + finalhost readPendingRevision accessor; completedReadRevision transient install clears pending in same protected new mapping CAS.
-15. Next: independent variants + analyzed exact-stored-workload successor API; public composition map recorded, no synthetic analysis/review/Yes. No owned tests running at checkpoint.
+14. Main wiring: native preview/pending/analyzed successor + save read/completedReadRevision in existing CAS, finalhost exact accessor; analyzed stored workload never creates review/Yes.
+15. Next independent analyzed review/public proof; possible post-analyzed Replace identity compatibility NOT RUN, no rehash/reset. Clean private backup, no owned tests/Runner/models.

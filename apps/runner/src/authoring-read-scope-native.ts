@@ -34,6 +34,8 @@ export type NativeReadScopePorts = {
    * generation patch is the actual consumed completion, never a fake answer. */
   save(input: { questions: OperatorQuestion[]; generation?: AuthoringTransportState;
     pendingReadRevisionState?: BoundaryAuthoringReadRevision;
+    read?: BoundaryAuthoringResumeRead;
+    completedReadRevision?: { question_id: string };
     stage: BoundaryAuthoringResumeState["stage"]; acknowledgeCompletedTurn: boolean; subject: string },
     permit: ProjectAuthorityMutationPermit): Promise<void>;
 };
@@ -105,7 +107,9 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
   };
   /** Recontext the same genuinely consumed proposal after its exact disabled
    * commit. No generation is consumed again and no analysis/Yes is fabricated. */
-  const commitPendingRevisionScope = async (expected: { boundary: ExplorationBoundaryDraft; questionId: string; savedReadDigest: Digest }) =>
+  type CommittedRevision = { boundary: ExplorationBoundaryDraft; questionId: string; savedReadDigest: Digest };
+  const commitRevisionScope = async (expected: CommittedRevision,
+    selected?: Pick<BoundaryAuthoringResumeRead, "analysis_id" | "analysis_digest">) =>
     input.ports.mutate(async permit => {
       await input.ports.assertCurrent(permit);
       const current = await loadBoundaryReviewContext(input.projectRoot), state = snapshot();
@@ -116,35 +120,53 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
         || explorationBoundaryCandidateDigest(current.candidate) !== expected.savedReadDigest)
         return unavailable("The exact recorded disabled Read revision commit");
       const inventory = project(expected.boundary, current, answerIds(), state);
+      const stored = selected ? await readReadWorkloadAnalysis({ projectRoot: input.projectRoot,
+        analysisId: selected.analysis_id, generatedBoundary: current.candidate }) : undefined;
+      if (stored && (stored.analysis_digest !== selected!.analysis_digest || !state.read
+        || stored.state === "stale" || stored.state === "blocked" || stored.analysis.status !== "ready"))
+        return unavailable("The exact stored analyzed Read revision");
       const resolved = resolveNativeReadScope({ questions: state.questions, handoffs: state.handoffs, generation: state.generation,
-        question_id: expected.questionId, expectedBinding: inventory.binding, ...inventory });
+        question_id: expected.questionId, expectedBinding: inventory.binding, ...inventory,
+        ...(stored ? { analysis: stored.analysis } : {}) });
       const old = resolved.question;
-      if (old.id !== expected.questionId || old.read_scope?.mode !== "review" || old.read_scope.record.analysis_digest !== undefined
-        || old.read_scope.record.proposal.applicability !== "read_requested" || old.confirmation || old.proposal || old.disposition
-        || resolved.status !== "pending" || resolved.replacement_pending)
+      if (old.id !== expected.questionId || old.read_scope?.mode !== "review"
+        || old.read_scope.record.proposal.applicability !== "read_requested" || old.confirmation || old.disposition
+        || resolved.replacement_pending || (stored
+          ? old.read_scope.record.analysis_digest !== canonicalJsonDigest(stored.analysis) || resolved.status !== "proposed"
+          : old.read_scope.record.analysis_digest !== undefined || old.proposal || resolved.status !== "pending"))
         return unavailable("The exact consumed pending Read revision proposal");
       const contextDigest = await input.ports.questionContext(permit);
-      const successor = createReadScopeQuestion({ id: randomUUID(), revision: old.revision + 1,
+      let successor = createReadScopeQuestion({ id: randomUUID(), revision: old.revision + 1,
         scope_digest: input.ports.questionScope(), context_digest: contextDigest,
         read_scope: { ...old.read_scope, predecessor_id: old.id } });
+      if (stored) successor = proposeReadScopeReview(successor, inventory.binding, stored.analysis, inventory);
       await input.ports.assertCurrent(permit);
       if (snapshot().revision !== state.revision) return unavailable("The unchanged committed Read revision checkpoint");
       const requestedQuestions = [...state.questions, successor];
       const expectedQuestionsDigest = canonicalJsonDigest(requestedQuestions), successorId = successor.id;
-      const requestedRevision = { ...revision, scope_question_id: successorId };
-      const expectedRevisionDigest = canonicalJsonDigest(requestedRevision);
-      const expectedReadDigest = canonicalJsonDigest(state.read), expectedGenerationDigest = canonicalJsonDigest(state.generation);
+      const requestedRevision = stored ? undefined : { ...revision, scope_question_id: successorId };
+      const requestedRead = stored ? { analysis_id: stored.analysis_id, analysis_digest: stored.analysis_digest,
+        scope_question_id: successorId, ...(state.read!.assistance_history ? { assistance_history: state.read!.assistance_history } : {}) } : state.read;
+      const expectedRevisionDigest = canonicalJsonDigest(requestedRevision ?? null);
+      const expectedReadDigest = canonicalJsonDigest(requestedRead), expectedGenerationDigest = canonicalJsonDigest(state.generation);
       await input.ports.save({ questions: structuredClone(requestedQuestions),
-        pendingReadRevisionState: structuredClone(requestedRevision), stage: state.resume.stage,
-        acknowledgeCompletedTurn: false, subject: "The committed Read scope awaiting mapping" }, permit);
+        ...(stored ? { read: structuredClone(requestedRead!), completedReadRevision: { question_id: old.id } }
+          : { pendingReadRevisionState: structuredClone(requestedRevision!) }), stage: state.resume.stage,
+        acknowledgeCompletedTurn: false, subject: stored ? "The committed analyzed Read scope awaiting review" : "The committed Read scope awaiting mapping" }, permit);
       const acknowledged = snapshot();
-      if (canonicalJsonDigest(acknowledged.resume.pending_read_revision_state) !== expectedRevisionDigest
+      if (canonicalJsonDigest(acknowledged.resume.pending_read_revision_state ?? null) !== expectedRevisionDigest
         || canonicalJsonDigest(acknowledged.questions) !== expectedQuestionsDigest
         || canonicalJsonDigest(acknowledged.read) !== expectedReadDigest
-        || canonicalJsonDigest(acknowledged.generation) !== expectedGenerationDigest)
+        || canonicalJsonDigest(acknowledged.resume.read) !== expectedReadDigest
+        || canonicalJsonDigest(acknowledged.generation) !== expectedGenerationDigest
+        || stored && acknowledged.resume.pending_read_revision !== undefined)
         return unavailable("The acknowledged committed Read scope successor");
       return successorId;
     });
+  const commitPendingRevisionScope = (expected: CommittedRevision) => commitRevisionScope(expected);
+  const commitAnalyzedRevisionScope = (expected: CommittedRevision & {
+    analysis: Pick<BoundaryAuthoringResumeRead, "analysis_id" | "analysis_digest">;
+  }) => commitRevisionScope(expected, expected.analysis);
   const host = createReadScopeHost({ access: {
     mutate: input.ports.mutate,
     load: async (questionId, permit) => {
@@ -193,7 +215,7 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     if (workload.analysis_digest !== saved.analysis_digest)
       throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: the saved Read analysis no longer matches this authoring checkpoint.");
     await input.ports.assertCurrent();
-    if (saved.scope_question_id && !workload.review) {
+    if (saved.scope_question_id) {
       const decision = await host.review(saved.scope_question_id);
       if (decision.state === "replace_requested") {
         await input.ports.assertCurrent();
@@ -206,7 +228,7 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
           question_id: saved.scope_question_id, analysis: workload.analysis } };
       }
       if (decision.state !== "confirmed") return { state: "pending" };
-      return { state: "restored", workload, reuse: false, disabled: false };
+      return { state: "restored", workload, reuse: Boolean(workload.review), disabled: false };
     }
     const reuse = snapshot().resume.stage === "authority_review" || Boolean(workload.review);
     return { state: "restored", workload, reuse, disabled: !reuse };
@@ -233,5 +255,5 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     }
     return { required, unresolved };
   };
-  return { context, preview, pendingRevision, commitPendingRevisionScope, answerIds, review: host.review, restore, recordNoRead, principalRequirement };
+  return { context, preview, pendingRevision, commitPendingRevisionScope, commitAnalyzedRevisionScope, answerIds, review: host.review, restore, recordNoRead, principalRequirement };
 }
