@@ -28,6 +28,8 @@ export type ActionParameterReviewInput = Readonly<{
   origin: TypedFieldOrigin; baseline_origin: TypedFieldOrigin; targets: readonly ActionParameterTarget[];
   /** Derived only from retained field events by the native question owner. */
   pending_fields?: readonly string[];
+  /** Host projection of actual per-field events; retaining a suggestion is not an edit. */
+  field_origins?: Readonly<Partial<Record<ActionParameterTarget["kind"], TypedFieldOrigin>>>;
   /** Existing compiler validates full proposal; this port cannot save/adopt it. */
   compile: (draft: ActionRuleModelDraftV1) => ActionParameterCompilation;
 }>;
@@ -74,7 +76,7 @@ function resolveField(input: ActionParameterReviewInput, target: ActionParameter
     label: target.label, ...(target.explanation ? { explanation: target.explanation } : {}), required: true };
   if (target.kind === "required_approvals") return { ...base, kind: "integer", minimum: 1, maximum: 10,
     current: { origin: input.baseline_origin, value: { kind: "integer", value: input.baseline.approval.required_approvals } },
-    suggestion: { origin: input.origin, value: { kind: "integer", value: input.working.approval.required_approvals } } };
+    suggestion: { origin: input.field_origins?.[target.kind] ?? input.origin, value: { kind: "integer", value: input.working.approval.required_approvals } } };
   const expression = simplePredicate(input.working, target.input_name), previous = simplePredicate(input.baseline, target.input_name);
   const declared = input.working.inputs!.find(item => item.name === target.input_name)!;
   if (target.expected_expression_digest !== canonicalJsonDigest(expression) || target.expected_input_digest !== canonicalJsonDigest(declared))
@@ -84,16 +86,16 @@ function resolveField(input: ActionParameterReviewInput, target: ActionParameter
   if (target.kind === "approval_comparator") return { ...base, kind: "choice",
     options: Object.entries(comparatorLabels).map(([value, label]) => ({ value, label })),
     current: { origin: input.baseline_origin, value: { kind: "choice", value: previous.operator } },
-    suggestion: { origin: input.origin, value: { kind: "choice", value: expression.operator } } };
+    suggestion: { origin: input.field_origins?.[target.kind] ?? input.origin, value: { kind: "choice", value: expression.operator } } };
   if (expression.right.value_type.kind === "integer") return { ...base, kind: "integer", minimum: Number.MIN_SAFE_INTEGER, maximum: Number.MAX_SAFE_INTEGER,
     current: { origin: input.baseline_origin, value: { kind: "integer", value: previous.right.value as number } },
-    suggestion: { origin: input.origin, value: { kind: "integer", value: expression.right.value as number } } };
+    suggestion: { origin: input.field_origins?.[target.kind] ?? input.origin, value: { kind: "integer", value: expression.right.value as number } } };
   if (expression.right.value_type.kind !== "money_minor" || target.money_scale === undefined)
     fail("UNSUPPORTED", "Money needs an explicit supported currency scale from the current domain owner.");
   const currency = expression.right.value_type.currency, scale = target.money_scale;
   return { ...base, kind: "money", currency, scale, minimum_minor: Number.MIN_SAFE_INTEGER, maximum_minor: Number.MAX_SAFE_INTEGER,
     current: { origin: input.baseline_origin, value: { kind: "money", minor_units: previous.right.value as number, currency, scale } },
-    suggestion: { origin: input.origin, value: { kind: "money", minor_units: expression.right.value as number, currency, scale } } };
+    suggestion: { origin: input.field_origins?.[target.kind] ?? input.origin, value: { kind: "money", minor_units: expression.right.value as number, currency, scale } } };
 }
 
 /** A bounded projection over actual compiled values. No persistence, JSON patch,
@@ -104,6 +106,9 @@ export function buildActionParameterReview(input: ActionParameterReviewInput): A
     fail("STALE", "The selected baseline or Action identity changed.");
   if (!Number.isSafeInteger(input.proposal_revision) || input.proposal_revision < 1 || !input.targets.length
     || new Set(input.targets.map(target => target.kind)).size !== input.targets.length) fail("INVALID", "Use unique supported targets and an exact proposal revision.");
+  if (input.field_origins && Object.entries(input.field_origins).some(([id, origin]) => !input.targets.some(target => target.kind === id)
+    || !["saved_confirmed", "saved_unconfirmed", "model_proposal", "operator_edit"].includes(origin)))
+    fail("INVALID", "Field provenance must identify an exact supported target and origin.");
   const compiled = input.compile(structuredClone(input.working));
   // Normalization is host-owned; target expectations must bind what is displayed.
   const current = { ...input, working: compiled.draft };

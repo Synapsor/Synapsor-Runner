@@ -6,7 +6,7 @@ import { parseTypedParameterBinding, parseTypedParameterRecord, typedParameterPe
 import type { AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import type { AuthoringTransportState } from "./authoring-generation-recovery.js";
 import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
-import type { TypedFieldEvent } from "./authoring-typed-review.js";
+import type { TypedFieldEvent, TypedFieldOrigin } from "./authoring-typed-review.js";
 type Digest = `sha256:${string}`;
 export type TypedParameterResolved = {
     baseline: ActionParameterReviewInput["baseline"];
@@ -28,7 +28,7 @@ export type TypedParameterHostAccess = {
 };
 const equal = (a: unknown, b: unknown) => canonicalJsonDigest(a) === canonicalJsonDigest(b);
 function stale(): never { throw new Error("TYPED_PARAMETER_QUESTION_STALE: The protected proposal, baseline or origin changed. No answer or new allowance was adopted."); }
-function domain(binding: TypedParameterBinding, resolved: TypedParameterResolved, working: ActionParameterReviewInput["working"], revision: number, pending: string[]): ActionParameterReviewInput {
+function domain(binding: TypedParameterBinding, resolved: TypedParameterResolved, working: ActionParameterReviewInput["working"], revision: number, pending: string[], events: readonly TypedFieldEvent[] = []): ActionParameterReviewInput {
     if (canonicalJsonDigest(resolved.baseline) !== binding.baseline.draft_digest || canonicalJsonDigest(resolved.initial) !== binding.initial_candidate_digest || resolved.baseline.outcome !== binding.baseline.outcome)
         stale();
     const targets = binding.targets.map(target => {
@@ -45,7 +45,16 @@ function domain(binding: TypedParameterBinding, resolved: TypedParameterResolved
         }
         return { ...target, expected_approval_digest: canonicalJsonDigest(working.approval) };
     });
-    return { baseline: resolved.baseline, working, expected_baseline_digest: binding.baseline.draft_digest, proposal_id: binding.proposal_id, proposal_revision: revision, operation_id: binding.operation_id, applicability_digest: binding.applicability_digest, origin: revision > 1 ? "operator_edit" : binding.origin.kind === "compiled_checkpoint" ? "model_proposal" : "saved_unconfirmed", baseline_origin: binding.baseline.kind === "compiled_checkpoint" ? "model_proposal" : binding.baseline.identity.location === "active" ? "saved_confirmed" : "saved_unconfirmed", targets, pending_fields: pending, compile: resolved.compile };
+    const origin: TypedFieldOrigin = binding.origin.kind === "compiled_checkpoint" ? "model_proposal"
+        : binding.origin.identity.location === "active" ? "saved_confirmed" : "saved_unconfirmed";
+    const field_origins: Partial<Record<ActionParameterReviewInput["targets"][number]["kind"], TypedFieldOrigin>> = {};
+    for (const event of events) {
+        if (event.kind !== "replace_literal" && event.kind !== "select_option") continue;
+        const target = binding.targets.find(target => target.kind === event.field_id);
+        if (!target) stale();
+        field_origins[target.kind] = "operator_edit";
+    }
+    return { baseline: resolved.baseline, working, expected_baseline_digest: binding.baseline.draft_digest, proposal_id: binding.proposal_id, proposal_revision: revision, operation_id: binding.operation_id, applicability_digest: binding.applicability_digest, origin, field_origins, baseline_origin: binding.baseline.kind === "compiled_checkpoint" ? "model_proposal" : binding.baseline.identity.location === "active" ? "saved_confirmed" : "saved_unconfirmed", targets, pending_fields: pending, compile: resolved.compile };
 }
 export function createTypedParameterQuestion(input: {
     id: string;
@@ -81,7 +90,7 @@ export function revalidateTypedParameterQuestion(value: OperatorQuestion, resolv
             working = applyActionParameterEvent(current, record.event).candidate;
         }
         records.push(record);
-        current = domain(binding, resolved, working, index + 1, typedParameterPendingFields(records));
+        current = domain(binding, resolved, working, index + 1, typedParameterPendingFields(records), records.flatMap(record => record.event ? [record.event] : []));
         const projected = buildActionParameterReview(current);
         if (!equal(projected.candidate, record.candidate) || !equal(projected.view, record.view))
             stale();
@@ -129,7 +138,7 @@ export function createTypedParameterHost(input: {
                 stale();
             const applied = applyActionParameterEvent(c.domain, request.event), event = structuredClone(applied.event);
             const pending = typedParameterPendingFields([...c.records, { candidate: applied.candidate, view: c.view, event }]);
-            const nextDomain = domain(c.question.typed_parameters!, c.resolved, applied.candidate, c.view.binding.proposal_revision + 1, pending);
+            const nextDomain = domain(c.question.typed_parameters!, c.resolved, applied.candidate, c.view.binding.proposal_revision + 1, pending, [...c.records.flatMap(record => record.event ? [record.event] : []), event]);
             const projection = buildActionParameterReview(nextDomain);
             let q = c.question;
             if (q.disposition)

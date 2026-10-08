@@ -29,5 +29,25 @@
     "fail": 0,
     "skip": 0
   },
-  "types_final": 0
+  "types_final": 0,
+  "provenance_fix": {
+    "before_pin": "6775cb12",
+    "independent_before": {
+      "reviewer_pin": "43155a39",
+      "pass": 5,
+      "fail": 3,
+      "evidence": "/var/tmp/synapsor-b64-independent-native-field677-active-owned/evidence/native-baseline.log"
+    },
+    "cause": "Blanket revision>1 origin relabelled keep/pending/untouched fields; active saved reference also mislabelled unconfirmed.",
+    "fix": "Per-field origins derive only from exact literal/select events; keep/pending retain; origin reference distinguishes saved active/disabled and model. Full proposal remains unconfirmed.",
+    "local_after": {
+      "files": 3,
+      "pass": 32,
+      "fail": 0,
+      "skip": 0,
+      "types": 0
+    },
+    "independent_after": "pending",
+    "scope": "Domain+native typed host only, no fixture/response/shared q/schema changes"
+  }
 }
