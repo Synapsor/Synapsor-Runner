@@ -1,3 +1,5 @@
+import { readMappingInvocationBinding } from "./read-mapping-invocation-binding.js";
+import { readRevisionMappingContinuation, type ReadRevisionMappingOwner } from "./read-revision-mapping-continuation.js";
 import { readScopeReplacementContinuation, type ReadScopeReplacementOwner, currentStructuredReadEvidence, currentReadScopeContextDigest,
   type CurrentReadEvidenceRecords, type CurrentStructuredReadEvidence } from "./read-current-evidence.js";
 import { READ_SCOPE_PROTOCOL, READ_SUBJECT_SCOPE_GUIDANCE, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
@@ -143,6 +145,7 @@ export type ModelReadWorkloadInput = {
   resumeCheckpoint?: ReadWorkloadAssistanceCheckpoint;
   /** Exact parsed native projection. Completed history is never an active dispatch. */
   postReviewReplacement?: ReadScopeReplacementOwner;
+  postRevisionMapping?: ReadRevisionMappingOwner;
   /** Main commits this and the real completion sidecar with existing Source/
    * generation/resume CAS. The current boundary is needed after an exact link review. */
   onCheckpoint?: (checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, currentBoundary: ExplorationBoundaryDraft,
@@ -183,7 +186,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     return serialized;
   };
   serializeCatalog();
-  const inheritedHistory = input.resumeCheckpoint ?? input.postReviewReplacement?.read.assistance_history;
+  const inheritedHistory = input.resumeCheckpoint ?? input.postReviewReplacement?.read.assistance_history ?? input.postRevisionMapping?.read.assistance_history;
   const inheritedCheckpoint = inheritedHistory ? parseReadWorkloadAssistanceCheckpoint(inheritedHistory) : undefined;
   const inheritedScopeAnswers = inheritedCheckpoint?.state;
   const ownedAnswerIds = new Set([...(inheritedScopeAnswers?.scope_answers ?? []), ...(inheritedScopeAnswers?.scope_replacements ?? [])]
@@ -205,6 +208,13 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED: Preserve the native job; no legacy protocol fallback is available.");
   const nativeScope = structuredScopeInput?.native ? currentStructuredReadEvidence({ ...structuredScopeInput.native,
     expectedBinding: structuredScopeInput.binding, references: structuredScopeInput.references, catalog: structuredScopeInput.catalog }) : undefined;
+  if (input.postReviewReplacement && input.postRevisionMapping)
+    throw new Error("READ_REVISION_MAPPING_STALE: A mapping cannot be both a replacement and a committed revision continuation.");
+  const revisionOwner = input.postRevisionMapping ? readRevisionMappingContinuation(input.postRevisionMapping,
+    { expectedBinding: structuredScopeInput!.binding, references: structuredScopeInput!.references, catalog: structuredScopeInput!.catalog }) : undefined;
+  if (revisionOwner && (structuredScopeInput?.native?.question_id !== revisionOwner.question.id
+    || nativeScope?.question.digest !== revisionOwner.question.digest))
+    throw new Error("READ_REVISION_MAPPING_STALE: The current native context must retain its exact consumed revision.");
   const replacementOwner = input.postReviewReplacement ? readScopeReplacementContinuation(input.postReviewReplacement,
     { expectedBinding: structuredScopeInput!.binding, references: structuredScopeInput!.references, catalog: structuredScopeInput!.catalog }) : undefined;
   if (replacementOwner && (structuredScopeInput?.native?.question_id !== replacementOwner.question.id
@@ -216,7 +226,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   }
   let structuredScopeDigest = currentReadScopeContextDigest(structuredScopeInput, ownedAnswerIds);
   const confirmedScope = nativeScope?.status === "confirmed" ? nativeScope.record : undefined;
-  if (nativeScope && nativeScope.status !== "confirmed" && !replacementOwner)
+  if (nativeScope && nativeScope.status !== "confirmed" && !replacementOwner && !revisionOwner)
     throw new Error("READ_SCOPE_NATIVE_PENDING: The exact native scope is stale, replaced or not confirmed. Review its current question before remapping.");
   const tools: AskToolDefinition[] = [readWorkloadToolDefinition(
     catalog.resources.map((resource) => resource.id),
@@ -645,6 +655,9 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     if (isReadProviderFailure(error) && diagnostics.length) throw new ReadWorkloadDraftError(diagnostics);
     throw error;
   };
+  const invocationBinding = readMappingInvocationBinding({ name, allowedQuestions, forbiddenQuestions, originalNamingSources,
+    principal_roots: input.principalScopedRootResources ?? null, provider: configuration.provider, model: configuration.model,
+    endpoint: configuration.endpoint.href, defer_narration: input.deferNarration ?? false, relationship_review_limit: relationshipReviewLimit });
   const producerBinding = () => canonicalJsonDigest({ protocol: READ_SCOPE_PROTOCOL, name, allowedQuestions, forbiddenQuestions,
     originalNamingSources, principal_roots: input.principalScopedRootResources ?? null,
     provider: configuration.provider, model: configuration.model, endpoint: configuration.endpoint.href,
@@ -670,7 +683,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The Read metadata changed while assistance was pending. Preserve the question and revalidate; no new mapping was sent.");
   };
   const controllerState = (): ReadWorkloadAssistanceCheckpoint["state"] => ({
-        scope_producer_binding: scopeProducerBinding,
+        scope_producer_binding: scopeProducerBinding, scope_invocation_binding: invocationBinding,
         call_count: callCount, attempt, phase, correction_used: correctionUsed, ...(wording.snapshot() ? { wording: wording.snapshot() } : {}), relationship_reviews: relationshipReviews,
         relationship_review_limit: relationshipReviewLimit, clarified_targets: clarifiedTargets, clarification_answers: clarificationAnswers,
         ...(scopeAnswers.length ? { scope_answers: scopeAnswers } : {}),
@@ -703,6 +716,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     const saved = parseReadWorkloadAssistanceCheckpoint(inheritedHistory);
     if (replacementOwner && saved.state.scope_producer_binding !== scopeProducerBinding)
       throw new Error("READ_SCOPE_REPLACEMENT_PRODUCER_CHANGED: The original task, model, destination or mapping configuration is missing or changed. Preserve the old proposal; no correction was solicited or sent.");
+    if (revisionOwner && canonicalJsonDigest(saved.state.scope_invocation_binding) !== canonicalJsonDigest(invocationBinding))
+      throw new Error("READ_REVISION_MAPPING_INVOCATION_CHANGED: The task, provider, model, destination or mapping options changed. No mapping was sent.");
     // The pin is an ingress contract, not permission to reinterpret an older
     // question/history shape under the new tool. Keep that history for inspection.
     const retainedQuestion = saved.stage === "dispatching" ? saved.previous_question?.pending_question : saved.pending_question;
@@ -716,8 +731,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       || saved.state.naming_evidence_correction_used)
       throw new Error("READ_SCOPE_CHECKPOINT_UNSUPPORTED: The retained assistance shape belongs to a retired protocol. Preserve its history; no legacy handler or replay was started.");
     if (!saved.state.scope_producer_binding
-      || (!replacementOwner || input.resumeCheckpoint) && (saved.input_digest !== inputDigest() || saved.tool_digest !== authorityDigest)
-      || saved.boundary_digest !== expectedBoundaryDigest || saved.catalog_digest !== catalog.digest || saved.state.relationship_review_limit !== relationshipReviewLimit)
+      || (!replacementOwner && !revisionOwner || input.resumeCheckpoint) && (saved.input_digest !== inputDigest() || saved.tool_digest !== authorityDigest)
+      || (!revisionOwner || input.resumeCheckpoint) && (saved.boundary_digest !== expectedBoundaryDigest || saved.catalog_digest !== catalog.digest) || saved.state.relationship_review_limit !== relationshipReviewLimit)
       throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The original mapping input, boundary, catalog or provider changed. Preserve the pending question and revalidate; no replacement was sent.");
     const canonicalRequest = (request: ModelReadClarificationRequest) => {
       const parsed = parseReadClarificationRequest(request as unknown as Record<string, unknown>, catalog, true);
@@ -757,7 +772,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     if (saved.stage === "dispatching" && saved.previous_question) {
       const previous = saved.previous_question.pending_question;
       if (previous.kind === "scope") {
-        if (!input.structuredScope || canonicalJsonDigest(previous.request.scope.binding) !== canonicalJsonDigest(structuredScopeInput!.binding))
+        if (!input.structuredScope || !revisionOwner && canonicalJsonDigest(previous.request.scope.binding) !== canonicalJsonDigest(structuredScopeInput!.binding))
           throw new Error("READ_SCOPE_QUESTION_STALE: The retained typed scope no longer matches this job.");
       } else if (previous.kind === "value") {
         const request = parseReadValueRequest(previous.request as unknown as Record<string, unknown>, catalog);
@@ -787,7 +802,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     resolvedMechanicalRequest = s.resolved_mechanical_request; namingCorrectionWorkload = s.naming_correction_workload;
     approvedValueContext = s.approved_value_context; diagnostics.push(...s.diagnostics); usage = s.usage;
     pendingAssistance = q; completion = q?.completion;
-    if (saved.stage === "dispatching" && (!replacementOwner || input.resumeCheckpoint)) {
+    if (saved.stage === "dispatching" && (!replacementOwner && !revisionOwner || input.resumeCheckpoint)) {
       const continued = await (correctionUsed ? run(saved.dispatch_question).then(result => ({ result, correction_used: false }))
         : runRequiredAuthoringToolCall({ run, question: saved.dispatch_question, toolName: SUBMIT_READ_WORKLOAD_TOOL,
           onCorrection: () => { phase = "correction"; correctionUsed = true; } })).catch(rethrowDiagnostic);
@@ -816,6 +831,14 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     completion = completedAuthoringQuestionSequence(consumedReadTurns);
     pendingAssistance = undefined;
   };
+  if (revisionOwner && !input.resumeCheckpoint) {
+    if (callCount >= MAX_READ_CLARIFICATIONS + relationshipReviewLimit + 4)
+      throw new Error("READ_SCOPE_ASSISTANCE_LIMIT: The retained mapping allowance is exhausted; no new mapping was sent.");
+    await remap(["The exact disabled Read revision was committed but still needs workload mapping; its consumed revision must not be replayed.",
+      `Retained unconfirmed scope proposal: ${JSON.stringify(revisionOwner.question.read_scope!.record.proposal)}`,
+      "Preserve the original request, current Source and raw-answer references, included requirements and exclusions. Missing business choices remain unresolved. This is a new mapping proposal requiring separate default-No review; no prior confirmation transfers.",
+      baseQuestion()].join("\n"));
+  }
   if (replacementOwner && !input.resumeCheckpoint) {
     if (readAnswerCount() >= MAX_READ_CLARIFICATIONS || callCount >= MAX_READ_CLARIFICATIONS + relationshipReviewLimit + 4)
       throw new Error("READ_SCOPE_ASSISTANCE_LIMIT: The existing Read allowance is exhausted; no replacement answer or request was solicited.");
@@ -1013,7 +1036,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     ...(diagnostics.length ? { diagnostics } : {}),
     analysis,
     ...(structuredReadScope ? { read_scope: structuredReadScope } : {}),
-    ...(replacementOwner ? { read_scope_predecessor_id: replacementOwner.question.id } : {}),
+    ...((replacementOwner ?? revisionOwner) ? { read_scope_predecessor_id: (replacementOwner ?? revisionOwner)!.question.id } : {}),
     analysis_clock: analysisClock,
     provider: input.provider,
     model: input.model,

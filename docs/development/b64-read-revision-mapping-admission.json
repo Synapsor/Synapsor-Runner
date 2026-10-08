@@ -1,0 +1,28 @@
+{
+  "status": "DEV component; independent compatibility/native-public review pending",
+  "base": "564d7485",
+  "before": {
+    "result": "0 PASS / 1 FAIL",
+    "code": "READ_SCOPE_NATIVE_PENDING",
+    "evidence": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/revision-mapping-before5.json"
+  },
+  "after": {
+    "native_admission_and_existing_replacement": "13 PASS / 2 new fixture expectation failures; corrected two cases 2 PASS unchanged product",
+    "corrections": [
+      "Supported custom destination test now declares openai_compatible; unsupported OpenAI custom URL had correctly failed earlier configuration validation",
+      "Foreign native question retains earlier READ_SCOPE_QUESTION_MISSING rather than demanding later custom stale code"
+    ],
+    "types": "PASS",
+    "evidence": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/revision-mapping-guards2.json"
+  },
+  "contract": [
+    "Native retained Read pointer/history stays intact; pending_read_revision_state.scope_question_id separately identifies the genuinely consumed committed revision",
+    "Prospective domain-versioned scope_invocation_binding admits technical preview change only with native result/current candidate/provenance lineage; full old producer binding remains mandatory ordinary Resume/Replace",
+    "Missing new binding refuses special transition without migration/reset; new actual mapping carries exact predecessor, counters/history and unconfirmed proposal",
+    "Main must wire actual current-record port and protected checkpoint predecessor/save; component proof is not public acceptance"
+  ],
+  "remaining": [
+    "R1 PM01\u201309 independent variants including old-reader rejection, counters/cold cancellation",
+    "Main actual native/public continuation and explicit grouped default-No review"
+  ]
+}

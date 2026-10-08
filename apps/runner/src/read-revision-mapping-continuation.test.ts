@@ -16,6 +16,7 @@ import { createReadScopeQuestion, proposeReadScopeReview } from "./authoring-rea
 import { readScopeConsumption } from "./authoring-read-scope-binding.js";
 import { createReadRevisionCheckpointHost, type ReadRevisionCheckpointAccess } from "./authoring-read-revision-checkpoint-host.js";
 import { generateModelReadBoundaryRevision } from "./read-boundary-revision-model.js";
+import { readWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import { generateModelReadWorkload, type ModelReadWorkloadInput } from "./read-workload-model.js";
 import { READ_SCOPE_PROTOCOL, type ReadScopeProposal } from "./read-structured-scope.js";
 import { storeReadWorkloadAnalysis, type ReadWorkloadView } from "./read-workloads.js";
@@ -43,7 +44,7 @@ function proposal(refs: Array<{kind:string;id:string;text:string}>, subjects: Ar
   }] };
 }
 const response = (tool: string, args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: randomUUID(), name: tool, arguments: JSON.stringify(args) }] } });
-it("continues an actually committed analysis-free revision with one new mapping and retained spent history", async () => {
+it.each(["ordinary", "changed_model", "changed_task", "changed_provider_destination", "missing_binding", "wrong_saved_candidate", "foreign_question"] as const)("continues only the exact actually committed revision: %s", async mode => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "native-read-revision-continuation-"));
   try {
     const prepared = await prepareReviewedReadScope(root, { resources: ["work.items"], field: "label", review: { filterable_fields: ["label"] } });
@@ -65,8 +66,9 @@ it("continues an actually committed analysis-free revision with one new mapping 
         write: generationRecovery => save({ generationRecovery }) }); return run();
     });
     let calls = 0;
-    const mapping = (owner?: { question_id: string } & Record<string, unknown>) => generation(() => generateModelReadWorkload({ name: "labels", allowedQuestions: [job],
-      operatorNamingContext: job, provider: "openai", model: "controlled", apiKey: "inert-test-key", egressAcknowledged: true,
+    const mapping = (owner?: { question_id: string } & Record<string, unknown>) => generation(() => generateModelReadWorkload({ name: "labels", allowedQuestions: [owner && mode === "changed_task" ? "Show every person all labels" : job],
+      operatorNamingContext: job, provider: owner && mode === "changed_provider_destination" ? "openai_compatible" : "openai", model: owner && mode === "changed_model" ? "other-model" : "controlled",
+      ...(owner && mode === "changed_provider_destination" ? { baseUrl: "https://different.example/v1" } : {}), apiKey: "inert-test-key", egressAcknowledged: true,
       deferNarration: true, generatedBoundary: boundary, ...(owner ? { postRevisionMapping: owner } : {}),
       structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => ({ ...scope(), ...(owner ? { native: { ...records(), question_id: owner.question_id } } : {}) }) },
       onCheckpoint: async (cp, current, result, completion) => {
@@ -127,6 +129,19 @@ it("continues an actually committed analysis-free revision with one new mapping 
     const disk = await readBoundaryAuthoringResumeState(root, state.binding); expect(disk.status).toBe("ready"); if (disk.status !== "ready") throw new Error("Cold native read failed");
     state = disk.value;
     const owner = { ...records(), read: state.read!, revision: state.pending_read_revision_state!, question_id: current.id, currentBoundary: boundary, priorAnalysis: previousAnalysis };
+    if (mode === "missing_binding") {
+      const retained = structuredClone(owner.read.assistance_history!); delete retained.state.scope_invocation_binding;
+      const { schema_version: _version, digest: _digest, ...body } = retained;
+      owner.read = { ...owner.read, assistance_history: readWorkloadAssistanceCheckpoint(body) };
+    }
+    if (mode === "wrong_saved_candidate") owner.revision = { ...owner.revision, saved_read_digest: d("another committed Read") };
+    if (mode === "foreign_question") owner.question_id = randomUUID();
+    if (mode !== "ordinary") {
+      const before = d(state);
+      await expect(mapping(owner)).rejects.toThrow(mode === "missing_binding" ? "READ_REVISION_MAPPING_HISTORY_UNSUPPORTED"
+        : mode === "foreign_question" ? "READ_SCOPE_QUESTION_MISSING" : mode === "wrong_saved_candidate" ? "READ_REVISION_MAPPING_STALE" : "READ_REVISION_MAPPING_INVOCATION_CHANGED");
+      expect(calls).toBe(1); expect(d(state)).toBe(before); return;
+    }
     const before = structuredClone(state.generation_recovery);
     const result = await mapping(owner);
     expect(calls).toBe(2); expect(result.read_scope_predecessor_id).toBe(current.id); expect(result.authority_granted).toBe(false);
