@@ -1,0 +1,24 @@
+{
+  "base": "757e160e",
+  "scope": "Exact immutable native Read review origin resolver; protected writer and active codec integration still pending",
+  "tests": {
+    "focused": "read-review-origin.test.ts",
+    "result": "5 PASS / 0 FAIL / 0 SKIP",
+    "types": "tsc -b --pretty false exit 0",
+    "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/read-review-origin-final.json"
+  },
+  "preserved_setup_failures": [
+    "read-review-origin.json: structural fixture was file-backed",
+    "read-review-origin-native.json: native migration required null read selection"
+  ],
+  "contract": [
+    "Resolve exact revision and candidate in bound native repository",
+    "Verify existing authority codec and candidate digest",
+    "No latest lookup, new confirmation, save or text inference"
+  ],
+  "open": [
+    "Independent reviewer variants",
+    "Attach exact origin on actual protected confirmation save",
+    "Strict prospective progress/native active format integration"
+  ]
+}
