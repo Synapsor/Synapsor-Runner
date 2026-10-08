@@ -10,6 +10,6 @@
 10. Six unresolved subject fixtures1da corrected (6PASS, assertions unchanged); six omission successors912 (MIG137–142)6PASS, actual native records/counts/events.
 11. Headless/long-job MIG143/192 now2PASS; shared existing description-limit guidance restored; b64-read-pending-two.json (independent review pending).
 12. R2 provenance plan RP01–08 now16PASS actual native records + groupedhost/confirmedYes/delta/privacy (b64-read-provenance-eight.json); independent review pending.
-13. Currentness pair2PASS; two interruption typed counterparts2PASS retaining recovery/counters/operation history (b64-read-interruption-two.json); independent review pending.
-14. Final local types show no owned-file errors;4 known other fixture migrations already fixed on Main. No full-suite or delivery acceptance claimed.
+13. Currentness2PASS/interruption2PASS pending review; read-only36-row policy map + initial target-delta design written (b64-read-policy-quote-map.json/b64-read-initial-target-delta-design.json).
+14. R2-adjudicated unknown first2 now2PASS (b64-read-unknown-two.json):2call pending/fourraw5callcap; two save-fault rows await precise R2 rule; no delta implementation.
 15. Main owns integration/public checks; keep original failures and compact per-group records; no authority/Source/allowance bypasses.

@@ -1,0 +1,16 @@
+{
+  "base": "c1abb24a",
+  "status": "2PASS; independent runtime/source verdict pending",
+  "approval": "Main relayed R2: nonblank unknown must receive typed model remap; one-to-two first calls justified only preserving pending/raw/caps/no replay.",
+  "before": [
+    "read-workload-full808-extracted.json old missingpin cases",
+    "typed-unknown-two-after.log onePASS/one new retired limit-code mismatch",
+    "typed-unknown-two-after2.log onePASS/one explicit Resume native fence versus retired limit-code mismatch"
+  ],
+  "after": "typed-unknown-two-after3.log:2PASS158filtered",
+  "case1": "Actual raw I don\u2019t know \u2192 model explicit typed unresolved \u2192 operator cancels narrower question:2calls pending. Cold Resume clear answer \u2192 thirdcall compatible new proposal. First raw/native question unchanged, both words exact, no confirmation/authority.",
+  "case2": "Across cold pauses4actual unknown raw answers\u21925calls total, each typed response declared unresolved. Terminal READ_SCOPE_ASSISTANCE_LIMIT; explicit restart remains ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION with no provider, no fifth answer and exact native state unchanged. No claim supported continuation or fence clearance.",
+  "retired_assertions": "Host lexical unknown classification/unresolved_answers oldstore and1call repeated unknown loop deliberately not recreated. Current native raw q/h/state.scope_answers evidence plus typed unresolved/correction counters are asserted.",
+  "other_change": "Rename two251329e5 interruption titles to typed correction budget; no assertion/product edit.",
+  "remaining": "Two raw-save failure/ACK-loss counterparts await R2 exact disposition/Resume adjudication; initial target delta still design-only."
+}

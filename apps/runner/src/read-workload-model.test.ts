@@ -701,7 +701,7 @@ describe("durable Read assistance producer checkpoint", () => {
       .rejects.toThrow("READ_WORKLOAD_SUBMISSION_REFUSED"); expect(noHttp).not.toHaveBeenCalled(); expect(exhausted.state.call_count).toBe(8);
   });
 
-  it("records mechanical limits before a native interrupted dispatch and restores them without another redirect", async () => {
+  it("retains one typed correction across native interrupted dispatch without a fresh allowance", async () => {
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, state: AuthoringTransportState = { version: 1, operations: [] }, sends = 0;
     const typed = declaredWorkloadScope("List my orders", "status_rows");
     const invalid = { ...typed.proposal, requirements: [{ ...typed.proposal.requirements[0]!, references: ["not-a-host-reference"] }] };
@@ -734,7 +734,7 @@ describe("durable Read assistance producer checkpoint", () => {
     } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
   });
 
-  it("preserves its one mechanical redirect after a later business wait resumes", async () => {
+  it("retains one typed correction after a later native business wait resumes", async () => {
     // Successor: one finite typed correction, then a genuine native business
     // wait. The removed English-mechanical route never receives a new budget.
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, resumed = false;
@@ -779,47 +779,57 @@ describe("B41 host-owned Read meaning resolution", () => {
     return conversation;
   };
   it("901 retains an explicitly unknown answer as pending and resumes without an initial replay", async () => {
-    const requestJson = vi.fn().mockResolvedValueOnce(response({ ...mapped,
-      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }))
-      .mockResolvedValue(response(mapped));
-    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    let resumed = false, answers = 0, calls = 0, checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const { h, proposal, missing, nativeInput } = await exactRequestedField("Read public.tbl_7.col_2 for this job.", async () => {
+      answers++; return resumed ? "Shipment lifecycle status" : answers === 1 ? "I don't know" : null;
+    });
+    const requestJson = vi.fn(async request => ++calls <= 2 ? response({ allowed: [], forbidden: [], read_scope: {
+      ...missing, requirements: [{ ...missing.requirements[0], unresolved: calls === 1 ? "What does this detail mean for the task?" : "Which business stage should this detail describe?" }],
+    } }) : response({ ...mapped, read_scope: proposalWithVisibleAnswers(request, proposal) }));
     const save = async (value: ReadWorkloadAssistanceCheckpoint | undefined) => { checkpoint = value; };
-    await expect(generateModelReadWorkload({ ...setup(requestJson), onCheckpoint: save,
-      clarificationHandler: async () => ({ state: "answered", answer: "I don't know" }) })).rejects.toThrow("AUTHORING_PAUSED");
-    expect(requestJson).toHaveBeenCalledOnce();
-    expect(checkpoint?.stage).toBe("waiting");
-    expect(checkpoint!.state).toMatchObject({ unresolved_answers: [expect.objectContaining({ answer: "I don't know", actor: "local_installation_operator" })] });
-    const result = await generateModelReadWorkload({ ...setup(requestJson), resumeCheckpoint: checkpoint, onCheckpoint: save,
-      clarificationHandler: async () => ({ state: "answered", answer: "Shipment lifecycle status" }) });
-    expect(requestJson).toHaveBeenCalledTimes(2);
-    expect(result.analysis.status).toBe("ready");
-    expect(result.workload.source.meaning_evidence).toEqual(expect.arrayContaining([
-      expect.objectContaining({ field: "col_2", reference: expect.objectContaining({ text: "Shipment lifecycle status" }) }) ]));
-    expect(result.workload.source.meaning_attempts).toEqual([
-      expect.objectContaining({ answer: "I don't know", actor: "local_installation_operator", field: "col_2" }) ]);
+    try {
+      await expect(h.run({ ...nativeInput(requestJson), onCheckpoint: save })).rejects.toThrow("AUTHORING_PAUSED");
+      // Nonblank testimony needs one actual mapping response; the host does not
+      // classify these English words as unknown (R2's explicit count change).
+      expect(requestJson).toHaveBeenCalledTimes(2); expect(checkpoint?.stage).toBe("waiting");
+      expect(checkpoint!.state.scope_answers).toHaveLength(1);
+      const rawBefore = h.state().operator_questions!.find(q => q.raw_answer)!;
+      expect(rawBefore.raw_answer!.text).toBe("I don't know"); expect(rawBefore.confirmation).toBeUndefined();
+      const cold = await h.coldState(); expect(cold.status).toBe("ready");
+      if (cold.status !== "ready") throw new Error("Expected pending native Read state");
+      resumed = true;
+      const result = await h.run({ ...nativeInput(requestJson), resumeCheckpoint: cold.value.read_assistance, onCheckpoint: save });
+      expect(requestJson).toHaveBeenCalledTimes(3); expect(result.analysis.status).toBe("ready");
+      expect(h.state().operator_questions!.find(q => q.id === rawBefore.id)).toEqual(rawBefore);
+      expect(h.state().operator_questions!.filter(q => q.raw_answer).map(q => q.raw_answer!.text)).toEqual(["I don't know", "Shipment lifecycle status"]);
+      expect(h.state().operator_questions!.every(q => !q.confirmation)).toBe(true); expect(result.authority_granted).toBe(false);
+    } finally { await h.cleanup(); }
   });
   it("retains the four-answer budget across unknown-answer pauses, with no fifth answer or generation", async () => {
-    const requestJson = vi.fn().mockResolvedValue(response(mapped));
-    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
-    const save = async (value: ReadWorkloadAssistanceCheckpoint | undefined) => { checkpoint = structuredClone(value); };
-    for (let attempt = 1; attempt <= 4; attempt++) {
-      const handler = vi.fn(async () => ({ state: "answered" as const, answer: "I don't know" }));
-      await expect(generateModelReadWorkload({ ...setup(requestJson), ...(checkpoint ? { resumeCheckpoint: checkpoint } : {}),
-        onCheckpoint: save, clarificationHandler: handler })).rejects.toThrow("AUTHORING_PAUSED");
-      expect(handler).toHaveBeenCalledOnce();
-      expect(checkpoint?.stage).toBe("waiting");
-      expect(checkpoint?.state.unresolved_answers).toHaveLength(attempt);
-      expect(checkpoint?.pending_question).not.toHaveProperty("decision");
-      expect(checkpoint?.state.call_count).toBe(1);
-      expect(checkpoint?.state.attempt).toBe(1);
-      expect(requestJson).toHaveBeenCalledOnce();
-    }
-    const before = structuredClone(checkpoint), handler = vi.fn(async () => ({ state: "answered" as const, answer: "The shipment lifecycle" }));
-    await expect(generateModelReadWorkload({ ...setup(requestJson), resumeCheckpoint: checkpoint,
-      onCheckpoint: save, clarificationHandler: handler })).rejects.toThrow("READ_WORKLOAD_CLARIFICATION_LIMIT");
-    expect(handler).not.toHaveBeenCalled();
-    expect(requestJson).toHaveBeenCalledOnce();
-    expect(checkpoint).toEqual(before);
+    let calls = 0, offered = false, acceptedAnswers = 0, checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const { h, missing, nativeInput } = await exactRequestedField("Read public.tbl_7.col_2 for this job.", async () => {
+      if (offered) return null; offered = true; acceptedAnswers++; return "I don't know";
+    });
+    const requestJson = vi.fn(async () => response({ allowed: [], forbidden: [], read_scope: { ...missing,
+      requirements: [{ ...missing.requirements[0], unresolved: `Which exact business stage remains unresolved (question ${++calls})?` }] } }));
+    try {
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        offered = false;
+        const result = h.run({ ...nativeInput(requestJson), ...(checkpoint ? { resumeCheckpoint: checkpoint } : {}),
+          onCheckpoint: async value => { checkpoint = structuredClone(value); } });
+        await expect(result).rejects.toThrow(attempt < 4 ? "AUTHORING_PAUSED" : "READ_SCOPE_ASSISTANCE_LIMIT");
+        expect(acceptedAnswers).toBe(attempt); expect(requestJson).toHaveBeenCalledTimes(attempt + 1);
+        expect(h.state().operator_questions!.filter(q => q.raw_answer)).toHaveLength(attempt);
+        expect(h.state().operator_questions!.filter(q => q.raw_answer).every(q => q.raw_answer!.text === "I don't know" && !q.confirmation)).toBe(true);
+        const cold = await h.coldState(); expect(cold.status).toBe("ready");
+        if (cold.status !== "ready") throw new Error("Expected saved native budget");
+        checkpoint = cold.value.read_assistance;
+      }
+      const before = structuredClone(h.state()), noSend = vi.fn(); offered = false;
+      await expect(h.run({ ...nativeInput(noSend), resumeCheckpoint: checkpoint })).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
+      expect(noSend).not.toHaveBeenCalled(); expect(acceptedAnswers).toBe(4); expect(requestJson).toHaveBeenCalledTimes(5);
+      expect(h.state()).toEqual(before);
+    } finally { await h.cleanup(); }
   });
   it.each(["save_failed", "acknowledgement_uncertain"])("does not dispatch after an unknown-answer %s", async mode => {
     const requestJson = vi.fn().mockResolvedValue(response(mapped));
