@@ -4343,31 +4343,6 @@
       "occurrence": 0
     },
     {
-      "fingerprint": "e82aa45a5ebdb2cdc85b8da6fb4b7b971df4f24a65b5160e7440b19786e9af73",
-      "file": "apps/runner/src/authoring-operator-presentation.ts",
-      "annotation_id": "I02062",
-      "annotation_ids": [
-        "I02062"
-      ],
-      "category": "exact_identifier_or_code",
-      "reason": "Known exact metadata identities and operator vocabulary drive technical-name presentation replacement, preserving target details and duplicate-target distinctions. Not universal snake_case or meaning authority.",
-      "review": {
-        "reviewer": "R1 /root/early_full_triage",
-        "verdict": "accepted",
-        "evidence": "docs/development/b64-legitimate-independent/VERDICT.json at a6f16baa; exact-expression map on 934ad542"
-      },
-      "source_pin": "934ad542ac17ed2f99e76fe38484704d6186af70",
-      "line": 48,
-      "column": 7,
-      "anchor_line": 48,
-      "kind": "literal_comparison",
-      "owner_name": "plainLabel",
-      "owner_digest": "0989f2b482d1077e86bf97f75059fe919f2f1366efe595c829e8893ed6a413d9",
-      "expression_digest": "886336350aa16ccf05dc842eba1d2ee7d5758ab28ff12b80b4e6620e728911e1",
-      "expression": "typeof value !== \"string\"",
-      "occurrence": 0
-    },
-    {
       "fingerprint": "57d0911d1bf4bba1d11eb17b3a4c5112b3c1b9f10d0eb3d4186d79bd989b3af3",
       "file": "apps/runner/src/authoring-operator-presentation.ts",
       "annotation_id": "I02062",
@@ -5865,31 +5840,6 @@
       "owner_digest": "c3aaf5e0ef9ea40f2922e308be77aa145365c93b91b912500d99bab2c633290e",
       "expression_digest": "d95f48723d5d87611b3f9910cc7f363193dd0fc6992c26551286f0caf1b17cd4",
       "expression": "OPAQUE_SOURCE_VALUE_KEYS.has(key)",
-      "occurrence": 0
-    },
-    {
-      "fingerprint": "26d40e99ea0a24a68b19b38e063bc537b356fe6fd62e5f74d3b49edf9533f07e",
-      "file": "packages/mcp-server/src/model-output-policy.ts",
-      "annotation_id": "I02088",
-      "annotation_ids": [
-        "I02088"
-      ],
-      "category": "redaction_secret_detection",
-      "reason": "Exact host metadata keys/suffixes identify authority digests to withhold. Source value buckets explicitly bypass metadata-key filtering and are cloned unchanged.",
-      "review": {
-        "reviewer": "R1 /root/early_full_triage",
-        "verdict": "accepted",
-        "evidence": "docs/development/b64-legitimate-independent/VERDICT.json at a6f16baa; exact-expression map on 934ad542"
-      },
-      "source_pin": "934ad542ac17ed2f99e76fe38484704d6186af70",
-      "line": 59,
-      "column": 10,
-      "anchor_line": 59,
-      "kind": "literal_comparison",
-      "owner_name": "isRecord",
-      "owner_digest": "d83d1e773cbe6139e882d0dbdf4f4c2af7251c7c1b52bb356b4252e59197fabf",
-      "expression_digest": "f13c9e45b40ad61650a4fd3446bd6e161cad2d905685c14fb15530fab2e7e2bd",
-      "expression": "typeof value === \"object\"",
       "occurrence": 0
     },
     {

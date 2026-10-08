@@ -200,7 +200,7 @@ export function evaluate(candidates, allowlist) {
     const entry = entries.get(candidate.fingerprint);
     if (!entry || entry.file !== candidate.file) errors.push({ ...candidate, syntax_kind: candidate.kind, kind: 'unreviewed_candidate' });
   }
-  for (const entry of entries.values()) if (!current.has(entry.fingerprint)) errors.push({ kind: 'stale_allowance', ...entry });
+  for (const entry of entries.values()) if (!current.has(entry.fingerprint)) errors.push({ ...entry, ...(entry.kind ? { syntax_kind: entry.kind } : {}), kind: 'stale_allowance' });
   return { candidates: candidates.length, reviewed: entries.size, errors };
 }
 

@@ -17,7 +17,8 @@
     "skip": 0
   },
   "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/language-guard-formal-*.txt",
-  "independent_status": "PENDING exact successor review",
-  "allowances": "No new or removed allowances. Original365 and141 audit retained; repository scan/explicit stale formal allowance removal pending",
-  "b64_remaining_counts": "Unchanged by tooling refinement; not a product retirement claim"
+  "independent_status": "ScopedACCEPT35337a8d: independentbefore8PASS2FAIL\u2192same10PASS after6b233881",
+  "allowances": "Exactly two strict typeof allowances removed per independent827fe693; current363. Original365 source/audit mapping remains historical. No new allowances.",
+  "b64_remaining_counts": "Unchanged by tooling refinement; not a product retirement claim",
+  "stale_label": "Stored syntax kind may not overwrite stale_allowance diagnostic; ownerbefore4PASS1FAIL\u2192all26PASS after. Independentafterpending."
 }
