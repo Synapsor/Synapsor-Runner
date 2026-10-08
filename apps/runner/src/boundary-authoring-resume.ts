@@ -58,6 +58,17 @@ export type BoundaryAuthoringResumeRead = {
   assistance_history?: ReadWorkloadAssistanceCheckpoint;
 };
 
+/** A repeated save/reuse of the same immutable analysis retains its native
+ * question/history identity. A different analysis must earn its own review;
+ * no equal-looking proposal or latest question can supply that decision. */
+export function bindBoundaryAuthoringReadAnalysis(previous: BoundaryAuthoringResumeRead | undefined,
+  analysis: Pick<BoundaryAuthoringResumeRead, "analysis_id" | "analysis_digest">): BoundaryAuthoringResumeRead {
+  const same = previous?.analysis_id === analysis.analysis_id && previous.analysis_digest === analysis.analysis_digest;
+  return { analysis_id: analysis.analysis_id, analysis_digest: analysis.analysis_digest,
+    ...(same && previous?.scope_question_id ? { scope_question_id: previous.scope_question_id } : {}),
+    ...(same && previous?.assistance_history ? { assistance_history: previous.assistance_history } : {}) };
+}
+
 export type BoundaryAuthoringActionRemoval = {
   outcome: string; authority_name: string; draft_digest: `sha256:${string}`;
   /** Final-outcome retirement reviews the exact active bundle, not an empty replacement. */

@@ -225,6 +225,7 @@ import {
 } from "./model-authoring-conversation.js";
 import {
   buildBoundaryAuthoringResumeState,
+  bindBoundaryAuthoringReadAnalysis,
   updateBoundaryPolicyReview,
   type BoundaryPolicyReviewRequest,
   assertBoundaryAuthoringResumeCurrent,
@@ -6486,9 +6487,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         reusedReadWorkload = exact;
         reusingExactRead = true;
         reusableState.read_boundaries_by_digest.set(context.bundle.candidate_digest, context.candidate);
-        resumeRead = { analysis_id: exact.analysis_id, analysis_digest: exact.analysis_digest,
-          ...(resumeRead?.analysis_id === exact.analysis_id && resumeRead.analysis_digest === exact.analysis_digest
-            && resumeRead.assistance_history ? { assistance_history: resumeRead.assistance_history } : {}) };
+        resumeRead = bindBoundaryAuthoringReadAnalysis(resumeRead, exact);
         if (jobPlan.action_mode === "reuse" || jobPlan.action_mode === "none") {
           if (reusableState.current_state.actions.some((action) => action.kind !== "rule_derived")) {
             return boundaryAssistResult({ tone: "warning", title: "An older action needs dependency review.",
@@ -6577,9 +6576,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         jobPlan = { ...jobPlan, read_mode: "reuse", action_mode: revalidatedActionOutcomes.length ? "revise" : "none",
           ...(revalidatedActionOutcomes.length ? { action_strategy: "rule_derived", action_intent: jobIntent.trim(),
             action_intents: resumedActionIntents, action_outcome: revalidatedActionOutcomes[0] } : {}) };
-        resumeRead = { analysis_id: reusedReadWorkload.analysis_id, analysis_digest: reusedReadWorkload.analysis_digest,
-          ...(resumeRead?.analysis_id === reusedReadWorkload.analysis_id && resumeRead.analysis_digest === reusedReadWorkload.analysis_digest
-            && resumeRead.assistance_history ? { assistance_history: resumeRead.assistance_history } : {}) };
+        resumeRead = bindBoundaryAuthoringReadAnalysis(resumeRead, reusedReadWorkload);
       }
       if (editingSavedJob && availableResume
         && (jobPlan.read_mode === "none" || jobPlan.read_mode === "reuse")
@@ -8020,12 +8017,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         });
       }
       if (workload) {
-        resumeRead = {
-          analysis_id: workload.analysis_id,
-          analysis_digest: workload.analysis_digest,
-          ...(resumeRead?.analysis_id === workload.analysis_id && resumeRead.analysis_digest === workload.analysis_digest
-            && resumeRead.assistance_history ? { assistance_history: resumeRead.assistance_history } : {}),
-        };
+        resumeRead = bindBoundaryAuthoringReadAnalysis(resumeRead, workload);
         await persistAuthoringResume(actionIntents.length ? "action_drafting" : "authority_review");
       }
       if (actionIntents.length) {
@@ -9131,12 +9123,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         // candidate. That new exact analysis must go through the ordinary
         // commit path rather than borrowing the prior pending review record.
         if (resumingDisabledRead && !workload.review) resumingDisabledRead = false;
-        resumeRead = {
-          analysis_id: workload.analysis_id,
-          analysis_digest: workload.analysis_digest,
-          ...(resumeRead?.analysis_id === workload.analysis_id && resumeRead.analysis_digest === workload.analysis_digest
-            && resumeRead.assistance_history ? { assistance_history: resumeRead.assistance_history } : {}),
-        };
+        resumeRead = bindBoundaryAuthoringReadAnalysis(resumeRead, workload);
         await persistAuthoringResume(actionIntents.length ? "action_drafting" : "authority_review");
       }
     }

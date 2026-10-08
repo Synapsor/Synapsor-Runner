@@ -358,6 +358,13 @@
       "fix": "Typed grouped Read review/pending menu use existing business_review + localOnly transport contract; defaultNo and snapshot guard unchanged.",
       "after": "45PASS3files; independent public rerun pending",
       "logs": "/var/tmp/synapsor-b64-main-owned/evidence/read-scope-local-view-*"
+    },
+    "read_scope_pointer_retention": {
+      "before": "R1 supplemental d16e6e39/ed7d977f: exact disabled-save scope pointer absent despite retained confirmed native q; original scope/public1PASS retained",
+      "fix": "Central native analysis binding retains scope_question_id/history only for identical analysis_id AND analysis_digest at4 existing store/reuse sites. Different identity inherits no review.",
+      "after": "83PASS5FAIL in3files; all5 existing native revision fixtures lack typed pin after reader deletion, delegated unchanged-assertion migration; focused4 binding +9group tests pass; types0",
+      "logs": "/var/tmp/synapsor-b64-main-owned/evidence/read-scope-pointer-*",
+      "pending": "R1 actual public supplemental rerun; cold policyReview diagnostic-only remains separateOPEN"
     }
   }
 }
