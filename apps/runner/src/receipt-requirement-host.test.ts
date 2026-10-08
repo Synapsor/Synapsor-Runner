@@ -19,9 +19,9 @@ import { createModelAuthoringConversation } from './model-authoring-conversation
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, {recursive:true,force:true}); });
-async function fixture(options:{failConfirmationProjectionOnce?:boolean}={}) {
+async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceText?:string}={}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'receipt-host-')); roots.push(root);
-  const source = policyTextSnapshot(Buffer.from('Describe a change as complete only from its trusted completion receipt.'), 'declared-policy.txt');
+  const source = policyTextSnapshot(Buffer.from(options.sourceText ?? 'Describe a change as complete only from its trusted completion receipt.'), 'declared-policy.txt');
   const sources = newPolicySourceSession(); sources.snapshots = [source]; sources.active = source.version;
   await savePolicySources(root, sources);
   const store = canonicalJsonDigest('declared local store'), scope = canonicalJsonDigest('declared current job');
@@ -40,7 +40,7 @@ async function fixture(options:{failConfirmationProjectionOnce?:boolean}={}) {
     acknowledge:async()=>{events.push('Source acknowledgment');await fs.writeFile(file,JSON.stringify(state));} });
   const invoke = (interact:(view:BusinessStatementInteraction)=>Promise<BusinessStatementResponse>) => createBusinessStatementHost({
     question:'What establishes completion, and how should an unapplied request be described?',stage:'authority_review',assertCurrent:async()=>{},
-    receiptDecision:{target:{phase:'receipt_requirement',resource:source.digest,field:'lines:1-1',outcomes:['lab.change']},material:[source.text],
+    receiptDecision:{target:{phase:'receipt_requirement',resource:source.digest,field:'lines:1-1',outcomes:['lab.change']},material:[`Attached Source lines 1-1:\n${source.text}`],
       evidence:[{id:'receipt-source-range',digest:binding},{id:'receipt-meaning-dependencies',digest:dependency}],
       selection:{source:'lab',mode:'runner_ledger',dependencies_digest:dependency},
       // Prepared responder reads only the actual wire question and captured
@@ -155,4 +155,16 @@ it('finishes only a missing Source projection after a durable native confirmatio
   expect(currentReceiptRequirement(f.source,{start:1,end:1},f.prepared(),f.sources)?.mode).toBe('runner_ledger');
   expect(f.inspect()).toEqual(native);expect(f.requests).toHaveLength(1);
   expect(native.questions!.at(-1)?.budget?.iterations_used).toBe(1);
+});
+
+it.each([2_000,2_001,16_000])('preserves the full %i-character Source target within native question material limits',async length=>{
+  const text='R'.repeat(length-2)+' Z';
+  const f=await fixture({sourceText:text});
+  expect(await f.invoke(respond(clear))).toBe(clear);
+  const material=f.inspect().questions![0]!.material;
+  expect(material.every(entry=>entry.length<=2_000)).toBe(true);
+  expect(material.filter(entry=>entry.startsWith('Attached Source lines '))
+    .map(entry=>entry.slice(entry.indexOf('\n')+1)).join('')).toBe(text);
+  expect(f.requests).toHaveLength(1);
+  expect(f.sources.receipt_requirement_reviews!.at(-1)!.source_excerpt).toBe(text);
 });
