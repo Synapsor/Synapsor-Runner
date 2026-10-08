@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import Ajv from "ajv";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { READ_SCOPE_PROTOCOL, readScopeProposalCodec, readScopeProposalSchema, parseReadScopeProposal,
-  parseReadScopeRecord, resolveReadScopeProposal, assessReadScopeDraft, currentReadScope,
+  parseReadScopeRecord, resolveReadScopeProposal, assessReadScopeDraft, assessReadScopeRecordCurrentness,
   assertReadScopeProvenance,
   type ReadScopeProposal, type ReadScopeTarget, type ReadScopeBinding, type ReadScopeReference } from "./read-structured-scope.js";
 import { READ_WORKLOAD_ANALYSIS_VERSION, type ReadWorkloadAnalysis } from "./read-workload-assist.js";
@@ -40,14 +40,14 @@ describe("B64 typed Read scope", () => {
   it("resolves actual references without promoting provenance to semantic confirmation", () => {
     const record = resolve();
     expect(record.references).toEqual(references);
-    expect(currentReadScope({ record, expectedBinding: binding })).toMatchObject({ status: "proposed", authority_granted: false });
+    expect(assessReadScopeRecordCurrentness({ record, expectedBinding: binding })).toMatchObject({ status: "proposed", authority_granted: false });
     expect(assessReadScopeDraft(record, analysis())).toMatchObject({ status: "compatible", authority_granted: false });
   });
   it("requires an explicit no-Read proposal rather than inferring it from an empty extraction", () => {
     expect(() => resolve({ ...proposal(), requirements: [] })).toThrow(/READ_SCOPE_INVALID/u);
     const noRead = resolve({ ...proposal(), applicability: "no_read_requested", requirements: [] });
     expect(assessReadScopeDraft(noRead, analysis())).toMatchObject({ status: "delta_required", added: [root, title] });
-    expect(currentReadScope({ record: noRead, expectedBinding: binding }).status).toBe("proposed");
+    expect(assessReadScopeRecordCurrentness({ record: noRead, expectedBinding: binding }).status).toBe("proposed");
   });
   it("binds semantic content and original references independently of provider correlation IDs", () => {
     const first = resolve();
@@ -68,7 +68,7 @@ describe("B64 typed Read scope", () => {
   it("does not treat valid policy lines as correct semantic mapping", () => {
     const incorrect = proposal(); incorrect.requirements[0]!.intended_use = "These real lines mean something else";
     const record = resolve(incorrect);
-    expect(currentReadScope({ record, expectedBinding: binding }).status).toBe("proposed");
+    expect(assessReadScopeRecordCurrentness({ record, expectedBinding: binding }).status).toBe("proposed");
   });
   it("rejects unknown and homonymous target identities rather than guessing", () => {
     const bad = proposal(); bad.requirements[0]!.targets = [{ ...title, resource: "items" }];
@@ -95,27 +95,16 @@ describe("B64 typed Read scope", () => {
       targets: [root], unresolved: "Which item register is intended?" };
     const record = resolve(value);
     expect(assessReadScopeDraft(record, analysis())).toMatchObject({ status: "pending", unresolved: ["titles"] });
-    expect(currentReadScope({ record, expectedBinding: binding,
-      confirmation: { actor: "local_installation_operator", proposal_digest: record.digest } }).status).toBe("pending");
+    expect(assessReadScopeRecordCurrentness({ record, expectedBinding: binding }).status).toBe("pending");
   });
-  it("requires a trusted exact proposal confirmation and rejects a different digest", () => {
-    const record = resolve();
-    expect(currentReadScope({ record, expectedBinding: binding,
-      confirmation: { actor: "local_installation_operator", proposal_digest: d("other") } }).status).toBe("proposed");
-    expect(currentReadScope({ record, expectedBinding: binding,
-      confirmation: { actor: "local_installation_operator", proposal_digest: record.digest } }).status).toBe("confirmed");
+  it("cannot label a current mechanically valid proposal as confirmed", () => {
+    expect(assessReadScopeRecordCurrentness({ record: resolve(), expectedBinding: binding }).status).toBe("proposed");
   });
   it.each(["meaning_digest", "applicability_digest", "operation_digest", "source_digest", "catalog_digest"] as const)(
     "does not reuse confirmation after %s changes", key => {
       const record = resolve();
-      expect(currentReadScope({ record, expectedBinding: { ...binding, [key]: d("changed") },
-        confirmation: { actor: "local_installation_operator", proposal_digest: record.digest } }).status).toBe("stale");
+      expect(assessReadScopeRecordCurrentness({ record, expectedBinding: { ...binding, [key]: d("changed") } }).status).toBe("stale");
     });
-  it("does not resurrect a replaced or newly pending decision", () => {
-    const record = resolve(); const confirmation = { actor: "local_installation_operator" as const, proposal_digest: record.digest };
-    expect(currentReadScope({ record, expectedBinding: binding, confirmation, retired: true }).status).toBe("stale");
-    expect(currentReadScope({ record, expectedBinding: binding, confirmation, pendingReplacement: true }).status).toBe("pending");
-  });
   it("rejects tampered record bodies and rewritten requirement bindings", () => {
     const record = resolve();
     record.proposal.requirements[0]!.targets = [secret];

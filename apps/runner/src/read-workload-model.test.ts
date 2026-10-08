@@ -2,7 +2,7 @@ import { operatorBusinessContext, operatorClarificationGate } from "./authoring-
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringTransportCheckpoint, configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringTransportCheckpoint, configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, validateAuthoringTransportState, type AuthoringTransportState, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import { describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
@@ -50,6 +50,26 @@ describe("B64 structured Read producer adapter", () => {
       egressAcknowledged: true, deferNarration: true, dependencies: { requestJson },
       structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context } }, context };
   }
+  it("delivers the actual consumed completion only alongside the accepted scope result", async () => {
+    let state: AuthoringTransportState = { version: 1, operations: [] };
+    const events: Array<{ accepted: boolean; completion?: AuthoringQuestionCompletion }> = [];
+    await withAuthoringGenerationRecovery(async () => {
+      configureAuthoringGenerationRecovery({ available: () => true, read: () => state,
+        current: async () => canonicalJsonDigest("fixed-native-scope-context"),
+        write: async next => { state = structuredClone(next); } });
+      const result = await generateModelReadWorkload({ ...setup(async () => response(args())).input,
+        onCheckpoint: async (_checkpoint, _boundary, accepted, completion) => {
+          events.push({ accepted: accepted !== undefined, ...(completion ? { completion } : {}) });
+        } });
+      expect(result.analysis.status).toBe("ready");
+      expect(result).not.toHaveProperty("completion");
+    });
+    expect(events.filter(event => !event.accepted).every(event => event.completion === undefined)).toBe(true);
+    const accepted = events.filter(event => event.accepted);
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]!.completion).toMatchObject({ operation_id: state.operations[0]!.id,
+      request_digest: state.operations[0]!.request_digest, response_digest: canonicalJsonDigest(response(args()).body) });
+  });
   it("uses the actual typed tool, returns unconfirmed scope, and never asks a lexical root question", async () => {
     const requests: unknown[] = [];
     const send = vi.fn(async request => { requests.push(request.body); return response(args()); });

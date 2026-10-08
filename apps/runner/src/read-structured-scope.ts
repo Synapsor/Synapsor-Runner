@@ -180,7 +180,9 @@ export function assertReadScopeProvenance(value: ReadScopeRecord, input: {
   expectedBinding: ReadScopeBinding; references: readonly ReadScopeReference[]; catalog: ReadScopeCatalog;
 }): ReadScopeRecord {
   const record = parseReadScopeRecord(value);
-  const current = resolveReadScopeProposal(record.proposal, input);
+  const current = resolveReadScopeProposal(record.proposal, {
+    expectedBinding: input.expectedBinding, references: input.references, catalog: input.catalog,
+  });
   const { digest: _savedDigest, analysis_digest: _analysis, ...savedBody } = record;
   const { digest: _currentDigest, ...currentBody } = current;
   if (canonicalJsonDigest(savedBody) !== canonicalJsonDigest(currentBody))
@@ -222,17 +224,15 @@ export function readScopeDelta(before: ReadScopeRecord, after: ReadScopeRecord):
     added: next.requirement_bindings.filter(requirement => !oldDigests.has(requirement.digest)) };
 }
 
-/** Native owner must supply a parsed OperatorQuestion and its current lineage.
- * Passing a provider reply here is never a substitute for that protected loader. */
-export function currentReadScope(input: { record: ReadScopeRecord; expectedBinding: ReadScopeBinding;
-  confirmation?: { proposal_digest: string; actor: "local_installation_operator" };
-  retired?: boolean; pendingReplacement?: boolean }): {
-    status: "proposed" | "confirmed" | "stale" | "pending"; record: ReadScopeRecord; authority_granted: false;
+/** Mechanical record currentness only. Confirmation belongs exclusively to the
+ * native parsed question/lineage resolver, never a caller-supplied boolean. */
+export function assessReadScopeRecordCurrentness(input: { record: ReadScopeRecord; expectedBinding: ReadScopeBinding }): {
+    status: "proposed" | "stale" | "pending"; record: ReadScopeRecord; authority_granted: false;
   } {
   const record = parseReadScopeRecord(input.record);
   const current = bindingSchema.parse(input.expectedBinding);
-  const status = input.retired || canonicalJsonDigest(record.binding) !== canonicalJsonDigest(current) ? "stale"
-    : input.pendingReplacement || !record.analysis_digest || record.proposal.requirements.some(requirement => requirement.disposition === "unresolved") ? "pending"
-    : input.confirmation?.actor === "local_installation_operator" && input.confirmation.proposal_digest === record.digest ? "confirmed" : "proposed";
+  const status = canonicalJsonDigest(record.binding) !== canonicalJsonDigest(current) ? "stale"
+    : record.proposal.applicability === "read_requested" && !record.analysis_digest
+      || record.proposal.requirements.some(requirement => requirement.disposition === "unresolved") ? "pending" : "proposed";
   return { status, record, authority_granted: false };
 }

@@ -9,6 +9,7 @@ import type { ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistanc
 import type { ReadWorkloadView } from "./read-workloads.js";
 import type { ExactReadRequestBinding } from "./read-requested-scope.js";
 import type { ModelAuthoringConversation } from "./model-authoring-conversation.js";
+import { resolveNativeReadScope } from "./authoring-read-scope-question.js";
 
 type Digest = `sha256:${string}`;
 type Answer = ReadMeaningTarget & { question: string; answer: string };
@@ -22,7 +23,14 @@ export type CurrentReadEvidenceRecords = {
   checkpoint?: ReadWorkloadAssistanceCheckpoint;
   workloads: readonly ReadWorkloadView[];
   boundary: ExplorationBoundaryDraft;
+  /** Structured scope uses the same derived owner, with native lineage rather
+   * than the legacy statement/definition recognizer. */
+  scope?: Omit<Parameters<typeof resolveNativeReadScope>[0], "questions" | "handoffs">;
 };
+export type CurrentStructuredReadEvidence = Parameters<typeof resolveNativeReadScope>[0];
+export function currentStructuredReadEvidence(records: CurrentStructuredReadEvidence) {
+  return resolveNativeReadScope(records);
+}
 export type CurrentReadEvidenceReference =
   | { kind: "statement"; evidence: ReadMeaningEvidence }
   | { kind: "operator_answer"; question_id: string; revision: number; answer_id: string; handoff_id: string }
@@ -110,7 +118,9 @@ export function createCurrentReadEvidence(input: CurrentReadEvidenceInput) {
   const statementMeaning = (target: ReadMeaningTarget) => createCurrentReadEvidence({ ...input, answers: [], records: undefined }).meaning(target);
   const view = () => input.catalog.resources.flatMap(resource => [meaning({ resource: resource.id }),
     ...resource.fields.map(field => meaning({ resource: resource.id, field: field.id }))]);
-  return { meaning, confirmedAnswers, statementMeaning, view };
+  const scope = () => input.records?.scope ? currentStructuredReadEvidence({ ...input.records.scope,
+    questions: input.records.questions, handoffs: input.records.handoffs }) : undefined;
+  return { meaning, confirmedAnswers, statementMeaning, view, scope };
 }
 
 /** One projection of original operator context, attached Source and declared

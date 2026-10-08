@@ -2,6 +2,7 @@ import { resolveRequestedReadScope, type ExactReadRequestBinding } from "./read-
 import { READ_SCOPE_PROTOCOL, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
   type ReadScopeBinding, type ReadScopeReference, type ReadScopeCatalog, type ReadScopeRecord } from "./read-structured-scope.js";
 import type { ReadWorkloadAnalysis } from "./read-workload-assist.js";
+import { currentStructuredReadEvidence, type CurrentStructuredReadEvidence } from "./read-current-evidence.js";
 import { isAuthoringGenerationStop, beginAuthoringProducerInvocation, authoringInterruptedProducerCorrections,
   reserveAuthoringProducerCorrection, withAuthoringProducerCorrection, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -147,8 +148,8 @@ type BoundaryJobPlanCore = {
 export type StructuredReadPlanningContext = {
   binding: ReadScopeBinding; references: readonly ReadScopeReference[]; catalog: ReadScopeCatalog;
   /** Exact native current analyses only; no synthetic coverage from names. */
-  reusable?: { scope: ReadScopeRecord; analysis: ReadWorkloadAnalysis };
-  resumable?: { scope: ReadScopeRecord; analysis: ReadWorkloadAnalysis };
+  reusable?: Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id"> & { analysis: ReadWorkloadAnalysis };
+  resumable?: Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id"> & { analysis: ReadWorkloadAnalysis };
 };
 
 /**
@@ -182,6 +183,11 @@ export async function planModelBoundaryJob(input: {
   const state = normalizeCurrentState(input.currentState);
   const availableResourceIds = normalizeAvailableResourceIds(input.availableResourceIds ?? []);
   const structured = input.structuredScope ? structuredClone(input.structuredScope.current()) : undefined;
+  const structuredView = structured ? { binding: structured.binding, references: structured.references, catalog: structured.catalog,
+    reusable: structured.reusable ? currentStructuredReadEvidence({ ...structured.reusable, expectedBinding: structured.binding,
+      references: structured.references, catalog: structured.catalog }).record.proposal : undefined,
+    resumable: structured.resumable ? currentStructuredReadEvidence({ ...structured.resumable, expectedBinding: structured.binding,
+      references: structured.references, catalog: structured.catalog }).record.proposal : undefined } : undefined;
   if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL) throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED");
   const exactRevisionRoute = input.workflow || input.structuredScope ? undefined : exactSoleSemanticActionRevisionRoute(jobIntent, state);
   if (exactRevisionRoute) {
@@ -239,7 +245,7 @@ export async function planModelBoundaryJob(input: {
       `Pinned Read protocol: ${READ_SCOPE_PROTOCOL}; every planned result needs an explicit read_scope interpretation.`,
       "Use applicability=no_read_requested with empty requirements only when proposing no Read work. That proposal still needs operator review against the original request. Never infer completion or consent.",
       "For read_requested preserve include/exclude/unresolved requirements and exact targets. References prove provenance only; catalog labels cannot confirm meaning. Read routing summaries are not scope.",
-      `Host Read context: ${JSON.stringify(structured)}`,
+      `Host Read context: ${JSON.stringify(structuredView)}`,
     ] : []),
     ...(input.workflow === "program" ? ["Operator selected the complete multi-Action program workflow. action_mode=create must include complete action_intents and aligned action_outcomes, never a broad single intent or first subset. Preserve exact requested identities from the source. Missing or ambiguous identities remain a clarification, not invented names.", ...(input.expectedActionOutcomes ? [`Previously reviewed exact inventory: ${JSON.stringify(input.expectedActionOutcomes)}`] : [])] : []),
     ...(clarificationAnswer
@@ -614,8 +620,11 @@ function parseJobPlan(
     if (readMode === "reuse" || readMode === "resume") {
       const native = readMode === "reuse" ? structured.reusable : structured.resumable;
       if (!native) throw new Error("READ_SCOPE_NATIVE_COVERAGE_REQUIRED: This route needs the exact native scope and analyzed workload.");
-      const delta = readScopeDelta(native.scope, typedScope);
-      if (delta.added.length || delta.removed.length || native.scope.proposal.applicability !== typedScope.proposal.applicability)
+      const resolved = currentStructuredReadEvidence({ ...native, expectedBinding: structured.binding,
+        references: structured.references, catalog: structured.catalog });
+      if (resolved.status !== "confirmed") throw new Error("READ_SCOPE_NATIVE_PENDING: Inspect the exact unconfirmed or replaced scope before reuse.");
+      const delta = readScopeDelta(resolved.record, typedScope);
+      if (delta.added.length || delta.removed.length || resolved.record.proposal.applicability !== typedScope.proposal.applicability)
         throw new Error("READ_SCOPE_REVIEWED_DELTA_REQUIRED: Reuse cannot replace the native scope interpretation.");
       if (assessReadScopeDraft(typedScope, native.analysis).status !== "compatible")
         throw new Error("READ_SCOPE_NATIVE_COVERAGE_REQUIRED: The exact native analysis does not cover the proposed scope.");

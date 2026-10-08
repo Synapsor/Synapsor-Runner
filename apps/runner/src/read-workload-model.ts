@@ -1,4 +1,5 @@
-import { createCurrentReadEvidence, currentReadEvidenceStatements, type CurrentReadEvidenceRecords } from "./read-current-evidence.js";
+import { createCurrentReadEvidence, currentReadEvidenceStatements, currentStructuredReadEvidence,
+  type CurrentReadEvidenceRecords, type CurrentStructuredReadEvidence } from "./read-current-evidence.js";
 import { READ_SCOPE_PROTOCOL, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
   type ReadScopeBinding, type ReadScopeCatalog, type ReadScopeReference, type ReadScopeRecord } from "./read-structured-scope.js";
 import { exactOnlyReadResourceIds, resolveRequestedReadScope } from "./read-requested-scope.js";
@@ -116,8 +117,8 @@ export type ModelReadWorkloadInput = {
   structuredScope?: {
     protocol: typeof READ_SCOPE_PROTOCOL;
     current: () => { binding: ReadScopeBinding; references: readonly ReadScopeReference[]; catalog: ReadScopeCatalog;
-      /** Main obtains this only from the exact native confirmed-question resolver. */
-      confirmed?: ReadScopeRecord };
+      /** Actual native records; a bare confirmed=true or model-owned record is not accepted. */
+      native?: Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id" | "analysis"> };
     answer?: (request: ReadScopeAssistanceRequest, completion: AuthoringQuestionCompletion | undefined) => Promise<ReadScopeAnswerReference | undefined>;
     resolveAnswer?: (reference: ReadScopeAnswerReference, request: ReadScopeAssistanceRequest) => ReadScopeReference | undefined;
   };
@@ -140,7 +141,7 @@ export type ModelReadWorkloadInput = {
   /** Main commits this and the real completion sidecar with existing Source/
    * generation/resume CAS. The current boundary is needed after an exact link review. */
   onCheckpoint?: (checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, currentBoundary: ExplorationBoundaryDraft,
-    acceptedResult?: ModelReadWorkloadResult) => Promise<void>;
+    acceptedResult?: ModelReadWorkloadResult, completion?: AuthoringQuestionCompletion) => Promise<void>;
   signal?: AbortSignal;
 };
 
@@ -179,10 +180,15 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL)
     throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED: Preserve the native job; no legacy protocol fallback is available.");
   const structuredScopeDigest = structuredScopeInput ? canonicalJsonDigest(structuredScopeInput) : undefined;
+  const nativeScope = structuredScopeInput?.native ? currentStructuredReadEvidence({ ...structuredScopeInput.native,
+    expectedBinding: structuredScopeInput.binding, references: structuredScopeInput.references, catalog: structuredScopeInput.catalog }) : undefined;
+  const confirmedScope = nativeScope?.status === "confirmed" ? nativeScope.record : undefined;
+  if (nativeScope && nativeScope.status !== "confirmed")
+    throw new Error("READ_SCOPE_NATIVE_PENDING: The exact native scope is stale, replaced or not confirmed. Review its current question before remapping.");
   const tools: AskToolDefinition[] = [readWorkloadToolDefinition(
     catalog.resources.map((resource) => resource.id),
     !!input.structuredScope,
-    !!structuredScopeInput?.confirmed,
+    !!confirmedScope,
   )];
   const authorityDigest = askToolSurfaceDigest(tools);
   const defaultKeyEnv = input.provider === "openai_compatible" ? undefined : defaultProviderKeyEnv(input.provider);
@@ -638,10 +644,10 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         // All structured submissions, including bounded corrections, pass the
         // same finite checker. Neither labels nor English clauses select scope.
         try {
-          const record = resolveReadScopeProposal(args.read_scope ?? structuredScopeInput.confirmed?.proposal, { expectedBinding: structuredScopeInput.binding,
+          const record = resolveReadScopeProposal(args.read_scope ?? confirmedScope?.proposal, { expectedBinding: structuredScopeInput.binding,
             references: scopeReferences(), catalog: structuredScopeInput.catalog, analysis: candidateAnalysis });
-          if (structuredScopeInput.confirmed) {
-            const delta = readScopeDelta(structuredScopeInput.confirmed, record);
+          if (confirmedScope) {
+            const delta = readScopeDelta(confirmedScope, record);
             if (delta.removed.length || delta.added.length) {
               workloadValidationBlockers = [`READ_SCOPE_REVIEWED_DELTA_REQUIRED: ${JSON.stringify(delta)}`];
               return { ok: false, error_code: "READ_SCOPE_REVIEWED_DELTA_REQUIRED", value: { delta,
@@ -842,8 +848,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     `Forbidden questions: ${JSON.stringify(forbiddenQuestions)}`,
     `Original operator request: ${JSON.stringify(originalNamingSources)}`,
     `Host scope reference inventory: ${JSON.stringify(scopeReferences())}`,
-    ...(structuredScopeInput.confirmed ? [
-      `Current native confirmed scope: ${JSON.stringify(structuredScopeInput.confirmed.proposal)}`,
+    ...(confirmedScope ? [
+      `Current native confirmed scope: ${JSON.stringify(confirmedScope.proposal)}`,
       "This scope remains binding if you omit read_scope. A changed requirement/exclusion needs a separately reviewed delta; a model response cannot replace it.",
     ] : []),
     `Structural catalog: ${serializeCatalog()}`,
@@ -1426,7 +1432,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   // the same CAS. A blocked mapping or narration failure never clears it.
   if (analysis.status === "ready" && input.onCheckpoint) {
     assertAssistanceContext();
-    await input.onCheckpoint(undefined, structuredClone(mappingBoundary), result);
+    await input.onCheckpoint(undefined, structuredClone(mappingBoundary), result, completion);
   }
   return result;
 }
