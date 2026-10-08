@@ -53,7 +53,13 @@ describe("original requested Read scope versus routing summary", () => {
     expect(probe.frames[0]).toContain(original);
   });
 
-  it.each(["studio.usage_daily", "studio.plan_change_offers"])("refuses actual missing %s even when the routing summary lists every area", async omitted => {
+  it.each([
+    ["studio.usage_daily", false], ["studio.plan_change_offers", false],
+    ["studio.usage_daily", true], ["studio.plan_change_offers", true],
+  ] as const)("does not accept missing %s with exact association=%s", async (omitted, exact) => {
+    // Natural names alone require a question. The explicit variant adds a
+    // declared literal request, establishing the exact omission lower bound.
+    const requested = exact ? `${original} Read ${resources.join(", ")}.` : original;
     const boundary = scopeBoundary();
     const bodies: string[] = [];
     const requestJson = vi.fn(async (request: { body: unknown }) => {
@@ -61,7 +67,7 @@ describe("original requested Read scope versus routing summary", () => {
       bodies.push(wire);
       // Every submitted identity/field is actually present in this transmitted catalog.
       for (const id of resources) expect(wire).toContain(id);
-      expect(wire).toContain(original);
+      expect(wire).toContain(requested);
       return { status: 200, body: { output: [{ type: "function_call", call_id: `map_${bodies.length}`,
         name: "runner__submit_read_workloads", arguments: JSON.stringify({
           allowed: resources.filter(resource => resource !== omitted).map((resource, index) => ({ id: `read_${index}`, description: `Read ${resource} status`,
@@ -70,9 +76,9 @@ describe("original requested Read scope versus routing summary", () => {
     });
     await expect(generateModelReadWorkload({ name: "studio_reads", generatedBoundary: boundary,
       allowedQuestions: ["Read accounts, subscriptions, service lines, recent usage, invoices, payments, and plan change offers."],
-      operatorNamingContext: original, provider: "openai", model: "declared-scope-fixture", apiKey: "local-fixture-only",
+      operatorNamingContext: requested, provider: "openai", model: "declared-scope-fixture", apiKey: "local-fixture-only",
       egressAcknowledged: true, deferNarration: true, dependencies: { requestJson },
-    })).rejects.toThrow(/OMITTED|requested.*workload/iu);
+    })).rejects.toThrow(exact ? /REQUIRED_RESOURCE_OMITTED/iu : /CLARIFICATION_REQUIRED/iu);
   });
   it("does not expand an exact only-request because the model summary names another inspected area", async () => {
     const request = "Read only studio.accounts.";

@@ -56,7 +56,7 @@ describe("attributed business phrase versus one implicit basename", () => {
   const definitions = [{ resource: "service.requests", phrases: ["customer cases"] }];
   it.each([
     ["Read customer cases.", ["service.requests"]],
-    ["Read customer cases and cases.", ["archive.cases", "service.requests"]],
+    ["Read customer cases and cases.", ["service.requests"]],
     ["Read customer cases and archive.cases.", ["archive.cases", "service.requests"]],
     ["Read customer cases and archive.cases.status.", ["archive.cases", "service.requests"]],
   ] as const)("keeps only genuinely requested targets: %s", (original, required) => {
@@ -64,10 +64,11 @@ describe("attributed business phrase versus one implicit basename", () => {
     expect(scope.required).toEqual(required);
     expect(scope.ambiguous).toEqual([]);
   });
-  it("does not let a metadata label suppress the implicit basename requirement", () => {
+  it("keeps a metadata label and an overlapping basename as unestablished alternatives", () => {
     const scope = resolveRequestedReadScope({ original: "Read customer cases.",
       resources: [{ id: "service.requests", label: "Customer cases" }, { id: "archive.cases" }], definitions: [], statements: [] });
-    expect(scope.required).toEqual(["archive.cases"]);
+    expect(scope.required).toEqual([]);
+    expect(scope.candidates).toEqual([["service.requests", "archive.cases"]]);
   });
 });
 
@@ -105,6 +106,31 @@ describe("bounded request evidence syntax", () => {
   it("does not call an unrecognized business request complete without definitions", () => {
     const scope = resolveRequestedReadScope({ original: "Read outstanding obligations.", resources, definitions: [], statements: [] });
     expect(scope.required).toEqual([]);
+    expect(scope.unresolved).toBe(true);
+  });
+});
+
+
+describe("established scope versus candidate and conflicting evidence", () => {
+  const resources = [{ id: "finance.accounts" }, { id: "finance.payments" }];
+  it.each(['Read "finance.accounts".', "Read 'finance.accounts'.", "Read `finance.accounts.status`."])("keeps literal identity: %s", original => {
+    expect(resolveRequestedReadScope({ original, resources, definitions: [], statements: [] }).required).toEqual(["finance.accounts"]);
+  });
+  it("keeps even a unique basename as candidate-only evidence", () => {
+    const scope = resolveRequestedReadScope({ original: "Read accounts.", resources, definitions: [], statements: [] });
+    expect(scope.required).toEqual([]);
+    expect(scope.candidates).toEqual([["finance.accounts"]]);
+  });
+  it("does not silently remove contradictory current instructions", () => {
+    const scope = resolveRequestedReadScope({ original: "Read finance.accounts.", resources, definitions: [], statements: ["Do not read finance.accounts."] });
+    expect(scope.required).toEqual(["finance.accounts"]);
+    expect(scope.excluded).toEqual(["finance.accounts"]);
+    expect(scope.conflicts).toEqual(["finance.accounts"]);
+  });
+  it("preserves an unknown exact reference as unresolved rather than falling back to its basename", () => {
+    const scope = resolveRequestedReadScope({ original: "Read elsewhere.accounts.", resources, definitions: [], statements: [] });
+    expect(scope.required).toEqual([]);
+    expect(scope.candidates).toEqual([]);
     expect(scope.unresolved).toBe(true);
   });
 });

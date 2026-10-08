@@ -246,8 +246,12 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     }), statements: activeMeaningStatements().map(statement => statement.text) });
   const requestedScopeQuestions = (scope = currentRequestedScope()) => {
     const questions = scope.candidates.map(alternatives => ({ alternatives,
-      reason: `The requested record name has an unestablished association with inspected resources: ${alternatives.join(", ")}. Confirm the intended business records before accepting this mapping.`,
-      question: "Which records should this task show? More than one available set of records matches the name in your request. Describe the intended information so the mapping can be reviewed." }));
+      reason: alternatives.length > 1
+        ? `The requested record name matches more than one inspected resource: ${alternatives.join(", ")}. Confirm the intended business records before accepting this mapping.`
+        : `The requested record name may refer to ${alternatives[0]}. Establish the intended business records before accepting this mapping.`,
+      question: alternatives.length > 1
+        ? "Which records should this task show? More than one available set of records matches the name in your request. Describe the intended information so the mapping can be reviewed."
+        : "What information should these records provide for your task? Their name alone does not establish the intended business mapping." }));
     if (scope.unresolved) questions.push({ alternatives: catalog.resources.map(resource => resource.id),
       reason: "The retained request has no exact association with the current attributed resource definitions. Preserve the request and establish the intended business mapping before accepting it.",
       question: "What information should this view provide for your task? The current definitions do not yet establish how these records match your request." });
@@ -515,6 +519,12 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           return { ok: false, error_code: "READ_WORKLOAD_EXCLUDED_RESOURCE", value: { blockers: workloadValidationBlockers,
             authority_granted: false, source_query_executed: false, source_database_changed: false } };
         }
+        const missingResources = requiredResources.filter(resource => !allowedResources.has(resource));
+        if (missingResources.length) {
+          workloadValidationBlockers = [`READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED: The retained operator request includes ${missingResources.join(", ")}; submit complete allowed workloads or retain the missing business access pending. A routing summary cannot withdraw it.`];
+          return { ok: false, error_code: "READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED", value: { blockers: workloadValidationBlockers,
+            authority_granted: false, source_query_executed: false, source_database_changed: false } };
+        }
         const scopeQuestions = requestedScopeQuestions(requestedResources);
         for (const { alternatives, reason, question } of scopeQuestions) {
           const answered = activeClarifiedTargets().filter(answer => !answer.field && answer.reason === reason
@@ -535,12 +545,6 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
             return { ok: false, error_code: "READ_WORKLOAD_SCOPE_MAPPING_CHANGED", value: { blockers: workloadValidationBlockers,
               authority_granted: false, source_query_executed: false, source_database_changed: false } };
           }
-        }
-        const missingResources = requiredResources.filter(resource => !allowedResources.has(resource));
-        if (missingResources.length) {
-          workloadValidationBlockers = [`READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED: The retained operator request includes ${missingResources.join(", ")}; submit complete allowed workloads or retain the missing business access pending. A routing summary cannot withdraw it.`];
-          return { ok: false, error_code: "READ_WORKLOAD_REQUIRED_RESOURCE_OMITTED", value: { blockers: workloadValidationBlockers,
-            authority_granted: false, source_query_executed: false, source_database_changed: false } };
         }
         const exactScope = exactOnlyReadResourceIds(originalNamingSources.join("\n"), catalog.resources.map(resource => resource.id));
         const outsideScope = exactScope && [...allowedResources].filter(resource => !exactScope.includes(resource));
