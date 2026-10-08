@@ -34,7 +34,7 @@ async function fixture(){
  const question=createTypedParameterQuestion({id:randomUUID(),revision:1,scope_digest:digest("scope"),context_digest:digest("context"),binding,resolved});
  const nativeBinding={boundary_name:"warehouse",generation_lock_fingerprint:digest("lock"),schema_fingerprint:digest("schema"),role_posture_fingerprint:digest("role")};
  const base={binding:nativeBinding,stage:"authority_review" as const,jobIntent:"Change required warehouse reviewers from one to two; keep other rules.",provider:"openai" as const,model:"unused-local-only"};
- await writeBoundaryAuthoringResumeState(root,buildBoundaryAuthoringResumeState({...base,authoringProtocol:{version:"synapsor.structured-authoring.v1"},operatorQuestions:[question]}),{expectedRevisionDigest:null});
+ await writeBoundaryAuthoringResumeState(root,buildBoundaryAuthoringResumeState({...base,authoringProtocol:{version:"synapsor.structured-authoring.v2"},operatorQuestions:[question]}),{expectedRevisionDigest:null});
  const load=async()=>{const loaded=await readBoundaryAuthoringResumeState(root,nativeBinding);if(loaded.status!=="ready")throw new Error("Exact native state missing");return loaded.value;};
  let held=0,saveFault=false,ackFault=false;
  const ports:NativeTypedParameterPorts={

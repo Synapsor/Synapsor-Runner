@@ -370,6 +370,31 @@
       "after": "R1 original+supplement2PASS/types0; cold fixture menu collision corrected independently and false successful policy reply replaced honest model-visible needs_decision:2PASS/zero cold calls/diagnostics. Original traces retained.",
       "logs": "/var/tmp/synapsor-b64-main-owned/evidence/read-scope-pointer-*",
       "pending": "Public PR03/04/06/07/08 PASS; PR05 replacement fails before shared group entry. Full policy qualification and replacement continuation remain OPEN. Five missing-pin Resume rows now ported unchanged and full75PASS."
+    },
+    "typed_subject_protocol_preparation": {
+      "base": "25ed70cc",
+      "before": "e611df60 / subject-protocol-before.log:1FAIL, known old pin continued into draft loading",
+      "head": "fe0a22cb",
+      "decision": "Native envelope v3 unchanged; structured-authoring.v2 and forthcoming Read.v2, known older development pin refuses exact Owner message before interpretation; no migration. R1 design fe5843fe accepted.",
+      "tests": "106PASS/types0; after final early unknown-pin validation14PASS; fresh fixture pins only, original safety assertions unchanged.",
+      "open": "R2 actual public/native compatibility; canonical Read.v2 schema/helper separate pending review. No whole v2 public qualification."
+    },
+    "saved_read_scope_review_continuation": {
+      "head": "25ed70cc",
+      "independent": "R1 before a14460eb fails missing Review; after5PASS1FAIL; Review->Yes retains same q/history, planning1/mapping1, actual disabled save, no activation. PR03/04/07/08 pass.",
+      "open": "PR05 reaches Replace but no raw replacement continuation. Digest-only assertion overstrict for appended declined disposition; original trace retained. Full Replace remains OPEN."
+    },
+    "native_typed_field_adapter": {
+      "head": "942e0501 (owner9b50f8fa)",
+      "independent": "R2 original12parent+1freshOS PASS; report d629921951500cbc7704a48616055309a79d273fcacd4e85206ee87f04d62518; public wiring not proved.",
+      "integration": "18PASS across3 actual files; requested host filename absent, no fourth file claim. Fresh nativefixture v2 pin, types0.",
+      "logs": "/var/tmp/synapsor-b64-main-owned/evidence/native-field-adapter-integration{,-types}.log"
+    },
+    "typed_mode_guidance": {
+      "head": "58ccd7e4 (owner43f43484)",
+      "independent": "R2 original before8PASS8FAIL; unchanged after16PASS, missing/exact/pending/delta with actual native consumed scope; no scope/allowance/consent mutation.",
+      "integration": "29PASS/56unselected in planning-mode-guidance-integration.log; original provider counts/assertions retained.",
+      "fixtures": "First producer inventory51P267F remains;212 original rows still open at960a4831. Subjects v2 adds explicit new fixture work, no blanket acceptance."
     }
   }
 }
