@@ -482,7 +482,10 @@
       "scope": [
         "authoring_or_shared"
       ],
-      "status": "MAIN_HOOKS_OR_SEPARATE_ADVISORY_CLASSIFICATION"
+      "status": "MAIN_HOOKS_OR_SEPARATE_ADVISORY_CLASSIFICATION",
+      "reclassified_annotations": [
+        "I03594"
+      ]
     },
     {
       "file": "apps/runner/src/boundary-job-model.ts",
@@ -586,7 +589,10 @@
       "scope": [
         "authoring_or_shared"
       ],
-      "status": "ACTIVE_RETIREMENT"
+      "status": "ACTIVE_RETIREMENT",
+      "reclassified_annotations": [
+        "I03556"
+      ]
     },
     {
       "file": "apps/runner/src/contract-tools.ts",
@@ -613,7 +619,11 @@
       "scope": [
         "authoring_or_shared"
       ],
-      "status": "ACTIVE_RETIREMENT"
+      "status": "ACTIVE_RETIREMENT",
+      "reclassified_annotations": [
+        "I00054",
+        "I00055"
+      ]
     },
     {
       "file": "apps/runner/src/guided-action-quick.ts",
@@ -676,7 +686,11 @@
       "scope": [
         "authoring_or_shared"
       ],
-      "status": "ACTIVE_RETIREMENT"
+      "status": "ACTIVE_RETIREMENT",
+      "reclassified_annotations": [
+        "I03543",
+        "I03544"
+      ]
     },
     {
       "file": "apps/runner/src/model-ask.ts",
@@ -713,7 +727,10 @@
       "scope": [
         "authoring_or_shared"
       ],
-      "status": "ACTIVE_RETIREMENT"
+      "status": "ACTIVE_RETIREMENT",
+      "reclassified_annotations": [
+        "I00371"
+      ]
     },
     {
       "file": "apps/runner/src/post-activation-ask.ts",
@@ -881,7 +898,10 @@
       "scope": [
         "separate_code_or_audit"
       ],
-      "status": "ACTIVE_RETIREMENT"
+      "status": "ACTIVE_RETIREMENT",
+      "reclassified_annotations": [
+        "I01961"
+      ]
     },
     {
       "file": "apps/runner/src/schema-candidates.ts",
@@ -924,7 +944,11 @@
       "scope": [
         "authoring_or_shared"
       ],
-      "status": "ACTIVE_RETIREMENT"
+      "status": "ACTIVE_RETIREMENT",
+      "reclassified_annotations": [
+        "I00415",
+        "I00416"
+      ]
     },
     {
       "file": "packages/mcp-server/src/scoped-catalog.ts",
@@ -980,6 +1004,175 @@
         "authoring_or_shared"
       ],
       "status": "MAIN_HOOKS_OR_SEPARATE_ADVISORY_CLASSIFICATION"
+    },
+    {
+      "file": "apps/runner/src/ask-mcp-gateway.ts",
+      "owner": "ask",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I03593"
+      ]
+    },
+    {
+      "file": "apps/runner/src/guided-action-rehearsal-target.ts",
+      "owner": "action",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I01962"
+      ]
+    },
+    {
+      "file": "apps/runner/src/runtime-doctor.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I03550"
+      ]
+    },
+    {
+      "file": "apps/runner/src/notifications.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I03553"
+      ]
+    },
+    {
+      "file": "apps/runner/src/graduated-trust.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I03569"
+      ]
+    },
+    {
+      "file": "apps/runner/src/first-run-doctor.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I03573"
+      ]
+    },
+    {
+      "file": "apps/runner/src/mcp-audit.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I03574"
+      ]
+    },
+    {
+      "file": "apps/runner/src/hosted-provider-models.ts",
+      "owner": "chat_presentation",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I03575"
+      ]
+    },
+    {
+      "file": "packages/mcp-server/src/runtime-errors.ts",
+      "owner": "main",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I02087"
+      ]
+    },
+    {
+      "file": "packages/proposal-store/src/query-builders.ts",
+      "owner": "main",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I02097"
+      ]
+    },
+    {
+      "file": "packages/mcp-server/src/proposal-freshness.ts",
+      "owner": "main",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I02100"
+      ]
+    },
+    {
+      "file": "apps/runner/src/mcp-runtime.ts",
+      "owner": "main",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I03547",
+        "I03548"
+      ]
+    },
+    {
+      "file": "apps/runner/src/worker-runtime.ts",
+      "owner": "main",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I03552"
+      ]
+    },
+    {
+      "file": "apps/runner/src/contract-testing.ts",
+      "owner": "main",
+      "inventory_annotations": [],
+      "status": "RECLASSIFIED_RETIREMENT",
+      "scope": [
+        "authoring_or_shared"
+      ],
+      "reclassified_annotations": [
+        "I03568"
+      ]
     }
   ],
   "hooks": [
@@ -1001,9 +1194,14 @@
     "count_unit": "Canonical decision annotations, not raw grep line count; branch implementation counts distinct from Main acceptance",
     "ask": {
       "pin": "0032979d",
-      "typed": 0,
+      "typed": 3,
       "delete": 0,
-      "source": "Mainintegratedall49canonicalspans afterR1scopedACCEPT4beb1842;70PASS/types0; retiredengine0productiondefinitions/callers; historicaltestsremainforcontractporting"
+      "source": "Original49 accepted/integrated; three reclassified runtime Read/Ask error-routing sites reopened by audit.",
+      "audit_reclassified_ids": [
+        "I00415",
+        "I00416",
+        "I03593"
+      ]
     },
     "privacy_visibility": {
       "pin": "a733ccec",
@@ -1022,21 +1220,37 @@
       "with_reclassifications": {
         "typed": 24,
         "delete": 2
-      }
+      },
+      "audit_reclassified_ids": [
+        "I00054",
+        "I00055",
+        "I00371"
+      ]
     },
     "chat_presentation": {
       "pin": "768d85e6",
-      "branch_typed": 0,
+      "branch_typed": 9,
       "branch_delete": 0,
-      "main_pending_typed": 0,
+      "main_pending_typed": 9,
       "main_pending_delete": 0,
-      "source": "All canonical source integrated; CP05/06/08 exact composition independently accepted c9e08389 (3PASS/types0); CP08 source/tests byte-identical after selective Main integration. Other provenance/public integration remains open."
+      "source": "Original29typed/1delete source accepted/integrated; nine reclassified presentation/routing/provenance sites newly assigned.",
+      "audit_reclassified_ids": [
+        "I03543",
+        "I03544",
+        "I03550",
+        "I03553",
+        "I03556",
+        "I03569",
+        "I03573",
+        "I03574",
+        "I03575"
+      ]
     },
     "action": {
-      "pin": "5f04859d",
-      "typed": 49,
+      "pin": "48cdcf07",
+      "typed": 41,
       "delete": 5,
-      "source": "Actualownercheckpoint:1typedcomplete,6partial,13deletions; broader155PASS33FAIL3existingSKIP retained; independentpending",
+      "source": "Nine original typed sites implemented source,13delete implemented; TUI79/guided28/renamed1PASS types0 owner evidence; successor independent acceptance pending. Two reclassified sites assigned.",
       "reclassified_open": {
         "typed": [
           "I01961"
@@ -1044,9 +1258,13 @@
         "delete": []
       },
       "with_reclassifications": {
-        "typed": 50,
+        "typed": 43,
         "delete": 5
-      }
+      },
+      "audit_reclassified_ids": [
+        "I01961",
+        "I01962"
+      ]
     },
     "read": {
       "pin": "d4562eb6",
@@ -1066,22 +1284,70 @@
       "pin": "d565098e",
       "typed": 30,
       "delete": 0,
-      "source": "Original31typed+1delete: I03525 old helper removed and I03528 shared typed permission presenter integrated. Other30 remain unclosed; Read-owned review identified11 of these pending Main hooks. Newly reclassified IDs are tracked separately until R1 final manifest.",
-      "reclassified_provisional": [
-        "I02097",
+      "source": "Original30typed/0delete remain; eight reclassified sites. Other audited sites explicitly assigned existing Ask/Chat/Action/Privacy owners, not dropped.",
+      "reclassified_provisional": [],
+      "audit_reclassified_ids": [
         "I02087",
+        "I02097",
         "I02100",
-        "I03553",
-        "I03544",
-        "I03543",
-        "I03548",
-        "I03575",
-        "I03568",
         "I03547",
-        "I03593",
+        "I03548",
+        "I03552",
+        "I03568",
         "I03594"
-      ]
+      ],
+      "with_reclassifications": {
+        "typed": 38,
+        "delete": 0
+      }
     }
   },
-  "exit_criterion": "Zero remaining English decision sites. All original250typed+66delete and independently reclassified sites must close; no deferral. Syntactic regex/candidate counts are not this metric."
+  "exit_criterion": "Zero remaining English decision sites. All original250typed+66delete and independently reclassified sites must close; no deferral. Syntactic regex/candidate counts are not this metric.",
+  "independent_legitimate_audit": {
+    "pin": "a6f16baa",
+    "audited_source": "49798f15",
+    "total": 141,
+    "legitimate": 101,
+    "reclassify_typed": 25,
+    "retired": 15,
+    "assignments": {
+      "ask": [
+        "I00415",
+        "I00416",
+        "I03593"
+      ],
+      "action": [
+        "I01961",
+        "I01962"
+      ],
+      "privacy_visibility": [
+        "I00054",
+        "I00055",
+        "I00371"
+      ],
+      "chat_presentation": [
+        "I03543",
+        "I03544",
+        "I03550",
+        "I03553",
+        "I03556",
+        "I03569",
+        "I03573",
+        "I03574",
+        "I03575"
+      ],
+      "main": [
+        "I02087",
+        "I02097",
+        "I02100",
+        "I03547",
+        "I03548",
+        "I03552",
+        "I03568",
+        "I03594"
+      ]
+    },
+    "evidence": "../b64-legitimate-independent/VERDICT.json",
+    "note": "Privacy requests deletion disposition for I00054/55 because the typed metadata replacement removes both predicates; original audit retained. I00371 owner implementation829 exists but is not Main integrated."
+  }
 }

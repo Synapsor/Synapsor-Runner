@@ -1,0 +1,1419 @@
+{
+  "source_pin": "49798f15c44f5492f81e09f1629680fdc56833ff",
+  "historical_inventory_unchanged": true,
+  "entries": [
+    {
+      "annotation_id": "I00054",
+      "historical_id": "READ-EN-054",
+      "historical_file": "apps/runner/src/explore-vocabulary.ts",
+      "historical_locations": [
+        [
+          50,
+          50
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Bounded code-shape observation, advisory only",
+      "current_file": "apps/runner/src/explore-vocabulary.ts",
+      "current_exact_evidence": [
+        {
+          "line": 58,
+          "text": "const CODED_ENUM_VALUE = /^[A-Za-z]{1,4}\\d{1,4}$/u;"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Privacy",
+      "reason": "Alphanumeric code shape infers coded_values semantic status and review_advised, also consumed by read catalog examples and model guidance. Advisory labeling does not make this display-only.",
+      "current_call_chain": "isCodedExploreValueDomain -> exploreFieldStructuralSemanticStatus -> exploreVocabularyCoverage / read-catalog-presentation readable dimensions / model catalog",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "da1981d25fd5bc157bdea2515d9118fcf19e629b71246414370fcca5686d89e1"
+    },
+    {
+      "annotation_id": "I00055",
+      "historical_id": "READ-EN-055",
+      "historical_file": "apps/runner/src/explore-vocabulary.ts",
+      "historical_locations": [
+        [
+          118,
+          118
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Bounded code-shape observation, advisory only",
+      "current_file": "apps/runner/src/explore-vocabulary.ts",
+      "current_exact_evidence": [
+        {
+          "line": 126,
+          "text": "&& values.every((item) => CODED_ENUM_VALUE.test(item));"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Privacy",
+      "reason": "Alphanumeric code shape infers coded_values semantic status and review_advised, also consumed by read catalog examples and model guidance. Advisory labeling does not make this display-only.",
+      "current_call_chain": "isCodedExploreValueDomain -> exploreFieldStructuralSemanticStatus -> exploreVocabularyCoverage / read-catalog-presentation readable dimensions / model catalog",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "da1981d25fd5bc157bdea2515d9118fcf19e629b71246414370fcca5686d89e1"
+    },
+    {
+      "annotation_id": "I00371",
+      "historical_id": "I00371",
+      "historical_file": "apps/runner/src/onboarding.ts",
+      "historical_locations": [
+        [
+          1443,
+          1443
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Strip trailing s for generated object naming (also feeds PK-name suggestion)",
+      "current_file": "apps/runner/src/onboarding.ts",
+      "current_exact_evidence": [
+        {
+          "line": 1445,
+          "text": "const base = tableName.replace(/[^A-Za-z0-9_]/g, \"_\").replace(/s$/, \"\");"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Main/onboarding",
+      "reason": "English plural-s removal is also consumed by inferPrimaryKeyCandidate, where singularized name selects a column when actual primary key is absent. Not exclusively name display. Split cosmetic naming from typed inspected/user-selected PK.",
+      "current_call_chain": "safeObjectName -> inferPrimaryKeyCandidate lines1538-1548 -> guided/direct onboarding defaults",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "3e4b5e915b65473673719d28a66612a12eb5b575c4d780f2c19699b942b0c357",
+      "implementation_status": {
+        "status": "implemented_not_in_audited_main",
+        "owner_pin": "829649eca24e2fab62ea19106b7ee9493625b299",
+        "proof": "Source verified: inferPrimaryKeyCandidate returns actual inspected single primary_key or undefined. No naming fallback. No owner test rerun in this audit."
+      }
+    },
+    {
+      "annotation_id": "I00415",
+      "historical_id": "I00415",
+      "historical_file": "apps/runner/src/scoped-explore.ts",
+      "historical_locations": [
+        [
+          6628,
+          6628
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Redact/classify database error category without exposing raw error",
+      "current_file": "apps/runner/src/scoped-explore.ts",
+      "current_exact_evidence": [
+        {
+          "line": 6594,
+          "text": "if (/timeout|timed out|connection|pool|too many clients|unavailable/i.test(message)) return \"temporary database connection or timeout failure\";"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Runtime Read",
+      "reason": "English database error text is classified as temporary failure vs stale schema. Although current error code remains EXPLORE_SOURCE_UNAVAILABLE, the diagnostic asserts an inferred cause, not merely redaction/formatting. Retain URL/credential redaction; classify using structured driver codes or generic unknown.",
+      "current_call_chain": "scoped query catch -> redactedDatabaseError -> error message presented to model/operator",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "0f1f62b1092a02833629b3e772da465ca1443418d39bec305c2dc999694bb2d0"
+    },
+    {
+      "annotation_id": "I00416",
+      "historical_id": "I00416",
+      "historical_file": "apps/runner/src/scoped-explore.ts",
+      "historical_locations": [
+        [
+          6629,
+          6629
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Redact/classify database error category without exposing raw error",
+      "current_file": "apps/runner/src/scoped-explore.ts",
+      "current_exact_evidence": [
+        {
+          "line": 6595,
+          "text": "if (/column|relation|table|schema|does not exist|unknown/i.test(message)) return \"reviewed schema no longer matches the source\";"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Runtime Read",
+      "reason": "English database error text is classified as temporary failure vs stale schema. Although current error code remains EXPLORE_SOURCE_UNAVAILABLE, the diagnostic asserts an inferred cause, not merely redaction/formatting. Retain URL/credential redaction; classify using structured driver codes or generic unknown.",
+      "current_call_chain": "scoped query catch -> redactedDatabaseError -> error message presented to model/operator",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "0f1f62b1092a02833629b3e772da465ca1443418d39bec305c2dc999694bb2d0"
+    },
+    {
+      "annotation_id": "I01961",
+      "historical_id": "ACTION-EN-42",
+      "historical_file": "apps/runner/src/safe-action.ts",
+      "historical_locations": [
+        [
+          61,
+          61
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "TODO/TBD marker scan refuses unresolved draft",
+      "current_file": "apps/runner/src/safe-action.ts",
+      "current_exact_evidence": [
+        {
+          "line": 61,
+          "text": "const unresolvedPattern = /(?:__REVIEW_[A-Z0-9_]+__|\\bTODO\\b|\\bTBD\\b|REVIEW_REQUIRED)/i;"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Action",
+      "reason": "TODO/TBD words anywhere in arbitrary capability keys/values decide SAFE_ACTION_REVIEW_PLACEHOLDER rejection. Explicit __REVIEW_* marker protocol may remain separately; natural text keywords are not exact authority state.",
+      "current_call_chain": "validate safe draft -> containsUnresolved recursively -> unresolvedPattern -> compile refusal",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "f3e60ecfd8bd077901bb291dd8e3164ec5c5e1e3fa4c1be8b6ccd9e97e37aba0"
+    },
+    {
+      "annotation_id": "I01962",
+      "historical_id": "ACTION-EN-43",
+      "historical_file": "apps/runner/src/guided-action-rehearsal-target.ts",
+      "historical_locations": [
+        [
+          138,
+          138
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Database error text supplies user-safe wrong-value explanation",
+      "current_file": "apps/runner/src/guided-action-rehearsal-target.ts",
+      "current_exact_evidence": [
+        {
+          "line": 138,
+          "text": "if (/invalid input syntax for type|incorrect .* value|truncated incorrect/i.test(message)) {"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Action",
+      "reason": "Driver English message regex changes failure to GUIDED_ACTION_TRUSTED_SCOPE_VALUE_INVALID and asserts tenant/principal value cause. Must use actual code/type information or preserve unknown; not display-only formatting.",
+      "current_call_chain": "guidedActionRehearsalTarget readRow catch -> typed refusal chosen from error.message",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "e0902f4030d9d0bffdf0b4471f0b6106b8c285d20a05f542476f5eb3e100b2af"
+    },
+    {
+      "annotation_id": "I02087",
+      "historical_id": "GR01",
+      "historical_file": "packages/mcp-server/src/runtime-errors.ts",
+      "historical_locations": [
+        [
+          225,
+          310
+        ]
+      ],
+      "historical_part": 0,
+      "historical_decision": "SQL/system connection and transport error text supplement typed error codes.",
+      "current_file": "packages/mcp-server/src/runtime-errors.ts",
+      "current_exact_evidence": [
+        {
+          "line": 225,
+          "text": "if (sqlState && (TRANSIENT_POSTGRES_CODES.has(sqlState) || sqlState.startsWith(\"08\"))) return true;"
+        },
+        {
+          "line": 226,
+          "text": "if (errno !== undefined && TRANSIENT_MYSQL_ERRNOS.has(errno)) return true;"
+        },
+        {
+          "line": 227,
+          "text": "const message = errorMessage(candidate);"
+        },
+        {
+          "line": 228,
+          "text": "if (/\\b(ECONNABORTED|ECONNREFUSED|ECONNRESET|EAI_AGAIN|ENETDOWN|ENETUNREACH|ENOTFOUND|EPIPE|ETIMEDOUT)\\b/i.test(message)) return true;"
+        },
+        {
+          "line": 229,
+          "text": "if (/\\b(connection (?:queue|pool) (?:is )?(?:full|exhausted|timed out)|pool (?:is )?(?:full|exhausted)|too many (?:clients|connections)|remaining connection slots|cannot connect now)\\b/i.test(message)) return true;"
+        },
+        {
+          "line": 230,
+          "text": "if (/\\b(connection (?:closed|lost|refused|reset|terminated|timed out)|database (?:is )?(?:starting up|shutting down|temporarily unavailable)|operation timed out|server closed the connection|socket hang up|timeout expired)\\b/i.test(message)) return true;"
+        },
+        {
+          "line": 232,
+          "text": "return false;"
+        },
+        {
+          "line": 235,
+          "text": "export function safeRuntimeErrorCode(error: unknown): string {"
+        },
+        {
+          "line": 236,
+          "text": "if (error instanceof McpRuntimeError) return error.code;"
+        },
+        {
+          "line": 241,
+          "text": "if (code && TRANSIENT_SYSTEM_CODES.has(code)) return `NODE_${code}`;"
+        },
+        {
+          "line": 242,
+          "text": "if (code && TRANSIENT_MYSQL_CODES.has(code)) return `MYSQL_${code}`;"
+        },
+        {
+          "line": 243,
+          "text": "if (errno !== undefined && TRANSIENT_MYSQL_ERRNOS.has(errno)) return `MYSQL_${errno}`;"
+        },
+        {
+          "line": 244,
+          "text": "if (code && (TRANSIENT_POSTGRES_CODES.has(code) || code.startsWith(\"08\"))) return `POSTGRES_${code}`;"
+        },
+        {
+          "line": 245,
+          "text": "if (sqlState && (TRANSIENT_POSTGRES_CODES.has(sqlState) || sqlState.startsWith(\"08\"))) return `POSTGRES_${sqlState}`;"
+        },
+        {
+          "line": 247,
+          "text": "return \"UNCLASSIFIED\";"
+        },
+        {
+          "line": 250,
+          "text": "export function errorChain(error: unknown): unknown[] {"
+        },
+        {
+          "line": 251,
+          "text": "const chain: unknown[] = [];"
+        },
+        {
+          "line": 252,
+          "text": "const seen = new Set<unknown>();"
+        },
+        {
+          "line": 253,
+          "text": "let current: unknown = error;"
+        },
+        {
+          "line": 254,
+          "text": "while (current !== undefined && current !== null && chain.length < 6 && !seen.has(current)) {"
+        },
+        {
+          "line": 255,
+          "text": "chain.push(current);"
+        },
+        {
+          "line": 256,
+          "text": "seen.add(current);"
+        },
+        {
+          "line": 257,
+          "text": "current = isRecord(current) ? current.cause : undefined;"
+        },
+        {
+          "line": 259,
+          "text": "return chain;"
+        },
+        {
+          "line": 262,
+          "text": "export function errorStringProperty(error: unknown, property: string): string | undefined {"
+        },
+        {
+          "line": 265,
+          "text": "if (typeof value !== \"string\" && typeof value !== \"number\") return undefined;"
+        },
+        {
+          "line": 266,
+          "text": "const normalized = String(value).trim().toUpperCase();"
+        },
+        {
+          "line": 267,
+          "text": "return normalized || undefined;"
+        },
+        {
+          "line": 270,
+          "text": "export function errorNumberProperty(error: unknown, property: string): number | undefined {"
+        },
+        {
+          "line": 273,
+          "text": "const normalized = typeof value === \"number\" ? value : typeof value === \"string\" ? Number(value) : Number.NaN;"
+        },
+        {
+          "line": 274,
+          "text": "return Number.isInteger(normalized) ? normalized : undefined;"
+        },
+        {
+          "line": 277,
+          "text": "export function errorMessage(error: unknown): string {"
+        },
+        {
+          "line": 278,
+          "text": "if (error instanceof Error) return error.message;"
+        },
+        {
+          "line": 279,
+          "text": "if (isRecord(error) && typeof error.message === \"string\") return error.message;"
+        },
+        {
+          "line": 280,
+          "text": "return typeof error === \"string\" ? error : \"\";"
+        },
+        {
+          "line": 283,
+          "text": "export function toolErrorPayload(error: unknown): Record<string, unknown> {"
+        },
+        {
+          "line": 284,
+          "text": "const safe = safeToolError(error);"
+        },
+        {
+          "line": 285,
+          "text": "const code = error instanceof McpRuntimeError"
+        },
+        {
+          "line": 286,
+          "text": "? error.code === \"LOCAL_STORE_UNAVAILABLE\" ? \"TEMPORARILY_UNAVAILABLE\" : error.code"
+        },
+        {
+          "line": 287,
+          "text": ": \"MCP_TOOL_FAILED\";"
+        },
+        {
+          "line": 289,
+          "text": "ok: false,"
+        },
+        {
+          "line": 290,
+          "text": "code,"
+        },
+        {
+          "line": 291,
+          "text": "error: safe.message,"
+        },
+        {
+          "line": 292,
+          "text": "...(safe.retry_after_ms ? { retry_after_ms: safe.retry_after_ms } : {}),"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Runtime",
+      "reason": "English infrastructure message phrases decide isTransientInfrastructureError, which produces retryable TEMPORARILY_UNAVAILABLE/retry delays. Exact errno/SQLSTATE/system-code branches can remain separately; English fallback cannot be allowlisted as formatting.",
+      "current_call_chain": "safeToolError/typed runtime errors -> isTransientInfrastructureError -> retryable response",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "5a41b220189f7df42887c610bb294e5b2ce03c16093ad41f046088bc1ce18917"
+    },
+    {
+      "annotation_id": "I02097",
+      "historical_id": "GL07",
+      "historical_file": "packages/proposal-store/src/query-builders.ts",
+      "historical_locations": [
+        [
+          234,
+          239
+        ],
+        [
+          263,
+          271
+        ]
+      ],
+      "historical_part": 1,
+      "historical_decision": "Escaped case-insensitive metadata search plus plural/public-prefix object-type variants.",
+      "current_file": "packages/proposal-store/src/query-builders.ts",
+      "current_exact_evidence": [
+        {
+          "line": 263,
+          "text": "export function objectTypeVariants(value: string): string[] {"
+        },
+        {
+          "line": 264,
+          "text": "const variants = new Set<string>([value]);"
+        },
+        {
+          "line": 265,
+          "text": "if (value.endsWith(\"s\")) variants.add(value.slice(0, -1));"
+        },
+        {
+          "line": 266,
+          "text": "else variants.add(`${value}s`);"
+        },
+        {
+          "line": 267,
+          "text": "for (const variant of [...variants]) {"
+        },
+        {
+          "line": 268,
+          "text": "if (!variant.includes(\".\")) variants.add(`public.${variant}`);"
+        },
+        {
+          "line": 270,
+          "text": "return [...variants];"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Runtime/store",
+      "reason": "Plural/singular and implicit public schema variants change which object records a query selects. This is English/table-identity alias inference, unlike literal substring search. Use exact typed object references/explicit aliases.",
+      "current_call_chain": "objectTypeVariants -> addObjectFilters -> IN clauses over proposal object_type/source_table",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "389b6a4174fa3ecfe94ce612b4acebf7bec1c617694854b14b378a926fc7db88"
+    },
+    {
+      "annotation_id": "I02100",
+      "historical_id": "GL10",
+      "historical_file": "packages/mcp-server/src/proposal-freshness.ts",
+      "historical_locations": [
+        [
+          498,
+          510
+        ]
+      ],
+      "historical_part": 0,
+      "historical_decision": "Technical connection/timeout/topology code or message selects unavailable/unsupported freshness failure.",
+      "current_file": "packages/mcp-server/src/proposal-freshness.ts",
+      "current_exact_evidence": [
+        {
+          "line": 498,
+          "text": "result: \"unavailable\" | \"invalid\" | \"unsupported\";"
+        },
+        {
+          "line": 499,
+          "text": "safe_code: string;"
+        },
+        {
+          "line": 501,
+          "text": "const code = error instanceof McpRuntimeError ? error.code : errorStringProperty(error, \"code\") ?? \"\";"
+        },
+        {
+          "line": 502,
+          "text": "if (/(TIMEOUT|POOL|CONNECTION|ECONN|ETIMEDOUT|TOO_MANY|UNAVAILABLE|SATURAT)/i.test(`${code} ${errorMessage(error)}`)) {"
+        },
+        {
+          "line": 503,
+          "text": "return { result: \"unavailable\", safe_code: \"FRESHNESS_TEMPORARILY_UNAVAILABLE\" };"
+        },
+        {
+          "line": 505,
+          "text": "if (/(UNSUPPORTED|CROSS_SOURCE)/i.test(code)) {"
+        },
+        {
+          "line": 506,
+          "text": "return { result: \"unsupported\", safe_code: \"FRESHNESS_TOPOLOGY_UNSUPPORTED\" };"
+        },
+        {
+          "line": 508,
+          "text": "return { result: \"invalid\", safe_code: \"FRESHNESS_CHECK_FAILED\" };"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Runtime",
+      "reason": "Combines error.code with English error.message to choose freshness unavailable/invalid classification, affecting safe recovery result. Preserve exact structured codes, remove text inference.",
+      "current_call_chain": "freshness check catch -> classifyFreshnessReadError -> forcedResult/forcedCode",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "a10c5fa65fabbce805f974437f6ffadcbf6f4295db942ea2756c334c2acfeb25"
+    },
+    {
+      "annotation_id": "I03543",
+      "historical_id": "MAIN-EN-020",
+      "historical_file": "apps/runner/src/local-ui.ts",
+      "historical_locations": [
+        [
+          6245,
+          6285
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Reports potentially unsafe external tool names, not a grant or business meaning decision",
+      "current_file": "apps/runner/src/local-ui.ts",
+      "current_exact_evidence": [
+        {
+          "line": 6244,
+          "text": ".filter((name) => /execute_sql|run_query|approve|commit|apply_writeback/i.test(name));"
+        },
+        {
+          "line": 6247,
+          "text": "setup: {"
+        },
+        {
+          "line": 6248,
+          "text": "config_path: configPath,"
+        },
+        {
+          "line": 6249,
+          "text": "store_path: storePath,"
+        },
+        {
+          "line": 6250,
+          "text": "mode: config.mode,"
+        },
+        {
+          "line": 6251,
+          "text": "storage: asRecord(config.storage),"
+        },
+        {
+          "line": 6252,
+          "text": "trusted_context: config.trusted_context,"
+        },
+        {
+          "line": 6253,
+          "text": "sources,"
+        },
+        {
+          "line": 6254,
+          "text": "capabilities,"
+        },
+        {
+          "line": 6256,
+          "text": "doctor: {"
+        },
+        {
+          "line": 6257,
+          "text": "config_ok: validation.ok,"
+        },
+        {
+          "line": 6258,
+          "text": "errors: validation.errors,"
+        },
+        {
+          "line": 6259,
+          "text": "warnings: validation.warnings,"
+        },
+        {
+          "line": 6260,
+          "text": "no_raw_sql_exposed: forbiddenTools.length === 0,"
+        },
+        {
+          "line": 6261,
+          "text": "forbidden_model_tools: forbiddenTools,"
+        },
+        {
+          "line": 6266,
+          "text": "function buildTools(config: JsonRecord): JsonRecord {"
+        },
+        {
+          "line": 6273,
+          "text": "target_business_object: `${String(target.schema ?? \"\")}.${String(target.table ?? \"\")}`,"
+        },
+        {
+          "line": 6274,
+          "text": "input_schema: item.args,"
+        },
+        {
+          "line": 6275,
+          "text": "hidden_trusted_bindings: contextValuesForCapability(config, item),"
+        },
+        {
+          "line": 6276,
+          "text": "lookup: item.lookup,"
+        },
+        {
+          "line": 6277,
+          "text": "visible_columns: item.visible_columns,"
+        },
+        {
+          "line": 6278,
+          "text": "allowed_patch_columns: item.allowed_columns ?? [],"
+        },
+        {
+          "line": 6279,
+          "text": "operation: item.operation,"
+        },
+        {
+          "line": 6280,
+          "text": "conflict_guard: item.conflict_guard,"
+        },
+        {
+          "line": 6283,
+          "text": "no_raw_sql_exposed: !/execute_sql|run_query/i.test(String(item.name ?? \"\")),"
+        },
+        {
+          "line": 6284,
+          "text": "approval_or_commit_exposed: /approve|commit|apply_writeback/i.test(String(item.name ?? \"\")),"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Main UI",
+      "reason": "Tool-name word substrings produce safety/provenance booleans no_raw_sql_exposed and approval_or_commit_exposed. Not merely cosmetic; absence is not typed capability proof.",
+      "current_call_chain": "buildSummary/buildTools -> doctor/UI safety claims from names",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "3ef010c334db35132fd7d14de05a5a363a08844c87f573bbb88d94d728ac41cf"
+    },
+    {
+      "annotation_id": "I03544",
+      "historical_id": "MAIN-EN-021",
+      "historical_file": "apps/runner/src/local-ui.ts",
+      "historical_locations": [
+        [
+          6943,
+          6950
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Matches technical policy_auto_approv actor marker for display provenance",
+      "current_file": "apps/runner/src/local-ui.ts",
+      "current_exact_evidence": [
+        {
+          "line": 6943,
+          "text": "proposalId: string,"
+        },
+        {
+          "line": 6944,
+          "text": "): \"human\" | \"policy_auto\" | \"none\" {"
+        },
+        {
+          "line": 6945,
+          "text": "const events = store.events(proposalId);"
+        },
+        {
+          "line": 6946,
+          "text": "if (events.some((event) => /policy_auto_approv/.test(event.kind))) return \"policy_auto\";"
+        },
+        {
+          "line": 6947,
+          "text": "if (store.approvals(proposalId).some((approval) => approval.status === \"approved\")) return \"human\";"
+        },
+        {
+          "line": 6948,
+          "text": "return \"none\";"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Main UI",
+      "reason": "/policy_auto_approv/ matches actual policy_auto_approval_deferred event as well as approvals, then claims policy_auto. This is approval-source interpretation, not formatting.",
+      "current_call_chain": "workbenchWorkerApprovalSource -> workbench worker rows; sqlite-proposal-methods emits policy_auto_approval_deferred",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "3ef010c334db35132fd7d14de05a5a363a08844c87f573bbb88d94d728ac41cf"
+    },
+    {
+      "annotation_id": "I03547",
+      "historical_id": "MAIN-EN-024",
+      "historical_file": "apps/runner/src/mcp-runtime.ts",
+      "historical_locations": [
+        [
+          1292,
+          1347
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Synthetic sample args chosen from capability/argument names; not actual operator interpretation",
+      "current_file": "apps/runner/src/mcp-runtime.ts",
+      "current_exact_evidence": [
+        {
+          "line": 1292,
+          "text": "export function sampleInputForCapability(capability: RuntimeCapabilityConfig): Record<string, unknown> {"
+        },
+        {
+          "line": 1293,
+          "text": "const input: Record<string, unknown> = {};"
+        },
+        {
+          "line": 1294,
+          "text": "for (const [name, spec] of Object.entries(capability.args)) {"
+        },
+        {
+          "line": 1295,
+          "text": "if (spec.type === \"object_array\") {"
+        },
+        {
+          "line": 1296,
+          "text": "input[name] = [Object.fromEntries(Object.entries(spec.fields).map(([fieldName, fieldSpec]) => [fieldName, sampleScalarArg(fieldName, fieldSpec)]))];"
+        },
+        {
+          "line": 1299,
+          "text": "if (spec.enum?.length) input[name] = spec.enum[0];"
+        },
+        {
+          "line": 1300,
+          "text": "else if (name === capability.lookup.id_from_arg) input[name] = sampleIdForCapability(capability, name);"
+        },
+        {
+          "line": 1301,
+          "text": "else if (/reason/i.test(name)) input[name] = sampleReasonForCapability(capability);"
+        },
+        {
+          "line": 1302,
+          "text": "else if (/resolution/i.test(name)) input[name] = \"Resolved after reviewing policy evidence.\";"
+        },
+        {
+          "line": 1303,
+          "text": "else if (/status/i.test(name)) input[name] = \"pending_review\";"
+        },
+        {
+          "line": 1304,
+          "text": "else if (/amount|cents|fee|credit|balance/i.test(name)) input[name] = typeof spec.maximum === \"number\" ? Math.min(spec.maximum, 1000) : 0;"
+        },
+        {
+          "line": 1305,
+          "text": "else if (spec.type === \"number\") input[name] = spec.minimum ?? 1;"
+        },
+        {
+          "line": 1306,
+          "text": "else if (spec.type === \"boolean\") input[name] = true;"
+        },
+        {
+          "line": 1307,
+          "text": "else input[name] = `sample_${name}`;"
+        },
+        {
+          "line": 1309,
+          "text": "const missing = Object.entries(capability.args)"
+        },
+        {
+          "line": 1310,
+          "text": ".filter(([, spec]) => spec.required !== false)"
+        },
+        {
+          "line": 1311,
+          "text": ".filter(([name]) => input[name] === undefined)"
+        },
+        {
+          "line": 1312,
+          "text": ".map(([name]) => name);"
+        },
+        {
+          "line": 1313,
+          "text": "if (missing.length > 0) {"
+        },
+        {
+          "line": 1314,
+          "text": "throw new Error(`no sample exists for ${capability.name}. Required input fields: ${missing.join(\", \")}`);"
+        },
+        {
+          "line": 1316,
+          "text": "return input;"
+        },
+        {
+          "line": 1320,
+          "text": "function sampleScalarArg(name: string, spec: Exclude<RuntimeCapabilityConfig[\"args\"][string], { type: \"object_array\" }>): unknown {"
+        },
+        {
+          "line": 1321,
+          "text": "if (spec.enum?.length) return spec.enum[0];"
+        },
+        {
+          "line": 1322,
+          "text": "if (/reason/i.test(name)) return \"Reviewed sample reason.\";"
+        },
+        {
+          "line": 1323,
+          "text": "if (/status/i.test(name)) return \"pending_review\";"
+        },
+        {
+          "line": 1324,
+          "text": "if (spec.type === \"number\") return spec.minimum ?? (typeof spec.maximum === \"number\" ? Math.min(spec.maximum, 1000) : 1);"
+        },
+        {
+          "line": 1325,
+          "text": "if (spec.type === \"boolean\") return true;"
+        },
+        {
+          "line": 1326,
+          "text": "return `sample_${name}`;"
+        },
+        {
+          "line": 1330,
+          "text": "function sampleIdForCapability(capability: RuntimeCapabilityConfig, argName: string): string {"
+        },
+        {
+          "line": 1331,
+          "text": "const text = `${capability.name} ${capability.target.table} ${argName}`.toLowerCase();"
+        },
+        {
+          "line": 1332,
+          "text": "const arg = argName.toLowerCase();"
+        },
+        {
+          "line": 1333,
+          "text": "if (/invoice|billing/.test(text)) return \"INV-3001\";"
+        },
+        {
+          "line": 1334,
+          "text": "if (/account|customer/.test(arg) || /accounts|customers/.test(text)) return \"cust_acme_1\";"
+        },
+        {
+          "line": 1335,
+          "text": "if (/ticket|support/.test(text)) return \"T-1042\";"
+        },
+        {
+          "line": 1336,
+          "text": "if (/order/.test(text)) return \"O-1001\";"
+        },
+        {
+          "line": 1337,
+          "text": "return \"sample_1\";"
+        },
+        {
+          "line": 1341,
+          "text": "function sampleReasonForCapability(capability: RuntimeCapabilityConfig): string {"
+        },
+        {
+          "line": 1342,
+          "text": "const text = `${capability.name} ${capability.target.table}`.toLowerCase();"
+        },
+        {
+          "line": 1343,
+          "text": "if (/order|status_change/.test(text)) return \"payment cleared and ready for the next status\";"
+        },
+        {
+          "line": 1344,
+          "text": "if (/credit|customer|account/.test(text)) return \"support goodwill credit\";"
+        },
+        {
+          "line": 1345,
+          "text": "if (/late_fee|waiver|billing|invoice/.test(text)) return \"approved support waiver\";"
+        },
+        {
+          "line": 1346,
+          "text": "return \"reviewed and approved by support\";"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Main runtime",
+      "reason": "English capability/table/argument name fragments invent IDs, values, reasons and claimed approvals used by propose --sample/smoke input. Not display-only.",
+      "current_call_chain": "parseProposalInput/executeRuntimeToolCall -> sampleInputForCapability -> real proposal/tool args",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "cffcdef0ef0c1b1570b64c4e731c3addb3a60bf6ced24619864bac2049e988ad"
+    },
+    {
+      "annotation_id": "I03548",
+      "historical_id": "MAIN-EN-025",
+      "historical_file": "apps/runner/src/mcp-runtime.ts",
+      "historical_locations": [
+        [
+          2020,
+          2025
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "External MCP audit flags unsafe tools/credential-looking data by technical tool names",
+      "current_file": "apps/runner/src/mcp-runtime.ts",
+      "current_exact_evidence": [
+        {
+          "line": 2020,
+          "text": "{ name: \"execute_sql absent\", ok: !names.some((name) => /execute_sql|run_query|query_database/i.test(name)), detail: \"model does not receive raw SQL tools\" },"
+        },
+        {
+          "line": 2021,
+          "text": "{ name: \"approval tools absent\", ok: !names.some((name) => /approve/i.test(name)), detail: \"approval stays outside MCP\" },"
+        },
+        {
+          "line": 2022,
+          "text": "{ name: \"policy recommendation tools absent\", ok: !names.some((name) => /policy.*recommend|recommend.*policy|activate.*policy/i.test(name)), detail: \"graduated-trust evaluation, review, export, and activation stay outside MCP\" },"
+        },
+        {
+          "line": 2023,
+          "text": "{ name: \"commit tools absent\", ok: !names.some((name) => /commit|apply_writeback/i.test(name)), detail: \"commit stays outside MCP\" },"
+        },
+        {
+          "line": 2024,
+          "text": "{ name: \"database_url absent\", ok: !/postgres(?:ql)?:\\/\\/|mysql:\\/\\//i.test(serialized), detail: \"MCP config uses env var names, not connection strings\" },"
+        },
+        {
+          "line": 2025,
+          "text": "{ name: \"write credentials absent\", ok: !/(password|secret|bearer|private[_-]?key|token)/i.test(serialized), detail: \"MCP tools do not include write credentials\" },"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Main runtime",
+      "reason": "Name fragments infer MCP raw-SQL/approval/commit exposure and determine smoke pass/exit status. Credential redaction portions remain separately legitimate; use actual typed tool interface/allowed surface instead of inferred capability meaning.",
+      "current_call_chain": "inspectMcpToolBoundary -> mcpSmoke boundary.ok / UI checks",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "cffcdef0ef0c1b1570b64c4e731c3addb3a60bf6ced24619864bac2049e988ad"
+    },
+    {
+      "annotation_id": "I03550",
+      "historical_id": "MAIN-EN-027",
+      "historical_file": "apps/runner/src/runtime-doctor.ts",
+      "historical_locations": [
+        [
+          1562,
+          1574
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Classifies database transport diagnostics into safe display categories; probe remains failed regardless of text",
+      "current_file": "apps/runner/src/runtime-doctor.ts",
+      "current_exact_evidence": [
+        {
+          "line": 1562,
+          "text": "function safeDatabaseProbeError(error: unknown): string {"
+        },
+        {
+          "line": 1563,
+          "text": "const raw = typeof error === \"string\""
+        },
+        {
+          "line": 1564,
+          "text": "? error"
+        },
+        {
+          "line": 1565,
+          "text": ": error instanceof Error"
+        },
+        {
+          "line": 1566,
+          "text": "? error.message"
+        },
+        {
+          "line": 1567,
+          "text": ": JSON.stringify(error ?? {});"
+        },
+        {
+          "line": 1568,
+          "text": "const message = raw.toLowerCase();"
+        },
+        {
+          "line": 1569,
+          "text": "if (/permission|denied|not authorized|insufficient|42501|er_tableaccess_denied|er_dbaccess_denied/.test(message)) return \"permission denied\";"
+        },
+        {
+          "line": 1570,
+          "text": "if (/authentication|password|28p01|access denied for user|invalid authorization/.test(message)) return \"authentication failed\";"
+        },
+        {
+          "line": 1571,
+          "text": "if (/timeout|timed out|etimedout/.test(message)) return \"timeout\";"
+        },
+        {
+          "line": 1572,
+          "text": "if (/econnrefused|enotfound|eai_again|network|connection terminated|connection failed/.test(message)) return \"connection failed\";"
+        },
+        {
+          "line": 1573,
+          "text": "if (/does not exist|unknown database|no such table|undefined_table|er_no_such_table|42p01/.test(message)) return \"configured object not found\";"
+        },
+        {
+          "line": 1574,
+          "text": "return \"database probe failed\";"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Doctor",
+      "reason": "English error text is interpreted as authentication, permission, schema or timeout cause. Probe already failed but displayed cause is still inferred semantics, not redaction formatting. Use structured codes or honest generic failure.",
+      "current_call_chain": "safeDatabaseProbeError -> diagnostic failure reason",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "c73183ef27d32c7e19f3540123a288c031a0ab75b36a9f4a92a16399aae7b869"
+    },
+    {
+      "annotation_id": "I03552",
+      "historical_id": "MAIN-EN-029",
+      "historical_file": "apps/runner/src/worker-runtime.ts",
+      "historical_locations": [
+        [
+          1257,
+          1264
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Infrastructure exception timeout keyword chooses failure code and retry classification",
+      "current_file": "apps/runner/src/worker-runtime.ts",
+      "current_exact_evidence": [
+        {
+          "line": 1257,
+          "text": "function workerErrorCode(error: unknown): string {"
+        },
+        {
+          "line": 1258,
+          "text": "const safe = safeOperationalErrorCode(error);"
+        },
+        {
+          "line": 1259,
+          "text": "if (safe.startsWith(\"OPERATOR_\") && !identityFailureCodes.has(safe)) return \"WORKER_EXECUTION_ERROR\";"
+        },
+        {
+          "line": 1260,
+          "text": "if (safe !== \"COMMAND_REJECTED\") return safe;"
+        },
+        {
+          "line": 1261,
+          "text": "const message = error instanceof Error ? error.message : \"\";"
+        },
+        {
+          "line": 1262,
+          "text": "if (/timeout/i.test(message)) return \"HANDLER_TIMEOUT\";"
+        },
+        {
+          "line": 1263,
+          "text": "return \"WORKER_EXECUTION_ERROR\";"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Worker",
+      "reason": "Raw error.message timeout word changes worker execution code, persisted failure/recovery classification. Structured operational error fallback must not infer from prose.",
+      "current_call_chain": "worker catch -> workerErrorCode -> finishWorkerFailure -> retry/recovery records",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "c76101b50730f04defd531cac75d2894c946d4d56e7438d29d9b9d5468532453"
+    },
+    {
+      "annotation_id": "I03553",
+      "historical_id": "MAIN-EN-030",
+      "historical_file": "apps/runner/src/notifications.ts",
+      "historical_locations": [
+        [
+          883,
+          890
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Infrastructure timeout/reset/temporary words classify notification delivery retryability",
+      "current_file": "apps/runner/src/notifications.ts",
+      "current_exact_evidence": [
+        {
+          "line": 883,
+          "text": "function classifyDeliveryError(error: unknown): { code: string; retryable: boolean } {"
+        },
+        {
+          "line": 884,
+          "text": "if (error instanceof NotificationDeliveryError) {"
+        },
+        {
+          "line": 885,
+          "text": "return { code: error.code, retryable: error.retryable };"
+        },
+        {
+          "line": 887,
+          "text": "const code = error instanceof Error && /timeout|reset|unavailable|temporary/i.test(error.message)"
+        },
+        {
+          "line": 888,
+          "text": "? \"NOTIFICATION_TRANSPORT_TRANSIENT\""
+        },
+        {
+          "line": 889,
+          "text": ": \"NOTIFICATION_TRANSPORT_FAILED\";"
+        },
+        {
+          "line": 890,
+          "text": "return { code, retryable: code === \"NOTIFICATION_TRANSPORT_TRANSIENT\" };"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Notifications",
+      "reason": "English timeout/reset/unavailable/temporary words decide retryability and delivery state. Not display formatting.",
+      "current_call_chain": "delivery catch -> classifyDeliveryError -> transport retryable result",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "e08cc8bbceab22413ac203a2971ad8eca594a105d4eb2f23d68cf450c1e8856d"
+    },
+    {
+      "annotation_id": "I03556",
+      "historical_id": "MAIN-EN-033",
+      "historical_file": "apps/runner/src/cli-logging.ts",
+      "historical_locations": [
+        [
+          86,
+          90
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Certificate diagnostic wording chooses a troubleshooting hint, not a successful transport result",
+      "current_file": "apps/runner/src/cli-logging.ts",
+      "current_exact_evidence": [
+        {
+          "line": 103,
+          "text": "if (/self-signed certificate|certificate.*chain|unable to verify/i.test(message)) {"
+        },
+        {
+          "line": 104,
+          "text": "return ["
+        },
+        {
+          "line": 107,
+          "text": "\"Hint:\","
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "CLI",
+      "reason": "Error prose selects TLS cause and suggests no-verify configuration. This is operational advice inferred from English, not typography; use explicit TLS code/typed cause or generic hint.",
+      "current_call_chain": "formatCliErrorHint -> exception output/hint",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "46c2792fe2e417d7ddfcb09f2fc311b005b93264f335c8de179962d0d23835a4"
+    },
+    {
+      "annotation_id": "I03568",
+      "historical_id": "MAIN-EN-045",
+      "historical_file": "apps/runner/src/contract-testing.ts",
+      "historical_locations": [
+        [
+          409,
+          411
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Explicit destructive test command requires test/demo-named source as an additional guard; not proof of ownership",
+      "current_file": "apps/runner/src/contract-testing.ts",
+      "current_exact_evidence": [
+        {
+          "line": 409,
+          "text": "const disposableName = /(?:test|demo|fixture|synapsor)/i.test(parsed.pathname);"
+        },
+        {
+          "line": 410,
+          "text": "if (!allowRemote && (!loopback || !disposableName)) throw new Error(`CONTRACT_TEST_REMOTE_DATABASE_REFUSED: ${name} must use a localhost disposable database; --allow-remote is an explicit operator override`);"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Contract testing",
+      "reason": "Database-name English fragments are treated as permission to run destructive live tests. Localhost plus naming is not an explicit disposable source identity. Requires typed/configured test target designation; existing override remains separately explicit.",
+      "current_call_chain": "assertDisposableSources -> live contract test admission",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "8ec662b9af28ac5ab5c8dfd0aee12feb669ca9dd8864edd3ccda319e40df7f63"
+    },
+    {
+      "annotation_id": "I03569",
+      "historical_id": "MAIN-EN-046",
+      "historical_file": "apps/runner/src/graduated-trust.ts",
+      "historical_locations": [
+        [
+          251,
+          253
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Technical event kind identifies revert/compensation events",
+      "current_file": "apps/runner/src/graduated-trust.ts",
+      "current_exact_evidence": [
+        {
+          "line": 251,
+          "text": "revert: proposal.change_set.schema_version === protocolVersions.compensationChangeSet || events.some((event) => /revert|compensation/.test(event.kind)),"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Graduated trust",
+      "reason": "Event-name fragment revert/compensation is interpreted as completed historical outcome and changes revert metrics/recommendation. Use exact typed event/outcome semantics; schema_version branch can remain.",
+      "current_call_chain": "inspectHistory -> revert boolean -> metricsFromHistory -> recommendation",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "99b8625419423e1a736ee71b9744ea449c04793a8c843811a6cd441fe881b3d1"
+    },
+    {
+      "annotation_id": "I03573",
+      "historical_id": "MAIN-EN-050",
+      "historical_file": "apps/runner/src/first-run-doctor.ts",
+      "historical_locations": [
+        [
+          136,
+          139
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Permission diagnostic chooses Docker troubleshooting advice",
+      "current_file": "apps/runner/src/first-run-doctor.ts",
+      "current_exact_evidence": [
+        {
+          "line": 136,
+          "text": "if (/permission denied/i.test(message)) return \"Your user cannot access the Docker socket. Add your user to the docker group or start Docker Desktop, then rerun ./scripts/try-synapsor.sh.\";"
+        },
+        {
+          "line": 137,
+          "text": "return \"Start Docker Desktop or the Docker daemon, then run ./scripts/try-synapsor.sh.\";"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Doctor/MCP audit",
+      "reason": "English subprocess error text chooses troubleshooting cause and next action (Docker permission, registry package absence, launch timeout). Exact structured error-code branches remain valid; English fallback requires typed cause or generic failure.",
+      "current_call_chain": "dockerFix / formatMcpLaunchFailure -> operator recovery guidance",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "3de2c17c08bb4c96d8a4ab55338fcbb8f5b0256b742128a1cd5edc8e7162a815"
+    },
+    {
+      "annotation_id": "I03574",
+      "historical_id": "MAIN-EN-051",
+      "historical_file": "apps/runner/src/mcp-audit.ts",
+      "historical_locations": [
+        [
+          671,
+          681
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Known package/timeout/config errors choose safe launcher guidance",
+      "current_file": "apps/runner/src/mcp-audit.ts",
+      "current_exact_evidence": [
+        {
+          "line": 671,
+          "text": "if (code === \"ETARGET\" || /\\bETARGET\\b|No matching version found/i.test(message)) {"
+        },
+        {
+          "line": 672,
+          "text": "return \"ETARGET: The configured package version is unavailable from the registry. Check the configured launcher and package version before retrying.\";"
+        },
+        {
+          "line": 674,
+          "text": "if (code === \"POLICY_EXECUTION_BINDING_CHANGED\" || /\\bPOLICY_EXECUTION_BINDING_CHANGED\\b/.test(message)) {"
+        },
+        {
+          "line": 675,
+          "text": "return \"POLICY_EXECUTION_BINDING_CHANGED: Runner refused changed execution bindings. Use the operator's reviewed connection setup; do not edit stored authority or bypass this guard.\";"
+        },
+        {
+          "line": 677,
+          "text": "if (code === \"ENOENT\") return \"ENOENT: The configured launcher executable or working directory was not found. Check the saved command and project location.\";"
+        },
+        {
+          "line": 678,
+          "text": "if (code === \"EACCES\") return \"EACCES: The configured launcher could not be executed. Check its executable and directory permissions.\";"
+        },
+        {
+          "line": 679,
+          "text": "if (/timed out/i.test(message)) return \"MCP_LAUNCH_TIMEOUT: The configured command did not finish the MCP handshake and tool catalog check before the timeout.\";"
+        },
+        {
+          "line": 680,
+          "text": "return \"MCP_LAUNCH_CHECK_FAILED: The configured command did not complete the reviewed MCP handshake and tool catalog check. Inspect the saved client entry and retry its launch check.\";"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Doctor/MCP audit",
+      "reason": "English subprocess error text chooses troubleshooting cause and next action (Docker permission, registry package absence, launch timeout). Exact structured error-code branches remain valid; English fallback requires typed cause or generic failure.",
+      "current_call_chain": "dockerFix / formatMcpLaunchFailure -> operator recovery guidance",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "c788cfec1f3f7595a2bc2cdbeb893449250c40fccb541bf82cbd1250e2b2f924"
+    },
+    {
+      "annotation_id": "I03575",
+      "historical_id": "MAIN-EN-052",
+      "historical_file": "apps/runner/src/hosted-provider-models.ts",
+      "historical_locations": [
+        [
+          94,
+          96
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Provider model-ID families identify provider compatibility; not operator English",
+      "current_file": "apps/runner/src/hosted-provider-models.ts",
+      "current_exact_evidence": [
+        {
+          "line": 94,
+          "text": "if (provider === \"anthropic\") return /^claude-/u.test(normalized);"
+        },
+        {
+          "line": 95,
+          "text": "if (!/^(?:gpt-|o[1345](?:-|$)|codex-)/u.test(normalized)) return false;"
+        },
+        {
+          "line": 96,
+          "text": "return !/(?:audio|realtime|transcrib|tts|whisper|embedding|moderation|image|dall-e|search-preview)/u.test(normalized);"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Provider settings",
+      "reason": "Model ID fragments audio/image/etc infer text/tool capability and filter selection; ID syntax is not capability metadata. Provider typed supported modalities/tool parameters or explicit reviewed model catalog should own compatibility.",
+      "current_call_chain": "fetchHostedProviderModels -> compatibleModelId -> offered provider models",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "f03ef84d891389bb844f1f9246cc0ce60ce0a1652fd18b8aaa82eadaaa3b640a"
+    },
+    {
+      "annotation_id": "I03593",
+      "historical_id": "R1G12",
+      "historical_file": "apps/runner/src/ask-mcp-gateway.ts",
+      "historical_locations": [
+        [
+          267,
+          275
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Exact SDK input-validation error text recognizes wire argument refusal.",
+      "current_file": "apps/runner/src/ask-mcp-gateway.ts",
+      "current_exact_evidence": [
+        {
+          "line": 267,
+          "text": "function isMcpInputValidationRefusal("
+        },
+        {
+          "line": 269,
+          "text": "): boolean {"
+        },
+        {
+          "line": 270,
+          "text": "if (!Array.isArray(result.content)) return false;"
+        },
+        {
+          "line": 271,
+          "text": "return result.content.some((item) =>"
+        },
+        {
+          "line": 272,
+          "text": "isRecord(item)"
+        },
+        {
+          "line": 273,
+          "text": "&& item.type === \"text\""
+        },
+        {
+          "line": 274,
+          "text": "&& typeof item.text === \"string\""
+        },
+        {
+          "line": 275,
+          "text": "&& item.text.includes(\"Input validation error: Invalid arguments for tool\"));"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Ask gateway",
+      "reason": "Vendor English text substring classifies an MCP error into local invalid-tool-arguments routing. isError alone does not make prose a typed validation code; use typed structured validation detail/native wrapper.",
+      "current_call_chain": "client.callTool -> isMcpInputValidationRefusal -> invalidModelToolArgumentsResult",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "b945774612478b8839d3d9167841095e903337639fb1df19cce91b414c5b4e70"
+    },
+    {
+      "annotation_id": "I03594",
+      "historical_id": "R1G13",
+      "historical_file": "apps/runner/src/boundary-commands.ts",
+      "historical_locations": [
+        [
+          6434,
+          6434
+        ]
+      ],
+      "historical_part": null,
+      "historical_decision": "Recognizes exact host save-wrapper prefix plus underlying native error codes.",
+      "current_file": "apps/runner/src/boundary-commands.ts",
+      "current_exact_evidence": [
+        {
+          "line": 6247,
+          "text": "if (error instanceof Error && /^ACTION_CHECKPOINT_NOT_SAVED: The checkpoint could not be saved\\. BOUNDARY_AUTHORING_RESUME_(?:PRIVATE_MATERIAL|TRUSTED_IDENTITY)_BLOCKED:/u.test(error.message)"
+        }
+      ],
+      "verdict": "reclassify_typed",
+      "category": null,
+      "repair_owner": "Main Resume",
+      "reason": "Fixed English save-wrapper sentence plus code prefixes selects transcript rollback behavior after failed checkpoint. Native causal code/structured failure binding should own this, not exact prose spelling.",
+      "current_call_chain": "conversationalActionPorts.coordinated catch -> wrapper regex -> restore acknowledged conversation",
+      "allowlist_eligible": false,
+      "allowlist_scope": "No allowance for semantic decision; independently review typed successor.",
+      "current_file_sha256": "47476ec42a0a98c5b179457c46db27971b54fce56b1a0903d1759e3a5407c780"
+    }
+  ]
+}
