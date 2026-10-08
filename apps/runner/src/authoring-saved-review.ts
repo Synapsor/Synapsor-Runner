@@ -1,3 +1,4 @@
+import { OLDER_AUTHORING_SETUP_MESSAGE } from "./authoring-protocol.js";
 import { isPreparedProgramRemoval } from "./authoring-program-completion.js";
 import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
 import { deferredReviewObligation } from "./authoring-obligation-review.js";
@@ -51,6 +52,8 @@ export async function savedAuthoringPolicyReview(input: {
       ...(nextAction ? [nextAction] : generation ? generation.summary
         : ["Resume the saved job to recheck its policy and pending work. Active authority is unchanged."])] });
   if (loaded.status === "none") return undefined;
+  if (loaded.status === "invalid" && loaded.reason === OLDER_AUTHORING_SETUP_MESSAGE)
+    return { ready: false, privacy: false, summary: [OLDER_AUTHORING_SETUP_MESSAGE], next_action: "Start a new setup." };
   if (loaded.status === "invalid") return pending("The saved job cannot be validated for review.",
     planAuthoringRefusal("BOUNDARY_AUTHORING_RESUME_INVALID")!.next_action);
   const saved = loaded.value;

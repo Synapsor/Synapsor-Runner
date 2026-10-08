@@ -283,7 +283,7 @@
       "change": "same live checkpoint parser includes pending_action_addition.retained_action.checkpoint; historical dispositions untouched"
     },
     "last_usage_check": {
-      "used_percent": 31,
+      "used_percent": 43,
       "pause_threshold_used_percent": 95
     },
     "native_scope_host_wip": {
@@ -314,6 +314,14 @@
       "tests": "170PASS (revisionproducer82,revisionhost13,Resume75); types0",
       "logs": "/var/tmp/synapsor-b64-main-owned/evidence/typed-revision-{host,types}.log",
       "open": "Public wiring/current preview ports and independent native-CAS acceptance pending"
+    },
+    "old_setup_retirement": {
+      "decision": "Owner2026-10-08 supersedes legacy allowance; oldv1/v2 refuse before interpretation, fresh nativebuilder pins B64.",
+      "scope": "Native load/directprevious/write/clear and public entry/savedReview; historical bytes retained, no migration.",
+      "tests": "8 targeted; affected first95P31F then fixturepin117P9F; final134P across4files/type0. Before logs preserved.",
+      "fixture_changes": "Checkpointfixtures explicitly B64; samejob writes track acknowledged CAS and predecessor; cleanup expectations nowretain structured setup (stronger); external disappearance test explicitly unlinks ownedfixture to retain stale-write assertion. No safety assertion removed. Old successful v1 creation/acceptance expectations replaced by exact refusal/no rewrite tests.",
+      "logs": "/var/tmp/synapsor-b64-main-owned/evidence/old-setup-refusal*.log",
+      "review": "R2 presealed retirement variants pending; public fullflow remains unqualified"
     }
   }
 }

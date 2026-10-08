@@ -1,5 +1,5 @@
 import { readStoredReadWorkloadAnalysis } from "./read-workloads.js";
-import { STRUCTURED_AUTHORING_RESUME_VERSION, parseStructuredAuthoringProtocol, assertAuthoringProtocolUnchanged, type StructuredAuthoringProtocol } from "./authoring-protocol.js";
+import { OLDER_AUTHORING_SETUP_MESSAGE, assertCurrentAuthoringEnvelope, STRUCTURED_AUTHORING_PROTOCOL_VERSION, STRUCTURED_AUTHORING_RESUME_VERSION, parseStructuredAuthoringProtocol, assertAuthoringProtocolUnchanged, type StructuredAuthoringProtocol } from "./authoring-protocol.js";
 import { assertAuthoringReadDecision, assertAuthoringReadCheckpoint, assertAuthoringTransportAdvance, assertAuthoringQuestionHandoff, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION, isAuthoringProgramResume } from "./authoring-program-capacity.js";
 import { ownerHandoffCheckpoint, parseOwnerHandoffs, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
@@ -331,8 +331,8 @@ export function buildBoundaryAuthoringResumeState(input: {
   now?: string;
 }): BoundaryAuthoringResumeState {
   if (input.previous) assertBoundaryAuthoringResumeState(input.previous);
-  const protocol = input.authoringProtocol === undefined ? input.previous?.authoring_protocol
-    : parseStructuredAuthoringProtocol(input.authoringProtocol);
+  const protocol = parseStructuredAuthoringProtocol(input.authoringProtocol ?? input.previous?.authoring_protocol
+    ?? { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION });
   if (input.previous) assertAuthoringProtocolUnchanged(input.previous.authoring_protocol, protocol);
   const now = input.now ?? new Date().toISOString();
   const conversation = modelAuthoringHistory(createModelAuthoringConversation(input.conversation));
@@ -363,8 +363,8 @@ export function buildBoundaryAuthoringResumeState(input: {
     || (input.pendingActionAddition?.retained_action.intents?.length ?? 0) > AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions;
   const maximum = programVersion ? AUTHORING_PROGRAM_CAPACITY.totalActions : AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions;
   const core = {
-    schema_version: protocol ? STRUCTURED_AUTHORING_RESUME_VERSION : programVersion ? AUTHORING_PROGRAM_RESUME_VERSION : BOUNDARY_AUTHORING_RESUME_VERSION,
-    ...(protocol ? { authoring_protocol: protocol } : {}),
+    schema_version: STRUCTURED_AUTHORING_RESUME_VERSION,
+    authoring_protocol: protocol,
     state: "in_progress" as const,
     ...((actionWorkflow || protocol && programVersion) ? { action_workflow: "program" as const } : {}),
     binding: normalizeBinding(input.binding),
@@ -653,6 +653,7 @@ export function revalidateBoundaryAuthoringResume(
 export function assertBoundaryAuthoringResumeState(
   value: unknown,
 ): asserts value is BoundaryAuthoringResumeState {
+  assertCurrentAuthoringEnvelope(value);
   if (!isRecord(value)
     || (value.schema_version !== BOUNDARY_AUTHORING_RESUME_VERSION && value.schema_version !== AUTHORING_PROGRAM_RESUME_VERSION && value.schema_version !== STRUCTURED_AUTHORING_RESUME_VERSION)
     || value.state !== "in_progress"
@@ -1479,6 +1480,7 @@ function* resumeMaterialText(value: unknown, category = "material"): Generator<{
 }
 
 function boundaryAuthoringResumeInvalidReason(error: unknown): string {
+  if ((error as { code?: string })?.code === "AUTHORING_SETUP_OLDER_VERSION") return OLDER_AUTHORING_SETUP_MESSAGE;
   if (!(error instanceof Error)) {
     return "The saved authoring state failed its integrity check.";
   }

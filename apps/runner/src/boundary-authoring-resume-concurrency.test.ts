@@ -60,7 +60,7 @@ describe("authoring resume filesystem compare-and-save", () => {
     await writeBoundaryAuthoringResumeState(root, base);
     const removed = buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: "Only inspect records now.",
       provider: "openai", model: "test", previous: base });
-    await writeBoundaryAuthoringResumeState(root, removed);
+    await writeBoundaryAuthoringResumeState(root, removed, { expectedRevisionDigest: base.revision_digest });
     const before = await fs.readFile(resumeFile(root));
     await expect(writeBoundaryAuthoringResumeState(root, state("Late private consent.", base),
       { expectedRevisionDigest: base.revision_digest })).rejects.toMatchObject({ code: "BOUNDARY_AUTHORING_RESUME_CHANGED" });
@@ -74,7 +74,10 @@ describe("authoring resume filesystem compare-and-save", () => {
     await writeBoundaryAuthoringResumeState(root, base, { expectedRevisionDigest: null });
     await expect(writeBoundaryAuthoringResumeState(root, state(), { expectedRevisionDigest: null }))
       .rejects.toMatchObject({ code: "BOUNDARY_AUTHORING_RESUME_CHANGED" });
-    expect(await clearBoundaryAuthoringResumeState(root)).toBe(true);
+    expect(await clearBoundaryAuthoringResumeState(root)).toBe(false);
+    // Model the external removal this CAS test protects against; current
+    // structured jobs are never silently discarded by normal cleanup.
+    await fs.unlink(resumeFile(root));
     await expect(writeBoundaryAuthoringResumeState(root, state(), { expectedRevisionDigest: base.revision_digest }))
       .rejects.toMatchObject({ code: "BOUNDARY_AUTHORING_RESUME_CHANGED" });
     expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "none" });
@@ -164,7 +167,7 @@ describe("authoring resume filesystem compare-and-save", () => {
     const root = await project(), base = state();
     await writeBoundaryAuthoringResumeState(root, base);
     await assertBoundaryAuthoringResumeCurrent(root, base, { intent: base.action!.intent });
-    const removed = buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: "Read records only.", provider: "openai", model: "test" });
+    const removed = buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: "Read records only.", provider: "openai", model: "test", previous: base });
     await writeBoundaryAuthoringResumeState(root, removed, { expectedRevisionDigest: base.revision_digest });
     await expect(assertBoundaryAuthoringResumeCurrent(root, base, { intent: base.action!.intent }))
       .rejects.toMatchObject({ code: "BOUNDARY_AUTHORING_RESUME_CHANGED" });
@@ -243,7 +246,7 @@ describe("B33 pending-question atomic resume persistence", () => {
       const result=await runAskProviderTurn({configuration,question:"DERIVED",history:[],tools,authorityDigest,signal:new AbortController().signal,
         gateway:{mode:"authoring",listTools:()=>tools,close:async()=>{},callTool:async()=>{throw new Error("No callback allowed");}},
         dependencies:{requestJson:async()=>({status:200,body:{status:"completed",output:[{type:"message",content:[{type:"output_text",text:"Which reviewed role handles exceptions?"}]}]}})}});
-      const cp=actionRuleAuthoringCheckpoint({intent_digest:canonicalJsonDigest(current.action!.intent),context_digest:canonicalJsonDigest(binding),components:{},
+      const cp=actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" },intent_digest:canonicalJsonDigest(current.action!.intent),context_digest:canonicalJsonDigest(binding),components:{},
         pending_question:{question:result.answer,operator_message:current.action!.intent,completion:completedAuthoringQuestion(result)}});
       const next=build(authoringQuestionCheckpoint(current.generation_recovery,cp)!,cp);
       return {root,base:current,next,cp};
@@ -264,7 +267,7 @@ describe("B33 pending-question atomic resume persistence", () => {
   it.each([false,true])("lost answer acknowledgement preserves exact committed-or-unanswered state (rename %s)",async committed=>{
     const {root,base,next,cp}=await questionPair();
     await writeBoundaryAuthoringResumeState(root,next,{expectedRevisionDigest:base.revision_digest});
-    const answered=actionRuleAuthoringCheckpoint({intent_digest:cp.intent_digest,context_digest:cp.context_digest,components:cp.components,operator_messages:["One scoped reviewer."]});
+    const answered=actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" },intent_digest:cp.intent_digest,context_digest:cp.context_digest,components:cp.components,operator_messages:["One scoped reviewer."]});
     const successor=buildBoundaryAuthoringResumeState({binding,stage:"action_drafting",jobIntent:next.job_intent,provider:"openai",model:"test",previous:next,
       action:{...next.action!,checkpoint:answered},generationRecovery:authoringQuestionAnswerCheckpoint(next.generation_recovery,cp,answered)});
     const rename=fs.rename;
@@ -278,7 +281,7 @@ describe("B33 pending-question atomic resume persistence", () => {
     await writeBoundaryAuthoringResumeState(root,next,{expectedRevisionDigest:base.revision_digest});
     const answers=["One scoped reviewer.","Two scoped reviewers."];
     const successors=answers.map(answer=>{
-      const answered=actionRuleAuthoringCheckpoint({intent_digest:cp.intent_digest,context_digest:cp.context_digest,components:cp.components,operator_messages:[answer]});
+      const answered=actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v1" },intent_digest:cp.intent_digest,context_digest:cp.context_digest,components:cp.components,operator_messages:[answer]});
       return buildBoundaryAuthoringResumeState({binding,stage:"action_drafting",jobIntent:next.job_intent,provider:"openai",model:"test",previous:next,
         action:{...next.action!,checkpoint:answered},generationRecovery:authoringQuestionAnswerCheckpoint(next.generation_recovery,cp,answered)});
     });

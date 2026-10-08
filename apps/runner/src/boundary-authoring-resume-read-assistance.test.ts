@@ -111,14 +111,14 @@ describe("durable Read assistance resume storage", () => {
     expect(revalidated.read_assistance).toEqual(cp); expect(revalidated.read).toBeUndefined();
   });
 
-  it("only explicit null clears same-job assistance and permits normal completed-resume cleanup", async () => {
+  it("only explicit null clears assistance while retaining the structured setup", async () => {
     const root = await project(), saved = build(checkpoint());
     await writeBoundaryAuthoringResumeState(root, saved);
     const cleared = build(null, { previous: saved });
     expect(cleared.read_assistance).toBeUndefined();
     await writeBoundaryAuthoringResumeState(root, cleared, { expectedRevisionDigest: saved.revision_digest });
-    expect(await clearBoundaryAuthoringResumeState(root)).toBe(true);
-    expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "none" });
+    expect(await clearBoundaryAuthoringResumeState(root)).toBe(false);
+    expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: cleared });
   });
 
   it.each(["job", "boundary"])("does not inherit assistance after a changed %s", change => {

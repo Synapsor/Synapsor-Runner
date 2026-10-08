@@ -1,10 +1,12 @@
+import { OLDER_AUTHORING_SETUP_MESSAGE } from "./authoring-protocol.js";
+import { savedAuthoringPolicyReview } from "./authoring-saved-review.js";
 import { describe, expect, it } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { buildBoundaryAuthoringResumeState, assertBoundaryAuthoringResumeState,
-  clearBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+  type BoundaryAuthoringResumeState, clearBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 
 const digest = canonicalJsonDigest("owned protocol fixture");
 const base = { binding: { boundary_name: "owned", generation_lock_fingerprint: digest,
@@ -14,10 +16,16 @@ const protocol = { version: "synapsor.structured-authoring.v1" as const };
 const structured = () => buildBoundaryAuthoringResumeState({ ...base, authoringProtocol: protocol } as Parameters<typeof buildBoundaryAuthoringResumeState>[0]);
 const seal = (v: Record<string, unknown>) => { const { revision_digest: _, ...core } = v; return { ...core, revision_digest: canonicalJsonDigest(core) }; };
 
+// A preserved historical-format fixture, never a current builder/migration.
+const older = (version = "synapsor.boundary-authoring-resume.v1") => {
+  const { authoring_protocol: _, ...body } = structured();
+  return seal({ ...body, schema_version: version }) as BoundaryAuthoringResumeState;
+};
+
 describe("B64 protocol pin in native Resume", () => {
   it("pins the new explicit mode and preserves it without reinterpreting legacy jobs", () => {
-    const legacy = buildBoundaryAuthoringResumeState(base);
-    expect(legacy.schema_version).toBe("synapsor.boundary-authoring-resume.v1");
+    const legacy = older();
+    expect(buildBoundaryAuthoringResumeState(base).authoring_protocol).toEqual(protocol);
     const fresh = structured();
     expect(fresh.schema_version).toBe("synapsor.boundary-authoring-resume.v3");
     expect(fresh).toHaveProperty("authoring_protocol", protocol);
@@ -25,7 +33,22 @@ describe("B64 protocol pin in native Resume", () => {
     expect(next).toHaveProperty("authoring_protocol", protocol);
     expect(next.schema_version).toBe(fresh.schema_version);
     expect(() => buildBoundaryAuthoringResumeState({ ...base, previous: legacy, authoringProtocol: protocol } as Parameters<typeof buildBoundaryAuthoringResumeState>[0]))
-      .toThrow("AUTHORING_PROTOCOL_CHANGE_REQUIRES_NEW_JOB");
+      .toThrow(OLDER_AUTHORING_SETUP_MESSAGE);
+  });
+  it.each(["synapsor.boundary-authoring-resume.v1", "synapsor.boundary-authoring-resume.v2"])("refuses opening %s before interpreting or rewriting its history", async version => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-b64-old-refusal-"));
+    try {
+      const relative = await writeBoundaryAuthoringResumeState(root, structured(), { expectedRevisionDigest: null });
+      const file = path.resolve(root, relative), old = older(version), bytes = JSON.stringify(old);
+      await fs.writeFile(file, bytes);
+      expect(await readBoundaryAuthoringResumeState(root, base.binding)).toEqual({ status: "invalid", reason: OLDER_AUTHORING_SETUP_MESSAGE });
+      expect(await savedAuthoringPolicyReview({ projectRoot: root, binding: base.binding, readDigest: digest }))
+        .toMatchObject({ ready: false, privacy: false, summary: [OLDER_AUTHORING_SETUP_MESSAGE] });
+      expect(() => buildBoundaryAuthoringResumeState({ ...base, previous: old })).toThrow(OLDER_AUTHORING_SETUP_MESSAGE);
+      await expect(clearBoundaryAuthoringResumeState(root)).rejects.toThrow(OLDER_AUTHORING_SETUP_MESSAGE);
+      await expect(writeBoundaryAuthoringResumeState(root, structured())).rejects.toThrow("AUTHORING_PROTOCOL_INVALID");
+      expect(await fs.readFile(file, "utf8")).toBe(bytes);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
   it("refuses missing, unknown and legacy-envelope protocol declarations", () => {
     const fresh = structured();
@@ -42,10 +65,10 @@ describe("B64 protocol pin in native Resume", () => {
     try {
       const fresh = structured();
       await writeBoundaryAuthoringResumeState(root, fresh, { expectedRevisionDigest: null });
-      const legacy = buildBoundaryAuthoringResumeState(base);
+      const legacy = older();
       await expect(writeBoundaryAuthoringResumeState(root, legacy, { expectedRevisionDigest: fresh.revision_digest }))
-        .rejects.toThrow("AUTHORING_PROTOCOL_CHANGE_REQUIRES_NEW_JOB");
-      await expect(writeBoundaryAuthoringResumeState(root, legacy)).rejects.toThrow("AUTHORING_PROTOCOL_CHANGE_REQUIRES_NEW_JOB");
+        .rejects.toThrow(OLDER_AUTHORING_SETUP_MESSAGE);
+      await expect(writeBoundaryAuthoringResumeState(root, legacy)).rejects.toThrow(OLDER_AUTHORING_SETUP_MESSAGE);
       expect(await readBoundaryAuthoringResumeState(root, base.binding)).toEqual({ status: "ready", value: fresh });
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });

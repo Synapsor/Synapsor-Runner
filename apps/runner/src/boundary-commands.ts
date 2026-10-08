@@ -1,3 +1,4 @@
+import { OLDER_AUTHORING_SETUP_MESSAGE } from "./authoring-protocol.js";
 import { currentBoundaryJobReadRequests } from './boundary-job-read-requests.js';
 import { reviewPolicyWithPendingDecision, policyReviewNextStep, policyDecisionAllowsSavedReview, resumePolicyDecision, resolvePolicyDecision, reviewPolicyWithDecision } from './authoring-policy-decision-route.js';
 import { createReadRevisionCheckpointHost } from "./authoring-read-revision-checkpoint-host.js";
@@ -4474,6 +4475,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   const loadedResume = resumeBinding
     ? await readBoundaryAuthoringResumeState(input.projectRoot, resumeBinding)
     : { status: "none" as const };
+  if (loadedResume.status === "invalid" && loadedResume.reason === OLDER_AUTHORING_SETUP_MESSAGE)
+    return boundaryAssistResult({ tone: "warning", title: "Older setup cannot be resumed",
+      lines: [OLDER_AUTHORING_SETUP_MESSAGE], footer: "The saved setup is unchanged; no model request or migration was started." });
   const revalidateSavedJob = loadedResume.status === "stale"
     && loadedResume.value.binding.boundary_name === resumeBinding?.boundary_name;
   const availableResume = loadedResume.status === "ready" ? loadedResume.value
