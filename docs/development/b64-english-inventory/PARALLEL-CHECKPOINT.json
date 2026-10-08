@@ -60,5 +60,11 @@
     "memory_disk_floor_gib": 8,
     "private_backup_only": true,
     "storage": "KEEP ALL; revisit below30GB"
+  },
+  "action": {
+    "hold": "7a constraint packet NOT integrated; later owner found declared-selector check moved after normalization could conceal wrong selector.",
+    "next": "Actual producer failing-before then restore pre-normalization comparison, affected controls and independent variant before integration.",
+    "review_limits": "Earlier d185 scoped acceptance did not establish this counterexample. Source/public continuation still open.",
+    "source_cycle_design": "R2 scoped design agreement4cd explicit source_review_required result; implementation and exact ordinary finish fence still pending."
   }
 }

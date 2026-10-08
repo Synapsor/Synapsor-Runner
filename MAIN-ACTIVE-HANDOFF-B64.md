@@ -5,7 +5,7 @@ Reviewed Read canonical/projector/RLS integrated; native entry and typedprincipa
 Read Replace accepted scoped: R1producer8PASS, public81ff6PASS inclcancel/blank/CAS; separateprocessReplace4760requests. Exact histories/default-No/counters retained.
 Main NEXT: typed permission hooks/public Actionv2 adapter; Read hook accepted93603/types0/41PASS; [exclusive retirement lanes](docs/development/b64-english-inventory/LANES.json): Read10/privacy13/chat7/Ask8/Action17/Main6 files. Failing-before→typed replacement→independent review; no English fallback.
 Action ae90 host integrated2887: R2native25PASS, Main305PASS/1optinskip/typesPASS; publichook/proofpendingactualsupportedtarget andconstraintretirement open.
-Action native constraints accepted scoped d185eb6c; typed consent hook6264/Main10PASS; full Action English constraint/focused/legacy-suggestion retirement remains OPEN. Main owns boundary hook points only.
+Action7a NOT integrated/HOLD: wrong-selector normalization finding, failing-before+fix+review next; consent hook6264/Main10PASS; full Action English constraint/focused/legacy-suggestion retirement remains OPEN. Main owns boundary hook points only.
 Read dafb44c9 accepted scoped19e5161c/integrated227adfdc; privacy583c0738/chat9a7f1c7e review pending; [compact parallel evidence](docs/development/b64-english-inventory/PARALLEL-CHECKPOINT.json). Ask Balanced refusal retirement HELD for Owner contract decision; other Ask work continues.
 Helper890 five typedplanningcounterparts integrateda5e:91PASS/types0; R1accepted scoped. Zero-call typededit/publicpending persistence remain open.
 Version integrated65PASS/3files at81ad, R2f77projection+3d6fixture scopedaccepted; manual420R1twelvePASS; fullRead80862PASS88FAIL beforeports retained; nofull/installedclaim.
