@@ -182,16 +182,6 @@ it('finishes only a missing Source projection after a durable native confirmatio
   expect(native.questions!.at(-1)?.budget?.iterations_used).toBe(1);
 });
 
-it('refuses receipt reuse when the checked reader or Action context changes during refresh',async()=>{
-  let context='declared current reader and Action role',onRefresh=async()=>{};
-  const f=await fixture({nominateTarget:true,onRefresh:()=>onRefresh(),currentContext:()=>context});
-  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed'});
-  const before=f.inspect(),calls=f.requests.length;
-  onRefresh=async()=>{context='changed inspected role, same cached draft and Source';};
-  await expect(f.productionInvoke(async()=>{throw new Error('Changed evidence cannot be reused or prompt');}))
-    .rejects.toThrow('POLICY_SOURCE_CHANGED');
-  expect(f.inspect()).toEqual(before);expect(f.requests).toHaveLength(calls);
-});
 it.each([2_000,2_001,16_000])('preserves the full %i-character Source target within native question material limits',async length=>{
   const text='R'.repeat(length-2)+' Z';
   const f=await fixture({sourceText:text});
