@@ -40,3 +40,30 @@ describe("typed permission presentation", () => {
     expect(text).toContain("declining leaves current authority and source data unchanged");
   });
 });
+
+it("the production consent adapter supplies the typed purpose without changing default-No", async () => {
+  const { createBoundaryAuthoringChat } = await import("./boundary-authoring-chat.js");
+  const requests: AuthoringPermissionPresentationInput[] = [];
+  const defaults: Array<string | undefined> = [];
+  const view = proposalActivationView();
+  const chat = createBoundaryAuthoringChat({ color: false, io: {
+    read: async () => undefined, write: () => undefined, isTerminal: () => true,
+    onInterrupt: () => () => undefined, close: () => undefined,
+    setStatus: () => undefined, clearStatus: () => undefined, columns: () => 100,
+    choose: async (choice) => { defaults.push(choice.initialValue); return "no"; },
+  } });
+  chat.setPermissionGuide!(async (request) => {
+    requests.push(request);
+    return authoringPermissionPresentation(request).nextQuestion;
+  });
+  try {
+    expect(await chat.session.confirm("Autoriser la décision examinée ?", {
+      decisionKind: "activation", activationView: view,
+      context: ["Reviewed change requests only"], defaultValue: false,
+    })).toBe(false);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ decisionKind: "activation", activationView: view });
+    expect(authoringPermissionPresentation(requests[0]!).nextQuestion).toBe(view.message);
+    expect(defaults).toEqual(["no"]);
+  } finally { chat.close(); }
+});
