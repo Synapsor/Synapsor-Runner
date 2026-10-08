@@ -1,0 +1,151 @@
+{
+  "pin": "043a594e",
+  "manifest_policy": "Supplement only; Main controls 212-row manifest. No row closed solely by this inventory. No retired safety assertion deleted.",
+  "component_result": {
+    "files": 3,
+    "pass": 47,
+    "filtered": 115,
+    "seconds": 14.83,
+    "workers": 1
+  },
+  "types": "Four previously known other-file fixture errors; zero owned-file errors. Main integration already carries those ports.",
+  "independent_review": "TA01\u201308 and exact decided-answer/allowance variants pending; pending sidecar state checkpointed adjudicated R1 and cold-record assertions added.",
+  "rows": [
+    {
+      "case_id": "B64-READ-MIG-113",
+      "case": "durable Read assistance producer checkpoint saves the completed question before pause and reopens its wait without an initial provider resend",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-114",
+      "case": "durable Read assistance producer checkpoint saves a canonical answer separately and resumes its real next mapping without reprompting",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-115",
+      "case": "durable Read assistance producer checkpoint leaves Escape or EOF at the value wait pending and accepts intentional without_values only as its typed decision",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-116",
+      "case": "durable Read assistance producer checkpoint reparses a retained target against the actual current catalog even when storage hashes are well formed",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-117",
+      "case": "durable Read assistance producer checkpoint keeps a used correction across resume and does not buy another invalid mapping attempt",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-118",
+      "case": "durable Read assistance producer checkpoint retains approved values and the one-value-request limit when a later business question pauses",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-119",
+      "case": "durable Read assistance producer checkpoint retains four business answers and stops a fifth request across pauses without re-asking accepted targets",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-120",
+      "case": "durable Read assistance producer checkpoint carries the real completed initial transport sidecar into the waiting checkpoint before its owner handler",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-121",
+      "case": "durable Read assistance producer checkpoint carries the real completed remap transport sidecar into the waiting checkpoint before its owner handler",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-123",
+      "case": "durable Read assistance producer checkpoint restores the pending relationship review counter without resending or charging the same review slot twice",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-124",
+      "case": "durable Read assistance producer checkpoint retains exact typed history through dispatch without reopening the decided value request",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-206",
+      "case": "model-assisted Read workload mapping allows one naming clarification followed by one separately approved value request",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-207",
+      "case": "model-assisted Read workload mapping preserves approved values when one naming clarification follows the value request",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-208",
+      "case": "model-assisted Read workload mapping sends only separately approved exact values after a model value request",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-209",
+      "case": "model-assisted Read workload mapping corrects a non-grammar filters key without requesting approved values again",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-210",
+      "case": "model-assisted Read workload mapping refuses a value request for a field outside the exact model-visible catalog",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-211",
+      "case": "model-assisted Read workload mapping requires an interactive decision before any requested Read value context can leave",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-assistance-limits-043.log",
+      "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    }
+  ]
+}
