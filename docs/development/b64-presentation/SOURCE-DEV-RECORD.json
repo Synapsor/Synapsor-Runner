@@ -1,5 +1,5 @@
 {
-  "status": "INDEPENDENT_REVIEW_PENDING",
+  "status": "INDEPENDENT_COMPONENT_ACCEPTED",
   "base": "60e7375f",
   "files": [
     "authoring-typed-parameter-source.ts",
@@ -29,11 +29,30 @@
   "contract": "Pure loaded-record resolver avoids Resume recursion; file adapter reads actual authority/Resume. Exact refs and native consumed material checked independently of normalized candidate hash. Full current compiler context; no latest fallback/mutation/transport replay.",
   "limits": [
     "Compiler context and Runner business-line projector supplied by owning native context; caller must recheck freshness/CAS under permit",
-    "File positive checkpoint test covers action.checkpoint; enumerated pending revision and retained action routes await independent controls",
+    "Positive action.checkpoint, pending_action_revision and retained_action slots independently proved with actual producer/native files",
     "No public CLI typed edit/source adoption/activation proof yet"
   ],
   "open": [
-    "Independent NS01-08 review",
     "Main native Resume validation/currentness/public wiring"
-  ]
+  ],
+  "affected_regressions": {
+    "pin": "bffae0f3",
+    "files": 3,
+    "pass": 52,
+    "fail": 0,
+    "skip": 0,
+    "evidence": "/var/tmp/synapsor-b64-native-parameter-owned/out/source-group.json"
+  },
+  "independent_review": {
+    "product_pin": "bffae0f3",
+    "review_pin": "0e39b9c9",
+    "record_pin": "6b992fa3",
+    "pass": 8,
+    "fail": 0,
+    "types": 0,
+    "verdict": "ACCEPT_SOURCE_FILE_COMPONENT_ONLY",
+    "limits": [
+      "NS07 combined typed amendment human-wait/save CAS and public routes pending Main"
+    ]
+  }
 }

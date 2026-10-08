@@ -1,0 +1,53 @@
+{
+  "status": "INDEPENDENT_REVIEW_PENDING",
+  "base": "1fe27135",
+  "failing_before_pin": "62aa44bd",
+  "files": [
+    "action-rule-model.ts strict ordinary B64 clarification schema/dispatcher",
+    "action-rule-model.test.ts additive actual request controls",
+    "test-fixtures/typed-action-clarification-process.ts",
+    "authoring-action-clarification-process.test.ts"
+  ],
+  "before": {
+    "pass": 0,
+    "fail": 1,
+    "evidence": "/var/tmp/synapsor-b64-action-clarification-owned/out/before.json"
+  },
+  "after": {
+    "pass": 203,
+    "fail": 0,
+    "skip": 1,
+    "skip_reason": "existing live provider qualification opt-in absent; paid lane CLOSED",
+    "types": 0,
+    "workers": 1,
+    "evidence": "/var/tmp/synapsor-b64-action-clarification-owned/out/affected-final.json"
+  },
+  "commands": [
+    "tsc -b --pretty false",
+    "vitest run action-rule-model.test.ts authoring-action-clarification-process.test.ts maxWorkers1 minWorkers1 timeout20000 under bwrap unshare-net isolated HOME/TMP+decoy parent"
+  ],
+  "harness_correction": "Preserved affected-first.json 201P1F1S: new cold-control expected later QUESTION_STALE but existing native CHECKPOINT_STALE rejected changed Read earlier. Corrected exact error expectation only; zero provider/prompts and unchanged native records retained. No old assertion/call-count changed.",
+  "contract": [
+    "Existing strict draft schemas retained; B64 ordinary tools now advertise strict current Action clarification union",
+    "Exact host snapshot digest covers intent, catalog/Read/baseline context, components, declared answers, Source; phase matches tool before existing wording/pending handler",
+    "Whole-Action pending_question+actual completion+logical material remains durable owner; target grants no field-specific scope or authority",
+    "Later mutations in consumed typed-question batch are refused",
+    "No new storage, allowance, confirmation, Source write or activation"
+  ],
+  "proof": [
+    "Actual typed question, stale context/phase/extra authority refusal, postquestion samebatch mutation blocked",
+    "Cold independent OS process uses actual Action producer -> generation recovery -> coordinated native question checkpoint/Resume CAS; redisplays without provider or writes; changed Read refuses before prompt/replay",
+    "Existing full action-rule-model file assertions unchanged incl bounded retries, batch consumption, blank/decline/source scope controls"
+  ],
+  "limits": [
+    "Independent R2 variants pending",
+    "No field-specific persisted question target is implemented or implied",
+    "Remaining semantic English constraint migrations in map are not completed by this transport fix",
+    "Public grouped mapping/default-No route remains existing Main owner; this control tests raw pending question, not final business approval"
+  ],
+  "observations": {
+    "usage_used_percent": 58,
+    "paid": "CLOSED",
+    "owned_processes_after_tests": 0
+  }
+}

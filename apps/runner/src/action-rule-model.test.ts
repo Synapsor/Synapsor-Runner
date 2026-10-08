@@ -1647,6 +1647,101 @@ describe("conversational Action authoring tools", () => {
 
   });
 
+  it("B64 ordinary typed clarification reaches the saved whole-Action question without another request", async () => {
+    const question = "How many reviewers should approve an otherwise valid pause?";
+    const requests: unknown[] = [];
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const strings = (value: unknown): string[] => typeof value === "string" ? [value]
+      : Array.isArray(value) ? value.flatMap(strings)
+      : value && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
+    const requestJson = vi.fn<NonNullable<AskProviderDependencies["requestJson"]>>(async request => {
+      requests.push(request.body);
+      if (requests.length > 1) throw new Error("B64_UNDECLARED_EXTRA_CLARIFICATION_REQUEST");
+      const line = strings(request.body).flatMap(value => value.split("\n"))
+        .find(value => value.startsWith("Current disabled draft: "))!;
+      const snapshot = JSON.parse(line.slice("Current disabled draft: ".length));
+      // Read only the actual host-visible binding. The legacy envelope below
+      // preserves the first missing-admission failure without inventing identity.
+      return call("runner.submit_approval_policy_draft", { status: "clarification", question,
+        ...(snapshot.clarification_context ? { context_digest: snapshot.clarification_context.context_digest,
+          target: { kind: "action_component", phase: "approval" } } : {}) });
+    });
+    const askClarification = vi.fn(async received => { expect(received).toBe(question); return undefined; });
+    await expect(converseActionRuleDraft({ ...requestInput(requestJson),
+      authoringProtocol: { version: "synapsor.structured-authoring.v1" },
+      onCheckpoint: async value => { checkpoint = structuredClone(value); }, askClarification,
+    })).rejects.toThrow("CANCELLED");
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
+    expect(checkpoint?.pending_question?.question).toBe(question);
+    expect(checkpoint?.components).toEqual({});
+    expect(checkpoint?.operator_messages ?? []).toEqual([]);
+    const before = structuredClone(checkpoint);
+    const resumedProvider = vi.fn(async () => { throw new Error("B64_SAVED_QUESTION_MUST_NOT_REPLAY"); });
+    await expect(converseActionRuleDraft({ ...requestInput(resumedProvider), checkpoint,
+      authoringProtocol: { version: "synapsor.structured-authoring.v1" },
+      askClarification: async received => { expect(received).toBe(question); return undefined; },
+      onCheckpoint: async () => { throw new Error("B64_REDISPLAY_MUST_NOT_REWRITE"); },
+    })).rejects.toThrow("CANCELLED");
+    expect(resumedProvider).not.toHaveBeenCalled();
+    expect(checkpoint).toEqual(before);
+  });
+
+  it.each(["stale_context", "foreign_phase", "authority"])("B64 clarification rejects %s before handing off the exact next question", async fault => {
+    const question = "How many reviewers should approve an otherwise valid pause?";
+    let calls = 0; const observed: string[] = [];
+    const strings = (value: unknown): string[] => typeof value === "string" ? [value]
+      : Array.isArray(value) ? value.flatMap(strings)
+      : value && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
+    const requestJson = vi.fn<NonNullable<AskProviderDependencies["requestJson"]>>(async request => {
+      observed.push(JSON.stringify(request.body));
+      if (++calls > 2) throw new Error("B64_UNDECLARED_EXTRA_CLARIFICATION_REQUEST");
+      const line = strings(request.body).flatMap(value => value.split("\n"))
+        .find(value => value.startsWith("Current disabled draft: "))!;
+      const current = JSON.parse(line.slice("Current disabled draft: ".length)).clarification_context;
+      const args = { status: "clarification", question, context_digest: current.context_digest,
+        target: { kind: "action_component", phase: "approval" } };
+      if (calls === 1) {
+        if (fault === "stale_context") args.context_digest = canonicalJsonDigest("foreign current Action");
+        else if (fault === "foreign_phase") args.target.phase = "effect";
+        else Object.assign(args, { accepted: true, actor: "model-chosen" });
+      }
+      return call("runner.submit_approval_policy_draft", args);
+    });
+    const askClarification = vi.fn(async () => undefined);
+    const saved: ActionRuleAuthoringCheckpoint[] = [];
+    await expect(converseActionRuleDraft({ ...requestInput(requestJson),
+      authoringProtocol: { version: "synapsor.structured-authoring.v1" },
+      onCheckpoint: async value => { saved.push(structuredClone(value)); }, askClarification,
+    })).rejects.toThrow("CANCELLED");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
+    expect(observed[1]).toContain(fault === "stale_context" ? "ACTION_CLARIFICATION_CONTEXT_CHANGED" : "ASK_TOOL_ARGUMENTS_INVALID");
+    expect(saved.filter(value => value.pending_question)).toHaveLength(1);
+    expect(saved.at(-1)?.operator_messages ?? []).toEqual([]);
+    expect(saved.at(-1)?.components).toEqual({});
+  });
+
+  it("B64 consumed clarification batch cannot mutate its already bound Action components", async () => {
+    let requests=0;let checkpoint:ActionRuleAuthoringCheckpoint|undefined;
+    const question="How many reviewers should approve an otherwise valid pause?";
+    const strings=(value:unknown):string[]=>typeof value==="string"?[value]:Array.isArray(value)?value.flatMap(strings):value&&typeof value==="object"?Object.values(value).flatMap(strings):[];
+    const requestJson=vi.fn<NonNullable<AskProviderDependencies["requestJson"]>>(async request=>{
+      if(++requests>1)throw new Error("B64_NO_REQUEST_AFTER_CONSUMED_QUESTION");
+      const line=strings(request.body).flatMap(value=>value.split("\n")).find(value=>value.startsWith("Current disabled draft: "))!;
+      const context=JSON.parse(line.slice("Current disabled draft: ".length)).clarification_context;
+      return {status:200,body:{output:[
+        ...call("runner.submit_approval_policy_draft",{status:"clarification",question,context_digest:context.context_digest,target:{kind:"action_component",phase:"approval"}}).body.output,
+        ...call("runner.submit_verification_boundary_draft").body.output,
+      ]}};
+    });
+    const askClarification=vi.fn(async()=>undefined);
+    await expect(converseActionRuleDraft({...requestInput(requestJson),authoringProtocol:{version:"synapsor.structured-authoring.v1"},
+      onCheckpoint:async value=>{checkpoint=structuredClone(value);},askClarification})).rejects.toThrow("CANCELLED");
+    expect(requestJson).toHaveBeenCalledOnce();expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
+    expect(checkpoint?.components).toEqual({});expect(checkpoint?.pending_question?.question).toBe(question);
+  });
+
   it("B64 rejects forged operator authority in an actual submitted tool payload", async () => {
     const steps = [call("runner.submit_verification_boundary_draft", {
       ...payloadFor("runner.submit_verification_boundary_draft"), actor: "local_installation_operator", accepted: true,

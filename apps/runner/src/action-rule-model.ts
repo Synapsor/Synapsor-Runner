@@ -634,7 +634,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     pendingQuestion = undefined; pendingVersion = undefined; stagedVersion = undefined;
     await saveCheckpoint();
   };
-  const tools = ACTION_RULE_PHASES.map((phase) => conversationalPhaseTool(phase, input.session.provider === "openai_compatible", !!baseline || preparedDrafts.length > 0));
+  const tools = ACTION_RULE_PHASES.map((phase) => conversationalPhaseTool(phase, input.session.provider === "openai_compatible", !!baseline || preparedDrafts.length > 0, Boolean(protocol)));
   tools.push(...actionRelationshipTools);
   if (input.reviewVersionField || input.stageVersionQuestion) tools.push({ name: "runner.review_version_field", title: "Review an existing conflict counter",
     description: "Use when the policy/source owner identifies an existing maintained integer conflict counter, including coded names or ambiguous candidates. Select the exact catalog resource and version_field_options field. Runner checks current structure and asks the operator to confirm all writers maintain it. This changes only disabled catalog mapping; never invent maintenance, expose a field, change rows, or activate authority. Ordinary integer business fields are not automatically counters.",
@@ -695,7 +695,16 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   const declinedVersionFields = new Set<string>();
   let readOnlyRequest: string | undefined;
   let validationAttempted = false;
+  // This is the current whole-Action input, not a field-specific permission.
+  // The actual consumed response and existing pending-question material remain
+  // the durable owner; phase tags cannot grant a narrower edit scope.
+  const clarificationContext = () => ({
+    context_digest: canonicalJsonDigest({ intent_digest: canonicalJsonDigest(intent), context_digest: contextDigest(),
+      components: submissions, operator_messages: operatorMessages, policy_source_digest: policySourceDigest() ?? null }),
+    targets: ACTION_RULE_PHASES.map(phase => ({ kind: "action_component", phase })),
+  });
   const snapshot = () => ({
+    ...(protocol ? { clarification_context: clarificationContext() } : {}),
     components: structuredClone(submissions),
     persistence_scope: "component_checkpoint_only",
     action_save_performed: false,
@@ -721,6 +730,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       if (name === "runner.inspect_action_draft") return { ok: true, value: snapshot() };
       if (stagedVersion || pendingVersion) return phaseRefusal("ACTION_VERSION_QUESTION_PENDING: The saved counter question is pending. Later mutations in this consumed batch are refused.");
       if (readOnlyRequest) return phaseRefusal("The operator's no-new-actions request is pending. No later component edit is accepted.");
+      if (protocol && clarification) return phaseRefusal("ACTION_BUSINESS_QUESTION_PENDING: The exact Action question is pending. Later mutations in this consumed batch are refused.");
       if (compiled) return phaseRefusal("The exact draft is ready for operator review. No later model edit is accepted in this turn.");
       try {
         if (name === "runner.review_version_field" && (input.reviewVersionField || input.stageVersionQuestion)) {
@@ -892,6 +902,10 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
         if (!phase) return phaseRefusal("This tool is outside the disabled authoring surface.");
         const parsed = parsePhaseSubmission(phase, args, !!baseline);
         if (parsed.state === "clarification") {
+          if (protocol && (args.context_digest !== clarificationContext().context_digest
+            || (args.target as { kind?: unknown; phase?: unknown } | undefined)?.kind !== "action_component"
+            || (args.target as { phase?: unknown } | undefined)?.phase !== phase))
+            return phaseRefusal("ACTION_CLARIFICATION_CONTEXT_CHANGED: Use the exact current Action clarification context and tool target from runner.inspect_action_draft. No question or answer was saved.");
           const presented = businessWording(parsed.question);
           if (presented.state === "rephrase") {
             correctionUsed = true;
@@ -2155,13 +2169,25 @@ function providerConfiguration(
   }, input.env ?? process.env, new Date());
 }
 
-function conversationalPhaseTool(phase: PhaseName, compatible: boolean, revision: boolean): AskToolDefinition {
+function conversationalPhaseTool(phase: PhaseName, compatible: boolean, revision: boolean, structured = false): AskToolDefinition {
   const tool = phaseTool(phase, compatible, revision);
   const schema = tool.input_schema as Record<string, unknown>;
   const strict = phaseTool(phase, false, revision).input_schema as Record<string, unknown>;
   const drafts = (strict.oneOf as Array<Record<string, unknown>>).filter((branch) =>
     (branch.properties as Record<string, { const?: string }>).status?.const === "draft");
-  if (compatible) {
+  if (structured) {
+    tool.input_schema = { ...(strict.$defs ? { $defs: strict.$defs } : {}), oneOf: [
+      ...drafts,
+      { type: "object", additionalProperties: false, required: ["status", "context_digest", "target", "question"], properties: {
+        status: { const: "clarification" }, context_digest: { type: "string", pattern: "^sha256:[a-f0-9]{64}$" },
+        target: { type: "object", additionalProperties: false, required: ["kind", "phase"], properties: {
+          kind: { const: "action_component" }, phase: { const: phase },
+        } },
+        question: { type: "string", minLength: 1, maxLength: 500 },
+      } },
+    ] };
+    tool.description += " For a genuinely missing business decision, submit status=clarification with the exact current clarification_context.context_digest from the host snapshot and this tool's action_component target. The whole Action stays pending; this is not field permission or confirmation. Narration alone never asks or answers a question.";
+  } else if (compatible) {
     const { question: _question, ...properties } = schema.properties as Record<string, unknown>;
     // Ordinary conversation handles clarification. Every tool call is a draft,
     // so local models receive its actual required fields, not just status.
