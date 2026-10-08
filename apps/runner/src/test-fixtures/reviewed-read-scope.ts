@@ -1,18 +1,29 @@
 /** Declared disposable fixture preparation through ordinary structural review.
  * No hand-built review confirmation, scope reference, candidate or analysis. */
+import fs from "node:fs/promises";
+import path from "node:path";
 import { buildAutoBoundary, writeAutoBoundaryArtifacts } from "../auto-boundary.js";
 import { boundaryReviewCommand, loadBoundaryReviewContext } from "../boundary-commands.js";
 import { analyzeReadWorkloadSet, READ_WORKLOAD_SET_VERSION } from "../read-workload-assist.js";
+import { prepareBoundaryResourceReviewMutation, commitBoundaryResourceReviewMutation } from "../boundary-review-mutation.js";
 import { ownedProgramInspection } from "./owned-authoring-program.js";
 
 export async function prepareReviewedReadScope(projectRoot: string) {
   // Reuse the declared structural fixture; only table identity changes to the
   // existing work.items test domain. No source rows or customer facts exist.
+  // A real isolated repository boundary prevents parent decoy/user config discovery.
+  await fs.mkdir(path.join(projectRoot,".git"),{mode:0o700});
   const inspection=ownedProgramInspection();
   inspection.schemas=["work"];inspection.tables[0]!.schema="work";inspection.tables[0]!.name="items";
   const build=buildAutoBoundary({inspection,sourceEnv:"DATABASE_URL",inspectedSchema:"work",
     project:{root:projectRoot,package_manager:"npm",frameworks:[],schema_inputs:[],database_env_names:["DATABASE_URL"]}});
   await writeAutoBoundaryArtifacts({projectRoot,build});
+  const preview=await prepareBoundaryResourceReviewMutation(projectRoot,{
+    resource_id:"work.items",include:true,tenant_key:"tenant_id",principal_key:"principal_id",
+    selectable_fields:["label"],actor:"declared fixture operator",
+    reason:"Show the current principal's item labels inside the trusted tenant; retain private fields outside returned data.",
+  },async()=>inspection);
+  await commitBoundaryResourceReviewMutation(projectRoot,preview);
   const shown:Array<{message:string;context:readonly string[];defaultValue:boolean|undefined}>=[];
   await boundaryReviewCommand(["--project-root",projectRoot,"--confirm","--actor","declared fixture operator"],async()=>inspection,{
     presentationMode:"conversation",promptText:async()=>undefined,
