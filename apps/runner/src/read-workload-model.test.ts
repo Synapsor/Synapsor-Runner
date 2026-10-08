@@ -275,7 +275,24 @@ function withDeclaredRoot(input: ModelReadWorkloadInput, definition: string): Mo
   return { ...input, operatorNamingContext: `${original}\n${definition}` };
 }
 
-function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malformed" | "arguments" | "blocked") {
+// Explicit public test facts, selected by the scenario before any draft is sent.
+// These targets never come from the submitted plan or compiler output.
+function declaredWorkloadScope(request: string, mode: "status_rows" | "average_by_status" | "root_only", boundary = generatedBoundary()) {
+  const catalog = readWorkloadCatalog(boundary);
+  const context = projectReadScopeHostContext({ request: { id: "job", text: request },
+    catalog: { digest: catalog.digest, resources: catalog.resources, relationships: [] },
+    binding: { meaning_digest: canonicalJsonDigest(request), applicability_digest: canonicalJsonDigest("declared workload case"), operation_digest: canonicalJsonDigest(boundary) } });
+  const root = { root_resource: "public.orders", resource: "public.orders" };
+  const targets: ReadScopeProposal["requirements"][number]["targets"] = [{ ...root, operation: "resource" }];
+  if (mode === "status_rows") targets.push({ ...root, operation: "return", field: "status" });
+  if (mode === "average_by_status") targets.push({ ...root, operation: "group", field: "status" }, { ...root, operation: "aggregate", field: "amount", qualifier: "avg" });
+  const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
+    id: "declared-task", intended_use: request, disposition: "include", references: ["job"], targets,
+  }] };
+  return { proposal, structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context } };
+}
+
+function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malformed" | "arguments" | "blocked", read_scope?: ReadScopeProposal) {
   if (kind === "malformed") return { status: 200, body: { output: [] } };
   if (kind === "missing") return { status: 200, body: {
     choices: [{ message: { role: "assistant", content: "I can help with that." } }],
@@ -283,6 +300,7 @@ function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malforme
   return { status: 200, body: { output: [{
     type: "function_call", call_id: "call_read_diagnostic", name: "runner__submit_read_workloads",
     arguments: kind === "arguments" ? "{broken" : JSON.stringify({
+      ...(read_scope ? { read_scope } : {}),
       allowed: [{
         id: kind === "invalid_id" ? "INVALID ID" : "my_orders",
         description: "List my orders",
@@ -1345,18 +1363,19 @@ describe("model-assisted Read workload mapping", () => {
     ["malformed", "provider_response", "ASK_PROVIDER_RESPONSE_INVALID", "no assistant text or function call"],
     ["arguments", "provider_response", "ASK_TOOL_ARGUMENTS_INVALID", "malformed tool arguments"],
   ] as const)("retains initial and correction diagnostics for %s without mutating the boundary", async (kind, category, code, reason) => {
+    const typed = declaredWorkloadScope("List my orders\npublic.orders means orders.", "status_rows");
     const boundary = generatedBoundary();
     const before = structuredClone(boundary);
     const requests: string[] = [];
     const requestJson = vi.fn(async (request) => {
       requests.push(JSON.stringify(request.body));
-      return diagnosticResponse(kind);
+      return diagnosticResponse(kind, typed.proposal);
     });
     const error = await generateModelReadWorkload(withDeclaredRoot({
       name: "diagnostic_test", allowedQuestions: ["List my orders"],
       provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
       generatedBoundary: boundary, egressAcknowledged: true, deferNarration: true,
-      dependencies: { requestJson },
+      dependencies: { requestJson }, structuredScope: typed.structuredScope,
     }, "public.orders means orders.")).catch((error) => error);
     expect(error).toBeInstanceOf(ReadWorkloadDraftError);
     expect(error.diagnostics).toEqual([
@@ -1370,13 +1389,14 @@ describe("model-assisted Read workload mapping", () => {
   });
 
   it.each(["invalid_id", "malformed", "arguments", "missing"] as const)("recovers %s with one valid correction", async (kind) => {
-    const requestJson = vi.fn().mockResolvedValueOnce(diagnosticResponse(kind))
-      .mockResolvedValueOnce(diagnosticResponse("valid"));
+    const typed = declaredWorkloadScope("List my orders\npublic.orders means orders.", "status_rows");
+    const requestJson = vi.fn().mockResolvedValueOnce(diagnosticResponse(kind, typed.proposal))
+      .mockResolvedValueOnce(diagnosticResponse("valid", typed.proposal));
     const result = await generateModelReadWorkload(withDeclaredRoot({
       name: "corrected_read", allowedQuestions: ["List my orders"],
       provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
       generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
-      dependencies: { requestJson },
+      dependencies: { requestJson }, structuredScope: typed.structuredScope,
     }, "public.orders means orders."));
     expect(result.analysis.status).toBe("ready");
     expect(result.authority_granted).toBe(false);
@@ -1385,13 +1405,14 @@ describe("model-assisted Read workload mapping", () => {
   });
 
   it.each(["missing", "malformed"] as const)("does not lose rejected draft details when correction returns %s", async (kind) => {
-    const requestJson = vi.fn().mockResolvedValueOnce(diagnosticResponse("invalid_id"))
-      .mockResolvedValueOnce(diagnosticResponse(kind));
+    const typed = declaredWorkloadScope("List my orders\npublic.orders means orders.", "status_rows");
+    const requestJson = vi.fn().mockResolvedValueOnce(diagnosticResponse("invalid_id", typed.proposal))
+      .mockResolvedValueOnce(diagnosticResponse(kind, typed.proposal));
     const error = await generateModelReadWorkload(withDeclaredRoot({
       name: "mixed_failure", allowedQuestions: ["List my orders"],
       provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
       generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
-      dependencies: { requestJson },
+      dependencies: { requestJson }, structuredScope: typed.structuredScope,
     }, "public.orders means orders.")).catch((error) => error);
     expect(error).toBeInstanceOf(ReadWorkloadDraftError);
     expect(error.diagnostics[0]).toMatchObject({ phase: "initial", category: "validation" });
@@ -1401,12 +1422,13 @@ describe("model-assisted Read workload mapping", () => {
   });
 
   it("retains compiler blockers from both submitted attempts in a blocked result", async () => {
-    const requestJson = vi.fn().mockResolvedValue(diagnosticResponse("blocked"));
+    const typed = declaredWorkloadScope("List my orders\npublic.orders means orders.", "status_rows");
+    const requestJson = vi.fn().mockResolvedValue(diagnosticResponse("blocked", typed.proposal));
     const result = await generateModelReadWorkload(withDeclaredRoot({
       name: "blocked_reads", allowedQuestions: ["List my orders"],
       provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
       generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
-      dependencies: { requestJson },
+      dependencies: { requestJson }, structuredScope: typed.structuredScope,
     }, "public.orders means orders."));
     expect(result.analysis.status).toBe("blocked");
     expect(result.diagnostics).toHaveLength(2);
@@ -1415,13 +1437,14 @@ describe("model-assisted Read workload mapping", () => {
   });
 
   it("preserves a validation refusal when its correction times out without another automatic retry", async () => {
-    const requestJson = vi.fn().mockResolvedValueOnce(diagnosticResponse("invalid_id"))
+    const typed = declaredWorkloadScope("List my orders\npublic.orders means orders.", "status_rows");
+    const requestJson = vi.fn().mockResolvedValueOnce(diagnosticResponse("invalid_id", typed.proposal))
       .mockRejectedValueOnce(new AskError("ASK_PROVIDER_TIMEOUT", "The provider did not respond within the Ask timeout.", 504));
     const error = await generateModelReadWorkload(withDeclaredRoot({
       name: "timed_out_correction", allowedQuestions: ["List my orders"],
       provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
       generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
-      dependencies: { requestJson },
+      dependencies: { requestJson }, structuredScope: typed.structuredScope,
     }, "public.orders means orders.")).catch((error) => error);
     expect(error.diagnostics).toEqual([
       expect.objectContaining({ phase: "initial", category: "validation" }),
@@ -1654,6 +1677,7 @@ describe("model-assisted Read workload mapping", () => {
   );
 
   it("requires explicit structural-metadata egress acknowledgement before any provider request", async () => {
+    const typed = declaredWorkloadScope("Average order amount by status", "average_by_status");
     const requestJson = vi.fn();
     await expect(generateModelReadWorkload({
       name: "support_reads",
@@ -1663,12 +1687,13 @@ describe("model-assisted Read workload mapping", () => {
       generatedBoundary: generatedBoundary(),
       env: { OPENAI_API_KEY: "provider-test-key" },
       egressAcknowledged: false,
-      dependencies: { requestJson },
+      dependencies: { requestJson }, structuredScope: typed.structuredScope,
     })).rejects.toThrow(/Acknowledge that reviewed visible data/);
     expect(requestJson).not.toHaveBeenCalled();
   });
 
   it("blocks obvious secret material in operator-authored questions before provider egress", async () => {
+    const typed = declaredWorkloadScope("Use API key = sk-do-not-send-this-value", "root_only");
     const requestJson = vi.fn();
     await expect(generateModelReadWorkload({
       name: "secret_question_refused",
@@ -1678,7 +1703,7 @@ describe("model-assisted Read workload mapping", () => {
       generatedBoundary: generatedBoundary(),
       env: { OPENAI_API_KEY: "provider-test-key" },
       egressAcknowledged: true,
-      dependencies: { requestJson },
+      dependencies: { requestJson }, structuredScope: typed.structuredScope,
     })).rejects.toThrow(/READ_WORKLOAD_SECRET_BLOCKED/);
     expect(requestJson).not.toHaveBeenCalled();
   });
@@ -1750,12 +1775,13 @@ describe("model-assisted Read workload mapping", () => {
   it.each(["openai", "anthropic"] as const)(
     "gives %s one bounded correction after deterministic workload validation refuses the first plan",
     async (provider) => {
+      const typed = declaredWorkloadScope("What is average order amount by status?", "average_by_status");
       let attempt = 0;
       const requests: string[] = [];
       const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
         requests.push(JSON.stringify(request.body));
         attempt += 1;
-        const input = {
+        const input = { read_scope: typed.proposal,
           allowed: [{
             id: "orders_by_status",
             description: "Average order amount by status",
@@ -1809,7 +1835,7 @@ describe("model-assisted Read workload mapping", () => {
         env: { TEST_PROVIDER_KEY: "provider-test-key" },
         apiKeyEnv: "TEST_PROVIDER_KEY",
         egressAcknowledged: true,
-        dependencies: { requestJson },
+        dependencies: { requestJson }, structuredScope: typed.structuredScope,
       });
 
       expect(requestJson).toHaveBeenCalledTimes(2);
