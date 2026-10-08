@@ -1,0 +1,18 @@
+{
+  "source": "81ad3cbf",
+  "scope": "Integrated reviewed Version Resume and fresh-process typed fixture ports plus existing shared contract",
+  "tests": {
+    "files": 3,
+    "passed": 65,
+    "failed": 0,
+    "skipped": 0,
+    "seconds": 56.52,
+    "maxWorkers": 2
+  },
+  "log": "/var/tmp/synapsor-b64-main-owned/evidence/version-integrated-81ad.log",
+  "independent_review": {
+    "f77_projection": "R2 scoped ACCEPT report 05f3b0ddc7cc78fbdfa7c3b7e1954aeffe1d9ebd00c0575d74af4b4d34f9c517",
+    "3d6_fixture": "R2 source scoped ACCEPT 34d6a69c3d5e6a1d070984cab2dfff89923608f363fe272a25dbe9afa4c3db25; all17 original scenario assertions byte-identical"
+  },
+  "limits": "No full suite, public Action subject v2, private proof, installed or freeze acceptance claimed"
+}
