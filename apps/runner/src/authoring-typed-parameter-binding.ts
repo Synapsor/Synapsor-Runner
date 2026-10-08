@@ -53,6 +53,12 @@ function parseDraft(value: unknown): ActionRuleModelDraftV1 {
         fail();
     return structuredClone(value) as ActionRuleModelDraftV1;
 }
+/** Shared baseline identity grammar; callers cannot reconstruct a weaker reference. */
+export function parseTypedParameterReference(value: unknown): TypedParameterReference {
+    const result = reference.safeParse(value);
+    if (!result.success || !equal(result.data, value)) fail();
+    return structuredClone(result.data);
+}
 export function parseTypedParameterBinding(value: unknown): TypedParameterBinding {
     const result = bindingSchema.safeParse(value);
     if (!result.success)

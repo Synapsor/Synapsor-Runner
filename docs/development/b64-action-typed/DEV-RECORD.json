@@ -42,5 +42,17 @@
     "fixture_ports": "Two declared pending business questions now use explicit clarification tool payloads; all assertions unchanged",
     "command": "vitest run apps/runner/src/action-rule-checkpoint-prerequisite.test.ts apps/runner/src/action-work-unit-source-assessment.test.ts apps/runner/src/authoring-typed-parameter-source.test.ts --maxWorkers=2 --minWorkers=1 --testTimeout=20000",
     "first": "118 PASS / 2 FAIL from the two narration-only question fixtures, preserved in affected-source-native.log"
+  },
+  "constraint_characterization": {
+    "result": "82 PASS unchanged (23 approval-scope,29 execution-intent,21 counting-contract,9 counting-history)",
+    "map": "CONSTRAINT-RETIREMENT-MAP.md",
+    "qualification": "Characterization only; active English constraint calls and focused-only legacy chain remain open migration items. No comparator/store/codec product code added."
+  },
+  "subject_codec_wip": {
+    "status": "component only; native/persistence/public and independent acceptance NOT RUN",
+    "tests": "14 PASS, one worker, OS network denied",
+    "before": "subject-codec-before.log: new module missing (expected preimplementation failure)",
+    "types": "Main-owned deleted boundary import is the only known branch error",
+    "next": "native question/generation/checkpoint binding, staged producer, Main protected-save hooks"
   }
 }
