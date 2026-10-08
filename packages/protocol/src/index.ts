@@ -1,4 +1,6 @@
 import { z } from "zod";
+export { parseSourceCompletionBinding, parseSourceCompletionEvidence,
+  type SourceCompletionBinding, type SourceCompletionEvidence } from "./source-completion.js";
 
 export {
   canonicalJsonDigest,

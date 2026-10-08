@@ -1,5 +1,6 @@
 import type { SourceRollbackEvidence } from "./source-rollback.js";
 export { sourceRollbackBinding, type SourceRollbackEvidence } from "./source-rollback.js";
+export { sourceCompletionBinding } from "./source-completion-binding.js";
 import crypto from "node:crypto";
 import type { ActionRuleFactLoaderAdapterV1 } from "@synapsor-runner/action-rules";
 import { ControlPlaneClient, type ClaimedWritebackJob } from "@synapsor-runner/control-plane-client";
@@ -41,6 +42,9 @@ export type RunnerConfig = {
     principal: string;
   };
   writebackIntentStore?: WritebackIntentStore;
+  /** Exact admitted runtime execution/selected-writer binding. Never accepted
+   * from a model; this supplies no effect or reconciliation authorization. */
+  sourceCompletionAdmission?: { execution_binding_digest: `sha256:${string}`; writer_reference: string };
   /**
    * Trusted semantic authority resolver and transaction-time rule evaluator.
    *
