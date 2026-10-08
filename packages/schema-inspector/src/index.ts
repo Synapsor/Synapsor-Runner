@@ -2376,9 +2376,10 @@ export function mysqlGrantPosture(
     const grant = raw.trim();
     const match = grant.match(/^GRANT\s+(.+?)\s+ON\s+(.+?)\s+TO\s+/i);
     if (!match) {
-      // A role assignment is not enough to prove its effective grants from
-      // SHOW GRANTS FOR CURRENT_USER alone, so hardened posture fails closed.
-      if (/^GRANT\s+/i.test(grant)) verified = false;
+      // Roles, partial-revoke rows and unknown output cannot establish effective
+      // authority from this supported GRANT grammar. Never discard an unknown
+      // row while certifying the remaining grants as complete.
+      verified = false;
       continue;
     }
     const target = parseMysqlGrantTarget(match[2]!);
@@ -2390,7 +2391,12 @@ export function mysqlGrantPosture(
     elevated ||= privileges.elevated
       || /\bWITH\s+GRANT\s+OPTION\b/i.test(grant)
       || (!privileges.verified && target.schema === "*" && target.table === "*");
-    if (!privileges.verified || (Object.keys(privileges.columns).length > 0 && (target.schema === "*" || target.table === "*"))) {
+    // Database-wide GRANT names can be patterns; partial_revokes changes their
+    // meaning. This API has no verified server context for that setting, so
+    // refuse unresolved scope. Exact table grants keep literal identifiers.
+    const unresolvedDatabaseScope = target.table === "*" && target.schema !== "*" && /[%_\\]/.test(target.schema);
+    if (unresolvedDatabaseScope || !privileges.verified
+      || (Object.keys(privileges.columns).length > 0 && (target.schema === "*" || target.table === "*"))) {
       verified = false;
       continue;
     }
