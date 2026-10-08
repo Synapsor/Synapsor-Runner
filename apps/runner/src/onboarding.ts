@@ -181,6 +181,7 @@ export async function runInitWizard(
   assertDatabaseRoleSafeForModelReads({
     inspection,
     sourceEnv: configDatabaseUrlEnv,
+    sourceDatabaseChanged: false,
     nextAction: "Rerun guided init with the same options.",
     statePreserved: "No generated setup file or model-facing capability was created, and the source database was not changed.",
   });
@@ -868,6 +869,7 @@ async function initFromInspection(args: string[], inspection: SchemaInspection, 
   assertDatabaseRoleSafeForModelReads({
     inspection,
     sourceEnv: databaseUrlEnv,
+    sourceDatabaseChanged: false,
     nextAction: "Rerun the same onboarding command.",
     statePreserved: "No generated setup file or model-facing capability was created, and the source database was not changed.",
   });

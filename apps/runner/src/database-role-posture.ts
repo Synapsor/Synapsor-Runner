@@ -17,10 +17,32 @@ export class DatabaseRolePostureError extends Error {
   constructor(
     message: string,
     public readonly assessment: DatabaseRolePostureAssessment,
+    public readonly recovery?: DatabaseRoleRecovery,
   ) {
     super(message);
     this.name = "DatabaseRolePostureError";
   }
+}
+
+type DatabaseRoleRecovery = { state_preserved: string; source_database_changed: boolean | null; next_action: string };
+type UnsafeDatabaseRoleInput = {
+  inspection: Pick<SchemaInspection, "engine" | "current_user" | "role_posture">;
+  sourceEnv?: string;
+  nextAction?: string;
+  statePreserved?: string;
+  /** Supplied by the operation before any Source effect, never read from prose. */
+  sourceDatabaseChanged?: boolean;
+};
+
+function databaseRoleRecovery(input: UnsafeDatabaseRoleInput, assessment: DatabaseRolePostureAssessment): DatabaseRoleRecovery {
+  const envInstruction = input.sourceEnv
+    ? `Update ${safeEnvironmentName(input.sourceEnv)} to reference that credential without printing its value.`
+    : "Update the configured read-credential environment variable without printing its value.";
+  return {
+    state_preserved: input.statePreserved ?? "Runner refused this read credential; inspect existing state before retrying.",
+    source_database_changed: input.sourceDatabaseChanged ?? null,
+    next_action: `${databaseRolePostureRemediation(assessment)} ${envInstruction}${input.nextAction ? ` ${input.nextAction}` : " Then rerun the command."}`,
+  };
 }
 
 
@@ -91,39 +113,27 @@ export function databaseRolePostureRemediation(
 }
 
 
-export function formatUnsafeDatabaseRoleMessage(input: {
-  inspection: Pick<SchemaInspection, "engine" | "current_user" | "role_posture">;
-  sourceEnv?: string;
-  nextAction?: string;
-  statePreserved?: string;
-}): string {
+export function formatUnsafeDatabaseRoleMessage(input: UnsafeDatabaseRoleInput): string {
   const assessment = assessDatabaseRolePosture(input.inspection);
   const detected = assessment.facts.length
     ? assessment.facts.map((fact) => `  - ${fact}`).join("\n")
     : "  - the role is not safe for model-facing reads";
-  const envInstruction = input.sourceEnv
-    ? `Update ${safeEnvironmentName(input.sourceEnv)} to reference that credential without printing its value.`
-    : "Update the configured read-credential environment variable without printing its value.";
+  const recovery = databaseRoleRecovery(input, assessment);
   return [
     `Database role ${assessment.role} is unsafe for model-facing reads.`,
     "Detected:",
     detected,
     "Why it matters: elevated, owner, write-capable, or BYPASSRLS credentials can bypass database defenses that Runner expects to remain independently effective.",
-    `State preserved: ${input.statePreserved ?? "Runner did not create or activate model-facing authority, and the source database was not changed."}`,
-    `Next: ${databaseRolePostureRemediation(assessment)} ${envInstruction}${input.nextAction ? ` ${input.nextAction}` : " Then rerun the command."}`,
+    `State preserved: ${recovery.state_preserved}`,
+    `Next: ${recovery.next_action}`,
   ].join("\n");
 }
 
 
-export function assertDatabaseRoleSafeForModelReads(input: {
-  inspection: Pick<SchemaInspection, "engine" | "current_user" | "role_posture">;
-  sourceEnv?: string;
-  nextAction?: string;
-  statePreserved?: string;
-}): void {
+export function assertDatabaseRoleSafeForModelReads(input: UnsafeDatabaseRoleInput): void {
   const assessment = assessDatabaseRolePosture(input.inspection);
   if (assessment.safe_for_model_reads) return;
-  throw new DatabaseRolePostureError(formatUnsafeDatabaseRoleMessage(input), assessment);
+  throw new DatabaseRolePostureError(formatUnsafeDatabaseRoleMessage(input), assessment, databaseRoleRecovery(input, assessment));
 }
 
 
