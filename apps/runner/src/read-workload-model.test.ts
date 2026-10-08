@@ -25,6 +25,7 @@ import { READ_SCOPE_PROTOCOL, resolveReadScopeProposal, assessReadScopeDraft, ty
 import { analyzeReadWorkloadSet, READ_WORKLOAD_SET_VERSION } from "./read-workload-assist.js";
 import { createReadScopeQuestion, proposeReadScopeReview, confirmReadScopeReview } from "./authoring-read-scope-question.js";
 import { readScopeConsumption } from "./authoring-read-scope-binding.js";
+import { planModelBoundaryJob } from "./boundary-job-model.js";
 
 describe("B64 structured Read producer adapter", () => {
   const original = "Show order status. Use public.orders.status for the order status; no other fields.";
@@ -72,7 +73,7 @@ describe("B64 structured Read producer adapter", () => {
     expect(accepted[0]!.completion).toMatchObject({ operation_id: state.operations[0]!.id,
       request_digest: state.operations[0]!.request_digest, response_digest: canonicalJsonDigest(response(args()).body) });
   });
-  it.each(["omit", "replace", "unconfirmed"] as const)("uses native scope lineage when a later producer tries to %s its interpretation", async mode => {
+  it.each(["omit", "replace", "unconfirmed", "planning_reuse", "planning_wrong_scope"] as const)("uses native scope lineage when a later producer tries to %s its interpretation", async mode => {
     let state: AuthoringTransportState = { version: 1, operations: [] };
     let saved: OperatorQuestion | undefined;
     const first = setup(async () => response(args()));
@@ -94,6 +95,26 @@ describe("B64 structured Read producer adapter", () => {
         } });
     });
     if (!saved) throw new Error("Expected native scope question");
+    if (mode === "planning_reuse" || mode === "planning_wrong_scope") {
+      const interpretation = structuredClone(initial.read_scope!.proposal);
+      if (mode === "planning_wrong_scope") interpretation.requirements[0]!.targets.pop();
+      const planSend = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "native_reuse",
+        name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "reuse", action_mode: "none",
+          summary: "Keep the reviewed scope", read_scope: interpretation }) }] } }));
+      const planned = planModelBoundaryJob({ session: { provider: "openai", model: "local-scripted", apiKey: "test-key",
+        dependencies: { requestJson: planSend } }, jobIntent: original, egressAcknowledged: true,
+        currentState: { read: { boundary_name: "reviewed_staging", authority: "disabled", fully_reviewed: true,
+          resource_ids: ["public.orders"], exact_reusable_revision_count: 1 }, actions: [] },
+        structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => ({ ...first.context, reusable: { questions: [saved!],
+          handoffs: [], generation: state, question_id: saved!.id, analysis: initial.analysis } }) } });
+      if (mode === "planning_wrong_scope") {
+        await expect(planned).rejects.toThrow("READ_SCOPE_REVIEWED_DELTA_REQUIRED"); expect(planSend).toHaveBeenCalledTimes(2);
+      } else {
+        await expect(planned).resolves.toMatchObject({ state: "planned", read_mode: "reuse", authority_granted: false });
+        expect(planSend).toHaveBeenCalledOnce();
+      }
+      return;
+    }
     const send = vi.fn(async () => {
       if (mode === "replace") {
         const changed = args(); changed.allowed[0]!.plan.select = ["amount"];
