@@ -17,6 +17,9 @@ import {
 import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { readBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
+import { READ_SCOPE_PROTOCOL, type ReadScopeProposal } from "./read-structured-scope.js";
+import { projectReadScopeHostContext } from "./read-current-evidence.js";
+import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import { generateModelReadBoundaryRevision } from "./read-boundary-revision-model.js";
 import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint } from "./authoring-owner-handoff.js";
@@ -48,11 +51,38 @@ function ownedReadRevisionDraft(): ExplorationBoundaryDraft {
     };
 }
 
+// Declared status-only purpose and exact disabled privacy preview. No workload
+// analysis or scope confirmation is fabricated by this history/CAS fixture.
+function ownedReadRevisionScope(draft: ExplorationBoundaryDraft) {
+  const originalRequest = "Read order status. Keep order identifiers private. Preserve unrelated access.";
+  const context = (candidate: ExplorationBoundaryDraft) => {
+    const catalog = readBoundaryRevisionCatalog(candidate);
+    return projectReadScopeHostContext({ request: { id: "owned-original-request", text: originalRequest },
+      catalog: { digest: catalog.digest, resources: catalog.resources, relationships: [] },
+      binding: { meaning_digest: canonicalJsonDigest(originalRequest), applicability_digest: canonicalJsonDigest("owned status job"),
+        operation_digest: canonicalJsonDigest(candidate) } });
+  };
+  const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, applicability: "read_requested", original_request: "owned-original-request",
+    requirements: [{ id: "status", intended_use: "Read order status", references: ["owned-original-request"], disposition: "include", targets: [
+      { root_resource: "public.orders", resource: "public.orders", operation: "resource" },
+      { root_resource: "public.orders", resource: "public.orders", operation: "return", field: "status" },
+    ] }, { id: "private-id", intended_use: "Keep order identifiers private", references: ["owned-original-request"], disposition: "exclude", targets: [
+      { root_resource: "public.orders", resource: "public.orders", operation: "return", field: "id" },
+    ] }] };
+  return { proposal, structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context(draft) },
+    validateRevision: async () => {
+      const preview = structuredClone(draft);
+      preview.pack.resources[0]!.selectable_fields = ["status"];
+      return { scope: context(preview) };
+    } };
+}
+
 describe("Boundary authoring resume state", () => {
   it("records a parsed Read revision result with its exact dispatch as inert history and reopens without replay", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-consumed-history-"));
     const instruction = "Keep order identifiers private. Preserve unrelated access.";
     const draft = ownedReadRevisionDraft();
+    const typed = ownedReadRevisionScope(draft);
     const input = { binding, stage: "authority_review" as const, jobIntent: "Read order status.",
       provider: "openai" as const, model: "offline-test", pendingReadRevision: instruction };
     let request: NonNullable<Parameters<typeof buildBoundaryAuthoringResumeState>[0]["pendingReadRevisionState"]> = {
@@ -63,10 +93,10 @@ describe("Boundary authoring resume state", () => {
     try {
       await writeBoundaryAuthoringResumeState(root, saved, { expectedRevisionDigest: null });
       const result = await generateModelReadBoundaryRevision({ instruction, provider: "openai", model: "offline-test", apiKey: "OWNED-key",
-        boundary: draft, egressAcknowledged: true, privacyOnly: true,
+        boundary: draft, egressAcknowledged: true, privacyOnly: true, structuredScope: typed.structuredScope, validateRevision: typed.validateRevision,
         dependencies: { requestJson: async () => { calls++; return { status: 200, body: { output: [{ type: "function_call",
           call_id: "owned_read_result", name: "runner__submit_read_boundary_revision",
-          arguments: JSON.stringify({ resource_changes: [{ resource: "public.orders", field_exposure: [{ field: "id", exposure: "runner_only" }] }] }) }] } }; } },
+          arguments: JSON.stringify({ read_scope: typed.proposal, resource_changes: [{ resource: "public.orders", field_exposure: [{ field: "id", exposure: "runner_only" }] }] }) }] } }; } },
         onCheckpoint: async (checkpoint, _current, accepted) => {
           if (checkpoint) request = { ...request, checkpoint };
           else {
@@ -193,6 +223,7 @@ describe("Boundary authoring resume state", () => {
   it.each(["cancelled", "malformed", "stale", "late"] as const)("keeps %s Read results unconsumed through the native producer", async failure => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-result-refusal-"));
     const instruction = "Keep order identifiers private. Preserve unrelated access.", draft = ownedReadRevisionDraft();
+    const typed = ownedReadRevisionScope(draft);
     const input = { binding, stage: "authority_review" as const, jobIntent: "Read order status.", provider: "openai" as const,
       model: "offline-test", pendingReadRevision: instruction };
     let request: NonNullable<Parameters<typeof buildBoundaryAuthoringResumeState>[0]["pendingReadRevisionState"]> = {
@@ -208,14 +239,14 @@ describe("Boundary authoring resume state", () => {
             await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: current.revision_digest, permit }); current = next;
           }) });
         const attempt = generateModelReadBoundaryRevision({ instruction, provider: "openai", model: "offline-test", apiKey: "OWNED-key",
-          boundary: draft, egressAcknowledged: true, privacyOnly: true,
+          boundary: draft, egressAcknowledged: true, privacyOnly: true, structuredScope: typed.structuredScope, validateRevision: typed.validateRevision,
           dependencies: { requestJson: async () => {
             calls++;
             if (failure === "cancelled") throw new AskError("ASK_CANCELLED", "The owned fixture stopped without a response.", 499);
             if (failure === "late") context = canonicalJsonDigest("changed business context before response acceptance");
             return { status: 200, body: { output: [{ type: "function_call", call_id: `owned_read_result_${calls}`,
               name: "runner__submit_read_boundary_revision", arguments: failure === "malformed" ? "{" : JSON.stringify({
-                resource_changes: [{ resource: "public.orders", field_exposure: [{ field: "id", exposure: "runner_only" }] }] }) }] } };
+                read_scope: typed.proposal, resource_changes: [{ resource: "public.orders", field_exposure: [{ field: "id", exposure: "runner_only" }] }] }) }] } };
           } },
           onCheckpoint: async (checkpoint, _draft, accepted) => withProjectAuthorityMutation(root, async permit => {
             if (!checkpoint) {

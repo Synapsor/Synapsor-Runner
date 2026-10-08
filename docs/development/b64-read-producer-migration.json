@@ -275,5 +275,24 @@
   {"file": "read-workload-model.test.ts", "case": "durable Read assistance producer checkpoint outer controller callback reservation survives a raw save acknowledgement loss without accepting its result", "state": "DEV_PASS", "evidence": "checkpoint-native-recovery-port.log"},
   {"file": "read-workload-model.test.ts", "case": "durable Read assistance producer checkpoint outer controller callback limit refuses an exhausted checkpoint before another HTTP request", "state": "DEV_PASS", "evidence": "checkpoint-fixture-typed-port.log"}
 ],
-"current_migration_counts": {"closed_after_baseline": 29, "remaining_open": 238}
+"current_migration_counts": {"closed_after_baseline": 29, "remaining_open": 238},
+"additional_fixture_groups": [
+  {
+    "file": "boundary-authoring-resume.test.ts",
+    "before_evidence": "/var/tmp/synapsor-b64-main-owned/evidence/read-scope-pointer-after.log",
+    "after_evidence": "/var/tmp/synapsor-b64-read-owned/evidence/resume-five-typed-port.log",
+    "results": {
+      "pass": 5,
+      "fail": 0
+    },
+    "cases": [
+      "records a parsed Read revision result with its exact dispatch as inert history and reopens without replay",
+      "keeps cancelled Read results unconsumed through the native producer",
+      "keeps malformed Read results unconsumed through the native producer",
+      "keeps stale Read results unconsumed through the native producer",
+      "keeps late Read results unconsumed through the native producer"
+    ],
+    "migration": "Explicit original status-only inclusion and identifier exclusion; disabled preview pending real workload analysis; original assertions and provider counts unchanged."
+  }
+]
 }
