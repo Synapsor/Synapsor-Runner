@@ -81,6 +81,10 @@ describe("B64 typed Read scope", () => {
     const missingField = proposal(); missingField.requirements[0]!.targets = [{ ...root, operation: "return" }];
     expect(() => resolve(missingField)).toThrow(/READ_SCOPE_TARGET_INVALID/u);
   });
+  it("refuses a cross-resource field without its exact relationship identity", () => {
+    const wrong = proposal(); wrong.requirements[0]!.targets = [{ ...title, resource: "other.items" }];
+    expect(() => resolve(wrong)).toThrow(/exact relationship identity/u);
+  });
   it("retains exclusions and missing inclusions in subsequent drafts", () => {
     expect(assessReadScopeDraft(resolve(), analysis([root, secret]))).toMatchObject({ status: "delta_required",
       missing: [title], excluded: [secret], added: [secret] });

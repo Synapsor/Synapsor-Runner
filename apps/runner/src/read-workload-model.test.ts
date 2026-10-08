@@ -21,7 +21,8 @@ import {
 import { generateModelReadWorkload, readWorkloadCatalog, type ModelReadWorkloadInput } from "./read-workload-model.js";
 import { ReadWorkloadDraftError } from "./read-workload-diagnostics.js";
 import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
-import { READ_SCOPE_PROTOCOL, type ReadScopeBinding, type ReadScopeProposal, type ReadScopeReference } from "./read-structured-scope.js";
+import { READ_SCOPE_PROTOCOL, resolveReadScopeProposal, assessReadScopeDraft, type ReadScopeBinding, type ReadScopeProposal, type ReadScopeReference } from "./read-structured-scope.js";
+import { analyzeReadWorkloadSet, READ_WORKLOAD_SET_VERSION } from "./read-workload-assist.js";
 
 describe("B64 structured Read producer adapter", () => {
   const original = "Show order status. Use public.orders.status for the order status; no other fields.";
@@ -105,11 +106,39 @@ describe("B64 structured Read producer adapter", () => {
       onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
     expect(send).toHaveBeenCalledOnce(); expect(noSend).not.toHaveBeenCalled();
   });
+  it("uses the existing compiler's exact related-resource atoms without merging root and target identities", () => {
+    const configured = setup(vi.fn()), boundary = configured.input.generatedBoundary;
+    const root = boundary.pack.resources[0]!;
+    const target = structuredClone(root); target.id = "public.products"; target.table = "products";
+    delete target.principal_key;
+    root.field_types.product_id = "uuid";
+    const link = { constraint_name: "order_product", source_resource: root.id, target_resource: target.id,
+      source_columns: ["tenant_id", "product_id"], target_columns: ["tenant_id", "id"],
+      target_uniqueness: { kind: "unique_constraint" as const, name: "products_tenant_id_key", columns: ["tenant_id", "id"] },
+      nullable: false, cardinality: "many_to_one" as const, max_fan_out: 1 as const };
+    root.relationships.push({ id: link.constraint_name, target_resource: target.id, local_columns: link.source_columns,
+      target_columns: link.target_columns, counted_entity: root.id, cardinality: "many_to_one", max_fan_out: 1, path_depth: 1,
+      proof: { source: "database_catalog", links: [link], digest: canonicalJsonDigest([link]) } });
+    boundary.pack.resources.push(target);
+    const analysis = analyzeReadWorkloadSet({ generatedBoundary: boundary, workload: {
+      schema_version: READ_WORKLOAD_SET_VERSION, name: "related_status", source: { kind: "model", provider: "openai", model: "scripted" }, forbidden: [], allowed: [{
+        id: "related", description: "Show order and related product statuses", plan: { kind: "rows", resource: root.id,
+          select: ["status"], related: [{ relationship: "order_product", select: ["status"] }] },
+      }],
+    } });
+    expect(analysis.status).toBe("ready");
+    const proposal = scope(); proposal.requirements[0]!.targets = analysis.authority_atoms.map(({ id: _id, ...atom }) => atom);
+    const record = resolveReadScopeProposal(proposal, { expectedBinding: configured.context.binding,
+      references: configured.context.references, analysis, catalog: { resources: readWorkloadCatalog(boundary).resources,
+        relationships: [{ id: "order_product", from: root.id, to: target.id }] } });
+    expect(assessReadScopeDraft(record, analysis).status).toBe("compatible");
+  });
   it("resumes a captured native answer after its durable decision without reasking or confirming its meaning", async () => {
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
     const reference = { question_id: "question-native", revision: 1, answer_id: "answer-native" };
-    const answer: ReadScopeReference = { kind: "answer", id: "captured-answer", digest: canonicalJsonDigest("Current fulfillment status."),
-      question_id: reference.question_id, answer_id: reference.answer_id, question_revision: 1, text: "Current fulfillment status." };
+    const raw = { id: reference.answer_id, text: "Current fulfillment status.", actor: "local_installation_operator", recorded_at: "2026-10-08T00:00:00Z" };
+    const answer: ReadScopeReference = { kind: "answer", id: "captured-answer", digest: canonicalJsonDigest(raw),
+      question_id: reference.question_id, answer_id: reference.answer_id, question_revision: 1, text: raw.text };
     const first = setup(vi.fn(async () => {
       const value = args(); value.read_scope.requirements[0]!.disposition = "unresolved";
       value.read_scope.requirements[0]!.unresolved = "Which status?"; return response(value);

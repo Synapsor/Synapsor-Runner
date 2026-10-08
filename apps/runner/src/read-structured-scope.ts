@@ -115,10 +115,15 @@ function validateCatalogTarget(target: ReadScopeTarget, catalog: ReadScopeCatalo
   if (target.operation === "resource" && (target.field !== undefined || target.relationship !== undefined || target.qualifier !== undefined))
     invalid("READ_SCOPE_TARGET_INVALID", "Resource identity is not a wildcard field or relationship operation.");
   if (target.operation === "relationship") {
-    if (target.field !== undefined || !target.relationship || !catalog.relationships.some(relationship =>
-      relationship.id === target.relationship && relationship.from === target.root_resource && relationship.to === target.resource))
+    if (target.field !== undefined || target.resource !== target.root_resource || !target.relationship || !catalog.relationships.some(relationship =>
+      relationship.id === target.relationship && relationship.from === target.root_resource && relationship.to === target.qualifier))
       invalid("READ_SCOPE_TARGET_INVALID", "The exact relationship is not in the supplied catalog.");
-  } else if (target.relationship !== undefined) invalid("READ_SCOPE_TARGET_INVALID", "Relationship identity needs a relationship operation.");
+  } else if (target.relationship !== undefined) {
+    if (!catalog.relationships.some(relationship => relationship.id === target.relationship
+      && relationship.from === target.root_resource && relationship.to === target.resource))
+      invalid("READ_SCOPE_TARGET_INVALID", "The field operation is not reached through its exact catalog relationship.");
+  } else if (target.resource !== target.root_resource)
+    invalid("READ_SCOPE_TARGET_INVALID", "A related target requires its exact relationship identity.");
   if (["return", "filter", "sort", "group", "count_distinct", "time_bucket", "time_window", "numeric_band", "auto_band"].includes(target.operation)
     && target.field === undefined) invalid("READ_SCOPE_TARGET_INVALID", "This operation needs an exact field.");
 }
