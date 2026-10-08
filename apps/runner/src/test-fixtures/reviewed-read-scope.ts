@@ -9,7 +9,7 @@ import { prepareBoundaryResourceReviewMutation, commitBoundaryResourceReviewMuta
 import type { BoundaryResourceReviewRequest } from "../read-authoring-contract-types.js";
 import { ownedProgramInspection } from "./owned-authoring-program.js";
 
-export async function prepareReviewedReadScope(projectRoot: string, declared: { resources: string[]; field: string; primaryKey?: string; fields?: Record<string, { type: string; enum?: string[] }>; review?: Pick<BoundaryResourceReviewRequest, "selectable_fields" | "filterable_fields" | "sortable_fields" | "groupable_fields" | "aggregate_measures" | "count_distinct_fields" | "time_bucket_fields" | "keep_out_fields"> } = {resources:["work.items"],field:"label"}) {
+export async function prepareReviewedReadScope(projectRoot: string, declared: { resources: string[]; field: string; primaryKey?: string; fields?: Record<string, { type: string; enum?: string[] }>; review?: Pick<BoundaryResourceReviewRequest, "selectable_fields" | "filterable_fields" | "sortable_fields" | "groupable_fields" | "aggregate_measures" | "count_distinct_fields" | "time_bucket_fields" | "keep_out_fields" | "allow_reviewed_fields"> } = {resources:["work.items"],field:"label"}) {
   // Reuse the declared structural fixture; only table identity changes to the
   // existing work.items test domain. No source rows or customer facts exist.
   // A real isolated repository boundary prevents parent decoy/user config discovery.

@@ -526,42 +526,55 @@ describe("durable Read assistance producer checkpoint", () => {
   });
 
   it("retains four business answers and stops a fifth request across pauses without re-asking accepted targets", async () => {
-    const boundary = generatedBoundary();
-    for (const field of ["region", "category", "description"]) { boundary.pack.resources[0]!.field_types[field] = "text"; boundary.pack.resources[0]!.selectable_fields.push(field); }
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
     const fields = ["status", "amount", "region", "category", "description"];
+    let answers = 0, resumed = false;
+    const nextHandler = vi.fn(async () => "Reviewed business meaning");
+    const h = await typedReadAssistanceFixture("List my orders", async () => resumed ? nextHandler()
+      : ++answers <= 2 ? "Reviewed business meaning" : null, "owned-local-fixture",
+      Object.fromEntries(fields.slice(1).map(field => [field, { type: "text" }])));
     const questionFor = (field: string) => ({ ...request, field, question: `Which business explanation belongs to ${field}?` });
     let sent = 0;
-    const sends = vi.fn(async () => response({ clarification_request: questionFor(fields[sent++]!) }));
-    let answers = 0;
-    await expect(generateModelReadWorkload({ ...setup(sends), generatedBoundary: boundary, onCheckpoint: async value => { checkpoint = value; },
-      clarificationHandler: async () => ++answers <= 2 ? { state: "answered", answer: "Reviewed business meaning" } : undefined })).rejects.toThrow("AUTHORING_PAUSED");
-    expect(checkpoint?.state.clarified_targets.map(t => t.field)).toEqual(["status", "amount"]); expect(sent).toBe(3);
-    const nextHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Reviewed business meaning" }));
-    await expect(generateModelReadWorkload({ ...setup(sends), generatedBoundary: boundary, resumeCheckpoint: checkpoint, onCheckpoint: async value => { checkpoint = value; }, clarificationHandler: nextHandler })).rejects.toThrow("READ_WORKLOAD_DRAFT_FAILED");
-    expect(nextHandler.mock.calls).toHaveLength(2); expect(sent).toBe(5);
-    expect(checkpoint?.state.clarified_targets.map(t => t.field)).toEqual(["status", "amount", "region", "category"]); // Fourth answer retained in the pre-dispatch mapping snapshot.
+    const sends = vi.fn(async () => {
+      const field = fields[sent++]!;
+      return response({ allowed: [], forbidden: [], read_scope: { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested",
+        requirements: [{ id: field, intended_use: `Explain ${field} for this view`, references: ["job"], disposition: "unresolved", subjects: [], targets: [], unresolved: questionFor(field).question }] } });
+    });
+    try {
+      await expect(h.run({ ...setup(sends), onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("AUTHORING_PAUSED");
+      expect(checkpoint?.state.scope_answers?.map(t => t.request.scope.proposal.requirements[0]!.id)).toEqual(["status", "amount"]); expect(sent).toBe(3);
+      resumed = true;
+      await expect(h.run({ ...setup(sends), resumeCheckpoint: checkpoint, onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("READ_WORKLOAD_DRAFT_FAILED");
+      expect(nextHandler.mock.calls).toHaveLength(2); expect(sent).toBe(5);
+      expect(checkpoint?.state.scope_answers?.map(t => t.request.scope.proposal.requirements[0]!.id)).toEqual(["status", "amount", "region", "category"]);
+      expect(h.state().operator_questions!.filter(q => q.raw_answer?.text === "Reviewed business meaning")).toHaveLength(4);
+    } finally { await h.cleanup(); }
   });
 
   it.each(["initial", "remap"] as const)("carries the real completed %s transport sidecar into the waiting checkpoint before its owner handler", async mode => {
-    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, state: AuthoringTransportState = { version: 1, operations: [] };
-    let sends = 0;
-    const followupRequest = { ...request, field: "amount", question: "Which business meaning belongs to this amount?" };
-    const server = createServer(async (req, res) => { for await (const _chunk of req) {} sends++; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(response({ clarification_request: sends === 1 ? request : followupRequest }).body)); });
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, sends = 0, lastBody: unknown;
+    const h = await typedReadAssistanceFixture("List my orders", async () => {
+      const op = h.state().generation_recovery!.operations.at(-1)!;
+      if (!checkpoint || checkpoint.stage !== "waiting") throw new Error("Expected the actual waiting question checkpoint");
+      expect(checkpoint.pending_question.completion).toMatchObject({ operation_id: op.id, request_digest: op.request_digest,
+        response_digest: canonicalJsonDigest(lastBody) });
+      return mode === "remap" && sends === 1 ? "The purchase fulfillment stage" : null;
+    }, "owned-local-fixture", { amount: { type: "numeric" } });
+    const server = createServer(async (req, res) => {
+      for await (const _chunk of req) {} sends++;
+      const field = sends === 1 ? "status" : "amount";
+      lastBody = response({ allowed: [], forbidden: [], read_scope: { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested",
+        requirements: [{ id: field, intended_use: `Explain ${field} for this view`, references: ["job"], disposition: "unresolved", subjects: [], targets: [],
+          unresolved: sends === 1 ? request.question : "Which business meaning belongs to this amount?" }] } }).body;
+      res.setHeader("content-type", "application/json"); res.end(JSON.stringify(lastBody));
+    });
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
-    const host = { available: () => true, read: () => state, current: async () => canonicalJsonDigest("owned immutable Read target"),
-      write: async (value: AuthoringTransportState) => { validateAuthoringTransportState(value); state = structuredClone(value); } };
-    const entering = () => withAuthoringGenerationRecovery(() => { configureAuthoringGenerationRecovery(host); return generateModelReadWorkload({
-      ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })), onCheckpoint: async value => { checkpoint = structuredClone(value); },
-      clarificationHandler: async asked => { const op = state.operations.at(-1)!;
-        if(!checkpoint || checkpoint.stage!=="waiting")throw new Error("Expected the actual waiting question checkpoint");
-        expect(checkpoint.pending_question.completion).toMatchObject({ operation_id: op.id, request_digest: op.request_digest,
-          response_digest: canonicalJsonDigest(response({ clarification_request: asked }).body) });
-        if (mode === "remap" && asked.field === "status") return { state: "answered", answer: "The purchase fulfillment stage" };
-        return undefined; } }); });
-    try { await expect(entering()).rejects.toThrow("AUTHORING_PAUSED"); expect(sends).toBe(mode === "initial" ? 1 : 2); expect(state.operations.at(-1)?.state).toBe("handled"); }
-    finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+    try {
+      await expect(h.run({ ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })),
+        onCheckpoint: async value => { checkpoint = structuredClone(value); } })).rejects.toThrow("AUTHORING_PAUSED");
+      expect(sends).toBe(mode === "initial" ? 1 : 2); expect(h.state().generation_recovery!.operations.at(-1)?.state).toBe("handled");
+    } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await h.cleanup(); }
   });
 
   it("checkpoints the exact bounded Read correction sequence before its question and continues once after restart", async () => {
