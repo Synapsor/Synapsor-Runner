@@ -40,8 +40,8 @@
   "heavy_slots": {
     "1": "Action next finite focused group max2; announce start/end",
     "2": "B65 runtime bounded activated hard-limit repair, max2",
-    "3": "R2 native Read persistence932 independent controls; no stale af477 grant",
-    "4": "Privacy finite scope characterization max2; announce start/end"
+    "3": "Main released R2 persistence20PASS; guard only bounded Node checks, no suite",
+    "4": "Read six-site finite before group next, Privacy metadata21PASS completed"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -1009,7 +1009,20 @@
       "pin": "a733ccec",
       "typed": 23,
       "delete": 0,
-      "source": "ScopedR2sourceaccepted; auto15/vocab6/index2 remain; subsequentemptyreduce5b56pendingseed128PASS sourcefix, nativeportsinreview"
+      "source": "ScopedR2sourceaccepted; auto15/vocab6/index2 remain; subsequentemptyreduce5b56pendingseed128PASS sourcefix, nativeportsinreview",
+      "reclassified_open": {
+        "typed": [
+          "I00371"
+        ],
+        "delete": [
+          "I00054",
+          "I00055"
+        ]
+      },
+      "with_reclassifications": {
+        "typed": 24,
+        "delete": 2
+      }
     },
     "chat_presentation": {
       "pin": "768d85e6",
@@ -1023,7 +1036,52 @@
       "pin": "5f04859d",
       "typed": 49,
       "delete": 5,
-      "source": "Actualownercheckpoint:1typedcomplete,6partial,13deletions; broader155PASS33FAIL3existingSKIP retained; independentpending"
+      "source": "Actualownercheckpoint:1typedcomplete,6partial,13deletions; broader155PASS33FAIL3existingSKIP retained; independentpending",
+      "reclassified_open": {
+        "typed": [
+          "I01961"
+        ],
+        "delete": []
+      },
+      "with_reclassifications": {
+        "typed": 50,
+        "delete": 5
+      }
+    },
+    "read": {
+      "pin": "d4562eb6",
+      "typed": 6,
+      "delete": 0,
+      "open_ids": [
+        "I00059",
+        "I00060",
+        "I00061",
+        "I00062",
+        "I00063",
+        "I00064"
+      ],
+      "source": "Original57:46delete+5typed source closed; six successor active. Native/public obligations separate, no whole public claim."
+    },
+    "main": {
+      "pin": "d565098e",
+      "typed": 30,
+      "delete": 0,
+      "source": "Original31typed+1delete: I03525 old helper removed and I03528 shared typed permission presenter integrated. Other30 remain unclosed; Read-owned review identified11 of these pending Main hooks. Newly reclassified IDs are tracked separately until R1 final manifest.",
+      "reclassified_provisional": [
+        "I02097",
+        "I02087",
+        "I02100",
+        "I03553",
+        "I03544",
+        "I03543",
+        "I03548",
+        "I03575",
+        "I03568",
+        "I03547",
+        "I03593",
+        "I03594"
+      ]
     }
-  }
+  },
+  "exit_criterion": "Zero remaining English decision sites. All original250typed+66delete and independently reclassified sites must close; no deferral. Syntactic regex/candidate counts are not this metric."
 }
