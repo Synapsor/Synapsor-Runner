@@ -7620,8 +7620,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         if (resumePersistenceBlocked) throw checkpointSaveFailure(subject); },
       checkpointFailure: checkpointSaveFailure,
     }, interact: view => presentReadMeaningInteraction({ session: readAssistanceSession,
-      questionMaterial: view.kind === "question" ? readMeaningQuestionMaterial(mappingSession, view.request,
-        operatorBusinessContext(mappingBoundary.pack.resources), view.previous) : [],
+      questionMaterial: view.kind === "question" && view.request ? readMeaningQuestionMaterial(mappingSession, view.request,
+        operatorBusinessContext(mappingBoundary.pack.resources), view.previous) : view.kind === "question" ? [...view.material] : [],
       businessContext: operatorBusinessContext(mappingBoundary.pack.resources), view }),
     answerTooLarge: () => input.session.present?.("READ MEANING REMAINS PENDING", [
       "Your complete answer is saved. This Read mapping accepts at most 1,000 text units; no part was shortened or adopted. Resume to supply a shorter answer for this same question."], "warning") });

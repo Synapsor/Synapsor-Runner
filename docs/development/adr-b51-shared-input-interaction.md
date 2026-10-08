@@ -588,3 +588,22 @@ The owning review must recheck current analysis, Source/reference inventory and
 applicability after waiting. The current WIP checks exact analyzed/view identity;
 production reference/currentness wiring and independent native acceptance remain
 open. This does not add a provider allowance, meaning store or activation path.
+
+
+B64 controlling Owner decision (2026-10-08): no legacy English scope path.
+The prior explicitly tested legacy handling allowance is historical. No customer
+jobs exist to preserve: pre-B64 saved authoring setups must refuse with
+"This setup was saved by an older version. Start a new setup." They must not be
+interpreted or migrated. Delete read-requested-scope.ts and every English-reader
+caller; keep only exact typed identifier validation. Model language interpretation
+feeds typed scope, current native evidence and explicit operator review. Missing
+or invalid protocol/context never selects English interpretation. Parser-only
+tests may be removed/replaced with a compact removal inventory; privacy, omission,
+scope and authority invariants require typed replacements, not weakened assertions.
+The same no-legacy-copy rule applies to edit-intent/reply classifiers during Action
+migration. Frozen candidate3, historical evidence, paid jobs/holds remain untouched.
+Before this decision Main's 7 zero-English-call characterization controls already
+passed on current structured paths (success/failure/missing context/unresolved),
+so that result is not claimed as a reproduced English leak. Their temporary patch
+and log remain /var/tmp/synapsor-b64-main-owned/evidence/english-scope-*; deletion
+and fail-closed typed routing now replace defensive legacy gating.
