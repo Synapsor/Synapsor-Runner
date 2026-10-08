@@ -1,0 +1,43 @@
+{
+  "source": "Main7f9009f5 boundary-commands.ts, read-only",
+  "hooks": [
+    {
+      "line": 6218,
+      "order": "Before ordinary restore, inspect exact saved result_received/saved_read_digest/scope_question_id; pendingRevision selects explicit pending owner/context while prior read/history remains. Do not reuse old workload or replay revision."
+    },
+    {
+      "line": 8918,
+      "order": "Revision checkpoint gets actual readQuestions and scopePreview reusing exact prepared mutation + prepareReadRevisionAnalysis. Pass analysis only for analyzed result, never preview settings as analysis."
+    },
+    {
+      "line": 9160,
+      "order": "Producer validateRevision prepares actual mutation; prepareReadRevisionAnalysis uses exact selected workload/expected ids and optional digest-verified live preparedWorkload. Return native.preview plus genuine analysis when ready."
+    },
+    {
+      "line": 12074,
+      "order": "Apply helper only guarded disabled commit and reload. Remove recordExactReadAuthorityAsReusableWorkload from this route; it fabricates empty allowed/forbidden/authority atoms and a review marker."
+    },
+    {
+      "line": 9463,
+      "order": "After actual commit, record exact saved_read_digest/current native binding and retain pending state before downstream work. Save failure remains uncertain; never infer commit or repeat completed generation."
+    },
+    {
+      "line": 9481,
+      "order": "Analyzed: storeCommittedReadRevisionAnalysis exact prepared/committed candidate; native successor with same actual revision completion+record, actual stored analysis and new context; new read pointer keeps history. No review marker/confirmation until grouped default-No. Compiled candidate can differ preview and still needs ordinary mapping commit/review owner."
+    },
+    {
+      "line": 9481,
+      "order": "Pending: commitPendingRevisionScope same consumed material/current context; pendingRevision ordinary mapping with retained invocation/counters. Final checkpoint admitted exact predecessor clears pending only in same CAS as genuine new mapping/q/history. Then explicit grouped review."
+    },
+    {
+      "line": 8944,
+      "order": "Saved result_received maps to supported saved continuation above, not producer replay or unconditional dead end. Unknown/unsaved result retains existing fence."
+    },
+    {
+      "line": 7168,
+      "order": "Retain exact native grouped review. No/cancel remains pending. Only separate reviewed authority/activation owners can grant; dependent Action rebinding occurs after actual selected mapping validated."
+    }
+  ],
+  "test": "isolated offline node node_modules/vitest/vitest.mjs run apps/runner/src/read-public-retirement.test.ts -t \"public typed Read revision and cold Resume\" --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --hookTimeout=20000",
+  "limits": "No product boundary edits here; original public fixture remains unchanged. Full public result not yet established."
+}

@@ -13,6 +13,7 @@ import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, authoringReadCheckpoint } from "./authoring-generation-recovery.js";
 import { createReadScopeQuestion, proposeReadScopeReview } from "./authoring-read-scope-question.js";
+import { createReadAssistanceCheckpointHost, type ReadAssistanceCheckpointUpdate } from "./authoring-read-assistance-checkpoint-host.js";
 import { createNativeReadScope } from "./authoring-read-scope-native.js";
 import { readScopeConsumption } from "./authoring-read-scope-binding.js";
 import { createReadRevisionCheckpointHost, type ReadRevisionCheckpointAccess } from "./authoring-read-revision-checkpoint-host.js";
@@ -46,8 +47,8 @@ function proposal(refs: Array<{kind:string;id:string;text:string}>, subjects: Ar
   }] };
 }
 const response = (tool: string, args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: randomUUID(), name: tool, arguments: JSON.stringify(args) }] } });
-it.each(["ordinary", "native_adapter", "native_wrong_commit", "native_foreign_commit", "native_no_ack", "native_save_failure", "changed_model", "changed_task", "changed_provider_destination", "missing_binding", "wrong_saved_candidate", "foreign_question"] as const)("continues only the exact actually committed revision: %s", async mode => {
-  const nativeCase = mode.startsWith("native_");
+it.each(["ordinary", "native_adapter", "native_checkpoint", "native_checkpoint_absent", "native_checkpoint_foreign", "native_checkpoint_commit_drift", "native_wrong_commit", "native_foreign_commit", "native_no_ack", "native_save_failure", "changed_model", "changed_task", "changed_provider_destination", "missing_binding", "wrong_saved_candidate", "foreign_question"] as const)("continues only the exact actually committed revision: %s", async mode => {
+  const nativeCase = mode.startsWith("native_"), checkpointCase = mode.startsWith("native_checkpoint");
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "native-read-revision-continuation-"));
   try {
     const prepared = await prepareReviewedReadScope(root, { resources: ["work.items"], field: "label", review: { filterable_fields: ["label"] } });
@@ -75,6 +76,33 @@ it.each(["ordinary", "native_adapter", "native_wrong_commit", "native_foreign_co
       deferNarration: true, generatedBoundary: boundary, ...(owner ? { postRevisionMapping: owner } : {}),
       structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => ({ ...scope(), ...(owner ? { native: { ...records(), question_id: owner.question_id } } : {}) }) },
       onCheckpoint: async (cp, current, result, completion) => {
+        if (owner && checkpointCase) {
+          const questions = structuredClone(state.operator_questions ?? []), handoffs = structuredClone(state.owner_handoffs ?? []);
+          let staged: ReadAssistanceCheckpointUpdate = {};
+          const host = createReadAssistanceCheckpointHost({ access: {
+            mutate: async op => { expect(locked).toBe(false); locked = true; try { return await op({ owned: true } as never); } finally { locked = false; } },
+            scopeDigest: () => scopeDigest, contextDigest: async () => contextDigest(),
+            currentCandidate: async () => ({ candidate_digest: explorationBoundaryCandidateDigest(boundary) }),
+            readCheckpoint: () => state.read_assistance, readPreparedRead: () => state.read,
+            readPendingRevision: async () => mode === "native_checkpoint_absent" ? undefined : ({ ...owner, ...records(), read: state.read!,
+              question_id: mode === "native_checkpoint_foreign" ? randomUUID() : owner.question_id,
+              revision: mode === "native_checkpoint_commit_drift" ? { ...state.pending_read_revision_state!, saved_read_digest: d("foreign commit") } : state.pending_read_revision_state!,
+              currentBoundary: boundary }),
+            scopeInventory: async () => scope(), readHandoffs: () => handoffs, readQuestions: () => questions,
+            readRecovery: () => staged.recovery ?? state.generation_recovery,
+            readConversation: () => undefined, readReviewedRelationshipAnswer: () => undefined,
+            install: update => { if (update.completedReadRevision) expect(update.completedReadRevision.question_id).toBe(state.pending_read_revision_state!.scope_question_id);
+              staged = { ...staged, ...update }; },
+            storeAnalysis: args => storeReadWorkloadAnalysis({ projectRoot: root, ...args }),
+            appendSourceMessage: async () => { throw new Error("No Source answer mutation"); },
+            save: async () => save({ operatorQuestions: questions, ownerHandoffs: handoffs,
+              generationRecovery: staged.recovery ?? state.generation_recovery, read: staged.read ?? state.read,
+              ...(staged.completedReadRevision ? { pendingReadRevision: undefined, pendingReadRevisionState: null } : {}),
+              readAssistanceCheckpoint: Object.hasOwn(staged, "checkpoint") ? staged.checkpoint ?? null : state.read_assistance }),
+            checkpointFailure: subject => new Error(`MAPPING_CHECKPOINT_REFUSED: ${subject}`),
+          } });
+          await host.persist(cp, current, result, completion); return;
+        }
         if (cp) { await save({ readAssistanceCheckpoint: cp }); return; }
         if (!result?.read_scope || !completion) throw new Error("Missing genuine mapped scope completion");
         const previousId = owner?.question_id ?? state.read?.scope_question_id;
@@ -144,7 +172,7 @@ it.each(["ordinary", "native_adapter", "native_wrong_commit", "native_foreign_co
       read_scope: { ...old.read_scope!, predecessor_id: old.id } });
     if (nativeCase) {
       const before = structuredClone(state.generation_recovery), priorRead = structuredClone(state.read);
-      if (mode !== "native_adapter") {
+      if (mode !== "native_adapter" && !checkpointCase) {
         const beforeState = d(state);
         await expect(native.commitPendingRevisionScope({ boundary,
           questionId: mode === "native_foreign_commit" ? randomUUID() : old.id,
@@ -181,7 +209,14 @@ it.each(["ordinary", "native_adapter", "native_wrong_commit", "native_foreign_co
       expect(calls).toBe(1); expect(d(state)).toBe(before); return;
     }
     const before = structuredClone(state.generation_recovery);
+    if (checkpointCase && mode !== "native_checkpoint") {
+      const beforeRead = structuredClone(state.read), beforeQuestions = structuredClone(state.operator_questions);
+      await expect(mapping(owner)).rejects.toThrow(mode === "native_checkpoint_commit_drift" ? "READ_REVISION_MAPPING_STALE" : "MAPPING_CHECKPOINT_REFUSED");
+      expect(calls).toBe(2); expect(state.read).toEqual(beforeRead); expect(state.operator_questions).toEqual(beforeQuestions);
+      expect(state.pending_read_revision_state?.scope_question_id).toBe(current.id); return;
+    }
     const result = await mapping(owner);
+    if (checkpointCase) { expect(state.pending_read_revision_state).toBeUndefined(); expect(state.pending_read_revision).toBeUndefined(); }
     expect(calls).toBe(2); expect(result.read_scope_predecessor_id).toBe(current.id); expect(result.authority_granted).toBe(false);
     expect(state.read!.assistance_history!.state.call_count).toBe(2);
     expect(state.operator_questions!.find(q => q.id === current.id)).toEqual(current);

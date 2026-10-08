@@ -1,3 +1,4 @@
+import { readRevisionMappingContinuation, type ReadRevisionMappingOwner } from "./read-revision-mapping-continuation.js";
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft } from "./auto-boundary.js";
@@ -26,6 +27,8 @@ export type ReadAssistanceCheckpointUpdate = {
   recovery?: AuthoringTransportState;
   read?: BoundaryAuthoringResumeRead;
   reviewedRelationshipAnswer?: ReviewedRelationshipAnswer;
+  /** Transient install instruction, never a durable authority/review marker. */
+  completedReadRevision?: { question_id: string };
 };
 export type ReadAssistanceCheckpointAccess = {
   mutate<T>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>): Promise<T>;
@@ -34,6 +37,9 @@ export type ReadAssistanceCheckpointAccess = {
   currentCandidate(): Promise<{ candidate_digest: Digest }>;
   readCheckpoint(): ReadWorkloadAssistanceCheckpoint | undefined;
   readPreparedRead?(): BoundaryAuthoringResumeRead | undefined;
+  /** Exact currently saved revision projection, reloaded under this mutation.
+   * The prior Read pointer remains in its own slot until this real new mapping. */
+  readPendingRevision?(permit: ProjectAuthorityMutationPermit): Promise<ReadRevisionMappingOwner | undefined>;
   /** Re-resolve from current protected records inside the owning mutation, not
    * a cached display/model inventory. Absence cannot silently use legacy mode. */
   scopeInventory?(permit: ProjectAuthorityMutationPermit): Promise<ReadScopeNativeInventory & { binding: ReadScopeBinding }>;
@@ -75,17 +81,29 @@ export function createReadAssistanceCheckpointHost({ access }: { access: ReadAss
           throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The accepted mapping no longer validates against the current Read catalog.");
         }
         let scopeQuestion: OperatorQuestion | undefined;
+        let completedReadRevision: ReadAssistanceCheckpointUpdate["completedReadRevision"];
         if (accepted.read_scope) {
           if (!completion || !access.scopeInventory) throw access.checkpointFailure("The native typed Read review");
           const inventory = await access.scopeInventory(permit);
           const currentRead = access.readPreparedRead?.();
           const previousId = accepted.read_scope_predecessor_id ?? currentRead?.scope_question_id;
+          const pendingRevision = accepted.read_scope_predecessor_id ? await access.readPendingRevision?.(permit) : undefined;
+          let revisionPredecessor: OperatorQuestion | undefined;
+          if (pendingRevision) {
+            if (!currentRead || previousId !== pendingRevision.question_id
+              || canonicalJsonDigest(pendingRevision.read) !== canonicalJsonDigest(currentRead))
+              throw access.checkpointFailure("The exact saved pending Read revision and prior mapping");
+            revisionPredecessor = readRevisionMappingContinuation({ ...pendingRevision, currentBoundary,
+              questions: access.readQuestions(), handoffs: access.readHandoffs(), generation: access.readRecovery() },
+              { expectedBinding: inventory.binding, ...inventory }).question;
+            completedReadRevision = { question_id: revisionPredecessor.id };
+          }
           const previous = previousId ? access.readQuestions().find(q => q.id === previousId
             && q.kind === "read_scope" && q.read_scope?.mode === "review" && q.scope_digest === access.scopeDigest()) : undefined;
-          if (previousId && (!previous || currentRead?.scope_question_id !== previousId
+          if (previousId && (!previous || !revisionPredecessor && currentRead?.scope_question_id !== previousId
             || access.readQuestions().some(q => q.read_scope?.predecessor_id === previousId)))
             throw access.checkpointFailure("The exact current Read proposal predecessor");
-          if (accepted.read_scope_predecessor_id) {
+          if (accepted.read_scope_predecessor_id && !revisionPredecessor) {
             const raw = access.readQuestions().find(q => q.read_scope?.mode === "replacement_answer"
               && q.read_scope.review_question_id === previousId && q.raw_answer && !q.disposition
               && !access.readQuestions().some(next => next.read_scope?.predecessor_id === q.id));
@@ -142,7 +160,7 @@ export function createReadAssistanceCheckpointHost({ access }: { access: ReadAss
         access.install({ read: { analysis_id: saved.analysis_id, analysis_digest: saved.analysis_digest,
           ...(scopeQuestion ? { scope_question_id: scopeQuestion.id } : {}),
           ...(access.readCheckpoint() ? { assistance_history: structuredClone(access.readCheckpoint()!) } : {}) },
-          checkpoint: undefined });
+          checkpoint: undefined, ...(completedReadRevision ? { completedReadRevision } : {}) });
       } else {
         const checked = parseReadWorkloadAssistanceCheckpoint(checkpoint);
         if (checked.stage === "dispatching") {

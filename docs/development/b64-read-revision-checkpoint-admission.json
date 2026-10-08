@@ -1,0 +1,31 @@
+{
+  "status": "DEV protected final checkpoint; independent review pending",
+  "base": "795646d8 with native ACK repairs2ae7f22e/57c34c6d",
+  "before": {
+    "result": "0 PASS / 1 FAIL",
+    "finding": "MAPPING_CHECKPOINT_REFUSED: The exact current Read proposal predecessor",
+    "evidence": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/native-revision-checkpoint-before.json"
+  },
+  "after": {
+    "result": "33 PASS / 0 FAIL",
+    "types": "PASS",
+    "scope": "Actual revision mapping16, existing assistance host9 and replacement producer8",
+    "evidence": "/var/tmp/synapsor-b64-read-public-retirement-owned/evidence/native-revision-checkpoint-guards.json",
+    "native_ack_note": "Loaded native adapter2ae; subsequent57 immutable question ACK change has independent review pending, not counted as separately tested here"
+  },
+  "ports": {
+    "readPendingRevision": "async(permit) returns exact saved ReadRevisionMappingOwner or undefined; existing protected loader must re-read current native pending revision/prior analysis",
+    "completedReadRevision": "Transient install signal {question_id:exact pending predecessor}. Main clears pendingReadRevision and pendingReadRevisionState under existing rollback+same Resume CAS storing new read/q/history; no durable flag"
+  },
+  "guards": [
+    "Host overrides returned arrays/generation/current boundary with its own current protected records, requires exact prior Read and predecessor, calls shared native admission",
+    "Ordinary and declined/raw Replace branches unchanged; no completion/analysis/authority fabricated",
+    "Real new mapping response consumes once, saves new unconfirmed scope with explicit pending predecessor and retained history; separate grouped decision required",
+    "Absent accessor, foreign q or changed saved commit refuse; no new scope/read pointer accepted after refused final save"
+  ],
+  "next": [
+    "R1 independent exact pending accessor/currentness/CAS variant",
+    "Main early cold route and public preview/commit wiring",
+    "Analyzed revision successor adapter still required; no settings-only representative analysis"
+  ]
+}
