@@ -140,7 +140,7 @@ export function resolveReadScopeProposal(value: unknown, input: {
   if (!original || original.kind !== "request" || original.digest !== binding.request_digest)
     invalid("READ_SCOPE_REFERENCE_INVALID", "The original request does not match the current host binding.");
   const used = new Set([proposal.original_request, ...proposal.requirements.flatMap(requirement => requirement.references)]);
-  const references = inventory.filter(reference => used.has(reference.id));
+  const references = inventory.filter(reference => used.has(reference.id)).sort((a, b) => a.id.localeCompare(b.id));
   if (references.length !== used.size) invalid("READ_SCOPE_REFERENCE_INVALID", "A reference was not supplied by the host.");
   for (const reference of references) {
     if (reference.kind === "source" && (reference.digest !== binding.source_digest || reference.end_line < reference.start_line))
@@ -170,6 +170,21 @@ export function parseReadScopeRecord(value: unknown): ReadScopeRecord {
   if (record.references.some(reference => reference.kind === "source"
     && (reference.digest !== record.binding.source_digest || reference.end_line < reference.start_line)))
     invalid("READ_SCOPE_RECORD_INVALID", "The saved Source identity or line range is inconsistent with its binding.");
+  return record;
+}
+
+/** Self-consistent hashes are insufficient. Native consumers must resolve every
+ * saved reference again against their current protected inventory. No Source
+ * quote or recorded answer is accepted merely because its location exists. */
+export function assertReadScopeProvenance(value: ReadScopeRecord, input: {
+  expectedBinding: ReadScopeBinding; references: readonly ReadScopeReference[]; catalog: ReadScopeCatalog;
+}): ReadScopeRecord {
+  const record = parseReadScopeRecord(value);
+  const current = resolveReadScopeProposal(record.proposal, input);
+  const { digest: _savedDigest, analysis_digest: _analysis, ...savedBody } = record;
+  const { digest: _currentDigest, ...currentBody } = current;
+  if (canonicalJsonDigest(savedBody) !== canonicalJsonDigest(currentBody))
+    invalid("READ_SCOPE_PROVENANCE_STALE", "The saved scope does not match the exact current host reference inventory and binding.");
   return record;
 }
 

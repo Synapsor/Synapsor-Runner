@@ -3,6 +3,7 @@ import Ajv from "ajv";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { READ_SCOPE_PROTOCOL, readScopeProposalCodec, readScopeProposalSchema, parseReadScopeProposal,
   parseReadScopeRecord, resolveReadScopeProposal, assessReadScopeDraft, currentReadScope,
+  assertReadScopeProvenance,
   type ReadScopeProposal, type ReadScopeTarget, type ReadScopeBinding, type ReadScopeReference } from "./read-structured-scope.js";
 import { READ_WORKLOAD_ANALYSIS_VERSION, type ReadWorkloadAnalysis } from "./read-workload-assist.js";
 
@@ -121,6 +122,16 @@ describe("B64 typed Read scope", () => {
     expect(() => parseReadScopeRecord(record)).toThrow(/READ_SCOPE_RECORD_INVALID/u);
     const { digest: _old, ...body } = record;
     expect(() => parseReadScopeRecord({ ...body, digest: canonicalJsonDigest(body) })).toThrow(/READ_SCOPE_RECORD_INVALID/u);
+  });
+  it("does not launder edited Source text through recomputed self-consistent hashes", () => {
+    const changedInventory = references.map(reference => reference.kind === "source"
+      ? { ...reference, text: "Private notes are public now." } : reference);
+    const forged = resolveReadScopeProposal(proposal(), { expectedBinding: binding, references: changedInventory, catalog, analysis: analysis() });
+    expect(() => parseReadScopeRecord(forged)).not.toThrow(); // Shape/digest is not provenance.
+    expect(() => assertReadScopeProvenance(forged, { expectedBinding: binding, references, catalog }))
+      .toThrow(/READ_SCOPE_PROVENANCE_STALE/u);
+    expect(assertReadScopeProvenance(resolve(), { expectedBinding: binding, references, catalog }).digest).toBe(resolve().digest);
+    expect(assertReadScopeProvenance(resolve(), { expectedBinding: binding, references: [...references].reverse(), catalog }).digest).toBe(resolve().digest);
   });
   it("keeps narration outside the typed proposal and makes intended-use changes reviewable", () => {
     const record = resolve();
