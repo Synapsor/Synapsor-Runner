@@ -587,50 +587,43 @@ describe("durable Read assistance producer checkpoint", () => {
   });
 
   it("checkpoints the exact bounded Read correction sequence before its question and continues once after restart", async () => {
-    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
-    let state: AuthoringTransportState = { version: 1, operations: [] }, sends = 0;
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, sends = 0, resumed = false;
+    const h = await typedReadAssistanceFixture("List my orders", async () => resumed ? "The purchase fulfillment stage" : null, "owned-local-fixture");
+    const typed = declaredWorkloadScope("List my orders", "status_rows", h.boundary);
+    const missing = { ...typed.proposal, requirements: [{ ...typed.proposal.requirements[0]!, disposition: "unresolved", subjects: [], targets: [], unresolved: request.question }] };
     const server = createServer(async (req, res) => {
-      for await (const _chunk of req) {}
-      sends++;
+      const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk));
+      const actualRequest = JSON.parse(Buffer.concat(chunks).toString("utf8")); sends++;
       const args = sends === 1 ? { allowed: [{ id: "orders", description: "Read purchase stage",
-        plan: { kind: "rows", resource: "public.orders", select: ["absent_field"] } }], forbidden: [] }
-        : sends === 2 ? { clarification_request: request }
+        plan: { kind: "rows", resource: "public.orders", select: ["absent_field"] } }], forbidden: [], read_scope: typed.proposal }
+        : sends === 2 ? { allowed: [], forbidden: [], read_scope: missing }
         : { allowed: [{ id: "orders", description: "Read purchase stage",
-          plan: { kind: "rows", resource: "public.orders", select: ["status"] } }], forbidden: [] };
+          plan: { kind: "rows", resource: "public.orders", select: ["status"] } }], forbidden: [],
+          read_scope: proposalWithVisibleAnswers({ body: actualRequest }, typed.proposal) };
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ status: "completed", ...response(args).body }));
     });
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
-    const host = { available: () => true, read: () => state,
-      current: async () => canonicalJsonDigest("owned immutable Read target"),
-      write: async (value: AuthoringTransportState) => { validateAuthoringTransportState(value); state = structuredClone(value); } };
-    const save = async (next: ReadWorkloadAssistanceCheckpoint | undefined) => {
-      if (next?.stage === "waiting" && next.digest !== checkpoint?.digest) state = authoringTransportCheckpoint(authoringQuestionCheckpoint(state,
-        { digest: next.digest, consumer: "read_clarification", pending_question: next.pending_question }))!;
-      if (next?.stage === "decided") state = authoringQuestionAnswerCheckpoint(state,
-        { digest: checkpoint!.digest, consumer: "read_clarification", pending_question: checkpoint!.pending_question },
-        { digest: next.digest, operator_messages: [(next.pending_question.decision as { answer: string }).answer] })!;
-      checkpoint = structuredClone(next);
-    };
-    const entering = (resume: boolean) => withAuthoringGenerationRecovery(() => {
-      configureAuthoringGenerationRecovery(host);
-      return generateModelReadWorkload({ ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })),
-        ...(resume ? { resumeCheckpoint: checkpoint } : {}), onCheckpoint: save,
-        clarificationHandler: async () => resume ? { state: "answered", answer: "The purchase fulfillment stage" } : undefined });
-    });
+    const entering = (resume: boolean) => h.run({ ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })),
+      ...(resume ? { resumeCheckpoint: checkpoint } : {}), onCheckpoint: async next => { checkpoint = structuredClone(next); } });
     try {
       await expect(entering(false)).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
       expect(sends).toBe(2);
       expect(checkpoint?.stage).toBe("waiting");
-      expect(state.operations.map(op => op.state)).toEqual(["checkpointed", "checkpointed"]);
+      expect(h.state().generation_recovery!.operations.map(op => op.state)).toEqual(["checkpointed", "checkpointed"]);
+      resumed = true;
       const result = await entering(true);
       expect(result.analysis.status).toBe("ready");
       expect(sends).toBe(3);
       expect(checkpoint).toBeUndefined();
-      expect(state.operations[1]?.question_handoff?.answered).toMatchObject({ answer: "The purchase fulfillment stage", actor: "local_installation_operator" });
-      expect(state.operations.flatMap(op => op.attempts).every(attempt => attempt.outcome === "response")).toBe(true);
-    } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+      expect(h.state().generation_recovery!.operations[1]?.question_handoff?.answered).toMatchObject({ answer: "The purchase fulfillment stage", actor: "local_installation_operator" });
+      expect(h.state().generation_recovery!.operations.flatMap(op => op.attempts).every(attempt => attempt.outcome === "response")).toBe(true);
+      expect(result.authority_granted).toBe(false);
+      const cold = await h.coldState(); expect(cold.status).toBe("ready");
+      if (cold.status !== "ready") throw new Error("Expected the exact saved Read proposal");
+      expect(cold.value.operator_questions!.find(q => q.id === cold.value.read?.scope_question_id)?.confirmation).toBeUndefined();
+    } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await h.cleanup(); }
   });
 
   it("restores the pending relationship review counter without resending or charging the same review slot twice", async () => {

@@ -146,6 +146,15 @@
       "counterpart": "read-workload-model.test.ts",
       "evidence": "typed-assistance-limits-043.log",
       "assertions": "Provider totals, no replay/reprompt, history, exact target, pending and non-authority preserved; retired payload shapes substituted explicitly in per-group records."
+    },
+    {
+      "case_id": "B64-READ-MIG-122",
+      "case": "durable Read assistance producer checkpoint checkpoints the exact bounded Read correction sequence before its question and continues once after restart",
+      "status": "COMPONENT_PASS_INDEPENDENT_VERDICT_PENDING",
+      "counterpart": "read-workload-model.test.ts",
+      "evidence": "typed-native-correction-sequence-after.log:1PASS149filtered",
+      "assertions": "Original two checkpointed initial operations, sends2\u21923, same answer actor, all transport response outcomes, ready and cleared pending checkpoint preserved; added cold pending group/no confirmation. Actual existing checkpoint/raw owners replace hand-built checkpoint consumption."
     }
-  ]
+  ],
+  "additional_after_pin": "MIG122 tests only after043: actual loopback provider request drives explicit unresolved scope, answers from actual transmitted native references only"
 }
