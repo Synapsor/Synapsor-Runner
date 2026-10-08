@@ -8,6 +8,13 @@ const resources=[{id:"lab.q8"},{id:"lab.r4",label:"dispatch summaries"}];
 const exactRequests=[{description,resource_ids:["lab.q8"]}];
 const resolve=(original=description, overrides: Partial<Parameters<typeof resolveRequestedReadScope>[0]>={})=>resolveRequestedReadScope({original,resources,definitions:[],statements:[],exactRequests,...overrides});
 describe("independent current request association 1653",()=>{
+ it("V10 unchanged capability noun retains work; an added unknown Read clause stays unresolved",()=>{
+   const change="Require two reviewers for shipping. Keep every other Read, Input, Version and receipt duty unchanged.";
+   expect(resolve(change)).toMatchObject({ required: [], candidates: [], unresolved: false });
+   expect(resolve(change+" Read outstanding invoices.").unresolved).toBe(true);
+   expect(resolve("Do not keep Read unchanged.").unresolved).toBe(true);
+ });
+
  it("V1 exact native request wins over another candidate label",()=>{expect(resolve()).toMatchObject({required:["lab.q8"],candidates:[],unresolved:false});});
  it("V2 extra unknown clause is not silently covered",()=>{expect(resolve(description+" Read staff assignments.").unresolved).toBe(true);});
  it("V3 explicit root exclusion still conflicts",()=>{expect(resolve(description+" Do not read lab.q8.").conflicts).toEqual(["lab.q8"]);});
