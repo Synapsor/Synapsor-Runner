@@ -125,9 +125,9 @@ function negativeTarget(clause: string): string | undefined {
  * establish without interpreting business prose. Unrecognized clauses remain
  * unresolved; never turn a partial keyword match into a complete allowlist. */
 export function exactOnlyReadResourceIds(text: string, availableResourceIds: readonly string[]): string[] | undefined {
-  const match = /^\s*(?:read|show|list)\s+only\s+(.+?)\.?\s*$/iu.exec(text);
+  const match = /^\s*(?:read|show|list)\s+only\s+(.+?)\.?\s*$/iu.exec(unquotedRequest(text));
   if (!match) return undefined;
-  const terms = match[1]!.split(/\s*,\s*|\s+and\s+/iu).filter(Boolean);
+  const terms = match[1]!.split(/\s*,\s*|\s+and\s+/iu).map(term => term.trim()).filter(Boolean);
   if (!terms.length || terms.some(term => !availableResourceIds.includes(term))) return undefined;
   return [...new Set(terms)];
 }
@@ -174,9 +174,13 @@ function unquotedRequest(text: string): string {
 
 function isPreservedReadBoundaryMention(sentence: string, index: number): boolean {
   if (!/^read\s+(?:boundary|mapping|revision)\b/iu.test(sentence.slice(index))) return false;
-  // An explicit exception/addition contradicts preservation; retain the
+  // A Read-directed exception contradicts preservation. A generic "and add"
+  // after a retained Read noun is not itself a new Read instruction; typed
+  // Action routing owns that addition. Subsequent actual Read verbs are still
+  // scanned independently. Retain the
   // ordinary missing-resource guard rather than assuming unchanged access.
-  if (/\b(?:but|except|and)\s+(?:also\s+)?(?:add|include|expose|extend|expand)\b/iu.test(sentence.slice(index))) return false;
+  if (/\b(?:but|except)\s+(?:also\s+)?(?:add|include|expose|extend|expand)\b/iu.test(sentence.slice(index))
+    || /\band\s+(?:also\s+)?(?:include|expose|extend|expand)\b/iu.test(sentence.slice(index))) return false;
   return /\b(?:keep|reuse|retain|preserve|leave)\s+(?:(?:the|our|this|same|existing|current|unchanged|saved|reviewed)\s+|saved\s+job\s+and\s+)*$/iu
     .test(sentence.slice(0, index));
 }

@@ -79,6 +79,7 @@ describe("preserved authority and explicit Read additions", () => {
   it.each([
     "Keep the same saved job and Read Boundary, private atelier.checks verification and every Action guard unchanged.",
     "Retain the saved job and Read mapping with private atelier.checks checks unchanged.",
+    "Reuse the existing Read Boundary and add only a bounded spend-alert proposal.",
   ])("does not turn nominal authority into requested access: %s", text => {
     expect(requestedReadResourceIds(text, resources)).toEqual([]);
   });
@@ -86,6 +87,7 @@ describe("preserved authority and explicit Read additions", () => {
     "Keep the same Read Boundary but include atelier.checks.",
     "Keep the saved job and Read mapping but also expose atelier.checks.",
     "Keep the same Read Boundary and show atelier.checks.",
+    "Reuse the existing Read Boundary and read atelier.checks.",
   ])("retains a genuine explicit addition: %s", text => {
     expect(requestedReadResourceIds(text, resources)).toEqual(["atelier.checks"]);
   });
