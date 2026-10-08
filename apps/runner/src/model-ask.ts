@@ -5153,15 +5153,6 @@ function completeProviderAnswer(
   traces: AskToolTrace[],
   usage: AskTurnResult["usage"],
 ): AskTurnResult {
-  if (claimsUnreviewedCurrencyConversion(answer, traces)) {
-    return completeAskResult(
-      configuration,
-      "Runner returned the reviewed values in cents. The provider's currency conversion was omitted because no reviewed conversion was executed. Use the verified Runner table below.",
-      traces,
-      usage,
-      "runner",
-    );
-  }
   const exploreAttempts = traces.filter((trace) => trace.tool === "app.explore_data");
   if (exploreAttempts.length > 0 && exploreAttempts.every((trace) => trace.status === "refused")) {
     const description = [...traces].reverse().find((trace) =>
@@ -5175,19 +5166,6 @@ function completeProviderAnswer(
     );
   }
   return completeAskResult(configuration, answer, traces, usage);
-}
-
-function claimsUnreviewedCurrencyConversion(answer: string, traces: AskToolTrace[]): boolean {
-  const centsMeasureExecuted = traces.some((trace) => {
-    if (trace.tool !== "app.explore_data" || trace.status !== "ok") return false;
-    const plan = isRecord(trace.arguments.plan) ? trace.arguments.plan : undefined;
-    if (!plan || !Array.isArray(plan.measures)) return false;
-    return plan.measures.some((measure) =>
-      isRecord(measure)
-      && typeof measure.field === "string"
-      && /(?:^|_)cents?$/.test(measure.field.toLowerCase()));
-  });
-  return centsMeasureExecuted && /[$€£]|\b(?:dollars?|euros?|pounds?)\b/i.test(answer);
 }
 
 function completeCatalogOnlyAnswer(
