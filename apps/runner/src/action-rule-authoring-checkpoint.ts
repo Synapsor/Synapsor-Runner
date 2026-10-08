@@ -1,3 +1,4 @@
+import { parseStructuredAuthoringProtocol, type StructuredAuthoringProtocol } from "./authoring-protocol.js";
 import { assertAuthoringGenerationAdmission } from "./authoring-generation-recovery.js";
 import { AskError } from "./model-provider-transport.js";
 import type { AskAuthoringEpisodeBudget } from "./model-ask.js";
@@ -89,7 +90,8 @@ export type ActionAuthoringPendingVersion = {
 };
 
 export type ActionRuleAuthoringCheckpoint = {
-  schema_version: "synapsor.action-authoring-checkpoint.v1";
+  schema_version: "synapsor.action-authoring-checkpoint.v1" | "synapsor.action-authoring-checkpoint.v2";
+  authoring_protocol?: StructuredAuthoringProtocol;
   intent_digest: `sha256:${string}`;
   context_digest: `sha256:${string}`;
   components: Partial<Record<"verification" | "effect" | "rule" | "approval", Record<string, unknown>>>;
@@ -113,7 +115,7 @@ export type ActionRuleAuthoringCheckpoint = {
 export function actionRuleAuthoringCheckpoint(
   input: Omit<ActionRuleAuthoringCheckpoint, "schema_version" | "digest">,
 ): ActionRuleAuthoringCheckpoint {
-  const core = { schema_version: "synapsor.action-authoring-checkpoint.v1" as const, ...structuredClone(input) };
+  const core = { schema_version: input.authoring_protocol ? "synapsor.action-authoring-checkpoint.v2" as const : "synapsor.action-authoring-checkpoint.v1" as const, ...structuredClone(input) };
   return parseActionRuleAuthoringCheckpoint({ ...core, digest: canonicalJsonDigest(core) });
 }
 
@@ -121,10 +123,12 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   const fail = () => new Error("ACTION_AUTHORING_CHECKPOINT_INVALID: saved draft components are invalid or changed. Active authority is unchanged.");
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const record = value as Record<string, unknown>;
-  if (record.schema_version !== "synapsor.action-authoring-checkpoint.v1"
-    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "pending_question", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "source_repair", "logical_turns", "pending_version", "digest"].includes(key))
+  if ((record.schema_version !== "synapsor.action-authoring-checkpoint.v1" && record.schema_version !== "synapsor.action-authoring-checkpoint.v2")
+    || Object.keys(record).some((key) => !["schema_version", "authoring_protocol", "intent_digest", "context_digest", "components", "operator_messages", "pending_question", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "source_repair", "logical_turns", "pending_version", "digest"].includes(key))
     || ![record.intent_digest, record.context_digest, record.digest].every((digest) => typeof digest === "string" && /^sha256:[a-f0-9]{64}$/u.test(digest))
     || !record.components || typeof record.components !== "object" || Array.isArray(record.components)) throw fail();
+  if (record.schema_version === "synapsor.action-authoring-checkpoint.v2") parseStructuredAuthoringProtocol(record.authoring_protocol);
+  else if (record.authoring_protocol !== undefined) throw fail();
   if (record.operator_messages !== undefined && (!Array.isArray(record.operator_messages)
     || record.operator_messages.length > 16
     || record.operator_messages.some((message) => typeof message !== "string" || !message.trim() || message.length > 4_000))) throw fail();

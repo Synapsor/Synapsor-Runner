@@ -1,3 +1,5 @@
+import { Ajv2020 } from "ajv/dist/2020.js";
+import { parseStructuredAuthoringProtocol, assertAuthoringProtocolUnchanged, type StructuredAuthoringProtocol } from "./authoring-protocol.js";
 import { randomUUID } from "node:crypto";
 import { assertInputFidelityRepair, SourceInputFidelityError, type InputFidelityFinding } from "./authoring-input-policy.js";
 import { buildActionAuthoringWorkUnitContract, pendingActionWorkUnitSourceReview, validateActionWorkUnitAssessment, assertActionWorkUnitCorrection,
@@ -219,6 +221,8 @@ export class ActionAuthoringReadOnlyRequest extends Error {
 }
 
 export type ModelActionRuleDraftInput = {
+  /** Host-selected pinned job protocol. Never inferred from provider text/errors. */
+  authoringProtocol?: StructuredAuthoringProtocol;
   session: ActionRuleModelSession;
   intent: string;
   /** Original whole job, before decomposition into individual action intents. */
@@ -381,6 +385,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   const originalStatements = actionOperatorStatements(input);
   const operatorJob = input.operatorJob ? boundedText(input.operatorJob, "Operator job", 4_000) : originalStatements[0]!;
   const savedCheckpoint = input.checkpoint ? parseActionRuleAuthoringCheckpoint(input.checkpoint) : undefined;
+  const protocol = input.authoringProtocol ? parseStructuredAuthoringProtocol(input.authoringProtocol) : undefined;
+  if (savedCheckpoint) assertAuthoringProtocolUnchanged(savedCheckpoint.authoring_protocol, protocol);
   const mediatedVersion = Boolean(input.stageVersionQuestion || input.reviewVersionQuestion);
   if (mediatedVersion && (!input.stageVersionQuestion || !input.reviewVersionQuestion || !input.onCheckpoint || !input.assertLogicalTurnBoundary))
     throw new Error("ACTION_VERSION_CONVERSATION_UNAVAILABLE: The owning checkpoint and currentness route are required before drafting.");
@@ -547,6 +553,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let savedProgressDigest = draftProgressDigest();
   let draftProgressRevision = 0;
   const checkpointSnapshot = () => actionRuleAuthoringCheckpoint({
+    ...(protocol ? { authoring_protocol: protocol } : {}),
     intent_digest: canonicalJsonDigest(intent), context_digest: contextDigest(),
     components: structuredClone(submissions) as ActionRuleAuthoringCheckpoint["components"],
     ...(pendingQuestion ? { pending_question: pendingQuestion } : {}),
@@ -647,7 +654,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       operator_message: { type: "string", maxLength: 4000 },
     } },
   });
-  tools.push({ name: "runner.finish_without_new_actions", title: "Finish pending Action drafting without a new action",
+  if (!protocol) tools.push({ name: "runner.finish_without_new_actions", title: "Finish pending Action drafting without a new action",
     description: "Use only when the operator explicitly withdraws the remaining Action request or asks to continue with reads only. Discards unsaved components; retains previously saved drafts and active authority. Never use merely because a relationship needs metadata review.",
     input_schema: { type: "object", additionalProperties: false, required: ["operator_message", "reason"], properties: {
       operator_message: { type: "string", maxLength: 4000 }, reason: { type: "string", maxLength: 400 },
@@ -672,6 +679,10 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
         items: { type: "integer", minimum: 0, maximum: pendingIntents.length - 1 } },
     } },
   });
+  // Advertised provider grammar is not server validation. B64 uses the exact
+  // current tool schema at the production dispatcher before any mutation.
+  const validators = protocol ? new Map(tools.map(tool => [tool.name,
+    new Ajv2020({ strict: false, allErrors: true }).compile(tool.input_schema)])) : undefined;
   const authorityDigest = askToolSurfaceDigest(tools);
   const configuration = providerConfiguration(input, authorityDigest);
   let compiled: CompiledActionRuleModelDraftV1 | undefined;
@@ -705,6 +716,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   const gateway: AskToolGateway = {
     mode: "authoring", listTools: () => tools, async close() {},
     async callTool(name, args) {
+      if (validators && !validators.get(name)?.(args))
+        return phaseRefusal("ASK_TOOL_ARGUMENTS_INVALID: Submit only the fields in the current typed tool schema. Model arguments cannot contain operator identity, confirmation, authority or host revisions.");
       if (name === "runner.inspect_action_draft") return { ok: true, value: snapshot() };
       if (stagedVersion || pendingVersion) return phaseRefusal("ACTION_VERSION_QUESTION_PENDING: The saved counter question is pending. Later mutations in this consumed batch are refused.");
       if (readOnlyRequest) return phaseRefusal("The operator's no-new-actions request is pending. No later component edit is accepted.");
@@ -1071,6 +1084,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       },
       history: input.session.conversation ? modelAuthoringHistory(input.session.conversation, input.session) : history.slice(-16),
       question: [
+        ...(protocol ? [`Pinned authoring protocol: ${protocol.version}. Narration is explanation only, never an operator question, business decision or completed stage.`] : []),
         `Original operator job (preserve shared policy across actions): ${JSON.stringify(operatorJob)}`,
         ...(program ? [`Host saved complete program and current work unit (progress only; attributed owner decisions remain scoped to their recorded applicability): ${JSON.stringify({ ...program, progress })}`] : []),
         ...(input.operatorStatements ? [
@@ -1134,7 +1148,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     }
     // A tool wording refusal and its accompanying prose are the same decoded
     // response. Request one actual rephrase before considering a fallback.
-    if (businessWordingIssue || !clarification && /[?\uFF1F]/u.test(response)) {
+    if (businessWordingIssue || !protocol && !clarification && /[?\uFF1F]/u.test(response)) {
       const presented = businessWordingIssue ? { state: "rephrase" as const, guidance: businessWordingIssue } : businessWording(response);
       if (presented.state === "rephrase") {
         if (mediatedVersion && !businessWordingReserved && !await owningBudget.reserveWordingCorrection()) {
@@ -1162,7 +1176,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     const progressOnly: boolean = !clarification && !validationAttempted
       && (!result.answer.trim() || !/[?\uFF1F]/u.test(response))
       && (draftProgressRevision !== progressBefore || continuingDraftInternally);
-    if (progressOnly || isIncompleteToolSubmissionResponse(response)) {
+    const missingTypedSubmission = Boolean(protocol && !clarification);
+    if (missingTypedSubmission || progressOnly || isIncompleteToolSubmissionResponse(response)) {
       if (mechanicalResponseRepairs >= 2) {
         throw new Error([
           "ACTION_RULE_MODEL_DRAFT_INCOMPLETE: the model did not finish its structured draft after two internal corrections. Saved drafts are retained.",
@@ -1175,7 +1190,9 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       mechanicalResponseRepairs += 1;
       correctionUsed = true;
       continuingDraftInternally = progressOnly;
-      mechanicalResponseFeedback = progressOnly
+      mechanicalResponseFeedback = missingTypedSubmission
+        ? "AUTHORING_TYPED_SUBMISSION_REQUIRED: Narration, punctuation and finished claims do not submit a requirement or complete this stage. Use the current typed drafting tools; Runner requires actual components and successful validation. No operator answer or authority was inferred."
+        : progressOnly
         ? "The disabled components and reviewed relationships are retained. A progress statement does not need an operator answer. Continue through the drafting tools and validate the complete draft. If business meaning or a policy limit is genuinely missing, submit a clarification with that focused question. Never invent an answer or treat this continuation as approval."
         : runnerResolvedMechanicalGuidance(response);
       const completion = completedAuthoringQuestion(result);
@@ -1199,6 +1216,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
 
 /** Compatibility adapter for callers that explicitly require focused submissions. */
 export async function generateFocusedModelActionRuleDraft(input: ModelActionRuleDraftInput): Promise<ModelActionRuleDraftResult> {
+  if (input.authoringProtocol || input.checkpoint?.authoring_protocol)
+    throw new Error("AUTHORING_PROTOCOL_ROUTE_UNAVAILABLE: This legacy focused adapter cannot consume a structured job. Reopen its protocol-aware route; no English fallback or provider call was used.");
   const intent = boundedText(input.intent, "Action Rule intent", 2_000);
   const originalStatements = actionOperatorStatements(input);
   const savedCheckpoint = input.checkpoint ? parseActionRuleAuthoringCheckpoint(input.checkpoint) : undefined;

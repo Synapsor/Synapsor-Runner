@@ -668,6 +668,14 @@ export function assertBoundaryAuthoringResumeState(
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: saved conversation history exceeds its reviewed bounds.");
   }
   if (value.action_workflow !== undefined && value.action_workflow !== "program") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Unknown Action workflow.");
+  const liveActionCheckpoints = [
+    (value.action as BoundaryAuthoringResumeAction | undefined)?.checkpoint,
+    (value.pending_action_revision as BoundaryAuthoringActionRevision | undefined)?.checkpoint,
+  ].filter((checkpoint): checkpoint is ActionRuleAuthoringCheckpoint => checkpoint !== undefined);
+  for (const checkpoint of liveActionCheckpoints) {
+    const parsed = parseActionRuleAuthoringCheckpoint(checkpoint);
+    assertAuthoringProtocolUnchanged(value.authoring_protocol as StructuredAuthoringProtocol | undefined, parsed.authoring_protocol);
+  }
   if (value.read !== undefined) normalizeRead(value.read as BoundaryAuthoringResumeRead);
   if (value.pending_read_relationship !== undefined) normalizePendingReadRelationship(value.pending_read_relationship);
   if (value.policy_source_session !== undefined) normalizeSourceSession(value.policy_source_session);
