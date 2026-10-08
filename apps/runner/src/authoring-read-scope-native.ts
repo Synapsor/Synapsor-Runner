@@ -129,14 +129,17 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
         read_scope: { ...old.read_scope, predecessor_id: old.id } });
       await input.ports.assertCurrent(permit);
       if (snapshot().revision !== state.revision) return unavailable("The unchanged committed Read revision checkpoint");
+      const requestedRevision = { ...revision, scope_question_id: successor.id };
+      const expectedRevisionDigest = canonicalJsonDigest(requestedRevision);
+      const expectedReadDigest = canonicalJsonDigest(state.read), expectedGenerationDigest = canonicalJsonDigest(state.generation);
       await input.ports.save({ questions: [...state.questions, successor],
-        pendingReadRevisionState: { ...revision, scope_question_id: successor.id }, stage: state.resume.stage,
+        pendingReadRevisionState: structuredClone(requestedRevision), stage: state.resume.stage,
         acknowledgeCompletedTurn: false, subject: "The committed Read scope awaiting mapping" }, permit);
       const acknowledged = snapshot();
-      if (acknowledged.resume.pending_read_revision_state?.scope_question_id !== successor.id
+      if (canonicalJsonDigest(acknowledged.resume.pending_read_revision_state) !== expectedRevisionDigest
         || acknowledged.questions.find(q => q.id === successor.id)?.digest !== successor.digest
-        || canonicalJsonDigest(acknowledged.read) !== canonicalJsonDigest(state.read)
-        || canonicalJsonDigest(acknowledged.generation) !== canonicalJsonDigest(state.generation))
+        || canonicalJsonDigest(acknowledged.read) !== expectedReadDigest
+        || canonicalJsonDigest(acknowledged.generation) !== expectedGenerationDigest)
         return unavailable("The acknowledged committed Read scope successor");
       return successor.id;
     });
