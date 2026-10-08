@@ -1,0 +1,19 @@
+{
+  "inactive_before_pin": "bcd68920",
+  "inactive_fixture_pin": "b3e5cf06",
+  "inactive_before": { "failed": 2, "passed": 1 },
+  "inactive_after": { "passed": 3 },
+  "producer": "Exact Privacy-owned EXPLORATION_BOUNDARY_INACTIVE hunk from fc8f545a adopted as e59b0634; same activation.state predicate/message, no authority change.",
+  "consumer": "Error.code identifies inactive authority. Existing ENOENT plus exact activation artifact filename identity remains. Matching English prose alone does not imply inactive authority.",
+  "owned_regression": {
+    "passed": 331, "failed": 4, "files_passed": 11, "files_failed": 1,
+    "typecheck_exit": 0,
+    "files": ["boundary-authoring-chat", "boundary-authoring-chat-retirement", "boundary-cli-picker", "model-authoring-narration", "model-authoring-narration-retirement", "model-authoring-conversation", "authoring-operator-presentation", "authoring-operator-presentation-retirement", "cli-logging-retirement", "local-ui-inactive-error-retirement", "action-tui-consent-context", "guided-start"],
+    "failures": [
+      {"file": "guided-start.test.ts", "tests": 2, "names": "public status generation records; public status policy blocker", "error": "BOUNDARY_AUTHORING_RESUME_CHANGED", "location": "138/242", "cause": "Existing fixture replaces a pinned structured saved record without original-job/CAS write options; guard preserved."},
+      {"file": "guided-start.test.ts", "tests": 2, "names": "start/onboard selected timeout and correction", "error": "READ_SCOPE_PROTOCOL_REQUIRED", "location": "273", "cause": "Existing planner fixture omits pinned structuredScope and typed output; no fallback added."}
+    ]
+  },
+  "isolation": "Borrowed slot4, bwrap --unshare-net, owned0700 HOME/TMP, max/min workers1; RAM20328824KiB/disk77812292KiB available at launch. Slot returned after full group/types.",
+  "limits": "No full local-ui integration suite, release gate or installed-path claim. Existing guided fixture ports and independent acceptance remain open; failures are preserved, not silently skipped."
+}

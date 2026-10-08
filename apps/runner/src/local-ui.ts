@@ -9767,7 +9767,7 @@ function isLocalHost(host: string): boolean {
 export function isInactiveExplorationBoundary(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const fsError = error as NodeJS.ErrnoException;
-  return error.message === "Exploration boundary is not active."
+  return fsError.code === "EXPLORATION_BOUNDARY_INACTIVE"
     || (fsError.code === "ENOENT"
       && typeof fsError.path === "string"
       && ["exploration-boundary.active.json", "exploration-boundaries.active.json"]
