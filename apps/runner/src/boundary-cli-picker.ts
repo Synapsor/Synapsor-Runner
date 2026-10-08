@@ -1229,7 +1229,7 @@ async function chooseResource(
         const activeResources = resources.filter((resource) => resource.active);
         const activeBoundaryName = activeResources[0]?.active_boundary_name;
         const candidateBoundaryName = resources[0]!.candidate_boundary_name;
-        const reviewLeft = boundaryReviewLeft(resources, overview);
+        const review = boundaryReviewState(resources, overview);
         const boundaryEntries = overview?.boundaries?.length
           ? overview.boundaries
           : [{
@@ -1245,7 +1245,7 @@ async function chooseResource(
         selectedBoundary = Math.min(selectedBoundary, boundaryEntries.length - 1);
         const highlightedBoundary = boundaryEntries[selectedBoundary]!;
         const highlightedOutstanding = highlightedBoundary.selected
-          ? (reviewLeft === "Complete"
+          ? (review.complete
             ? (highlightedBoundary.policy_review_required ? 1 : 0)
             : highlightedBoundary.outstanding_decisions)
           : highlightedBoundary.outstanding_decisions;
@@ -1389,7 +1389,7 @@ async function chooseResource(
         const rows = boundaryEntries.map((entry, index) => {
           const isCurrent = entry.selected;
           const outstanding = isCurrent
-            ? (reviewLeft === "Complete"
+            ? (review.complete
               ? (entry.policy_review_required ? 1 : 0)
               : entry.outstanding_decisions)
             : entry.outstanding_decisions;
@@ -1624,11 +1624,11 @@ async function chooseResource(
       const below = listedResources.length - end;
       const highlighted = listedResources[selected]!;
       const includedCount = resources.filter((resource) => resource.included).length;
-      const reviewLeft = boundaryReviewLeft(resources, overview);
+      const review = boundaryReviewState(resources, overview);
       const selectedBoundaryEntry = overview?.boundaries?.find((entry) => entry.selected);
       const candidateIsActive = selectedBoundaryEntry
         ? selectedBoundaryEntry.active && selectedBoundaryEntry.matches_active_digest
-        : reviewLeft === "Complete"
+        : review.complete
           && resources.some((resource) =>
             resource.active_boundary_name === resource.candidate_boundary_name)
           && resources.filter((resource) => resource.active).length === includedCount;
@@ -1636,21 +1636,21 @@ async function chooseResource(
         && selectedBoundaryEntry.matches_active_digest === false;
       const candidateActionAvailable = selectedBoundaryEntry?.active === true
         || (selectedBoundaryEntry?.proposal_action_state === "none" && !selectedBoundaryEntry.verified_action_state)
-        || (reviewLeft === "Complete" && selectedBoundaryEntry?.policy_review_required !== true);
+        || (review.complete && selectedBoundaryEntry?.policy_review_required !== true);
       const candidateStatus = candidateIsActive
         ? theme.success("ACTIVE")
         : candidateHasPendingChange
           ? theme.warning("ACTIVE + DRAFT EDITS")
-        : reviewLeft === "Complete"
+        : review.complete
           ? theme.success("REVIEWED - NOT ACTIVE")
         : theme.warning("DRAFT - NO ACCESS");
       const selectedCompatibility = databaseCompatibilityLine(
         highlighted.database_server_compatibility,
         theme,
       );
-      const displayedReviewLeft = focusedAccess && reviewLeft !== "Complete"
+      const displayedReviewLeft = focusedAccess && !review.complete
         ? "FINAL REVIEW PENDING"
-        : safeTerminalText(reviewLeft);
+        : safeTerminalText(review.label);
       const actionWidth = terminalContentWidth(output.columns);
       const selectedIncluded = resourceView === "boundary" && highlighted.included;
       const relationshipStatus = relationshipPathActionStatus(highlighted);
@@ -3750,20 +3750,20 @@ function plural(count: number, singular: string, pluralValue: string): string {
   return count === 1 ? singular : pluralValue;
 }
 
-function boundaryReviewLeft(
+function boundaryReviewState(
   resources: BoundaryResourceReviewSummary[],
   overview: BoundaryReviewOverview | undefined,
-): string {
+): { complete: boolean; label: string } {
   const tableSignoffs = overview?.resources_requiring_signoff
     ?? resources.filter((resource) => resource.included && resource.risk_count > 0).length;
   const boundarySignoff = (overview?.outstanding_boundary_decisions ?? 0) > 0 ? 1 : 0;
-  if (tableSignoffs === 0 && boundarySignoff === 0) return "Complete";
-  return [
+  const complete = tableSignoffs === 0 && boundarySignoff === 0;
+  return { complete, label: complete ? "Complete" : [
     ...(tableSignoffs
       ? [`${tableSignoffs} ${plural(tableSignoffs, "table", "tables")}`]
       : []),
     ...(boundarySignoff ? ["boundary"] : []),
-  ].join(" + ");
+  ].join(" + ") };
 }
 
 function savedBoundaryRow(

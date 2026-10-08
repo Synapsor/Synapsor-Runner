@@ -1,0 +1,498 @@
+{
+  "source_pin": "2857e2e4c0ffab23591e96f76887d523038c5031",
+  "lane_base": "0bf2c1fd",
+  "entries": [
+    {
+      "id": "GN01",
+      "annotation_id": "I02036",
+      "file": "apps/runner/src/model-authoring-narration.ts",
+      "lines": [
+        164,
+        176
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "English opening/question identity, scope and permission-word checks choose whether model narration is displayed."
+    },
+    {
+      "id": "GN02",
+      "annotation_id": "I02037",
+      "file": "apps/runner/src/model-authoring-narration.ts",
+      "lines": [
+        179,
+        215
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Infers history, scope resolved, tenant-only, active authority, approval ceiling and source-write status from English facts/response."
+    },
+    {
+      "id": "GN03",
+      "annotation_id": "I02038",
+      "file": "apps/runner/src/model-authoring-narration.ts",
+      "lines": [
+        141,
+        144
+      ],
+      "disposition": "legitimate",
+      "decision": "Question punctuation, length, newline and nonempty response shape."
+    },
+    {
+      "id": "GC01",
+      "annotation_id": "I02039",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        237,
+        263
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "English heading selects model question speaker and question turn kind."
+    },
+    {
+      "id": "GC02",
+      "annotation_id": "I02040",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        273,
+        334
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Exact English checkpoint titles and exclusion phrases select compact recorded-state rendering."
+    },
+    {
+      "id": "GC03",
+      "annotation_id": "I02041",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        338,
+        344
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "English permission words select permission/business decision presentation."
+    },
+    {
+      "id": "GC04",
+      "annotation_id": "I02042",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        1034,
+        1038
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Title/detail/default-choice English chooses permission explanation, model-question route and safe default."
+    },
+    {
+      "id": "GC04",
+      "annotation_id": "I02043",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        1164,
+        1167
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Title/detail/default-choice English chooses permission explanation, model-question route and safe default."
+    },
+    {
+      "id": "GC04",
+      "annotation_id": "I02044",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        1190,
+        1191
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Title/detail/default-choice English chooses permission explanation, model-question route and safe default."
+    },
+    {
+      "id": "GC04",
+      "annotation_id": "I02045",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        1207,
+        1208
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Title/detail/default-choice English chooses permission explanation, model-question route and safe default."
+    },
+    {
+      "id": "GC04",
+      "annotation_id": "I02046",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        1223,
+        1241
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Title/detail/default-choice English chooses permission explanation, model-question route and safe default."
+    },
+    {
+      "id": "GC04",
+      "annotation_id": "I02047",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        1282,
+        1292
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Title/detail/default-choice English chooses permission explanation, model-question route and safe default."
+    },
+    {
+      "id": "GC05",
+      "annotation_id": "I02048",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        415,
+        436
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "English line labels choose raw/Runner/model formatting, detail rewriting and which diff lines survive."
+    },
+    {
+      "id": "GC05",
+      "annotation_id": "I02049",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        630,
+        642
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "English line labels choose raw/Runner/model formatting, detail rewriting and which diff lines survive."
+    },
+    {
+      "id": "GC05",
+      "annotation_id": "I02050",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        706,
+        710
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "English line labels choose raw/Runner/model formatting, detail rewriting and which diff lines survive."
+    },
+    {
+      "id": "GC05",
+      "annotation_id": "I02051",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        830,
+        835
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "English line labels choose raw/Runner/model formatting, detail rewriting and which diff lines survive."
+    },
+    {
+      "id": "GC05",
+      "annotation_id": "I02052",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        1246,
+        1246
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "English line labels choose raw/Runner/model formatting, detail rewriting and which diff lines survive."
+    },
+    {
+      "id": "GC05",
+      "annotation_id": "I02053",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        1337,
+        1339
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "English line labels choose raw/Runner/model formatting, detail rewriting and which diff lines survive."
+    },
+    {
+      "id": "GC06",
+      "annotation_id": "I02054",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        124,
+        130
+      ],
+      "disposition": "legitimate",
+      "decision": "Question punctuation, emphasis and labels style existing text; not answer interpretation."
+    },
+    {
+      "id": "GC06",
+      "annotation_id": "I02055",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        188,
+        196
+      ],
+      "disposition": "legitimate",
+      "decision": "Question punctuation, emphasis and labels style existing text; not answer interpretation."
+    },
+    {
+      "id": "GC06",
+      "annotation_id": "I02056",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        520,
+        528
+      ],
+      "disposition": "legitimate",
+      "decision": "Question punctuation, emphasis and labels style existing text; not answer interpretation."
+    },
+    {
+      "id": "GC06",
+      "annotation_id": "I02057",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        787,
+        789
+      ],
+      "disposition": "legitimate",
+      "decision": "Question punctuation, emphasis and labels style existing text; not answer interpretation."
+    },
+    {
+      "id": "GC07",
+      "annotation_id": "I02058",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        866,
+        866
+      ],
+      "disposition": "legitimate",
+      "decision": "Documented slash commands and their exact local dispatch."
+    },
+    {
+      "id": "GC07",
+      "annotation_id": "I02059",
+      "file": "apps/runner/src/boundary-authoring-chat.ts",
+      "lines": [
+        885,
+        925
+      ],
+      "disposition": "legitimate",
+      "decision": "Documented slash commands and their exact local dispatch."
+    },
+    {
+      "id": "GP01",
+      "annotation_id": "I02060",
+      "file": "apps/runner/src/authoring-operator-presentation.ts",
+      "lines": [
+        156,
+        166
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "literalConstraints treats English negation/quantifier/required words plus numbers as semantic-equivalence check for rephrase."
+    },
+    {
+      "id": "GP02",
+      "annotation_id": "I02061",
+      "file": "apps/runner/src/authoring-operator-presentation.ts",
+      "lines": [
+        194,
+        213
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "English readback labels decide which lines contain immutable operator words and which may be humanized."
+    },
+    {
+      "id": "GP03",
+      "annotation_id": "I02062",
+      "file": "apps/runner/src/authoring-operator-presentation.ts",
+      "lines": [
+        30,
+        53
+      ],
+      "disposition": "legitimate",
+      "decision": "Known metadata identifiers/control characters are detected/replaced only for presentation."
+    },
+    {
+      "id": "GP03",
+      "annotation_id": "I02063",
+      "file": "apps/runner/src/authoring-operator-presentation.ts",
+      "lines": [
+        100,
+        117
+      ],
+      "disposition": "legitimate",
+      "decision": "Known metadata identifiers/control characters are detected/replaced only for presentation."
+    },
+    {
+      "id": "MAIN-EN-015",
+      "annotation_id": "I03538",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "lines": [
+        2816,
+        2824
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Generated unresolved-scope English chooses which details to show"
+    },
+    {
+      "id": "MAIN-EN-016",
+      "annotation_id": "I03539",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "lines": [
+        4000,
+        4042
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Parses unavailable-scope prose and repair suffix for exact operator guidance"
+    },
+    {
+      "id": "MAIN-EN-017",
+      "annotation_id": "I03540",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "lines": [
+        4297,
+        4345
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "English required-decision labels select role/resource/field review wording and target extraction"
+    },
+    {
+      "id": "MAIN-EN-018",
+      "annotation_id": "I03541",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "lines": [
+        4156,
+        4172
+      ],
+      "disposition": "legitimate",
+      "decision": "Colors fixed table headings/status strings without changing decisions"
+    },
+    {
+      "id": "MAIN-EN-019",
+      "annotation_id": "I03542",
+      "file": "apps/runner/src/local-ui.ts",
+      "lines": [
+        7619,
+        7707
+      ],
+      "disposition": "delete",
+      "decision": "Converts generated English decision text into native review decisions"
+    },
+    {
+      "id": "MAIN-EN-020",
+      "annotation_id": "I03543",
+      "file": "apps/runner/src/local-ui.ts",
+      "lines": [
+        6245,
+        6285
+      ],
+      "disposition": "legitimate",
+      "decision": "Reports potentially unsafe external tool names, not a grant or business meaning decision"
+    },
+    {
+      "id": "MAIN-EN-021",
+      "annotation_id": "I03544",
+      "file": "apps/runner/src/local-ui.ts",
+      "lines": [
+        6943,
+        6950
+      ],
+      "disposition": "legitimate",
+      "decision": "Matches technical policy_auto_approv actor marker for display provenance"
+    },
+    {
+      "id": "MAIN-EN-022",
+      "annotation_id": "I03545",
+      "file": "apps/runner/src/local-ui.ts",
+      "lines": [
+        9881,
+        9888
+      ],
+      "disposition": "legitimate",
+      "decision": "Redacts secret key names and connection/token patterns"
+    },
+    {
+      "id": "MAIN-EN-023",
+      "annotation_id": "I03546",
+      "file": "apps/runner/src/local-ui.ts",
+      "lines": [
+        9902,
+        9907
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Exact host exception text identifies inactive authority on UI projection"
+    },
+    {
+      "id": "MAIN-EN-031",
+      "annotation_id": "I03554",
+      "file": "apps/runner/src/cli-logging.ts",
+      "lines": [
+        60,
+        75
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Parses error prose into machine-readable state-preserved/source-changed/next-action claims"
+    },
+    {
+      "id": "MAIN-EN-032",
+      "annotation_id": "I03555",
+      "file": "apps/runner/src/cli-logging.ts",
+      "lines": [
+        54,
+        55
+      ],
+      "disposition": "legitimate",
+      "decision": "Credential-shaped tokens removed from diagnostics"
+    },
+    {
+      "id": "MAIN-EN-033",
+      "annotation_id": "I03556",
+      "file": "apps/runner/src/cli-logging.ts",
+      "lines": [
+        86,
+        90
+      ],
+      "disposition": "legitimate",
+      "decision": "Certificate diagnostic wording chooses a troubleshooting hint, not a successful transport result"
+    },
+    {
+      "annotation_id": "I04405",
+      "file": "apps/runner/src/guided-start.ts",
+      "line": 958,
+      "disposition": "replace_with_typed",
+      "decision": "Generated principal description beginning not required controls rendered scope summary; use actual typed principal configuration."
+    },
+    {
+      "id": "ACTION-FINAL-01",
+      "annotation_id": "I08156",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "lines": [
+        765,
+        774
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Displayed evidence is selected by finding the chosen identifier inside evidence.detail prose."
+    },
+    {
+      "id": "ACTION-FINAL-02",
+      "annotation_id": "I08157",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "lines": [
+        1248,
+        1248
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Complete display string determines highlighted outstanding count."
+    },
+    {
+      "id": "ACTION-FINAL-03",
+      "annotation_id": "I08158",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "lines": [
+        1392,
+        1392
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Complete display string determines each selected boundary outstanding count."
+    },
+    {
+      "id": "ACTION-FINAL-04",
+      "annotation_id": "I08159",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "lines": [
+        1631,
+        1651
+      ],
+      "disposition": "replace_with_typed",
+      "decision": "Complete display string gates candidate status/action availability."
+    }
+  ],
+  "status": "Retirement remains open. GP01 producer candidate70c4e458; MAIN-EN-019 deletioncc6e38b2. All other entries unretired unless separately documented. Independent acceptance required."
+}

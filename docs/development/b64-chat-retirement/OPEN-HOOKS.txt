@@ -1,0 +1,10 @@
+B64 chat retirement open hooks
+
+GC03/04: existing decisionKind/localOnly/activationView are sufficient for BoundaryReviewInteractiveSession routing. Main must classify actual caller operations explicitly; text/exactDetails are not operation kinds. ActionControlPrompter has no typed kind today and belongs outside this lane.
+GN01/02: free model narration cannot be proved from English fact/answer comparisons. Proposed bounded typed selection of supplied factual lines and exact next question awaits Main design review; no new protocol schema added.
+GP02: callers pass mixed string[] raw evidence and Runner wording. Preserve raw words; typed line role adapter requires presenter owner coordination.
+MAIN-EN-023: auto-boundary producer needs typed EXPLORATION_BOUNDARY_INACTIVE code; Privacy owner requested via Main.
+MAIN-EN-031: cli.ts must pass actual error rather than redacted message. Typed operational outcome producer/consumer contract requires Main coordination.
+MAIN-EN015–017: structured blocker/review identities absent from current picker view string arrays; render original text or coordinate typed producer. Never infer roles/targets from prose.
+ACTION-FINAL02–04: local UI state changed to boolean completion derived from existing signoff counts; before picker102PASS, after pending slot return.
+Remaining tracked spans listed in OWNED-INVENTORY.json; no blanket retirement claim.
