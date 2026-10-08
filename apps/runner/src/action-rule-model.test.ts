@@ -1647,8 +1647,11 @@ describe("conversational Action authoring tools", () => {
 
   });
 
-  it("B64 ordinary typed clarification reaches the saved whole-Action question without another request", async () => {
-    const question = "How many reviewers should approve an otherwise valid pause?";
+  it.each([
+    "How many reviewers should approve an otherwise valid pause?",
+    "The draft needs your choice: which components are needed for approval?",
+    "How many reviewers should approve an otherwise valid pause",
+  ])("B64 ordinary typed clarification reaches the saved whole-Action question without another request: %s", async (question) => {
     const requests: unknown[] = [];
     let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
     const strings = (value: unknown): string[] => typeof value === "string" ? [value]
@@ -2081,6 +2084,40 @@ describe("conversational Action authoring tools", () => {
     expect(result.compiled.draft.effect).toEqual(existing.compiled.draft.effect);
     expect(result.compiled.approval_class.required_approvals).toBe(2);
     expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    "Require two reviewers. Keep everything else unchanged.",
+    "Se necesitan dos revisores; conserva todo lo demás.",
+    "承認者を二人にしてください。他は変更しないでください。",
+  ])("B64 typed revision uses the full baseline diff, independent of edit phrasing: %s", async intent => {
+    const baseline = compileActionRuleModelDraft({ draft: modelDraft(), builtCatalog: builtCatalog(),
+      readBoundary: boundary(), readBoundaryDigest: readDigest }).draft;
+    const expected = structuredClone(baseline);
+    expected.approval.required_approvals = 2; // Declared operator fact, not an oracle-only policy value.
+    const strings = (value: unknown): string[] => typeof value === "string" ? [value]
+      : Array.isArray(value) ? value.flatMap(strings)
+      : value && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
+    const requestJson = vi.fn<NonNullable<AskProviderDependencies["requestJson"]>>(async request => {
+      if (requestJson.mock.calls.length === 1) {
+        const line = strings(request.body).flatMap(value => value.split("\n"))
+          .find(value => value.startsWith("Current disabled draft: "))!;
+        const current = JSON.parse(line.slice("Current disabled draft: ".length));
+        return call("runner.submit_approval_policy_draft", { ...current.components.approval,
+          status: "draft", required_approvals: 2, changed_fields: ["required_approvals"] });
+      }
+      if (requestJson.mock.calls.length === 2) return call("runner.validate_action_draft", {});
+      throw new Error("B64_TYPED_EDIT_MUST_NOT_ADD_A_MODEL_CALL");
+    });
+    const askClarification = vi.fn(async () => { throw new Error("No business fact is missing"); });
+    const result = await converseActionRuleDraft({ ...requestInput(requestJson), existingDraft: baseline, intent,
+      authoringProtocol: { version: "synapsor.structured-authoring.v2" }, askClarification });
+    expect(result.compiled.draft).toEqual(expected);
+    expect(result.revision).toEqual({ outcome: baseline.outcome, changed_phases: ["approval"] });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
   });
 
   it("applies an explicitly revised input bound without losing other rule or approval settings", async () => {

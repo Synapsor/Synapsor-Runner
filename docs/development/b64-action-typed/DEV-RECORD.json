@@ -1,0 +1,29 @@
+{
+  "base": "f938749a",
+  "scope": "Action typed result dispatch and revision-focus removal; first bounded checkpoint, not whole Action migration acceptance",
+  "before": {
+    "command": "vitest run apps/runner/src/action-rule-model.test.ts -t \"B64 ordinary typed clarification reaches\" --maxWorkers=1 --minWorkers=1 --testTimeout=20000",
+    "result": "2 PASS, 1 FAIL; an accepted typed clarification caused an unintended second provider call",
+    "trace": "typed-question-before.log"
+  },
+  "after": {
+    "command": "vitest run apps/runner/src/action-rule-model.test.ts -t \"B64|already-correct baseline|edits only the selected component|bounds repeated incomplete\" --maxWorkers=1 --minWorkers=1 --testTimeout=20000",
+    "result": "17 PASS; original provider counts preserved; three typed revision language variants compare the complete compiled candidate",
+    "typecheck": "Only pending Main-owned boundary import error TS2305: modelActionRuleRevisionFocus deleted; baseline types PASS"
+  },
+  "environment": "Owned 0700 /var/tmp HOME/TMP; bwrap --unshare-net; no provider access",
+  "reviewer": "Independent R2 preseal/review requested through Main; not self-approved",
+  "main_hook": "Remove modelActionRuleRevisionFocus import/call in boundary-commands.ts; neutral progress label, never English-derived approval-only claim",
+  "open": [
+    "Focused-only English mechanical/lifetime/diagnostic classifiers remain pending retirement/fixture ports.",
+    "Source approval-limit/execution-intent English safety checks need typed evidence bindings; not removed or bypassed.",
+    "Old narration-as-question fixtures require typed-tool ports with assertions/counts unchanged.",
+    "Full public native/CAS/typed-field route acceptance remains Main/reviewer-owned."
+  ],
+  "clock": {
+    "T0": "2026-10-08T06:32:23Z",
+    "end": "2026-10-13T06:32:23Z"
+  },
+  "paid": "CLOSED",
+  "usage": "No usage pause under latest Owner direction"
+}

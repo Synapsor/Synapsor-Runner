@@ -183,35 +183,6 @@ export type ActionRuleModelPreparedContext = {
 };
 
 /**
- * A precise approval-only revision can safely reuse the already compiled
- * verification, effect, and rule phases. Broader wording deliberately falls
- * back to all four phases so an operator request is never silently narrowed.
- */
-export function modelActionRuleRevisionFocus(
-  intent: string,
-  existingDraft: ActionRuleModelDraftV1 | undefined,
-): "approval" | undefined {
-  if (!existingDraft) return undefined;
-  const normalized = intent.replace(/\s+/gu, " ").trim();
-  const preservation = normalized.match(
-    /\b(?:preserve|retain|keep|leave|preserving|retaining|keeping|leaving)\b/iu,
-  );
-  if (!preservation || preservation.index === undefined) return undefined;
-
-  const requestedChange = normalized.slice(0, preservation.index).trim();
-  const explicitlySole = /\b(?:change|revise|update|modify|set|increase|decrease)\s+only\b/iu.test(requestedChange)
-    || /\bonly\b[^.!?]{0,180}\b(?:approval|reviewer|quorum|human[ -]review|human fallback|fallback)\b/iu.test(requestedChange);
-  if (!explicitlySole) return undefined;
-  if (!/\b(?:approval|reviewer|quorum|human[ -]review|human fallback|fallback)\b/iu.test(requestedChange)) {
-    return undefined;
-  }
-  if (/\b(?:eligibility|eligible|ineligible|verification|verify|fact|condition|derive|effect|field|column|resource|table|target|writeback|ttl|expiry|expiration|threshold|amount|range)\b/iu.test(requestedChange)) {
-    return undefined;
-  }
-  return "approval";
-}
-
-/**
  * Uses four small structured authoring tools. Their results are untrusted and
  * are compiled together only after Runner re-resolves all database authority
  * from the reviewed catalog. Runtime rule evaluation never calls a model.
@@ -548,10 +519,6 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     const original = phaseSubmissionsFromDraft(sourceRepair.original_parent);
     for (const phase of ACTION_RULE_PHASES) submissions[phase] ??= original[phase];
   }
-  const draftProgressDigest = () => canonicalJsonDigest({ components: submissions,
-    relationships: [...reviewedRelationships].sort(), sources: reviewedPrivateSources, versions: reviewedVersionFields, reopened: reopenedDraft ?? null });
-  let savedProgressDigest = draftProgressDigest();
-  let draftProgressRevision = 0;
   const checkpointSnapshot = () => actionRuleAuthoringCheckpoint({
     ...(protocol ? { authoring_protocol: protocol } : {}),
     intent_digest: canonicalJsonDigest(intent), context_digest: contextDigest(),
@@ -571,8 +538,6 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     await input.onCheckpoint?.(checkpoint, { ...(expectedDigest ? { expected_checkpoint_digest: expectedDigest } : {}), ...metadata });
     currentCheckpoint = checkpoint;
     logicalTurns = structuredClone(checkpoint.logical_turns);
-    const next = draftProgressDigest();
-    if (next !== savedProgressDigest) { savedProgressDigest = next; draftProgressRevision += 1; }
   };
   const saveCheckpoint = async (metadata?: Omit<NonNullable<Parameters<NonNullable<ModelActionRuleDraftInput["onCheckpoint"]>>[1]>, "expected_checkpoint_digest">) => {
     await persistCheckpoint(checkpointSnapshot(), currentCheckpoint?.digest, metadata);
@@ -694,7 +659,6 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let infrastructureFailure: unknown;
   const declinedVersionFields = new Set<string>();
   let readOnlyRequest: string | undefined;
-  let validationAttempted = false;
   // This is the current whole-Action input, not a field-specific permission.
   // The actual consumed response and existing pending-question material remain
   // the durable owner; phase tags cannot grant a narrower edit scope.
@@ -845,7 +809,6 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           return { ok: true, value: result };
         }
         if (name === "runner.validate_action_draft") {
-          validationAttempted = true;
           const missing = snapshot().missing;
           if (missing.length) return phaseRefusal(`Draft components still needed: ${missing.join(", ")}. Submit them through the corresponding tools.`);
           submissions.effect = validateAndResolveEffectSubmission({
@@ -996,7 +959,6 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let operatorMessage = intent;
   let mechanicalResponseRepairs = 0;
   let mechanicalResponseFeedback: string | undefined;
-  let continuingDraftInternally = false;
   let businessWording = operatorClarificationGate({ stage: "action", context: operatorBusinessContext(context.builtCatalog.authoring.resources) });
   let businessWordingIssue: string | undefined;
   let businessWordingReserved = false;
@@ -1053,8 +1015,6 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     if (input.signal?.aborted) throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
     clarification = undefined;
     businessWordingIssue = undefined;
-    validationAttempted = false;
-    const progressBefore = draftProgressRevision;
     const origin = await authoringInterruptedProducerInput("action_rule_components");
     if (origin) {
       // Only an original instruction or a currently retained, attributed answer
@@ -1162,8 +1122,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     }
     // A tool wording refusal and its accompanying prose are the same decoded
     // response. Request one actual rephrase before considering a fallback.
-    if (businessWordingIssue || !protocol && !clarification && /[?\uFF1F]/u.test(response)) {
-      const presented = businessWordingIssue ? { state: "rephrase" as const, guidance: businessWordingIssue } : businessWording(response);
+    if (businessWordingIssue) {
+      const presented = { state: "rephrase" as const, guidance: businessWordingIssue };
       if (presented.state === "rephrase") {
         if (mediatedVersion && !businessWordingReserved && !await owningBudget.reserveWordingCorrection()) {
           // A restart cannot mint another wording call. A fully consumed valid
@@ -1180,18 +1140,12 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
         await saveCheckpoint();
         continue;
         }
-      } else {
-        response = presented.question;
       }
     }
-    // A saved component followed by status prose is still the model's work,
-    // not a request for an operator acknowledgement. Genuine questions retain
-    // the ordinary chat path; ambiguous prose gets one bounded tool correction.
-    const progressOnly: boolean = !clarification && !validationAttempted
-      && (!result.answer.trim() || !/[?\uFF1F]/u.test(response))
-      && (draftProgressRevision !== progressBefore || continuingDraftInternally);
-    const missingTypedSubmission = Boolean(protocol && !clarification);
-    if (missingTypedSubmission || progressOnly || isIncompleteToolSubmissionResponse(response)) {
+    // Only a validated typed submission can return control to the operator.
+    // Narration, punctuation and progress vocabulary do not affect dispatch,
+    // regardless of whether an older component caller supplied a protocol pin.
+    if (!clarification) {
       if (mechanicalResponseRepairs >= 2) {
         throw new Error([
           "ACTION_RULE_MODEL_DRAFT_INCOMPLETE: the model did not finish its structured draft after two internal corrections. Saved drafts are retained.",
@@ -1203,12 +1157,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       }
       mechanicalResponseRepairs += 1;
       correctionUsed = true;
-      continuingDraftInternally = progressOnly;
-      mechanicalResponseFeedback = missingTypedSubmission
-        ? "AUTHORING_TYPED_SUBMISSION_REQUIRED: Narration, punctuation and finished claims do not submit a requirement or complete this stage. Use the current typed drafting tools; Runner requires actual components and successful validation. No operator answer or authority was inferred."
-        : progressOnly
-        ? "The disabled components and reviewed relationships are retained. A progress statement does not need an operator answer. Continue through the drafting tools and validate the complete draft. If business meaning or a policy limit is genuinely missing, submit a clarification with that focused question. Never invent an answer or treat this continuation as approval."
-        : runnerResolvedMechanicalGuidance(response);
+      mechanicalResponseFeedback = "AUTHORING_TYPED_SUBMISSION_REQUIRED: Narration, punctuation and finished claims do not submit a requirement or complete this stage. Use the current typed drafting tools; Runner requires actual components and successful validation. No operator answer or authority was inferred.";
       const completion = completedAuthoringQuestion(result);
       if (mediatedVersion && completion) ordinaryCompletions.push(completion);
       await saveCheckpoint();
@@ -1216,7 +1165,6 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     }
     mechanicalResponseRepairs = 0;
     mechanicalResponseFeedback = undefined;
-    continuingDraftInternally = false;
     rememberResponse();
     pendingQuestion = {question: response, operator_message: operatorMessage,
       ...(policySourceDigest() ? {policy_source_digest: policySourceDigest()} : {}),
@@ -1282,8 +1230,10 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
   let usage: AskTurnResult["usage"];
   let clarificationCount = 0;
   let correctionUsed = false;
-  const revisionFocus = modelActionRuleRevisionFocus(intent, existingDraft);
-  let phases: readonly PhaseName[] = revisionFocus ? [revisionFocus] : ACTION_RULE_PHASES;
+  // A human sentence never selects the changed component set. Every component
+  // uses its typed changed_fields declaration; the complete baseline diff is
+  // computed below after compilation.
+  let phases: readonly PhaseName[] = ACTION_RULE_PHASES;
   const saveSourceRepair = async () => {
     if (!sourceRepair) return;
     if (!input.onCheckpoint) throw new Error("ACTION_SOURCE_REPAIR_NOT_SAVED: Preserve the original nomination; no correction was sent.");
