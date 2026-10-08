@@ -277,7 +277,7 @@ function withDeclaredRoot(input: ModelReadWorkloadInput, definition: string): Mo
 
 // Explicit public test facts, selected by the scenario before any draft is sent.
 // These targets never come from the submitted plan or compiler output.
-function declaredWorkloadScope(request: string, mode: "status_rows" | "average_by_status" | "root_only", boundary = generatedBoundary()) {
+function declaredWorkloadScope(request: string, mode: "status_rows" | "average_by_status" | "count_by_status" | "root_only", boundary = generatedBoundary()) {
   const catalog = readWorkloadCatalog(boundary);
   const context = projectReadScopeHostContext({ request: { id: "job", text: request },
     catalog: { digest: catalog.digest, resources: catalog.resources, relationships: [] },
@@ -285,6 +285,7 @@ function declaredWorkloadScope(request: string, mode: "status_rows" | "average_b
   const root = { root_resource: "public.orders", resource: "public.orders" };
   const targets: ReadScopeProposal["requirements"][number]["targets"] = [{ ...root, operation: "resource" }];
   if (mode === "status_rows") targets.push({ ...root, operation: "return", field: "status" });
+  if (mode === "count_by_status") targets.push({ ...root, operation: "group", field: "status" });
   if (mode === "average_by_status") targets.push({ ...root, operation: "group", field: "status" }, { ...root, operation: "aggregate", field: "amount", qualifier: "avg" });
   const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
     id: "declared-task", intended_use: request, disposition: "include", references: ["job"], targets,
@@ -1455,6 +1456,7 @@ describe("model-assisted Read workload mapping", () => {
     expect(requestJson).toHaveBeenCalledTimes(2);
   });
   it("carries prior authoring history into mapping and returns actual validated model prose", async () => {
+    const typed = declaredWorkloadScope("How many orders are in each status?", "count_by_status");
     const conversation = createModelAuthoringConversation();
     rememberModelAuthoringTurn(
       conversation,
@@ -1473,6 +1475,7 @@ describe("model-assisted Read workload mapping", () => {
               call_id: "call_read_history",
               name: "runner__submit_read_workloads",
               arguments: JSON.stringify({
+                read_scope: typed.proposal,
                 allowed: [{
                   id: "orders_by_status",
                   description: "Count orders by status",
@@ -1510,7 +1513,7 @@ describe("model-assisted Read workload mapping", () => {
       env: { TEST_PROVIDER_KEY: "provider-test-key" },
       apiKeyEnv: "TEST_PROVIDER_KEY",
       egressAcknowledged: true,
-      dependencies: { requestJson },
+      dependencies: { requestJson }, structuredScope: typed.structuredScope,
       conversation,
     });
 
@@ -1522,6 +1525,7 @@ describe("model-assisted Read workload mapping", () => {
   });
 
   it("defers narration to the retained outer authoring session without another provider call", async () => {
+    const typed = declaredWorkloadScope("How many orders are in each status?", "count_by_status");
     const requestJson = vi.fn(async () => ({
       status: 200,
       body: {
@@ -1530,6 +1534,7 @@ describe("model-assisted Read workload mapping", () => {
           call_id: "call_read_deferred",
           name: "runner__submit_read_workloads",
           arguments: JSON.stringify({
+                read_scope: typed.proposal,
             allowed: [{
               id: "orders_by_status",
               description: "Count orders by status",
@@ -1555,7 +1560,7 @@ describe("model-assisted Read workload mapping", () => {
       env: { TEST_PROVIDER_KEY: "provider-test-key" },
       apiKeyEnv: "TEST_PROVIDER_KEY",
       egressAcknowledged: true,
-      dependencies: { requestJson },
+      dependencies: { requestJson }, structuredScope: typed.structuredScope,
       conversation: createModelAuthoringConversation(),
       deferNarration: true,
     });
@@ -1709,6 +1714,7 @@ describe("model-assisted Read workload mapping", () => {
   });
 
   it("gives a local model one bounded correction when it returns prose instead of the required tool", async () => {
+    const typed = declaredWorkloadScope("What is average order amount by status?", "average_by_status");
     let attempt = 0;
     const requests: string[] = [];
     const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
@@ -1735,6 +1741,7 @@ describe("model-assisted Read workload mapping", () => {
                 function: {
                   name: "runner__submit_read_workloads",
                   arguments: JSON.stringify({
+                read_scope: typed.proposal,
                     allowed: [{
                       id: "orders_by_status",
                       description: "Average order amount by status",
@@ -1763,7 +1770,7 @@ describe("model-assisted Read workload mapping", () => {
       baseUrl: "http://127.0.0.1:11434/v1",
       generatedBoundary: generatedBoundary(),
       egressAcknowledged: true,
-      dependencies: { requestJson },
+      dependencies: { requestJson }, structuredScope: typed.structuredScope,
     });
 
     expect(result.analysis.status).toBe("ready");
@@ -1855,6 +1862,7 @@ describe("model-assisted Read workload mapping", () => {
   );
 
   it("keeps an invalid model mapping blocked and non-authoritative", async () => {
+    const typed = declaredWorkloadScope("Show an invented field", "root_only");
     const requestJson = vi.fn(async () => ({
       status: 200,
       body: {
@@ -1863,6 +1871,7 @@ describe("model-assisted Read workload mapping", () => {
           call_id: "call_bad_read_workload",
           name: "runner__submit_read_workloads",
           arguments: JSON.stringify({
+                read_scope: typed.proposal,
             allowed: [{
               id: "invented_field",
               description: "Invented access",
@@ -1882,7 +1891,7 @@ describe("model-assisted Read workload mapping", () => {
       generatedBoundary: generatedBoundary(),
       env: { OPENAI_API_KEY: "provider-test-key" },
       egressAcknowledged: true,
-      dependencies: { requestJson },
+      dependencies: { requestJson }, structuredScope: typed.structuredScope,
     });
 
     expect(result.analysis.status).toBe("blocked");
