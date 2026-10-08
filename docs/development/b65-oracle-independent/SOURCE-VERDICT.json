@@ -1,0 +1,77 @@
+{
+  "verdict": "ACCEPT_SOURCE_SCOPED_PRIVATE_ORACLE",
+  "pin": "f50cbff39e9eb251f746458fc954c32c85cbaa62",
+  "reviewer": "R1",
+  "source_hashes": {
+    "CASE-MANIFEST.json": "d3483b47cf7bf74b82830a30a734b8f7b16c9788ea1c946a4f26de2bf3d999d1",
+    "fixtures/SCENARIOS.json": "316ed7187af9f5ea22b92bcf0f9a0b74c756772059ea3a56944317244d989599",
+    "fixtures/OPERATOR-FACTS.json": "4a89664d2f90a4374419f010566da1e8421d609c830033072e9eacb7ab08dea2",
+    "private-oracle/reference-state.mjs": "a5bcfe9b4fe7b6ff6f62dbb07f27972c180b6dac776b472760f731f32bd45f0f",
+    "private-oracle/reference-state.test.mjs": "ac452f52d9f20971da26a04077a9577d448ca16aac4c979f3a2883da133f7fae",
+    "private-oracle/README.md": "145aa1e047112d6bd521667764adeef55968cca99f61b19116fb25b378209cc4",
+    "private-oracle/CONTROL-RESULT.json": "81d89628d746978fbe3b81a727fa54c90999e02cfdbe826561b4d4d2602e2419"
+  },
+  "fixture_count": 28,
+  "math_review": [
+    {
+      "cases": "S01\u2013S05",
+      "assessment": "Independent fresh baseline30; insert25/20/10=>55/50/40; replace old10 with25/35=>45/55. Valid F/T/T/T/F; no sequential carryover."
+    },
+    {
+      "cases": "PRE01",
+      "assessment": "Open before effect permits closed after; next close in serial schedule fails precondition. Correct pre-vs-post separation."
+    },
+    {
+      "cases": "T01",
+      "assessment": "80-20=60 and100-40=60 individually;80-40=40<60 jointly."
+    },
+    {
+      "cases": "T02/T02-three/T02-teams",
+      "assessment": "2\u21921 individually/0 jointly fails;3\u21921 jointly valid; two independent teams each2\u21921 valid. Declared team universe ensures empty population cannot vanish."
+    },
+    {
+      "cases": "T03/T03-principals/T03-teams",
+      "assessment": "300+250=550>500 for shared team/period including cross-principal rows; separate team totals300/250 valid. Independent table row sums avoid fanout and distinct-value collapse."
+    },
+    {
+      "cases": "T04/T04-below-usage",
+      "assessment": "350+100=450;500-100=400 jointly fails. -200 independently gives300<350 and must fail. No grandfathering."
+    },
+    {
+      "cases": "T05/T05-activate/T05-campaigns",
+      "assessment": "Two active benefits in one campaign fail whether insert or activation; separate campaigns each1 valid."
+    },
+    {
+      "cases": "T06/T06-same-customer/T06-complete",
+      "assessment": "9+two distinct completed customers=11 fails; two same new customer gives10 valid; pending\u2192completed updates count actual completed membership."
+    },
+    {
+      "cases": "T07",
+      "assessment": "Move40 fromP intoQ50 gives90; insert30 aloneQ80; jointlyQ120>100. OldP is empty/zero and upper bound remains satisfied; no lower-bound claim."
+    },
+    {
+      "cases": "T08/T08-transfer/T08-transfer-reversed/T08-race",
+      "assessment": "55+55=110>100;70+20\u219240+50=90 valid both atomic statement orders, ignoring transient120; race70+30+20=120 fails jointly."
+    },
+    {
+      "cases": "T09",
+      "assessment": "40+35+30=105; every pair65/70/75<=100. Six permutations; ideal serial first2 valid,last1 not. Native may correctly refuse stale earlier; not optimal-progress assertion."
+    },
+    {
+      "cases": "T10",
+      "assessment": "90*1=90;80*1.2=96 individually;90*1.2=108 jointly fails. BigInt numerator/positive denominator cross multiplication is exact; all declared account limits/rates/charge populations checked."
+    }
+  ],
+  "independence": "Oracle imports only node:fs and node:util; reads immutable predeclared JSON, applies exact operation IDs/effects to initial state. No Runner evaluator/SQL/parser/provider or observed state computes expected state. Expected declarations serve checks; not used by assessment functions.",
+  "complete_state": "Snapshot comparison retains all table names, rows and fields, canonicalizes only order, rejects duplicate IDs; missing/extra/altered unaffected fields do not compare equal. Actual committed operation IDs must come from independent native evidence, not success prose; missing source effects remain fixture gaps.",
+  "privacy": "SCENARIOS and CASE-MANIFEST are private. OPERATOR-FACTS excludes initial/expected/results but contains whole operation menu, potentially cross-principal targets; README expressly forbids wholesale model injection and permits only actual authorized job/consented facts. This source review proves separation conventions, not outgoing-wire screening.",
+  "limits": [
+    "Owner41 pure controls reported, not independently rerun in this source-only step.",
+    "No native capability/locking/currentness/receipt/privacy/transport/DB PASS inferred. Native matrix remains NOT_RUN until independent observations.",
+    "Signed integer-cent/rational oracle does not invent SQL NULL/precision/overflow rules. Native technical columns/triggers/defaults must be declared before use; no projection dropping extra fields.",
+    "Completeness is relative to declared full fixture input, not proven Source population completeness by pure math.",
+    "Manifest pending precision/tenant membership/participant version/source effects/recovery companions remain pending; no acceptance by omission.",
+    "Owner original amendment numerical match not independently re-read; verdict verifies exact canonical supplied pack internal math and boundaries."
+  ],
+  "tests_or_effects_run": false
+}

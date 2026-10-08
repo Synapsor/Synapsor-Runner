@@ -1,0 +1,31 @@
+{
+  "site": "I02097",
+  "status": "Owner tests PASS; independent implementation verdict pending",
+  "before_pin": "b9c8ff33",
+  "contract": "Exact supplied local search identity matches business_object OR exact Source table; all existing tenant/principal/source/object_id conjuncts remain. Not an authority handle. Separate table parameter unchanged.",
+  "change": "Delete objectTypeVariants singular/plural/public-prefix guessing; shared addObjectFilter binds exact token twice. No caller-specific fallback.",
+  "failing_before": {
+    "pass": 4,
+    "fail": 9,
+    "skip": 0,
+    "report": "/var/tmp/synapsor-b64-main-owned/evidence/object-identity-before.json"
+  },
+  "after": {
+    "pass": 96,
+    "fail": 0,
+    "skip": 0,
+    "files": [
+      "packages/proposal-store/src/query-object-identity.test.ts",
+      "packages/proposal-store/src/index.test.ts"
+    ],
+    "report": "/var/tmp/synapsor-b64-main-owned/evidence/object-identity-after.json"
+  },
+  "types": {
+    "exit": 0,
+    "log": "/var/tmp/synapsor-b64-main-owned/evidence/object-identity-types.log"
+  },
+  "launch": "bwrap --unshare-net with env -i and owned0700 HOME/TMP /var/tmp/synapsor-b64-main-owned; vitest run files --maxWorkers=1 --minWorkers=1 --testTimeout=20000 --hookTimeout=20000; node typescript/bin/tsc -b --pretty false",
+  "review": "R1 fb36735f contract accepted + OF01\u201307 presealed; exact after review pending",
+  "existing_assertions": "No existing test edits; new13 and unchanged83pass",
+  "remaining_counts": "Main36typed/0delete until independent implementation verdict; no earlier closure"
+}

@@ -1,0 +1,48 @@
+{
+  "source_pin": "de5fff44",
+  "site": "I02097",
+  "verdict": "DESIGN_ACCEPT_SCOPED_PENDING_IMPLEMENTATION",
+  "contract": "Remove English singular/plural and invented public-prefix aliases from objectType. Existing exact-token union business_object OR source_table/table_name remains a local search contract; not unique authority resolution. No new typed distinction required for this bounded change.",
+  "routes": [
+    "ledger-options direct --object/--object-type -> proposal/evidence/audit/receipt filters -> sqlite-proposal-methods -> query-builders",
+    "compliance-report object scope -> store.listProposals with exact tenant/object token/id",
+    "lifecycle-view local filtered selection lists/counts and reports actual selected proposal; not uniqueness proof"
+  ],
+  "constraints": [
+    "Preserve OR parentheses under tenant/principal/source/object_id AND constraints.",
+    "All token values remain bound SQL parameters, including quotes/%/_/schema dots.",
+    "Distinct addTableFilter unqualified/public matching remains separate, not silently changed by objectType removal.",
+    "No changes to paging/order/count identity or receipt join provenance."
+  ],
+  "cases": [
+    {
+      "id": "OF01",
+      "oracle": "Supplied invoice matches exact business_object=invoice even source_table=public.invoices; does not independently match only business_object=invoices or source_table=public.invoice."
+    },
+    {
+      "id": "OF02",
+      "oracle": "Supplied public.invoices matches exact source_table only (or exact same business_object); does not match invoices/public.invoice/other.invoices."
+    },
+    {
+      "id": "OF03",
+      "oracle": "business_object and source_table can share a token across two different rows; local search returns both if all other exact filters match. Do not falsely claim unique target or silently select one in query helper."
+    },
+    {
+      "id": "OF04",
+      "oracle": "Tenant/principal/source/id mismatch excludes row even if either OR arm matches. Add malicious collision rows in other tenant/source with same object ID."
+    },
+    {
+      "id": "OF05",
+      "oracle": "Quotes, SQL fragments, %/_ and non-English object names remain exact params, never interpolated, pluralized/casefolded/prefix-added."
+    },
+    {
+      "id": "OF06",
+      "oracle": "Proposal list/count, evidence, query_audit table_name and receipt joined proposal fields use consistent exact condition with original ID constraint."
+    },
+    {
+      "id": "OF07",
+      "oracle": "No objectType retains original optional filter behavior; objectId alone still filters exactly; table option is separately characterized unchanged."
+    }
+  ],
+  "status": "Read-only contract and preseal only; no tests run, product or expectation edits."
+}

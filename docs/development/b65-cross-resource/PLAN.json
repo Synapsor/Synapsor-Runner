@@ -65,14 +65,15 @@
       "fail": 0,
       "skip": 0
     },
-    "independent_source_review": "R1 pending",
+    "independent_source_review": "R1 fb36735f SOURCE_SCOPED_ACCEPT, 28cases/math/fullsnapshot/privacy separation; no native capability transfer",
     "native_verdicts": "unset in canonical manifest; Tester owns separate SUPPORT-MATRIX",
     "files": [
       "CASE-MANIFEST.json",
       "fixtures/SCENARIOS.json",
       "fixtures/OPERATOR-FACTS.json",
       "private-oracle/CONTROL-RESULT.json"
-    ]
+    ],
+    "review_evidence": "../b65-oracle-independent/SOURCE-VERDICT.json"
   },
   "literal_insert_boundary": "Existing fe885 compiler admission refuses designated single INSERT (PG and MySQL); keep literal25/20/10 and T09 INSERT shapes. Runtime is inspecting whether the already authorized single-INSERT upper-SUM contract can be supported without new authority; unsupported is not ENFORCED. Historical unused-row UPDATE is not INSERT evidence."
 }

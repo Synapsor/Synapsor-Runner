@@ -208,10 +208,8 @@ export function addObjectFilter(
     params.push(objectId);
   }
   if (!objectType) return;
-  const variants = objectTypeVariants(objectType);
-  const placeholders = variants.map(() => "?").join(", ");
-  clauses.push(`(${typeColumn} IN (${placeholders}) OR ${tableColumn} IN (${placeholders}))`);
-  params.push(...variants, ...variants);
+  clauses.push(`(${typeColumn} = ? OR ${tableColumn} = ?)`);
+  params.push(objectType, objectType);
 }
 
 export function addTimeRange(clauses: string[], params: SqlParam[], column: string, from?: string, to?: string): void {
@@ -258,16 +256,6 @@ export function finishQuery(
       ...(boundedOffset ? [boundedOffset] : []),
     ],
   };
-}
-
-export function objectTypeVariants(value: string): string[] {
-  const variants = new Set<string>([value]);
-  if (value.endsWith("s")) variants.add(value.slice(0, -1));
-  else variants.add(`${value}s`);
-  for (const variant of [...variants]) {
-    if (!variant.includes(".")) variants.add(`public.${variant}`);
-  }
-  return [...variants];
 }
 
 export function stringFromUnknown(value: unknown): string | undefined {
