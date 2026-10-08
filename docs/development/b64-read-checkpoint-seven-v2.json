@@ -1,0 +1,14 @@
+{
+  "kind": "DEV fixture migration",
+  "base": "9c65daa9",
+  "file": "authoring-read-assistance-checkpoint-host.test.ts",
+  "cases": 7,
+  "validation": {
+    "result": "9 PASS including two existing typed controls",
+    "log": "/var/tmp/synapsor-b64-read-owned/evidence/checkpoint-host-seven-v2-after.log",
+    "types": "No changed-file errors; four other fixture migration errors remain locally."
+  },
+  "contract": "Original dispatch, save acknowledgements, inert stored analysis, candidate/Source currentness, genuine completion and call-count assertions unchanged. Actual reviewed disabled structural preparation supplies typed scope. Legacy meaning question becomes explicit unresolved typed requirement; actual completion/native wait retained. No final scope confirmation invented.",
+  "before": "Main missing-protocol failures preserved at /var/tmp/synapsor-b64-main-owned/evidence/replace-integrated-components.log. First successor8P1F was test request time_bucket_fields object vs public API array; narrowed fixture correction, no product/assertion change.",
+  "remaining": "10 mapping assistance rows share two reproduced ingress gaps; finite adapter design/preseal next."
+}

@@ -21,15 +21,12 @@ import { storeReadWorkloadAnalysis, listReadWorkloadAnalyses } from "./read-work
 const question = { resource: "public.orders", field: "status", reason: "Meaning missing from this view", question: "Which fulfillment stages should this view describe?" };
 const response = (args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "read_host_control", name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } });
 const mapping = { allowed: [{ id: "my_orders", description: "List my orders", plan: { kind: "rows", resource: "public.orders", select: ["status"] } }], forbidden: [] };
-async function harness(relativeTime = false, nativeStructure = false) {
+async function harness(relativeTime = false, nativeStructure = true) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "read-checkpoint-host-"));
-  const prepared = nativeStructure ? await prepareReviewedReadScope(root, { resources: ["public.orders"], field: "status" }) : undefined;
+  const prepared = nativeStructure ? await prepareReviewedReadScope(root, { resources: ["public.orders"], field: "status",
+    ...(relativeTime ? { fields: { created_at: { type: "timestamptz" } }, review: { selectable_fields: ["status", "created_at"], time_bucket_fields: ["created_at"] } } : {}),
+  }) : undefined;
   const boundary = prepared?.context.candidate ?? generatedBoundary();
-  if (relativeTime) {
-    boundary.pack.resources[0]!.field_types.created_at = "timestamptz";
-    boundary.pack.resources[0]!.selectable_fields.push("created_at");
-    boundary.pack.resources[0]!.time_bucket_fields.created_at = ["day"];
-  }
   let context = canonicalJsonDigest("declared current Source and reader"), candidate = explorationBoundaryCandidateDigest(boundary);
   let state: { checkpoint?: ReadWorkloadAssistanceCheckpoint; read?: BoundaryAuthoringResumeRead; handoffs: AuthoringOwnerHandoff[]; questions: OperatorQuestion[]; recovery?: AuthoringTransportState } = { handoffs: [], questions: [] };
   const permit = Object.freeze({ testPermit: "identity-only mock native mutation port" }) as never;
@@ -49,12 +46,33 @@ async function harness(relativeTime = false, nativeStructure = false) {
     checkpointFailure: subject => new Error("CHECKPOINT_NOT_SAVED: " + subject),
   };
   const host = createReadAssistanceCheckpointHost({ access });
-  const run = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>, extra: Partial<ModelReadWorkloadInput> = {}) => generateModelReadWorkload({
-    name: "owned_assistance", allowedQuestions: ["List my orders"], provider: "openai", model: "owned-local-fixture", generatedBoundary: boundary,
-    apiKey: "inert-test-key", egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, onCheckpoint: host.persist,
-    clarificationHandler: async () => undefined, ...extra,
+  const binding = { request_digest: canonicalJsonDigest("List my orders"), source_digest: canonicalJsonDigest("policy"),
+    catalog_digest: canonicalJsonDigest("catalog"), meaning_digest: canonicalJsonDigest("meaning"),
+    applicability_digest: canonicalJsonDigest("purpose"), operation_digest: canonicalJsonDigest("read") };
+  const inventory = { binding, references: [{ id: "job", kind: "request" as const, digest: binding.request_digest, text: "List my orders" }],
+    catalog: { resources: [{ id: "public.orders", fields: [{ id: "status" }, ...(relativeTime ? [{ id: "created_at" }] : [])] }], relationships: [],
+      subject_scopes: prepared ? projectReadSubjectContext({ context: prepared.context, sourceDigest: binding.source_digest }).subject_scopes : [] } };
+  const scope = { protocol: "synapsor.read-scope.v2", applicability: "read_requested", original_request: "job", requirements: [{
+    id: "status", intended_use: "List my orders", references: ["job"], disposition: "include", subjects: [{ root_resource: "public.orders", mode: "trusted_principal" }], targets: [
+      { root_resource: "public.orders", resource: "public.orders", operation: "resource" },
+      { root_resource: "public.orders", resource: "public.orders", operation: "return", field: "status" },
+      ...(relativeTime ? [{ root_resource: "public.orders", resource: "public.orders", operation: "time_window", field: "created_at" }] : []),
+    ],
+  }] };
+  const unresolved = { allowed: [], forbidden: [], read_scope: { ...scope, requirements: [{ id: "status", intended_use: "List my orders", references: ["job"],
+    disposition: "unresolved", subjects: [], targets: [], unresolved: question.question }] } };
+  access.scopeInventory = async () => inventory;
+  const run = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>, extra: Partial<ModelReadWorkloadInput> = {}) => withAuthoringGenerationRecovery(async () => {
+    configureAuthoringGenerationRecovery({ available: () => true, read: () => state.recovery,
+      current: async () => context, write: async value => { state.recovery = structuredClone(value); }, progress: () => {} });
+    return generateModelReadWorkload({
+      name: "owned_assistance", allowedQuestions: ["List my orders"], provider: "openai", model: "owned-local-fixture", generatedBoundary: boundary,
+      apiKey: "inert-test-key", egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, onCheckpoint: host.persist,
+      structuredScope: { protocol: "synapsor.read-scope.v2", current: () => inventory, answer: async () => undefined },
+      clarificationHandler: async () => undefined, ...extra,
+    });
   });
-  return { root, boundary, prepared, host, access, run, saves, saveFault, append, state: () => state,
+  return { root, boundary, prepared, host, access, run, scope, unresolved, saves, saveFault, append, state: () => state,
     driftContext: () => { context = canonicalJsonDigest("different Source binding"); },
     driftCandidate: () => { candidate = canonicalJsonDigest("different Read candidate"); },
     setRecovery: (value: AuthoringTransportState) => { state.recovery = structuredClone(value); },
@@ -66,7 +84,7 @@ describe("initial Read assistance checkpoint host native producer boundary", () 
     const h = await harness(true);
     let clock = Date.parse("2026-10-07T15:00:00Z");
     const now = vi.spyOn(Date, "now").mockImplementation(() => clock++);
-    const send = vi.fn(async () => response({ ...mapping, allowed: [{ ...mapping.allowed[0], plan: {
+    const send = vi.fn(async () => response({ ...mapping, read_scope: h.scope, allowed: [{ ...mapping.allowed[0], plan: {
       ...mapping.allowed[0]!.plan, time_window: { field: "created_at", window: "last_30_days" },
     } }] }));
     try {
@@ -79,7 +97,7 @@ describe("initial Read assistance checkpoint host native producer boundary", () 
     } finally { now.mockRestore(); await h.cleanup(); }
   });
   it("stops a failed pre-I/O dispatch save without sending, clearing or renewing producer limits", async () => {
-    const h = await harness(), send = vi.fn(async () => response(mapping));
+    const h = await harness(), send = vi.fn(async () => response({ ...mapping, read_scope: h.scope }));
     try { h.saveFault.subject = "The Read dispatch checkpoint";
       await expect(h.run(send)).rejects.toThrow("TEST_NATIVE_SAVE_ACK_LOST");
       expect(send).not.toHaveBeenCalled(); expect(h.state()).toEqual({ handoffs: [], questions: [] }); expect(h.saves).toEqual([]);
@@ -87,7 +105,7 @@ describe("initial Read assistance checkpoint host native producer boundary", () 
   });
   it("retains spent dispatch before I/O and explicitly clears the wait only after accepted native analysis", async () => {
     const h = await harness();
-    try { const result = await h.run(async () => { expect(h.state().checkpoint?.stage).toBe("dispatching"); return response(mapping); });
+    try { const result = await h.run(async () => { expect(h.state().checkpoint?.stage).toBe("dispatching"); return response({ ...mapping, read_scope: h.scope }); });
       expect(result.analysis.status).toBe("ready"); expect(h.saves.map(x => x.acknowledge)).toEqual([false, false, undefined]);
       expect(h.state()).toHaveProperty("checkpoint", undefined); expect(h.state().read?.analysis_id).toBeTruthy();
       const records = await listReadWorkloadAnalyses({ projectRoot: h.root, generatedBoundary: h.boundary });
@@ -98,7 +116,7 @@ describe("initial Read assistance checkpoint host native producer boundary", () 
   it("retains the last dispatch on accepted Resume acknowledgement loss; stored analysis remains inert", async () => {
     const h = await harness();
     try { h.saveFault.subject = "The Read assistance checkpoint";
-      await expect(h.run(async () => response(mapping))).rejects.toThrow("TEST_NATIVE_SAVE_ACK_LOST");
+      await expect(h.run(async () => response({ ...mapping, read_scope: h.scope }))).rejects.toThrow("TEST_NATIVE_SAVE_ACK_LOST");
       expect(h.state().checkpoint?.stage).toBe("dispatching"); expect(h.state().read).toBeUndefined();
       expect(h.saves).toHaveLength(2); expect(h.saves.every(x => x.acknowledge === false)).toBe(true);
       const records = await listReadWorkloadAnalyses({ projectRoot: h.root, generatedBoundary: h.boundary });
@@ -106,21 +124,21 @@ describe("initial Read assistance checkpoint host native producer boundary", () 
     } finally { await h.cleanup(); }
   });
   it("refuses a stale exact candidate before provider or store activity", async () => {
-    const h = await harness(), send = vi.fn(async () => response(mapping));
+    const h = await harness(), send = vi.fn(async () => response({ ...mapping, read_scope: h.scope }));
     try { h.driftCandidate(); await expect(h.run(send)).rejects.toThrow("CHECKPOINT_STALE");
       expect(send).not.toHaveBeenCalled(); expect(h.saves).toEqual([]); expect(h.state().read).toBeUndefined();
     } finally { await h.cleanup(); }
   });
   it("refuses changed Source context when replaying the actual retained wait", async () => {
     const h = await harness();
-    try { await expect(h.run(async () => response({ clarification_request: question }))).rejects.toThrow("AUTHORING_PAUSED");
+    try { await expect(h.run(async () => response(h.unresolved))).rejects.toThrow("AUTHORING_PAUSED");
       const before = structuredClone(h.state()), checkpoint = before.checkpoint!; expect(checkpoint.stage).toBe("waiting");
       h.driftContext(); await expect(h.host.persist(checkpoint, h.boundary)).rejects.toThrow("OWNER_QUESTION_CONTEXT_CHANGED");
       expect(h.state()).toEqual(before); expect(h.state().questions).toHaveLength(1); expect(h.append).not.toHaveBeenCalled();
     } finally { await h.cleanup(); }
   });
   it("binds the actual transport completion and refuses same text from another completed call", async () => {
-    const h = await harness(); let sends = 0; const server = createServer(async (req, res) => { for await (const _ of req) {} sends++; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(response({ clarification_request: question }).body)); });
+    const h = await harness(); let sends = 0; const server = createServer(async (req, res) => { for await (const _ of req) {} sends++; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(response(h.unresolved).body)); });
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
     h.setRecovery({ version: 1, operations: [] });
