@@ -374,7 +374,10 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
             references: scopeReferences(), catalog: structuredScopeInput.catalog });
           const missing = scope.proposal.requirements.find(requirement => requirement.disposition === "unresolved");
           if (missing) {
-            if (readAnswerCount() >= MAX_READ_CLARIFICATIONS) throw new Error("READ_SCOPE_ASSISTANCE_LIMIT: The existing four-question allowance is exhausted; preserve the unresolved scope.");
+            if (readAnswerCount() >= MAX_READ_CLARIFICATIONS) {
+              repeatedAssistanceRequest = true;
+              throw new Error("READ_SCOPE_ASSISTANCE_LIMIT: The existing four-question allowance is exhausted; preserve the unresolved scope.");
+            }
             structuredScopeRequest = { scope, requirement_digest: scope.requirement_bindings.find(item => item.id === missing.id)!.digest,
               question: "Please clarify the missing detail for this Read requirement." };
             return { ok: true, value: { status: "scope_clarification_required", unresolved: missing.unresolved,
@@ -1379,6 +1382,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     : workloadValidationBlockers;
   if ((!workload || !analysis || analysis.status === "blocked")
     && correctionBlockers.length
+    && !repeatedAssistanceRequest
     && !correctionUsed) {
     if (!await reserveAuthoringProducerCorrection("semantic")) throw new Error("READ_WORKLOAD_CORRECTION_EXHAUSTED: The saved workload correction was already used; preserve the unresolved mapping and answers.");
     correctionUsed = true;

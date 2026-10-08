@@ -1,12 +1,15 @@
 {
   "base": "5bb82a33",
-  "status": "WIP native typed fixture migration, not passing or accepted",
+  "status": "Three native typed controls PASS; independent allowance variant pending",
   "before": "typed-durable-transport-three-before.log:3 missing protocol failures",
   "after": "typed-durable-transport-three-after.log: ordinary description visibility fixture refused; two actual completion controls pass digests/sends but old synthetic handled expectation differs from native checkpointed pending",
   "ordinary_fixture_fix": "Additional declared visible scalar fields use actual allow_reviewed_fields review operation, no fabricated confirmations or product change",
   "actual_after": "typed-durable-four-answer-after2.log: four real answers retained, fifth does not prompt, but sixth provider call occurs (expected5 unchanged) after assistance limit enters generic correction",
   "pending": [
-    "independent checkpointed-versus-handled contract adjudication",
-    "terminal assistance allowance shared fix plus independent variant"
-  ]
+    "R1 independent terminal-budget variant",
+    "affected counter/value regression"
+  ],
+  "sidecar_adjudication": "R1 accepted exact checkpointed pending state: actual question+Read checkpoint owner consumes response durably; old synthetic onCheckpoint copied only. Tests now cold-load native q/handoff/operation and assert exact completion/consumption, waiting, no raw/confirmation.",
+  "fix": "Exhausted typed four-question allowance marks existing repeated-assistance state; semantic correction cannot spend another call after that terminal state. No answer/call counters reset.",
+  "after_fix": "typed-durable-transport-three-after3.log:3PASS147filtered, original provider totals1/2/5 preserved"
 }

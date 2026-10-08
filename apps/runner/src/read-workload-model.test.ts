@@ -573,7 +573,16 @@ describe("durable Read assistance producer checkpoint", () => {
     try {
       await expect(h.run({ ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })),
         onCheckpoint: async value => { checkpoint = structuredClone(value); } })).rejects.toThrow("AUTHORING_PAUSED");
-      expect(sends).toBe(mode === "initial" ? 1 : 2); expect(h.state().generation_recovery!.operations.at(-1)?.state).toBe("handled");
+      expect(sends).toBe(mode === "initial" ? 1 : 2);
+      const cold = await h.coldState();
+      expect(cold.status).toBe("ready"); if (cold.status !== "ready") throw new Error("Expected the exact cold saved native checkpoint");
+      const operation = cold.value.generation_recovery!.operations.at(-1)!, question = cold.value.operator_questions!.at(-1)!;
+      const handoff = cold.value.owner_handoffs!.find(item => item.id === question.handoff_id)!;
+      expect(operation.state).toBe("checkpointed");
+      expect(handoff.state).toBe("waiting"); expect(handoff.completion).toEqual(checkpoint!.pending_question!.completion);
+      expect(question.read_scope?.mode).toBe("missing_answer"); expect(question.read_scope?.completion).toEqual(handoff.completion);
+      expect(question.raw_answer).toBeUndefined(); expect(question.confirmation).toBeUndefined();
+      expect(operation.read_checkpoint).toEqual({ ...readScopeConsumption(question.read_scope!), response_digest: handoff.completion!.response_digest });
     } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await h.cleanup(); }
   });
 

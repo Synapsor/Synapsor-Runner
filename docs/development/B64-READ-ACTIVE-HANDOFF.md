@@ -10,4 +10,4 @@
 10. RP01–07 producer scope accepted; Main public/CAS wait proofs and no-Read planning continuation remain separate.
 11. Five remaining v2 subject sites ported via actual reviewed inventory:44P,130filtered; revision relationship8P fixture-only; two mapping assistance repros cover10 open adapter rows.
 12. Typed assistance:10 original controls+2 actual committed relationship transitions PASS; native raw currentness/value retention class fixes before2F each; composedb18888PASS; four durable ports4PASS found/fixed exact decided-answer cold Resume ownership; independent review pending. Paid CLOSED.
-13. Three native transport ports WIP: pending checkpoint is checkpointed vs prior synthetic handled (review pending); exhausted four-answer flow wrongly takes sixth provider call (original expects5), exact before preserved.
+13. Three native transport ports3PASS: exact checkpointed pending adjudicated by R1; exhausted-answer sixth-call defect fixed to original5 calls; independent limit variant pending.

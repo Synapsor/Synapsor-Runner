@@ -6,7 +6,7 @@ import { prepareReviewedReadScope } from "./reviewed-read-scope.js";
 import { projectReadSubjectContext } from "../authoring-read-subject-context.js";
 import { projectReadScopeHostContext } from "../read-current-evidence.js";
 import { explorationBoundaryCandidateDigest } from "../auto-boundary.js";
-import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "../boundary-authoring-resume.js";
+import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "../boundary-authoring-resume.js";
 import { createReadAssistanceCheckpointHost, type ReadAssistanceCheckpointUpdate } from "../authoring-read-assistance-checkpoint-host.js";
 import { createReadMeaningHost, type ReadMeaningRecordUpdate } from "../authoring-read-meaning-host.js";
 import { generateModelReadWorkload, readWorkloadCatalog, type ModelReadWorkloadInput } from "../read-workload-model.js";
@@ -70,7 +70,7 @@ export async function typedReadAssistanceFixture(request: string, answer: () => 
     } });
   const structuredScope = { protocol: READ_SCOPE_PROTOCOL, current: references,
     answer: meaning.answerScope, resolveAnswer: meaning.resolveScopeAnswer };
-  return { boundary, structuredScope, state: () => state,
+  return { boundary, structuredScope, state: () => state, coldState: () => readBoundaryAuthoringResumeState(root, input.binding),
     run: (options: ModelReadWorkloadInput) => withAuthoringGenerationRecovery(async () => {
       configureAuthoringGenerationRecovery({ available: () => true, read: () => state.generation_recovery,
         current: async () => contextDigest, progress: () => {},
