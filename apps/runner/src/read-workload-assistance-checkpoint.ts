@@ -49,6 +49,8 @@ export type ReadWorkloadAssistanceCheckpoint = {
     clarification_answers: string[];
     /** Native captured-answer identities, not interpreted meanings or grants. */
     scope_answers?: Array<{ request: ReadScopeAssistanceRequest; answer_reference: ReadScopeAnswerReference }>;
+    /** Operator-origin corrections to an actual completed grouped review. */
+    scope_replacements?: Array<{ review_question_id: string; answer_reference: ReadScopeAnswerReference }>;
     /** The original response list is append-only. Only these operator-reviewed
      * edges select a later current interpretation; history is never removed. */
     reviewed_replacements?: ReadReviewedClarificationReplacement[];
@@ -181,7 +183,7 @@ export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkl
   if (value.stage !== "dispatching") assertAssistanceQuestion(q, value.stage as "waiting" | "decided");
   const flags = ["correction_used", "clarification_from_invalid_naming", "clarification_resolved", "mechanical_clarification_resolved",
     "value_request_resolved", "repeated_assistance_request", "naming_evidence_correction_used"];
-  if (!exact(s, ["call_count", "attempt", "phase", "relationship_reviews", "relationship_review_limit", "clarified_targets", "clarification_answers", "scope_answers", "unresolved_answers", "reviewed_replacements",
+  if (!exact(s, ["call_count", "attempt", "phase", "relationship_reviews", "relationship_review_limit", "clarified_targets", "clarification_answers", "scope_answers", "scope_replacements", "unresolved_answers", "reviewed_replacements",
     ...flags, "wording", "resolved_mechanical_request", "naming_correction_workload", "approved_value_context", "diagnostics", "usage"])
     || !count(s.call_count, 11) || !count(s.attempt, 16) || !["initial", "correction", "follow-up"].includes(s.phase as string)
     || ![0, 3].includes(s.relationship_review_limit as number) || !count(s.relationship_reviews, s.relationship_review_limit as number)
@@ -205,6 +207,15 @@ export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkl
       || s.scope_answers.some(answer => !record(answer) || !exact(answer, ["request", "answer_reference"])
         || !validScopeRequest(answer.request) || !validScopeAnswerReference(answer.answer_reference))) throw fail();
     const identities = s.scope_answers.map(answer => canonicalJsonDigest(answer.answer_reference));
+    if (new Set(identities).size !== identities.length) throw fail();
+  }
+  if (s.scope_replacements !== undefined) {
+    if (!Array.isArray(s.scope_replacements)
+      || s.scope_replacements.length + ((s.scope_answers as unknown[] | undefined)?.length ?? 0)
+        + s.clarified_targets.length + ((s.unresolved_answers as unknown[] | undefined)?.length ?? 0) > 4
+      || s.scope_replacements.some(answer => !record(answer) || !exact(answer, ["review_question_id", "answer_reference"])
+        || !text(answer.review_question_id, 100) || !validScopeAnswerReference(answer.answer_reference))) throw fail();
+    const identities = s.scope_replacements.map(answer => canonicalJsonDigest(answer.answer_reference));
     if (new Set(identities).size !== identities.length) throw fail();
   }
   if (s.reviewed_replacements !== undefined) {

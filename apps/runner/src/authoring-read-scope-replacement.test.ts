@@ -33,6 +33,15 @@ describe("native user-initiated Read replacement answer", () => {
       expect(parsed[1]!.raw_answer?.text).toBe(raw); expect(parsed[1]!.confirmation).toBeUndefined();
       expect(reopened.value.owner_handoffs![0]!.completion).toBeUndefined();
       expect(d(reopened.value.generation_recovery)).toBe(generationBefore);
+      const changed = (patch: Partial<typeof captured>) => { const { digest: _digest, ...body } = { ...captured, ...patch }; return { ...body, digest: d(body) }; };
+      expect(() => parseOperatorQuestions([original, captured], [answered], reopened.value.generation_recovery)).toThrow("declined Read proposal");
+      expect(() => parseOperatorQuestions([declined, changed({ read_scope: { ...captured.read_scope!, review_question_id: randomUUID() } })],
+        [answered], reopened.value.generation_recovery)).toThrow("declined Read proposal");
+      expect(() => parseOperatorQuestions([declined, captured, changed({ id: randomUUID() })], [answered], reopened.value.generation_recovery)).toThrow("without branching");
+      const fabricatedHandoff = createOwnerHandoff({ consumer: "read_revision_instruction", scope_digest: declined.scope_digest,
+        context_digest: declined.context_digest, question: handoff.question, completion: declined.read_scope!.completion });
+      expect(() => parseOperatorQuestions([declined, changed({ handoff_id: fabricatedHandoff.id })],
+        [answerOwnerHandoff(fabricatedHandoff, raw, declined.context_digest)], reopened.value.generation_recovery)).toThrow("attributable owner handoff");
     } finally { await fs.rm(f.dir, { recursive: true, force: true }); }
   });
 });

@@ -5,10 +5,11 @@ import { parseOperatorQuestion, parseOperatorQuestions, type OperatorQuestion } 
 import { parseOwnerHandoffs, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import { findReadMeaningEvidence, readDefinitionPhrases, ReadMeaningConflictError, isUnknownReadMeaning,
   type ReadMeaningCatalog, type ReadMeaningEvidence, type ReadMeaningStatement, type ReadMeaningTarget } from "./read-meaning-evidence.js";
-import type { ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
+import { parseReadWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import type { ReadWorkloadView } from "./read-workloads.js";
 import type { ExactReadRequestBinding } from "./boundary-job-read-requests.js";
 import type { ModelAuthoringConversation } from "./model-authoring-conversation.js";
+import type { BoundaryAuthoringResumeRead } from "./boundary-authoring-resume.js";
 import { resolveNativeReadScope } from "./authoring-read-scope-question.js";
 
 type Digest = `sha256:${string}`;
@@ -28,6 +29,24 @@ export type CurrentReadEvidenceRecords = {
   scope?: Omit<Parameters<typeof resolveNativeReadScope>[0], "questions" | "handoffs">;
 };
 export type CurrentStructuredReadEvidence = Parameters<typeof resolveNativeReadScope>[0];
+export type ReadScopeReplacementOwner = Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id" | "analysis">
+  & { read: BoundaryAuthoringResumeRead };
+/** Derive a continuation only from the exact native saved mapping and its real
+ * consumed review. A dispatch history supplies spent counters, never replay. */
+export function readScopeReplacementContinuation(input: ReadScopeReplacementOwner,
+  current: Pick<CurrentStructuredReadEvidence, "expectedBinding" | "references" | "catalog">) {
+  const resolved = resolveNativeReadScope({ ...input, ...current });
+  const question = resolved.question;
+  if (input.read.scope_question_id !== input.question_id || question.id !== input.question_id
+    || question.read_scope?.mode !== "review" || question.read_scope.record.proposal.applicability !== "read_requested"
+    || !question.disposition || question.confirmation || resolved.status === "stale" || !input.analysis
+    || question.read_scope.record.analysis_digest !== canonicalJsonDigest(input.analysis) || !input.read.assistance_history)
+    throw new Error("READ_SCOPE_REPLACEMENT_STALE: Reopen the exact declined mapped Read proposal with its saved producer history.");
+  const history = parseReadWorkloadAssistanceCheckpoint(input.read.assistance_history);
+  if (history.stage !== "dispatching" || !history.state.call_count || !history.state.attempt)
+    throw new Error("READ_SCOPE_REPLACEMENT_HISTORY_REQUIRED: No completed Read dispatch history can be resumed for this proposal.");
+  return { question, history };
+}
 export function currentStructuredReadEvidence(records: CurrentStructuredReadEvidence) {
   return resolveNativeReadScope(records);
 }
@@ -101,7 +120,7 @@ export function currentReadScopeContextDigest(input: {
   native?: Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id" | "analysis">;
   reusable?: Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id" | "analysis">;
   resumable?: Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id" | "analysis">;
-} | undefined): Digest {
+} | undefined, producerOwnedAnswerIds: ReadonlySet<string> = new Set()): Digest {
   if (!input) throw new Error("READ_SCOPE_PROTOCOL_REQUIRED: No scope evidence context is available.");
   const native = (value: typeof input.native) => {
     if (!value) return null;
@@ -110,7 +129,7 @@ export function currentReadScopeContextDigest(input: {
     return { requested_question_id: value.question_id, question_digest: current.question.digest,
       record_digest: current.record.digest, status: current.status, analysis_digest: canonicalJsonDigest(value.analysis ?? null) };
   };
-  return canonicalJsonDigest({ binding: input.binding, references: input.references, catalog: input.catalog,
+  return canonicalJsonDigest({ binding: input.binding, references: input.references.filter(ref => ref.kind !== "answer" || !producerOwnedAnswerIds.has(ref.question_id)), catalog: input.catalog,
     native: native(input.native), reusable: native(input.reusable), resumable: native(input.resumable) });
 }
 export type CurrentReadEvidenceReference =

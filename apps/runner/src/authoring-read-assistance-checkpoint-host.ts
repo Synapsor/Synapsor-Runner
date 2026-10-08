@@ -33,6 +33,7 @@ export type ReadAssistanceCheckpointAccess = {
   contextDigest(permit: ProjectAuthorityMutationPermit): Promise<Digest>;
   currentCandidate(): Promise<{ candidate_digest: Digest }>;
   readCheckpoint(): ReadWorkloadAssistanceCheckpoint | undefined;
+  readPreparedRead?(): BoundaryAuthoringResumeRead | undefined;
   /** Re-resolve from current protected records inside the owning mutation, not
    * a cached display/model inventory. Absence cannot silently use legacy mode. */
   scopeInventory?(permit: ProjectAuthorityMutationPermit): Promise<ReadScopeNativeInventory & { binding: ReadScopeBinding }>;
@@ -77,8 +78,22 @@ export function createReadAssistanceCheckpointHost({ access }: { access: ReadAss
         if (accepted.read_scope) {
           if (!completion || !access.scopeInventory) throw access.checkpointFailure("The native typed Read review");
           const inventory = await access.scopeInventory(permit);
-          const previous = [...access.readQuestions()].reverse().find(q => q.kind === "read_scope"
-            && q.read_scope?.mode === "review" && q.scope_digest === access.scopeDigest());
+          const currentRead = access.readPreparedRead?.();
+          const previousId = accepted.read_scope_predecessor_id ?? currentRead?.scope_question_id;
+          const previous = previousId ? access.readQuestions().find(q => q.id === previousId
+            && q.kind === "read_scope" && q.read_scope?.mode === "review" && q.scope_digest === access.scopeDigest()) : undefined;
+          if (previousId && (!previous || currentRead?.scope_question_id !== previousId
+            || access.readQuestions().some(q => q.read_scope?.predecessor_id === previousId)))
+            throw access.checkpointFailure("The exact current Read proposal predecessor");
+          if (accepted.read_scope_predecessor_id) {
+            const raw = access.readQuestions().find(q => q.read_scope?.mode === "replacement_answer"
+              && q.read_scope.review_question_id === previousId && q.raw_answer && !q.disposition
+              && !access.readQuestions().some(next => next.read_scope?.predecessor_id === q.id));
+            if (!previous?.disposition || previous.confirmation || !raw || !accepted.read_scope.references.some(ref => ref.kind === "answer"
+              && ref.question_id === raw.id && ref.question_revision === raw.revision && ref.answer_id === raw.raw_answer!.id
+              && ref.digest === canonicalJsonDigest(raw.raw_answer)))
+              throw access.checkpointFailure("The exact raw Read correction and declined proposal");
+          }
           scopeQuestion = proposeReadScopeReview(createReadScopeQuestion({ id: randomUUID(), revision: previous ? previous.revision + 1 : 1,
             scope_digest: access.scopeDigest(), context_digest: currentContext,
             read_scope: { mode: "review", record: accepted.read_scope, completion, ...(previous ? { predecessor_id: previous.id } : {}) } }),
