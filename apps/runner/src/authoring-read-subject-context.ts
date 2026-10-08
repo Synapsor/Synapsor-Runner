@@ -51,7 +51,11 @@ export function projectReadSubjectContext(input: { context: ReadSubjectReviewCon
     return { id: decision.id, kind: decision.kind, resource_id: decision.resource_id ?? null,
       input_digest: decision.input_digest, acknowledgement: d({ actor: confirmation.actor, confirmed_at: confirmation.confirmed_at }) };
   };
-  const globals = [acknowledged("trusted_context"), acknowledged("database_role"),
+  // Verified role posture can have no outstanding role decision. Require its
+  // acknowledgment only when the existing native review actually defines one;
+  // the coherent schema/role fingerprints above remain mandatory in either case.
+  const globals = [acknowledged("trusted_context"),
+    ...(decisions.some(decision => decision.kind === "database_role" && !decision.resource_id) ? [acknowledged("database_role")] : []),
     ...(candidate.organization_scope ? [acknowledged("organization_scope")] : [])];
   if (globals.some(value => !value)) return { subject_scopes: [], descriptions: [] };
   const subject_scopes: ReadSubjectBinding[] = [], descriptions: Array<{ root_resource: string; kind: ReadSubjectBinding["kind"]; text: string }> = [];
