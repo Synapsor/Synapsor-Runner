@@ -1,0 +1,54 @@
+{
+  "kind": "B65 private pure fixture/reference controls; not a native/product verdict",
+  "manifest_pin": "7544e7f5",
+  "fixture_scenarios": 28,
+  "owner_main_cases": [
+    "S01",
+    "S02",
+    "S03",
+    "S04",
+    "S05",
+    "T01",
+    "T02",
+    "T03",
+    "T04",
+    "T05",
+    "T06",
+    "T07",
+    "T08",
+    "T09",
+    "T10"
+  ],
+  "command": "env HOME=/var/tmp/synapsor-b65-reference-owned/home TMPDIR=/var/tmp/synapsor-b65-reference-owned/tmp node --test docs/development/b65-cross-resource/private-oracle/reference-state.test.mjs",
+  "results": {
+    "pass": 41,
+    "fail": 0,
+    "skip": 0,
+    "duration_ms": 191.631512
+  },
+  "earlier_unisolated_pure_check": {
+    "pass": 41,
+    "fail": 0,
+    "duration_ms": 147.256826,
+    "reason_followed_by_isolated_run": "Apply the standard owned HOME/TMP launch envelope; no Runner, database, provider or writes from the earlier pure check."
+  },
+  "launch": {
+    "home_tmp_mode": "0700",
+    "mem_available_kib": 19859384,
+    "disk_available_bytes": 66585964544
+  },
+  "independence": "Reference expected rows derive from fixture initial rows and exact effects; no Runner modules/evaluator/poststate input. Observed snapshot is comparison-only after expected state computed. Node builtins only.",
+  "boundaries": [
+    "No native Source DB query or effect, no model/provider call, no product code edits, no source authority/grants",
+    "All native case/engine verdicts remain unset pending Tester attempt; no public/locking/privacy/recovery/receipt support claim",
+    "Complete SQL-native schema/default/trigger effects must be explicitly predeclared by existing harness before native run; never normalize away unplanned changed fields",
+    "Operator-facts file must not be dumped wholesale into model; complete initial rows/expected outcomes remain private",
+    "Selected precision/NULL/overflow, policy-version/new participant, tenant collision, trigger and B61 companions remain pending exact native predeclaration or existing evidence linkage"
+  ],
+  "evidence": [
+    "/var/tmp/synapsor-b65-reference-owned/evidence/pure-first.log",
+    "/var/tmp/synapsor-b65-reference-owned/evidence/pure-isolated.log"
+  ],
+  "review": "Prepared by independent-from-product fixture helper; native Tester/R2 verdict still required. Self-tests do not constitute independent product acceptance.",
+  "read_preserved": "16f44f67 on codex/b64-read-review-persistence-20261008; signoff/context review and coherent Main integration pending."
+}

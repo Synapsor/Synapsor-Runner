@@ -1,0 +1,733 @@
+[
+  {
+    "id": "S01",
+    "operator_policy": "A designated invariant limits the complete post-change total to 50.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "new",
+            "amount_cents": "2500"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "S02",
+    "operator_policy": "A designated invariant limits the complete post-change total to 50.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "new",
+            "amount_cents": "2000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "S03",
+    "operator_policy": "A designated invariant limits the complete post-change total to 50.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "new",
+            "amount_cents": "1000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "S04",
+    "operator_policy": "A designated invariant limits the complete post-change total to 50.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "old10",
+          "set": {
+            "amount_cents": "2500"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "S05",
+    "operator_policy": "A designated invariant limits the complete post-change total to 50.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "old10",
+          "set": {
+            "amount_cents": "3500"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "PRE01",
+    "operator_policy": "Only an open request may be closed. This is pre-state eligibility, not a designated post-state invariant.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "requests",
+          "key": "r",
+          "set": {
+            "status": "closed"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T01",
+    "operator_policy": "For each product, price minus discount must remain at least its floor.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "products",
+          "key": "p",
+          "set": {
+            "price_cents": "8000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "products",
+          "key": "p",
+          "set": {
+            "discount_cents": "4000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T02",
+    "operator_policy": "Each team must retain at least one available responder.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "responders",
+          "key": "r1",
+          "set": {
+            "available": false
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "responders",
+          "key": "r2",
+          "set": {
+            "available": false
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T02-three",
+    "operator_policy": "Each team must retain at least one available responder.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "responders",
+          "key": "r1",
+          "set": {
+            "available": false
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "responders",
+          "key": "r2",
+          "set": {
+            "available": false
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T02-teams",
+    "operator_policy": "Each team must retain at least one available responder.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "responders",
+          "key": "r1",
+          "set": {
+            "available": false
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "responders",
+          "key": "r2",
+          "set": {
+            "available": false
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T03",
+    "operator_policy": "Credit amounts plus invoice waiver amounts share one team-and-period budget of 500. Distinct rows count once each; customers are not independent budget scopes.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "credits",
+          "row": {
+            "id": "c",
+            "team": "T",
+            "period": "P",
+            "customer": "X",
+            "principal": "P",
+            "amount_cents": "30000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "invoices",
+          "key": "i",
+          "set": {
+            "waiver_cents": "25000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T03-principals",
+    "operator_policy": "Credit amounts plus invoice waiver amounts share one team-and-period budget of 500. Distinct rows count once each; customers are not independent budget scopes.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "credits",
+          "row": {
+            "id": "c",
+            "team": "T",
+            "period": "P",
+            "customer": "X",
+            "principal": "PX",
+            "amount_cents": "30000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "invoices",
+          "key": "i",
+          "set": {
+            "waiver_cents": "25000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T03-teams",
+    "operator_policy": "Credit amounts plus invoice waiver amounts share one team-and-period budget of 500. Distinct rows count once each; customers are not independent budget scopes.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "credits",
+          "row": {
+            "id": "c",
+            "team": "T",
+            "period": "P",
+            "customer": "X",
+            "principal": "PX",
+            "amount_cents": "30000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "invoices",
+          "key": "i",
+          "set": {
+            "waiver_cents": "25000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T04",
+    "operator_policy": "Usage must not exceed base budget plus all applicable adjustments; reductions have no grandfathering.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "credits",
+          "row": {
+            "id": "new",
+            "amount_cents": "10000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "adjustments",
+          "row": {
+            "id": "adj",
+            "amount_cents": "-10000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T04-below-usage",
+    "operator_policy": "Usage must not exceed base budget plus all applicable adjustments; reductions have no grandfathering.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "credits",
+          "row": {
+            "id": "new",
+            "amount_cents": "10000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "adjustments",
+          "row": {
+            "id": "adj",
+            "amount_cents": "-20000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T05",
+    "operator_policy": "At most one active campaign benefit may exist across cash and product awards for a campaign.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "cash_awards",
+          "row": {
+            "id": "c",
+            "campaign": "C",
+            "active": true
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "product_awards",
+          "row": {
+            "id": "p",
+            "campaign": "C",
+            "active": true
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T05-activate",
+    "operator_policy": "At most one active campaign benefit may exist across cash and product awards for a campaign.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "cash_awards",
+          "row": {
+            "id": "c",
+            "campaign": "C",
+            "active": true
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "product_awards",
+          "key": "p",
+          "set": {
+            "active": true
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T05-campaigns",
+    "operator_policy": "At most one active campaign benefit may exist across cash and product awards for a campaign.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "cash_awards",
+          "row": {
+            "id": "c",
+            "campaign": "C",
+            "active": true
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "product_awards",
+          "row": {
+            "id": "p",
+            "campaign": "D",
+            "active": true
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T06",
+    "operator_policy": "No more than ten distinct customers may have completed refunds in this population. Count customers, not approvals or rows.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "refunds",
+          "row": {
+            "id": "a",
+            "customer": "c10",
+            "status": "completed"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "refunds",
+          "row": {
+            "id": "b",
+            "customer": "c11",
+            "status": "completed"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T06-same-customer",
+    "operator_policy": "No more than ten distinct customers may have completed refunds in this population. Count customers, not approvals or rows.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "refunds",
+          "row": {
+            "id": "a",
+            "customer": "c10",
+            "status": "completed"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "refunds",
+          "row": {
+            "id": "b",
+            "customer": "c10",
+            "status": "completed"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T06-complete",
+    "operator_policy": "No more than ten distinct customers may have completed refunds in this population. Count customers, not approvals or rows.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "refunds",
+          "key": "a",
+          "set": {
+            "status": "completed"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "refunds",
+          "key": "b",
+          "set": {
+            "status": "completed"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T07",
+    "operator_policy": "Each business group P/Q has limit100. Moving an item changes reviewed business grouping only, never tenant/principal.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "p",
+          "set": {
+            "group": "Q"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "new",
+            "group": "Q",
+            "amount_cents": "3000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T08",
+    "operator_policy": "The complete atomic UPDATE group must preserve total <=100; its two +15 effects are evaluated together.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "a",
+          "set": {
+            "amount_cents": "5500"
+          }
+        },
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "b",
+          "set": {
+            "amount_cents": "5500"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T08-transfer",
+    "operator_policy": "One atomic two-UPDATE transfer keeps total90. Check whole effect, not transient statement prefix.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "a",
+          "set": {
+            "amount_cents": "4000"
+          }
+        },
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "b",
+          "set": {
+            "amount_cents": "5000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T08-transfer-reversed",
+    "operator_policy": "One atomic two-UPDATE transfer keeps total90. Check whole effect, not transient statement prefix.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "b",
+          "set": {
+            "amount_cents": "5000"
+          }
+        },
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "a",
+          "set": {
+            "amount_cents": "4000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T08-race",
+    "operator_policy": "From total70, atomic group+30 races independent UPDATE+20; total must remain <=100.",
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "a",
+          "set": {
+            "amount_cents": "4000"
+          }
+        },
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "b",
+          "set": {
+            "amount_cents": "4000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "c",
+          "set": {
+            "amount_cents": "4000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T09",
+    "operator_policy": "Total must remain <=100; every pair of requests40/35/30 fits, all three do not.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "A",
+            "amount_cents": "4000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "B",
+            "amount_cents": "3500"
+          }
+        }
+      ],
+      "C": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "C",
+            "amount_cents": "3000"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  },
+  {
+    "id": "T10",
+    "operator_policy": "Charges times the applicable rate must remain <=100 for every impacted account. If protection cannot cover all impacted accounts, refuse the invariant-bearing operation.",
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "charges",
+          "row": {
+            "id": "new",
+            "account": "A",
+            "amount_cents": "1000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "rates",
+          "key": "r",
+          "set": {
+            "numerator": "120"
+          }
+        }
+      ]
+    },
+    "visibility": "Declared business intent/effects only. Initial complete Source rows and oracle results are excluded; actual provider requests must use existing privacy/Source-consent handling."
+  }
+]

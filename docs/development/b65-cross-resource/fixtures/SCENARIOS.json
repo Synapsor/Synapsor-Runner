@@ -1,0 +1,1637 @@
+[
+  {
+    "id": "S01",
+    "family": "sequential",
+    "initial": {
+      "entries": [
+        {
+          "id": "old10",
+          "amount_cents": "1000"
+        },
+        {
+          "id": "old20",
+          "amount_cents": "2000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "new",
+            "amount_cents": "2500"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "sum",
+      "table": "entries",
+      "field": "amount_cents",
+      "limit_cents": "5000"
+    },
+    "operator_policy": "A designated invariant limits the complete post-change total to 50.",
+    "orders": [
+      [
+        "A"
+      ]
+    ],
+    "note": "Each sequential case starts fresh at 30 including existing row10. No prior case effects carry over."
+  },
+  {
+    "id": "S02",
+    "family": "sequential",
+    "initial": {
+      "entries": [
+        {
+          "id": "old10",
+          "amount_cents": "1000"
+        },
+        {
+          "id": "old20",
+          "amount_cents": "2000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "new",
+            "amount_cents": "2000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "sum",
+      "table": "entries",
+      "field": "amount_cents",
+      "limit_cents": "5000"
+    },
+    "operator_policy": "A designated invariant limits the complete post-change total to 50.",
+    "orders": [
+      [
+        "A"
+      ]
+    ],
+    "note": "Each sequential case starts fresh at 30 including existing row10. No prior case effects carry over."
+  },
+  {
+    "id": "S03",
+    "family": "sequential",
+    "initial": {
+      "entries": [
+        {
+          "id": "old10",
+          "amount_cents": "1000"
+        },
+        {
+          "id": "old20",
+          "amount_cents": "2000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "new",
+            "amount_cents": "1000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "sum",
+      "table": "entries",
+      "field": "amount_cents",
+      "limit_cents": "5000"
+    },
+    "operator_policy": "A designated invariant limits the complete post-change total to 50.",
+    "orders": [
+      [
+        "A"
+      ]
+    ],
+    "note": "Each sequential case starts fresh at 30 including existing row10. No prior case effects carry over."
+  },
+  {
+    "id": "S04",
+    "family": "sequential",
+    "initial": {
+      "entries": [
+        {
+          "id": "old10",
+          "amount_cents": "1000"
+        },
+        {
+          "id": "old20",
+          "amount_cents": "2000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "old10",
+          "set": {
+            "amount_cents": "2500"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "sum",
+      "table": "entries",
+      "field": "amount_cents",
+      "limit_cents": "5000"
+    },
+    "operator_policy": "A designated invariant limits the complete post-change total to 50.",
+    "orders": [
+      [
+        "A"
+      ]
+    ],
+    "note": "Each sequential case starts fresh at 30 including existing row10. No prior case effects carry over."
+  },
+  {
+    "id": "S05",
+    "family": "sequential",
+    "initial": {
+      "entries": [
+        {
+          "id": "old10",
+          "amount_cents": "1000"
+        },
+        {
+          "id": "old20",
+          "amount_cents": "2000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "old10",
+          "set": {
+            "amount_cents": "3500"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "sum",
+      "table": "entries",
+      "field": "amount_cents",
+      "limit_cents": "5000"
+    },
+    "operator_policy": "A designated invariant limits the complete post-change total to 50.",
+    "orders": [
+      [
+        "A"
+      ]
+    ],
+    "note": "Each sequential case starts fresh at 30 including existing row10. No prior case effects carry over."
+  },
+  {
+    "id": "PRE01",
+    "family": "precondition",
+    "initial": {
+      "requests": [
+        {
+          "id": "r",
+          "status": "open"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "requests",
+          "key": "r",
+          "set": {
+            "status": "closed"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "precondition",
+      "table": "requests",
+      "key": "r",
+      "field": "status",
+      "value": "open"
+    },
+    "operator_policy": "Only an open request may be closed. This is pre-state eligibility, not a designated post-state invariant.",
+    "orders": [
+      [
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T01",
+    "family": "column_relation",
+    "initial": {
+      "products": [
+        {
+          "id": "p",
+          "price_cents": "10000",
+          "discount_cents": "2000",
+          "floor_cents": "6000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "products",
+          "key": "p",
+          "set": {
+            "price_cents": "8000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "products",
+          "key": "p",
+          "set": {
+            "discount_cents": "4000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "net_price"
+    },
+    "operator_policy": "For each product, price minus discount must remain at least its floor.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T02",
+    "family": "minimum_population",
+    "initial": {
+      "responders": [
+        {
+          "id": "r1",
+          "team": "T",
+          "available": true
+        },
+        {
+          "id": "r2",
+          "team": "T",
+          "available": true
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "responders",
+          "key": "r1",
+          "set": {
+            "available": false
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "responders",
+          "key": "r2",
+          "set": {
+            "available": false
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "minimum_available",
+      "teams": [
+        "T"
+      ]
+    },
+    "operator_policy": "Each team must retain at least one available responder.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T02-three",
+    "family": "minimum_population",
+    "initial": {
+      "responders": [
+        {
+          "id": "r1",
+          "team": "T",
+          "available": true
+        },
+        {
+          "id": "r2",
+          "team": "T",
+          "available": true
+        },
+        {
+          "id": "r3",
+          "team": "T",
+          "available": true
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "responders",
+          "key": "r1",
+          "set": {
+            "available": false
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "responders",
+          "key": "r2",
+          "set": {
+            "available": false
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "minimum_available",
+      "teams": [
+        "T"
+      ]
+    },
+    "operator_policy": "Each team must retain at least one available responder.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T02-teams",
+    "family": "minimum_population",
+    "initial": {
+      "responders": [
+        {
+          "id": "r1",
+          "team": "T",
+          "available": true
+        },
+        {
+          "id": "r2",
+          "team": "U",
+          "available": true
+        },
+        {
+          "id": "r3",
+          "team": "T",
+          "available": true
+        },
+        {
+          "id": "r4",
+          "team": "U",
+          "available": true
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "responders",
+          "key": "r1",
+          "set": {
+            "available": false
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "responders",
+          "key": "r2",
+          "set": {
+            "available": false
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "minimum_available",
+      "teams": [
+        "T",
+        "U"
+      ]
+    },
+    "operator_policy": "Each team must retain at least one available responder.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T03",
+    "family": "cross_table_budget",
+    "initial": {
+      "credits": [],
+      "invoices": [
+        {
+          "id": "i",
+          "team": "T",
+          "period": "P",
+          "customer": "Y",
+          "principal": "P",
+          "waiver_cents": "0"
+        }
+      ],
+      "limits": [
+        {
+          "id": "lT",
+          "team": "T",
+          "period": "P",
+          "limit_cents": "50000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "credits",
+          "row": {
+            "id": "c",
+            "team": "T",
+            "period": "P",
+            "customer": "X",
+            "principal": "P",
+            "amount_cents": "30000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "invoices",
+          "key": "i",
+          "set": {
+            "waiver_cents": "25000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "cross_budget"
+    },
+    "operator_policy": "Credit amounts plus invoice waiver amounts share one team-and-period budget of 500. Distinct rows count once each; customers are not independent budget scopes.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ],
+    "note": "The whole fixture is private oracle/source preparation material. Different-principal completeness must not expose another principal's rows or totals to the agent."
+  },
+  {
+    "id": "T03-principals",
+    "family": "cross_table_budget",
+    "initial": {
+      "credits": [],
+      "invoices": [
+        {
+          "id": "i",
+          "team": "T",
+          "period": "P",
+          "customer": "Y",
+          "principal": "PY",
+          "waiver_cents": "0"
+        }
+      ],
+      "limits": [
+        {
+          "id": "lT",
+          "team": "T",
+          "period": "P",
+          "limit_cents": "50000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "credits",
+          "row": {
+            "id": "c",
+            "team": "T",
+            "period": "P",
+            "customer": "X",
+            "principal": "PX",
+            "amount_cents": "30000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "invoices",
+          "key": "i",
+          "set": {
+            "waiver_cents": "25000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "cross_budget"
+    },
+    "operator_policy": "Credit amounts plus invoice waiver amounts share one team-and-period budget of 500. Distinct rows count once each; customers are not independent budget scopes.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ],
+    "note": "The whole fixture is private oracle/source preparation material. Different-principal completeness must not expose another principal's rows or totals to the agent."
+  },
+  {
+    "id": "T03-teams",
+    "family": "cross_table_budget",
+    "initial": {
+      "credits": [],
+      "invoices": [
+        {
+          "id": "i",
+          "team": "U",
+          "period": "P",
+          "customer": "Y",
+          "principal": "PY",
+          "waiver_cents": "0"
+        }
+      ],
+      "limits": [
+        {
+          "id": "lT",
+          "team": "T",
+          "period": "P",
+          "limit_cents": "50000"
+        },
+        {
+          "id": "lU",
+          "team": "U",
+          "period": "P",
+          "limit_cents": "50000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "credits",
+          "row": {
+            "id": "c",
+            "team": "T",
+            "period": "P",
+            "customer": "X",
+            "principal": "PX",
+            "amount_cents": "30000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "invoices",
+          "key": "i",
+          "set": {
+            "waiver_cents": "25000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "cross_budget"
+    },
+    "operator_policy": "Credit amounts plus invoice waiver amounts share one team-and-period budget of 500. Distinct rows count once each; customers are not independent budget scopes.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ],
+    "note": "The whole fixture is private oracle/source preparation material. Different-principal completeness must not expose another principal's rows or totals to the agent."
+  },
+  {
+    "id": "T04",
+    "family": "threshold_insert",
+    "initial": {
+      "credits": [
+        {
+          "id": "used",
+          "amount_cents": "35000"
+        }
+      ],
+      "adjustments": [],
+      "budget": [
+        {
+          "id": "b",
+          "base_cents": "50000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "credits",
+          "row": {
+            "id": "new",
+            "amount_cents": "10000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "adjustments",
+          "row": {
+            "id": "adj",
+            "amount_cents": "-10000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "adjusted_budget"
+    },
+    "operator_policy": "Usage must not exceed base budget plus all applicable adjustments; reductions have no grandfathering.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ],
+    "note": "The -200 companion is a separately declared fixture choice to prove a fresh reduction below existing usage350; Owner main case stays -100."
+  },
+  {
+    "id": "T04-below-usage",
+    "family": "threshold_insert",
+    "initial": {
+      "credits": [
+        {
+          "id": "used",
+          "amount_cents": "35000"
+        }
+      ],
+      "adjustments": [],
+      "budget": [
+        {
+          "id": "b",
+          "base_cents": "50000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "credits",
+          "row": {
+            "id": "new",
+            "amount_cents": "10000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "adjustments",
+          "row": {
+            "id": "adj",
+            "amount_cents": "-20000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "adjusted_budget"
+    },
+    "operator_policy": "Usage must not exceed base budget plus all applicable adjustments; reductions have no grandfathering.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ],
+    "note": "The -200 companion is a separately declared fixture choice to prove a fresh reduction below existing usage350; Owner main case stays -100."
+  },
+  {
+    "id": "T05",
+    "family": "cross_table_exclusivity",
+    "initial": {
+      "cash_awards": [],
+      "product_awards": []
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "cash_awards",
+          "row": {
+            "id": "c",
+            "campaign": "C",
+            "active": true
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "product_awards",
+          "row": {
+            "id": "p",
+            "campaign": "C",
+            "active": true
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "campaign_exclusivity"
+    },
+    "operator_policy": "At most one active campaign benefit may exist across cash and product awards for a campaign.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T05-activate",
+    "family": "cross_table_exclusivity",
+    "initial": {
+      "cash_awards": [],
+      "product_awards": [
+        {
+          "id": "p",
+          "campaign": "C",
+          "active": false
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "cash_awards",
+          "row": {
+            "id": "c",
+            "campaign": "C",
+            "active": true
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "product_awards",
+          "key": "p",
+          "set": {
+            "active": true
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "campaign_exclusivity"
+    },
+    "operator_policy": "At most one active campaign benefit may exist across cash and product awards for a campaign.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T05-campaigns",
+    "family": "cross_table_exclusivity",
+    "initial": {
+      "cash_awards": [],
+      "product_awards": []
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "cash_awards",
+          "row": {
+            "id": "c",
+            "campaign": "C",
+            "active": true
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "product_awards",
+          "row": {
+            "id": "p",
+            "campaign": "D",
+            "active": true
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "campaign_exclusivity"
+    },
+    "operator_policy": "At most one active campaign benefit may exist across cash and product awards for a campaign.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T06",
+    "family": "distinct_count",
+    "initial": {
+      "refunds": [
+        {
+          "id": "r1",
+          "customer": "c1",
+          "status": "completed"
+        },
+        {
+          "id": "r2",
+          "customer": "c2",
+          "status": "completed"
+        },
+        {
+          "id": "r3",
+          "customer": "c3",
+          "status": "completed"
+        },
+        {
+          "id": "r4",
+          "customer": "c4",
+          "status": "completed"
+        },
+        {
+          "id": "r5",
+          "customer": "c5",
+          "status": "completed"
+        },
+        {
+          "id": "r6",
+          "customer": "c6",
+          "status": "completed"
+        },
+        {
+          "id": "r7",
+          "customer": "c7",
+          "status": "completed"
+        },
+        {
+          "id": "r8",
+          "customer": "c8",
+          "status": "completed"
+        },
+        {
+          "id": "r9",
+          "customer": "c9",
+          "status": "completed"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "refunds",
+          "row": {
+            "id": "a",
+            "customer": "c10",
+            "status": "completed"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "refunds",
+          "row": {
+            "id": "b",
+            "customer": "c11",
+            "status": "completed"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "distinct_completed",
+      "limit": "10"
+    },
+    "operator_policy": "No more than ten distinct customers may have completed refunds in this population. Count customers, not approvals or rows.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T06-same-customer",
+    "family": "distinct_count",
+    "initial": {
+      "refunds": [
+        {
+          "id": "r1",
+          "customer": "c1",
+          "status": "completed"
+        },
+        {
+          "id": "r2",
+          "customer": "c2",
+          "status": "completed"
+        },
+        {
+          "id": "r3",
+          "customer": "c3",
+          "status": "completed"
+        },
+        {
+          "id": "r4",
+          "customer": "c4",
+          "status": "completed"
+        },
+        {
+          "id": "r5",
+          "customer": "c5",
+          "status": "completed"
+        },
+        {
+          "id": "r6",
+          "customer": "c6",
+          "status": "completed"
+        },
+        {
+          "id": "r7",
+          "customer": "c7",
+          "status": "completed"
+        },
+        {
+          "id": "r8",
+          "customer": "c8",
+          "status": "completed"
+        },
+        {
+          "id": "r9",
+          "customer": "c9",
+          "status": "completed"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "refunds",
+          "row": {
+            "id": "a",
+            "customer": "c10",
+            "status": "completed"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "refunds",
+          "row": {
+            "id": "b",
+            "customer": "c10",
+            "status": "completed"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "distinct_completed",
+      "limit": "10"
+    },
+    "operator_policy": "No more than ten distinct customers may have completed refunds in this population. Count customers, not approvals or rows.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T06-complete",
+    "family": "distinct_count",
+    "initial": {
+      "refunds": [
+        {
+          "id": "r1",
+          "customer": "c1",
+          "status": "completed"
+        },
+        {
+          "id": "r2",
+          "customer": "c2",
+          "status": "completed"
+        },
+        {
+          "id": "r3",
+          "customer": "c3",
+          "status": "completed"
+        },
+        {
+          "id": "r4",
+          "customer": "c4",
+          "status": "completed"
+        },
+        {
+          "id": "r5",
+          "customer": "c5",
+          "status": "completed"
+        },
+        {
+          "id": "r6",
+          "customer": "c6",
+          "status": "completed"
+        },
+        {
+          "id": "r7",
+          "customer": "c7",
+          "status": "completed"
+        },
+        {
+          "id": "r8",
+          "customer": "c8",
+          "status": "completed"
+        },
+        {
+          "id": "r9",
+          "customer": "c9",
+          "status": "completed"
+        },
+        {
+          "id": "a",
+          "customer": "c10",
+          "status": "pending"
+        },
+        {
+          "id": "b",
+          "customer": "c11",
+          "status": "pending"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "refunds",
+          "key": "a",
+          "set": {
+            "status": "completed"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "refunds",
+          "key": "b",
+          "set": {
+            "status": "completed"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "distinct_completed",
+      "limit": "10"
+    },
+    "operator_policy": "No more than ten distinct customers may have completed refunds in this population. Count customers, not approvals or rows.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T07",
+    "family": "group_move",
+    "initial": {
+      "entries": [
+        {
+          "id": "p",
+          "group": "P",
+          "amount_cents": "4000"
+        },
+        {
+          "id": "q",
+          "group": "Q",
+          "amount_cents": "5000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "p",
+          "set": {
+            "group": "Q"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "new",
+            "group": "Q",
+            "amount_cents": "3000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "group_budget",
+      "limit_cents": "10000"
+    },
+    "operator_policy": "Each business group P/Q has limit100. Moving an item changes reviewed business grouping only, never tenant/principal.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ],
+    "note": "Both affected groups must be protected. Run both operation orders and reverse acquisition inputs without changing effects."
+  },
+  {
+    "id": "T08",
+    "family": "atomic_update",
+    "initial": {
+      "entries": [
+        {
+          "id": "a",
+          "amount_cents": "4000"
+        },
+        {
+          "id": "b",
+          "amount_cents": "4000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "a",
+          "set": {
+            "amount_cents": "5500"
+          }
+        },
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "b",
+          "set": {
+            "amount_cents": "5500"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "sum",
+      "table": "entries",
+      "field": "amount_cents",
+      "limit_cents": "10000"
+    },
+    "operator_policy": "The complete atomic UPDATE group must preserve total <=100; its two +15 effects are evaluated together.",
+    "orders": [
+      [
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T08-transfer",
+    "family": "atomic_update",
+    "initial": {
+      "entries": [
+        {
+          "id": "a",
+          "amount_cents": "7000"
+        },
+        {
+          "id": "b",
+          "amount_cents": "2000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "a",
+          "set": {
+            "amount_cents": "4000"
+          }
+        },
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "b",
+          "set": {
+            "amount_cents": "5000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "sum",
+      "table": "entries",
+      "field": "amount_cents",
+      "limit_cents": "10000"
+    },
+    "operator_policy": "One atomic two-UPDATE transfer keeps total90. Check whole effect, not transient statement prefix.",
+    "orders": [
+      [
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T08-transfer-reversed",
+    "family": "atomic_update",
+    "initial": {
+      "entries": [
+        {
+          "id": "a",
+          "amount_cents": "7000"
+        },
+        {
+          "id": "b",
+          "amount_cents": "2000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "b",
+          "set": {
+            "amount_cents": "5000"
+          }
+        },
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "a",
+          "set": {
+            "amount_cents": "4000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "sum",
+      "table": "entries",
+      "field": "amount_cents",
+      "limit_cents": "10000"
+    },
+    "operator_policy": "One atomic two-UPDATE transfer keeps total90. Check whole effect, not transient statement prefix.",
+    "orders": [
+      [
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T08-race",
+    "family": "atomic_update",
+    "initial": {
+      "entries": [
+        {
+          "id": "a",
+          "amount_cents": "2500"
+        },
+        {
+          "id": "b",
+          "amount_cents": "2500"
+        },
+        {
+          "id": "c",
+          "amount_cents": "2000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "a",
+          "set": {
+            "amount_cents": "4000"
+          }
+        },
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "b",
+          "set": {
+            "amount_cents": "4000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "entries",
+          "key": "c",
+          "set": {
+            "amount_cents": "4000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "sum",
+      "table": "entries",
+      "field": "amount_cents",
+      "limit_cents": "10000"
+    },
+    "operator_policy": "From total70, atomic group+30 races independent UPDATE+20; total must remain <=100.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ]
+  },
+  {
+    "id": "T09",
+    "family": "three_contenders",
+    "initial": {
+      "entries": []
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "A",
+            "amount_cents": "4000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "B",
+            "amount_cents": "3500"
+          }
+        }
+      ],
+      "C": [
+        {
+          "kind": "insert",
+          "table": "entries",
+          "row": {
+            "id": "C",
+            "amount_cents": "3000"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "sum",
+      "table": "entries",
+      "field": "amount_cents",
+      "limit_cents": "10000"
+    },
+    "operator_policy": "Total must remain <=100; every pair of requests40/35/30 fits, all three do not.",
+    "orders": [
+      [
+        "A",
+        "B",
+        "C"
+      ],
+      [
+        "A",
+        "C",
+        "B"
+      ],
+      [
+        "B",
+        "A",
+        "C"
+      ],
+      [
+        "B",
+        "C",
+        "A"
+      ],
+      [
+        "C",
+        "A",
+        "B"
+      ],
+      [
+        "C",
+        "B",
+        "A"
+      ]
+    ],
+    "note": "All six orders predeclared. Oracle computes serial valid possibilities; stale proposals need not produce optimal acceptance. Both-refused is not a positive progress result."
+  },
+  {
+    "id": "T10",
+    "family": "indirect_rate",
+    "initial": {
+      "charges": [
+        {
+          "id": "old",
+          "account": "A",
+          "amount_cents": "8000"
+        }
+      ],
+      "rates": [
+        {
+          "id": "r",
+          "account": "A",
+          "numerator": "100",
+          "denominator": "100"
+        }
+      ],
+      "limits": [
+        {
+          "id": "l",
+          "account": "A",
+          "limit_cents": "10000"
+        }
+      ]
+    },
+    "operations": {
+      "A": [
+        {
+          "kind": "insert",
+          "table": "charges",
+          "row": {
+            "id": "new",
+            "account": "A",
+            "amount_cents": "1000"
+          }
+        }
+      ],
+      "B": [
+        {
+          "kind": "update",
+          "table": "rates",
+          "key": "r",
+          "set": {
+            "numerator": "120"
+          }
+        }
+      ]
+    },
+    "rule": {
+      "kind": "rate_budget"
+    },
+    "operator_policy": "Charges times the applicable rate must remain <=100 for every impacted account. If protection cannot cover all impacted accounts, refuse the invariant-bearing operation.",
+    "orders": [
+      [
+        "A",
+        "B"
+      ],
+      [
+        "B",
+        "A"
+      ]
+    ],
+    "note": "Exact rational comparison; main combined value108. No invented bounded affected-account population."
+  }
+]

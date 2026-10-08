@@ -1,0 +1,929 @@
+{
+  "version": 1,
+  "authority": "Owner attachment de468b9a-5464-40fa-b848-b06dceb57f26; exact main-case numbers retained",
+  "visibility": "PRIVATE TEST PLAN / ORACLE: never provide this manifest or complete initial rows to the model",
+  "window": {
+    "T0": "2026-10-08T16:56:15Z",
+    "end": "2026-10-12T16:56:15Z",
+    "integration_start": "2026-10-11T16:56:15Z"
+  },
+  "owner": "Read helper owns manifest/reference fixtures; independent Tester owns native SUPPORT-MATRIX and verdict",
+  "priority": [
+    "sequential",
+    "T01",
+    "T03",
+    "T04",
+    "T08",
+    "T09"
+  ],
+  "units": "Money uses signed decimal integer cents strings; rate uses exact integer numerator/denominator. No floating-point arithmetic. Synthetic IDs are test-only.",
+  "independence": "Private oracle imports only these fixtures and Node builtins; never Runner code, evaluator, SQL parser, or observed Runner state to compute expected state. Native snapshots may be compared after reference calculation. This is no new Runner harness or capability.",
+  "native_verdicts": [
+    "ENFORCED",
+    "UNSUPPORTED_REFUSED",
+    "DEFECT",
+    "NOT_REACHED_HARNESS"
+  ],
+  "classification": {
+    "ENFORCED": "Actual supported path records exact deciding check, correct complete state/receipt, necessary concurrency protection, useful progress and fresh valid control. Stale refusal alone is not post-state evidence.",
+    "UNSUPPORTED_REFUSED": "Intent retained; unsupported invariant designation/activation refused before effect. Correct boundary, not implemented capability.",
+    "DEFECT": "Violation of supported invariant, scope/privacy, exact-effect, receipt/recovery or authority contract. Preserve evidence.",
+    "NOT_REACHED_HARNESS": "Harness/preparation prevented the target. No product pass.",
+    "not_run": "null native verdict until attempted; support unknown. No engine result transfers."
+  },
+  "native_observation_fields": [
+    "engine/version",
+    "source/product/fixture pin",
+    "route:public|native_component",
+    "case/order/barrier/wait evidence",
+    "initial complete snapshot",
+    "proposed exact atomic effects",
+    "actual deciding code/stage",
+    "complete committed snapshot and unchanged rows/fields",
+    "proposal/execution/receipt status and identity",
+    "private scope disclosure",
+    "locking/poststate/recovery/progress separately",
+    "fresh individual-valid and continuation control",
+    "unknown COMMIT hold/no replay",
+    "failure/unsupported reason"
+  ],
+  "execution_rules": [
+    "Existing shared native harness only; no custom mutex, queue1, sleep-only race, or hidden constraint replacing Runner protection.",
+    "Fresh baseline per scenario/order. Individual valid controls and both winning orders; T09 six orders.",
+    "Fresh valid continuation may be a new separately observed proposal; never auto-adjust or replay a refused/stale request.",
+    "Atomic UPDATE groups only; no INSERT-group capability expansion.",
+    "Unsupported lower-bound/distinct/range/global/cross-principal shapes remain characterization, never scope reduction or approval fallback.",
+    "Hidden rows are not zero; complete data/oracle remains private. Participating-vs-bypass writer boundary must be disclosed.",
+    "No Runner data-source DB/native/provider calls performed by fixture helper; no authority or grants added."
+  ],
+  "selected_companions": [
+    {
+      "id": "C-precision",
+      "apply_to": [
+        "T01",
+        "T03",
+        "T10"
+      ],
+      "requirement": "Exact cents/rational arithmetic; NULL, signed/overflow and precision boundaries; no implicit null=0.",
+      "state": "PENDING_NATIVE_PREDECLARATION"
+    },
+    {
+      "id": "C-membership",
+      "apply_to": [
+        "T02",
+        "T06",
+        "T07"
+      ],
+      "requirement": "Status/group membership changes and tenant-ID collisions; independent scopes unaffected.",
+      "state": "PARTIAL_EXACT_FIXTURES_PRESENT"
+    },
+    {
+      "id": "C-participant-version",
+      "apply_to": [
+        "T03",
+        "T09"
+      ],
+      "requirement": "New participant Action and changed active policy version retain shared invariant protection.",
+      "state": "PENDING_NATIVE_PREDECLARATION"
+    },
+    {
+      "id": "C-source-effects",
+      "apply_to": [
+        "T04",
+        "T08"
+      ],
+      "requirement": "Declared trigger/default effects; participating/bypass writers. Unknown source effect refuses rather than invents outcome.",
+      "state": "PENDING_NATIVE_PREDECLARATION"
+    },
+    {
+      "id": "C-recovery",
+      "apply_to": [
+        "T08",
+        "T09"
+      ],
+      "requirement": "Reuse B61 exact receipt-scope rollback/unknown-COMMIT evidence; no replay, duplicate effect, or release of unknown capacity.",
+      "state": "PENDING_EXISTING_EVIDENCE_LINK"
+    }
+  ],
+  "cases": [
+    {
+      "id": "S01",
+      "family": "sequential",
+      "initial_and_effects": "fixtures/SCENARIOS.json#S01",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#S01",
+      "expected_reference": {
+        "individual": {
+          "A": false
+        },
+        "all_effects_valid": false,
+        "all_effects_total_cents": "5500"
+      },
+      "orders": [
+        [
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Each sequential case starts fresh at 30 including existing row10. No prior case effects carry over."
+    },
+    {
+      "id": "S02",
+      "family": "sequential",
+      "initial_and_effects": "fixtures/SCENARIOS.json#S02",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#S02",
+      "expected_reference": {
+        "individual": {
+          "A": true
+        },
+        "all_effects_valid": true,
+        "all_effects_total_cents": "5000"
+      },
+      "orders": [
+        [
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Each sequential case starts fresh at 30 including existing row10. No prior case effects carry over."
+    },
+    {
+      "id": "S03",
+      "family": "sequential",
+      "initial_and_effects": "fixtures/SCENARIOS.json#S03",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#S03",
+      "expected_reference": {
+        "individual": {
+          "A": true
+        },
+        "all_effects_valid": true,
+        "all_effects_total_cents": "4000"
+      },
+      "orders": [
+        [
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Each sequential case starts fresh at 30 including existing row10. No prior case effects carry over."
+    },
+    {
+      "id": "S04",
+      "family": "sequential",
+      "initial_and_effects": "fixtures/SCENARIOS.json#S04",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#S04",
+      "expected_reference": {
+        "individual": {
+          "A": true
+        },
+        "all_effects_valid": true,
+        "all_effects_total_cents": "4500"
+      },
+      "orders": [
+        [
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Each sequential case starts fresh at 30 including existing row10. No prior case effects carry over."
+    },
+    {
+      "id": "S05",
+      "family": "sequential",
+      "initial_and_effects": "fixtures/SCENARIOS.json#S05",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#S05",
+      "expected_reference": {
+        "individual": {
+          "A": false
+        },
+        "all_effects_valid": false,
+        "all_effects_total_cents": "5500"
+      },
+      "orders": [
+        [
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Each sequential case starts fresh at 30 including existing row10. No prior case effects carry over."
+    },
+    {
+      "id": "PRE01",
+      "family": "precondition",
+      "initial_and_effects": "fixtures/SCENARIOS.json#PRE01",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#PRE01",
+      "expected_reference": {
+        "individual": {
+          "A": true
+        },
+        "all_effects_valid": true
+      },
+      "orders": [
+        [
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T01",
+      "family": "column_relation",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T01",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T01",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": false
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T02",
+      "family": "minimum_population",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T02",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T02",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": false
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T02-three",
+      "family": "minimum_population",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T02-three",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T02-three",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": true
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T02-teams",
+      "family": "minimum_population",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T02-teams",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T02-teams",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": true
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T03",
+      "family": "cross_table_budget",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T03",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T03",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": false
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "The whole fixture is private oracle/source preparation material. Different-principal completeness must not expose another principal's rows or totals to the agent."
+    },
+    {
+      "id": "T03-principals",
+      "family": "cross_table_budget",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T03-principals",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T03-principals",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": false
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "The whole fixture is private oracle/source preparation material. Different-principal completeness must not expose another principal's rows or totals to the agent."
+    },
+    {
+      "id": "T03-teams",
+      "family": "cross_table_budget",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T03-teams",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T03-teams",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": true
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "The whole fixture is private oracle/source preparation material. Different-principal completeness must not expose another principal's rows or totals to the agent."
+    },
+    {
+      "id": "T04",
+      "family": "threshold_insert",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T04",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T04",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": false
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "The -200 companion is a separately declared fixture choice to prove a fresh reduction below existing usage350; Owner main case stays -100."
+    },
+    {
+      "id": "T04-below-usage",
+      "family": "threshold_insert",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T04-below-usage",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T04-below-usage",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": false
+        },
+        "all_effects_valid": false
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "The -200 companion is a separately declared fixture choice to prove a fresh reduction below existing usage350; Owner main case stays -100."
+    },
+    {
+      "id": "T05",
+      "family": "cross_table_exclusivity",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T05",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T05",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": false
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T05-activate",
+      "family": "cross_table_exclusivity",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T05-activate",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T05-activate",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": false
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T05-campaigns",
+      "family": "cross_table_exclusivity",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T05-campaigns",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T05-campaigns",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": true
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T06",
+      "family": "distinct_count",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T06",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T06",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": false
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T06-same-customer",
+      "family": "distinct_count",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T06-same-customer",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T06-same-customer",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": true
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T06-complete",
+      "family": "distinct_count",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T06-complete",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T06-complete",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": false
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T07",
+      "family": "group_move",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T07",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T07",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": false
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Both affected groups must be protected. Run both operation orders and reverse acquisition inputs without changing effects."
+    },
+    {
+      "id": "T08",
+      "family": "atomic_update",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T08",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T08",
+      "expected_reference": {
+        "individual": {
+          "A": false
+        },
+        "all_effects_valid": false,
+        "all_effects_total_cents": "11000"
+      },
+      "orders": [
+        [
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T08-transfer",
+      "family": "atomic_update",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T08-transfer",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T08-transfer",
+      "expected_reference": {
+        "individual": {
+          "A": true
+        },
+        "all_effects_valid": true,
+        "all_effects_total_cents": "9000"
+      },
+      "orders": [
+        [
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T08-transfer-reversed",
+      "family": "atomic_update",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T08-transfer-reversed",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T08-transfer-reversed",
+      "expected_reference": {
+        "individual": {
+          "A": true
+        },
+        "all_effects_valid": true,
+        "all_effects_total_cents": "9000"
+      },
+      "orders": [
+        [
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T08-race",
+      "family": "atomic_update",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T08-race",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T08-race",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": false,
+        "all_effects_total_cents": "12000"
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact Owner main case; no support claim before native/public qualification."
+    },
+    {
+      "id": "T09",
+      "family": "three_contenders",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T09",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T09",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true,
+          "C": true
+        },
+        "all_effects_valid": false,
+        "all_effects_total_cents": "10500"
+      },
+      "orders": [
+        [
+          "A",
+          "B",
+          "C"
+        ],
+        [
+          "A",
+          "C",
+          "B"
+        ],
+        [
+          "B",
+          "A",
+          "C"
+        ],
+        [
+          "B",
+          "C",
+          "A"
+        ],
+        [
+          "C",
+          "A",
+          "B"
+        ],
+        [
+          "C",
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "All six orders predeclared. Oracle computes serial valid possibilities; stale proposals need not produce optimal acceptance. Both-refused is not a positive progress result."
+    },
+    {
+      "id": "T10",
+      "family": "indirect_rate",
+      "initial_and_effects": "fixtures/SCENARIOS.json#T10",
+      "declared_operator_facts": "fixtures/OPERATOR-FACTS.json#T10",
+      "expected_reference": {
+        "individual": {
+          "A": true,
+          "B": true
+        },
+        "all_effects_valid": false
+      },
+      "orders": [
+        [
+          "A",
+          "B"
+        ],
+        [
+          "B",
+          "A"
+        ]
+      ],
+      "native_status": {
+        "postgres": null,
+        "mysql": null
+      },
+      "execution_state": "NOT_RUN",
+      "capability": "PENDING_CHARACTERIZATION",
+      "note": "Exact rational comparison; main combined value108. No invented bounded affected-account population."
+    }
+  ]
+}
