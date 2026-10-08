@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   exactGroupingDataTypeSupported,
   loadActivatedExplorationBoundaries,
+  reviewedNumericAggregateFunctions,
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
 import { readGuidedOnboardingState } from "./guided-project.js";
@@ -299,7 +300,7 @@ function operationAvailable(resource: ReviewedBoundaryResource, field: string, o
   if (!permission) return false;
   if (operation.kind === "filter") return resource.filterable_fields[field]?.some(candidate => candidate === operation.operator) === true;
   if (operation.kind === "measure") return resource.aggregate_measures.includes(field)
-    && resource.aggregate_measure_functions?.[field]?.some(candidate => candidate === operation.function) === true;
+    && reviewedNumericAggregateFunctions(resource, field).some(candidate => candidate === operation.function);
   if (operation.kind === "time_bucket") return resource.time_bucket_fields[field]?.some(candidate => candidate === operation.bucket) === true;
   if (operation.kind === "time_comparison" || operation.kind === "time_window") return Boolean(resource.time_bucket_fields[field]?.length);
   if (permission.key === "time_bucket_fields" || permission.key === "filterable_fields") return false;
