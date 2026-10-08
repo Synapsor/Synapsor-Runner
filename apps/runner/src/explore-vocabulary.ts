@@ -3,6 +3,14 @@ type ExploreVocabularyFieldMetadata = {
   description?: string;
 };
 
+/** True only for supplied reviewed vocabulary; identifiers and storage types do
+ * not establish business meaning. Callers must pass the existing reviewed
+ * boundary metadata, never raw database comments or model-only suggestions. */
+export function hasReviewedExploreVocabulary(metadata: ExploreVocabularyFieldMetadata | undefined): boolean {
+  return Boolean(metadata && [metadata.label, metadata.description]
+    .some(value => typeof value === "string" && value.trim().length > 0));
+}
+
 export type ExploreVocabularyResource = {
   id: string;
   label?: string;
@@ -149,7 +157,7 @@ export function exploreFieldSemanticStatus(
   field: string,
 ): ExploreFieldSemanticStatus {
   const metadata = resource.field_metadata?.[field];
-  if (metadata?.label || metadata?.description) return "reviewed_vocabulary";
+  if (hasReviewedExploreVocabulary(metadata)) return "reviewed_vocabulary";
   return exploreFieldStructuralSemanticStatus(resource, field);
 }
 
@@ -188,7 +196,7 @@ export function exploreVocabularyCoverage(
   const fieldsWithDescriptions = fields.filter((field) => Boolean(resource.field_metadata?.[field]?.description));
   const fieldsWithReviewedVocabulary = fields.filter((field) => {
     const metadata = resource.field_metadata?.[field];
-    return Boolean(metadata?.label || metadata?.description);
+    return hasReviewedExploreVocabulary(metadata);
   });
   const opaqueFields = fields.filter((field) =>
     exploreFieldSemanticStatus(resource, field) === "opaque_identifier");
