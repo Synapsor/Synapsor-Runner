@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { AskError } from "./model-ask.js";
@@ -6,9 +7,10 @@ import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceDecisionAn
   type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import { activePolicySource, PolicySourceChangedError, type PolicySourceSession } from "./authoring-policy-source.js";
 import { createOwnerHandoff, answerOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
-import { createReadScopeQuestion } from "./authoring-read-scope-question.js";
+import { createReadScopeQuestion, proposeReadScopeReview, type ReadScopeNativeInventory } from "./authoring-read-scope-question.js";
 import { readScopeConsumption } from "./authoring-read-scope-binding.js";
-import { authoringReadCheckpoint } from "./authoring-generation-recovery.js";
+import type { ReadScopeBinding } from "./read-structured-scope.js";
+import { authoringReadCheckpoint, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { createOperatorQuestion, presentOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { rememberModelAuthoringTurn, type ModelAuthoringConversation } from "./model-authoring-conversation.js";
@@ -31,6 +33,9 @@ export type ReadAssistanceCheckpointAccess = {
   contextDigest(permit: ProjectAuthorityMutationPermit): Promise<Digest>;
   currentCandidate(): Promise<{ candidate_digest: Digest }>;
   readCheckpoint(): ReadWorkloadAssistanceCheckpoint | undefined;
+  /** Re-resolve from current protected records inside the owning mutation, not
+   * a cached display/model inventory. Absence cannot silently use legacy mode. */
+  scopeInventory?(permit: ProjectAuthorityMutationPermit): Promise<ReadScopeNativeInventory & { binding: ReadScopeBinding }>;
   readHandoffs(): AuthoringOwnerHandoff[];
   readQuestions(): OperatorQuestion[];
   readRecovery(): AuthoringTransportState | undefined;
@@ -51,7 +56,7 @@ export type ReadAssistanceCheckpointAccess = {
  * testimony append is deliberately not part of this accepted-remap boundary. */
 export function createReadAssistanceCheckpointHost({ access }: { access: ReadAssistanceCheckpointAccess }) {
   const persist = async (checkpoint: ReadWorkloadAssistanceCheckpoint | undefined,
-    currentBoundary: ExplorationBoundaryDraft, accepted?: ModelReadWorkloadResult) => access.mutate(async permit => {
+    currentBoundary: ExplorationBoundaryDraft, accepted?: ModelReadWorkloadResult, completion?: AuthoringQuestionCompletion) => access.mutate(async permit => {
       const currentContext = await access.contextDigest(permit);
       const current = await access.currentCandidate();
       if (explorationBoundaryCandidateDigest(currentBoundary) !== current.candidate_digest) {
@@ -67,6 +72,19 @@ export function createReadAssistanceCheckpointHost({ access }: { access: ReadAss
           now: accepted.analysis_clock });
         if (analysis.status !== "ready" || canonicalJsonDigest(analysis) !== canonicalJsonDigest(accepted.analysis)) {
           throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The accepted mapping no longer validates against the current Read catalog.");
+        }
+        let scopeQuestion: OperatorQuestion | undefined;
+        if (accepted.read_scope) {
+          if (!completion || !access.scopeInventory) throw access.checkpointFailure("The native typed Read review");
+          const inventory = await access.scopeInventory(permit);
+          const previous = [...access.readQuestions()].reverse().find(q => q.kind === "read_scope"
+            && q.read_scope?.mode === "review" && q.scope_digest === access.scopeDigest());
+          scopeQuestion = proposeReadScopeReview(createReadScopeQuestion({ id: randomUUID(), revision: previous ? previous.revision + 1 : 1,
+            scope_digest: access.scopeDigest(), context_digest: currentContext,
+            read_scope: { mode: "review", record: accepted.read_scope, completion, ...(previous ? { predecessor_id: previous.id } : {}) } }),
+            inventory.binding, analysis, inventory);
+          access.install({ recovery: authoringReadCheckpoint(access.readRecovery(), completion, readScopeConsumption(scopeQuestion.read_scope!)) });
+          access.readQuestions().push(scopeQuestion);
         }
         const saved = await access.storeAnalysis({ generatedBoundary: currentBoundary, source: accepted.workload.source, analysis });
         // The producer pins its input history until this accepted mapping.
@@ -107,6 +125,7 @@ export function createReadAssistanceCheckpointHost({ access }: { access: ReadAss
             { permit, expectedDigest: canonicalJsonDigest(sources) });
         }
         access.install({ read: { analysis_id: saved.analysis_id, analysis_digest: saved.analysis_digest,
+          ...(scopeQuestion ? { scope_question_id: scopeQuestion.id } : {}),
           ...(access.readCheckpoint() ? { assistance_history: structuredClone(access.readCheckpoint()!) } : {}) },
           checkpoint: undefined });
       } else {

@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { createReadAssistanceCheckpointHost, type ReadAssistanceCheckpointAccess } from "./authoring-read-assistance-checkpoint-host.js";
-import { generateModelReadWorkload } from "./read-workload-model.js";
+import { generateModelReadWorkload, type ModelReadWorkloadInput } from "./read-workload-model.js";
 import type { ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import type { BoundaryAuthoringResumeRead } from "./boundary-authoring-resume.js";
 import type { AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
@@ -46,10 +46,10 @@ async function harness(relativeTime = false) {
     checkpointFailure: subject => new Error("CHECKPOINT_NOT_SAVED: " + subject),
   };
   const host = createReadAssistanceCheckpointHost({ access });
-  const run = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>) => generateModelReadWorkload({
+  const run = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>, extra: Partial<ModelReadWorkloadInput> = {}) => generateModelReadWorkload({
     name: "owned_assistance", allowedQuestions: ["List my orders"], provider: "openai", model: "owned-local-fixture", generatedBoundary: boundary,
     apiKey: "inert-test-key", egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, onCheckpoint: host.persist,
-    clarificationHandler: async () => undefined,
+    clarificationHandler: async () => undefined, ...extra,
   });
   return { root, boundary, host, access, run, saves, saveFault, append, state: () => state,
     driftContext: () => { context = canonicalJsonDigest("different Source binding"); },
@@ -227,6 +227,44 @@ describe("B64 typed missing-scope question host", () => {
       })).rejects.toThrow("AUTHORING_PAUSED");
       expect(answered).toBe(1); expect(h.state().checkpoint?.stage).toBe("waiting");
       expect(h.state().handoffs.at(-1)?.state).toBe("waiting");
+    } finally { await h.cleanup(); }
+  });
+});
+
+// The host port below is the existing rollback model, not installed/native CAS acceptance.
+describe("B64 full scope review handoff", () => {
+  it("stores the real submitted proposal beside its exact analysis, still unconfirmed", async () => {
+    const h = await harness();
+    const original = "Show order status";
+    const binding = { request_digest: canonicalJsonDigest(original), source_digest: canonicalJsonDigest("policy"),
+      catalog_digest: canonicalJsonDigest("catalog"), meaning_digest: canonicalJsonDigest("meaning"),
+      applicability_digest: canonicalJsonDigest("purpose"), operation_digest: canonicalJsonDigest("read") };
+    const inventory = { binding, references: [{ id: "job", kind: "request" as const, digest: binding.request_digest, text: original }],
+      catalog: { resources: [{ id: "public.orders", fields: [{ id: "status" }] }], relationships: [] } };
+    h.access.scopeInventory = async () => inventory;
+    const scope = { protocol: "synapsor.read-scope.v1", applicability: "read_requested", original_request: "job", requirements: [{
+      id: "status", intended_use: original, references: ["job"], disposition: "include", targets: [
+        { root_resource: "public.orders", resource: "public.orders", operation: "resource" },
+        { root_resource: "public.orders", resource: "public.orders", operation: "return", field: "status" },
+      ],
+    }] };
+    try {
+      const result = await withAuthoringGenerationRecovery(async () => {
+        configureAuthoringGenerationRecovery({ available: () => true, read: () => h.state().recovery,
+          current: async () => canonicalJsonDigest("declared current Source and reader"), write: async value => h.setRecovery(value), progress: () => {} });
+        return h.run(async request => {
+          expect(JSON.stringify(request.body)).toContain("job");
+          return response({ ...mapping, read_scope: scope });
+        }, { allowedQuestions: [original], structuredScope: { protocol: "synapsor.read-scope.v1", current: () => inventory } });
+      });
+      const q = h.state().questions.at(-1)!;
+      expect(q.kind).toBe("read_scope"); expect(q.read_scope?.mode).toBe("review");
+      expect(q.proposal?.disposition).toBe("proposed"); expect(q.raw_answer).toBeUndefined(); expect(q.confirmation).toBeUndefined();
+      expect(q.read_scope?.record.proposal).toEqual(scope);
+      expect(q.read_scope?.record.analysis_digest).toBe(canonicalJsonDigest(result.analysis));
+      expect(h.state().read?.scope_question_id).toBe(q.id);
+      expect(h.state().recovery?.operations.at(-1)?.read_checkpoint?.material_digest).toBe(canonicalJsonDigest(q.read_scope!.record));
+      expect(h.saves.at(-1)?.state.questions.at(-1)?.digest).toBe(q.digest);
     } finally { await h.cleanup(); }
   });
 });

@@ -259,7 +259,7 @@
       }
     },
     "pause_audit": "All active lanes confirmed clean, private-backed-up, zero owned tests/Runner/model processes and no stale owned locks; history/held resources preserved",
-    "overnight_usage_rule": "Check after every commit/test group/slice; at about97%used finishsmallstep, no newwork, allownerprivatepush + <=15line handoffs unchangedclock + zero processes/locks; timestamp USAGE PAUSE \u2014 ready to switch thenstop. Paid CLOSED.",
+    "overnight_usage_rule": "Check after every commit/test group/slice; at about95%used finishsmallstep, no newwork, allownerprivatepush + <=15line handoffs unchangedclock + zero processes/locks; timestamp USAGE PAUSE \u2014 ready to switch thenstop. Paid CLOSED.",
     "native_scope_wip": {
       "base": "3d6aab70",
       "before": "native-scope-before.log 1FAIL unsupported v2",
@@ -292,6 +292,13 @@
       "after": "native-scope-host-after.log1PASS/7filtered; native-scope-host-affected.log79PASS; native-scope-host-types.logexit0",
       "changes": "scope waits persist actualconsumedproposal+native question beforeUI; decided checkpoints resolve actualnative captured rawanswer ratherthan fabricate reference prose. Resume validates exactquestion/requirement/handoff.",
       "coverage_limit": "Hostwait checked; captured answer continuation/public/nativewholeflow pending. Nativefixture now passes actualtypedpayload through decoder beforeScopeCAS; coldprocess notyet."
+    },
+    "native_scope_integration": {
+      "base": "b9d7445e/e0e6f8d1",
+      "tests": "native-scope-integrated-group.log332PASS; native-scope-final-host.log2PASS/7filtered; native-scope-integrated-types.logexit0",
+      "whole_scope": "actualfinalcompletedsequence persisted as native review question beside savedanalysis via scope_question_id; stillproposed/unconfirmed, no raw testimony or activation",
+      "currentness": "actualSource/reference inventory re-resolved, bareconfirmed projection removed; native lineage alone yieldsconfirmed, exactanalysisbinding checked; noRead requiresnoinventedanalysis",
+      "limits": "public CLI/freshOSreview/refusal/consent notestablished; hostproduction nativeport + actualnative producer separately covered; originallegacyhost3failures preserved."
     }
   }
 }

@@ -48,6 +48,8 @@ export type BoundaryAuthoringResumeBinding = {
 };
 
 export type BoundaryAuthoringResumeRead = {
+  /** Existing native question owns the unconfirmed/full-scope decision. */
+  scope_question_id?: string;
   analysis_id: string;
   analysis_digest: `sha256:${string}`;
   /** Inert provenance retained after the pending assistance wait is cleared.
@@ -732,6 +734,13 @@ export function assertBoundaryAuthoringResumeState(
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Typed questions require the pinned structured authoring protocol.");
   if (value.operator_questions !== undefined) parseOperatorQuestions(value.operator_questions, parseOwnerHandoffs(value.owner_handoffs ?? []),
     value.generation_recovery as AuthoringTransportState | undefined);
+  const scopedRead = value.read as BoundaryAuthoringResumeRead | undefined;
+  if (scopedRead?.scope_question_id) {
+    const q = (value.operator_questions as OperatorQuestion[] | undefined)?.find(q => q.id === scopedRead.scope_question_id);
+    if (!value.authoring_protocol || !q || q.kind !== "read_scope" || q.read_scope?.mode !== "review"
+      || q.read_scope.record.analysis_digest !== scopedRead.analysis_digest)
+      throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The Read analysis has no exact native scope review.");
+  }
   assertReadAssistanceHandoff(value);
   const checkpoints = [(value.action as BoundaryAuthoringResumeAction | undefined)?.checkpoint,
     (value.pending_action_revision as BoundaryAuthoringActionRevision | undefined)?.checkpoint];
@@ -1292,6 +1301,7 @@ function normalizePendingReadRelationship(value: unknown): { resource: string } 
 
 function normalizeRead(value: BoundaryAuthoringResumeRead): BoundaryAuthoringResumeRead {
   return {
+    ...(value.scope_question_id !== undefined ? { scope_question_id: normalizeSourceSession(value.scope_question_id) } : {}),
     analysis_id: reviewedName(value.analysis_id, "Read analysis id", 128),
     analysis_digest: reviewedDigest(value.analysis_digest, "Read analysis digest"),
     ...(value.assistance_history ? { assistance_history: parseReadWorkloadAssistanceCheckpoint(value.assistance_history) } : {}),
