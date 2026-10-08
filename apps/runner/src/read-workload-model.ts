@@ -890,6 +890,11 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     if (isReadProviderFailure(error) && diagnostics.length) throw new ReadWorkloadDraftError(diagnostics);
     throw error;
   };
+  const scopeProducerBinding = canonicalJsonDigest({ protocol: READ_SCOPE_PROTOCOL, name, allowedQuestions, forbiddenQuestions,
+    originalNamingSources, principal_roots: input.principalScopedRootResources ?? null,
+    provider: configuration.provider, model: configuration.model, endpoint: configuration.endpoint.href,
+    boundary_digest: expectedBoundaryDigest, catalog_digest: catalog.digest, tool_digest: authorityDigest,
+    defer_narration: input.deferNarration ?? false, relationship_review_limit: relationshipReviewLimit });
   const inputDigest = () => canonicalJsonDigest({ name, allowedQuestions, forbiddenQuestions, originalNamingSources, namingSources,
     principal_roots: input.principalScopedRootResources ?? null, provider: configuration.provider, model: configuration.model,
     endpoint: configuration.endpoint.href, base_question: input.structuredScope ? { protocol: READ_SCOPE_PROTOCOL, context_digest: structuredScopeDigest } : baseQuestion(), provider_system_prompt: providerSystemPrompt,
@@ -909,6 +914,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The Read metadata changed while assistance was pending. Preserve the question and revalidate; no new mapping was sent.");
   };
   const controllerState = (): ReadWorkloadAssistanceCheckpoint["state"] => ({
+        scope_producer_binding: scopeProducerBinding,
         call_count: callCount, attempt, phase, correction_used: correctionUsed, ...(wording.snapshot() ? { wording: wording.snapshot() } : {}), relationship_reviews: relationshipReviews,
         relationship_review_limit: relationshipReviewLimit, clarified_targets: clarifiedTargets, clarification_answers: clarificationAnswers,
         ...(scopeAnswers.length ? { scope_answers: scopeAnswers } : {}),
@@ -939,6 +945,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   };
   if (inheritedHistory) {
     const saved = parseReadWorkloadAssistanceCheckpoint(inheritedHistory);
+    if (replacementOwner && saved.state.scope_producer_binding !== scopeProducerBinding)
+      throw new Error("READ_SCOPE_REPLACEMENT_PRODUCER_CHANGED: The original task, model, destination or mapping configuration is missing or changed. Preserve the old proposal; no correction was solicited or sent.");
     // The pin is an ingress contract, not permission to reinterpret an older
     // question/history shape under the new tool. Keep that history for inspection.
     const retainedQuestion = saved.stage === "dispatching" ? saved.previous_question?.pending_question : saved.pending_question;

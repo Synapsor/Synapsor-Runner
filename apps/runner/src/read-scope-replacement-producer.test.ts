@@ -19,7 +19,7 @@ import type { ReadScopeReplacementOwner } from "./read-current-evidence.js";
 // Genuine mapping completion and native saved history, not a fabricated dispatch.
 // The operator's declared correction only changes the requested row limit.
 describe("Read post-review replacement producer", () => {
-  it.each(["ordinary", "captured_before_restart", "cancel_then_resume"] as const)("continues %s with one new mapping call, retained history and separate default-No review", async mode => {
+  it.each(["ordinary", "captured_before_restart", "cancel_then_resume", "changed_model", "changed_task"] as const)("continues %s with one new mapping call, retained history and separate default-No review", async mode => {
     const f = await nativeFixture();
     try {
       const boundary = (await loadBoundaryReviewContext(f.dir)).candidate;
@@ -70,8 +70,8 @@ describe("Read post-review replacement producer", () => {
         configureAuthoringGenerationRecovery({ available: () => true, read: () => f.state().generation_recovery,
           current: async () => contextDigest, progress: () => {}, write: generationRecovery => f.persist(buildBoundaryAuthoringResumeState({
             ...f.input, previous: f.state(), read: f.state().read, generationRecovery })) });
-        return generateModelReadWorkload({ name: "items", allowedQuestions: [f.input.jobIntent], operatorNamingContext: f.input.jobIntent,
-          provider: "openai", model: "controlled", apiKey: "inert-local-credential", egressAcknowledged: true, generatedBoundary: boundary, deferNarration: true,
+        return generateModelReadWorkload({ name: "items", allowedQuestions: [owner && mode === "changed_task" ? "Show every person their labels" : f.input.jobIntent], operatorNamingContext: f.input.jobIntent,
+          provider: "openai", model: owner && mode === "changed_model" ? "another-controlled-model" : "controlled", apiKey: "inert-local-credential", egressAcknowledged: true, generatedBoundary: boundary, deferNarration: true,
           ...(owner ? { postReviewReplacement: owner } : {}), onCheckpoint: checkpoint.persist,
           structuredScope: { protocol: READ_SCOPE_PROTOCOL, current,
             replacementAnswer: meaning.answerScopeReplacement, resolveReplacementAnswer: meaning.resolveScopeReplacementAnswer },
@@ -110,6 +110,11 @@ describe("Read post-review replacement producer", () => {
         return { read: disk.value.read!, questions: disk.value.operator_questions!, handoffs: disk.value.owner_handoffs ?? [],
           generation: disk.value.generation_recovery, question_id: old.id, analysis: lastAnalysis!.analysis };
       };
+      if (mode === "changed_model" || mode === "changed_task") {
+        const before = d(f.state());
+        await expect(run(await reloadOwner())).rejects.toThrow("READ_SCOPE_REPLACEMENT_PRODUCER_CHANGED");
+        expect(calls).toBe(1); expect(prompts).toBe(0); expect(d(f.state())).toBe(before); return;
+      }
       if (mode === "captured_before_restart") await meaning.answerScopeReplacement(old.id);
       if (mode === "cancel_then_resume") {
         cancelAnswer = true;

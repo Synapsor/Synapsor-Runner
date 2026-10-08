@@ -245,7 +245,7 @@ describe("B64 actual missing-scope raw-answer host", () => {
       const request = cp.pending_question.request, answer = h.resolve(reference)!;
       const inventory = { binding: request.scope.binding, references: request.scope.references,
         catalog: { resources: [{ id: "public.orders", fields: [{ id: "status" }] }], relationships: [],
-          subject_scopes: projectReadSubjectContext({ context: h.prepared!.context, sourceDigest: request.scope.binding.source_digest }).subject_scopes } };
+          subject_scopes: projectReadSubjectContext({ context: h.prepared!.context, sourceDigest: request.scope.binding.source_digest as `sha256:${string}` }).subject_scopes } };
       h.access.scopeInventory = async () => ({ ...inventory, references: [...inventory.references, answer] });
       const answerAgain = vi.fn(async () => { throw new Error("Must resume mapping without another prompt"); });
       const send = vi.fn(async wire => {
