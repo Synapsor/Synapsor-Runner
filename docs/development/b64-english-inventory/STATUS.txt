@@ -1,0 +1,9 @@
+B64 remaining English decision inventory — in progress
+Source pin:2857e2e4c0ffab23591e96f76887d523038c5031 (fixed audit source; later Main Read literal repair is separate).
+Completed: Readc5880196 + supplement43878ced; Action04e65e5d + supplementc623f154; generic/packagef1903b4e; Main curated sites in MAIN-SITES.json.
+Full AST sweep includes regex literals, string normalization/methods, exact comparisons/switches and word arrays. Dynamic prose comparisons additionally inspected by owners.
+Counts of syntax candidates are not counts of English decisions; do not compare to the old122 regex-line estimate.
+Global join found11061 remaining machine candidates; split equally across the same three owners for final operand/call-chain classification. These are explicitly UNCLASSIFIED, not assumed safe.
+No complete inventory or B64 English-retirement acceptance is claimed until that join closes.
+Every structured-authoring semantic decision must be typed or deleted. Ask/runtime search/audit cases are labeled separately; identifiers, formal grammars, redaction and presentation have explicit retained reasons.
+No new provider calls, authority or frozen artifacts changed. Paid CLOSED.

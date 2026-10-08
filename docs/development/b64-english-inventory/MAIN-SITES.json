@@ -1,0 +1,780 @@
+{
+  "source_pin": "2857e2e4c0ffab23591e96f76887d523038c5031",
+  "status": "STATIC_AUDIT_PRODUCT_REPLACEMENT_OPEN",
+  "rows": [
+    {
+      "id": "MAIN-EN-001",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        3174,
+        3238
+      ],
+      "owner": "isBoundaryAuthoringExplanationQuestion / promptModelGuidedActionClarification",
+      "decision": "English question prefixes distinguish explanation from business answer and spend narration calls",
+      "structured_reachable": "no production caller of prompt helper remains",
+      "disposition": "delete",
+      "production_call_chain": "Unreferenced local helper; remove with preserved typed explanation/answer tests",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-002",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        3135,
+        3145
+      ],
+      "owner": "modelSafePermissionFacts",
+      "decision": "Redacts local identifiers, credentials and excluded-field detail before narration; no business meaning established",
+      "structured_reachable": "yes",
+      "disposition": "legitimate",
+      "production_call_chain": "installPermissionGuide \u2192 modelSafePermissionFacts \u2192 narration egress",
+      "scope": "security_redaction"
+    },
+    {
+      "id": "MAIN-EN-003",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        3519,
+        3534
+      ],
+      "owner": "actionRuleModelFailureSummary",
+      "decision": "Reads error prose for target identity/ambiguity and chooses suggested next action",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "recoverableActionRuleModelDraftFailure \u2192 actionRuleModelFailureSummary; use typed code/target diagnostic",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-004",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        4759,
+        4792
+      ],
+      "owner": "installPermissionGuide",
+      "decision": "Classifies pending permission purpose from prompt/choice English; supplies different approval/execution facts",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "interactive authoring \u2192 setPermissionGuide \u2192 narrator; consume consent kind/purpose view instead",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-005",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        11192,
+        11192
+      ],
+      "owner": "prepareJobMappingCatalog",
+      "decision": "Decides optional shared resources from job words matching singularized table-name tokens",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "job setup \u2192 prepareJobMappingCatalog \u2192 jobExplicitlyNamesResource; typed requested scope required",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-006",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        11300,
+        11317
+      ],
+      "owner": "jobExplicitlyNamesResource / boundaryIntentTokens",
+      "decision": "Tokenization and plural rules infer explicitly requested resources",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "prepareJobMappingCatalog \u2192 jobExplicitlyNamesResource; not exact typed resource ID equality",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-007",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        10540,
+        10547
+      ],
+      "owner": "reconcilePendingPolicyRepair",
+      "decision": "An English instruction prefix chooses whether the saved repair is a covered requirement",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "policy repair Resume \u2192 reconcilePendingPolicyRepair \u2192 pending revision instruction prefix",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-008",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        12909,
+        12916
+      ],
+      "owner": "representativeReadCoverage",
+      "decision": "Description prefix hides one category from representative coverage",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "activation review \u2192 representativeReadCoverage; use typed coverage provenance/kind",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-009",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        15119,
+        15129
+      ],
+      "owner": "readBoundaryFieldReviewNote",
+      "decision": "Generated role labels choose the field privacy explanation",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "field review screen \u2192 readBoundaryFieldReviewNote; typed role, not English label",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-010",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        15378,
+        15392
+      ],
+      "owner": "formatReadActivationDecisionSummary",
+      "decision": "English warning prefixes decide which activation concerns survive the summary",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "Read activation review \u2192 formatReadActivationDecisionSummary; structured concern kinds required",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-011",
+      "file": "apps/runner/src/boundary-commands.ts",
+      "lines": [
+        15505,
+        15522
+      ],
+      "owner": "styleReviewValue",
+      "decision": "Colors fixed Runner-produced labels and review text; no dispatch or saved authority",
+      "structured_reachable": "yes",
+      "disposition": "legitimate",
+      "production_call_chain": "review formatting \u2192 styleReviewValue",
+      "scope": "presentation_only"
+    },
+    {
+      "id": "MAIN-EN-013",
+      "file": "apps/runner/src/boundary-authoring-resume.ts",
+      "lines": [
+        1448,
+        1455
+      ],
+      "owner": "assertBoundaryAuthoringResumeMaterial",
+      "decision": "Blocks secret/connection material in saved authoring text",
+      "structured_reachable": "yes",
+      "disposition": "legitimate",
+      "production_call_chain": "Resume writer \u2192 assertBoundaryAuthoringResumeMaterial",
+      "scope": "security_redaction"
+    },
+    {
+      "id": "MAIN-EN-014",
+      "file": "apps/runner/src/boundary-authoring-resume.ts",
+      "lines": [
+        1457,
+        1483
+      ],
+      "owner": "assertBoundaryAuthoringResumeMaterial",
+      "decision": "English tenant/principal phrases and word numbers exempt or reject stored material as identity values",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "Resume writer \u2192 assertBoundaryAuthoringResumeMaterial; preserve privacy checks using attributed typed material/identity boundaries, not English exceptions",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-015",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "lines": [
+        2816,
+        2824
+      ],
+      "owner": "boundaryResourceMapLines",
+      "decision": "Generated unresolved-scope English chooses which details to show",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "resource map \u2192 boundaryResourceMapLines; typed unresolved reason projection",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-016",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "lines": [
+        4000,
+        4042
+      ],
+      "owner": "blockedBoundaryTableLines / blockedScopeReasonPresentation",
+      "decision": "Parses unavailable-scope prose and repair suffix for exact operator guidance",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "resource review \u2192 blocked table/map presentation; typed scope issue with target",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-017",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "lines": [
+        4297,
+        4345
+      ],
+      "owner": "reviewItemPresentation",
+      "decision": "English required-decision labels select role/resource/field review wording and target extraction",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "interactive resource review \u2192 reviewItemPresentation; structured review item identity",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-018",
+      "file": "apps/runner/src/boundary-cli-picker.ts",
+      "lines": [
+        4156,
+        4172
+      ],
+      "owner": "styleBoundaryOverviewTableLine",
+      "decision": "Colors fixed table headings/status strings without changing decisions",
+      "structured_reachable": "yes",
+      "disposition": "legitimate",
+      "production_call_chain": "overview table renderer",
+      "scope": "presentation_only"
+    },
+    {
+      "id": "MAIN-EN-019",
+      "file": "apps/runner/src/local-ui.ts",
+      "lines": [
+        7619,
+        7707
+      ],
+      "owner": "legacyBoundaryReviewDecisions",
+      "decision": "Converts generated English decision text into native review decisions",
+      "structured_reachable": "no caller remains",
+      "disposition": "delete",
+      "production_call_chain": "Unreferenced legacy helper; supported typed decisions use applyManagedBoundaryReviewDecision",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-020",
+      "file": "apps/runner/src/local-ui.ts",
+      "lines": [
+        6245,
+        6285
+      ],
+      "owner": "buildSummary / buildTools",
+      "decision": "Reports potentially unsafe external tool names, not a grant or business meaning decision",
+      "structured_reachable": "separate workbench audit",
+      "disposition": "legitimate",
+      "production_call_chain": "workbench summary/tools \u2192 tool-name inspection",
+      "scope": "external_audit"
+    },
+    {
+      "id": "MAIN-EN-021",
+      "file": "apps/runner/src/local-ui.ts",
+      "lines": [
+        6943,
+        6950
+      ],
+      "owner": "workbenchWorkerApprovalSource",
+      "decision": "Matches technical policy_auto_approv actor marker for display provenance",
+      "structured_reachable": "runtime projection only",
+      "disposition": "legitimate",
+      "production_call_chain": "workbench worker history \u2192 approval source label",
+      "scope": "technical_presentation"
+    },
+    {
+      "id": "MAIN-EN-022",
+      "file": "apps/runner/src/local-ui.ts",
+      "lines": [
+        9881,
+        9888
+      ],
+      "owner": "redactSecrets",
+      "decision": "Redacts secret key names and connection/token patterns",
+      "structured_reachable": "yes",
+      "disposition": "legitimate",
+      "production_call_chain": "workbench output sanitizer",
+      "scope": "security_redaction"
+    },
+    {
+      "id": "MAIN-EN-023",
+      "file": "apps/runner/src/local-ui.ts",
+      "lines": [
+        9902,
+        9907
+      ],
+      "owner": "isInactiveExplorationBoundary",
+      "decision": "Exact host exception text identifies inactive authority on UI projection",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "local UI error handling \u2192 isInactiveExplorationBoundary; use structured inactivity code",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-024",
+      "file": "apps/runner/src/mcp-runtime.ts",
+      "lines": [
+        1292,
+        1347
+      ],
+      "owner": "sampleInputForCapability / sampleScalarArg / sampleIdForCapability / sampleReasonForCapability",
+      "decision": "Synthetic sample args chosen from capability/argument names; not actual operator interpretation",
+      "structured_reachable": "explicit sample/demo mode only",
+      "disposition": "legitimate",
+      "production_call_chain": "resolveCapabilityArguments(sample) / sample command \u2192 generated examples; never evidence for actual scope or grants",
+      "scope": "explicit_example_generation"
+    },
+    {
+      "id": "MAIN-EN-025",
+      "file": "apps/runner/src/mcp-runtime.ts",
+      "lines": [
+        2020,
+        2025
+      ],
+      "owner": "inspectMcpToolBoundary",
+      "decision": "External MCP audit flags unsafe tools/credential-looking data by technical tool names",
+      "structured_reachable": "external audit, not B64 producer",
+      "disposition": "legitimate",
+      "production_call_chain": "MCP audit \u2192 inspectMcpToolBoundary",
+      "scope": "external_audit"
+    },
+    {
+      "id": "MAIN-EN-026",
+      "file": "apps/runner/src/runtime-doctor.ts",
+      "lines": [
+        768,
+        769
+      ],
+      "owner": "isStrongEndpointTokenForDoctor",
+      "decision": "Rejects trivial repeated/placeholder endpoint secrets",
+      "structured_reachable": "technical readiness shared",
+      "disposition": "legitimate",
+      "production_call_chain": "local doctor \u2192 endpoint token strength check",
+      "scope": "security_validation"
+    },
+    {
+      "id": "MAIN-EN-027",
+      "file": "apps/runner/src/runtime-doctor.ts",
+      "lines": [
+        1562,
+        1574
+      ],
+      "owner": "safeDatabaseProbeError",
+      "decision": "Classifies database transport diagnostics into safe display categories; probe remains failed regardless of text",
+      "structured_reachable": "technical readiness shared",
+      "disposition": "legitimate",
+      "production_call_chain": "rollback-only probe failure \u2192 safeDatabaseProbeError; no business eligibility or source success inferred",
+      "scope": "technical_error_redaction"
+    },
+    {
+      "id": "MAIN-EN-028",
+      "file": "apps/runner/src/worker-policy.ts",
+      "lines": [
+        42,
+        53
+      ],
+      "owner": "supervisedWorkerEligibilityCode",
+      "decision": "Known technical issue-code fragments select typed launch failure class; no business rule interpretation",
+      "structured_reachable": "runtime, not authoring semantics",
+      "disposition": "legitimate",
+      "production_call_chain": "worker launch assessment \u2192 supervisedWorkerEligibilityCode",
+      "scope": "technical_error_codes"
+    },
+    {
+      "id": "MAIN-EN-029",
+      "file": "apps/runner/src/worker-runtime.ts",
+      "lines": [
+        1257,
+        1264
+      ],
+      "owner": "workerErrorCode",
+      "decision": "Infrastructure exception timeout keyword chooses failure code and retry classification",
+      "structured_reachable": "runtime execution only",
+      "disposition": "legitimate",
+      "production_call_chain": "worker failure \u2192 workerErrorCode; separate runtime contract, not operator/business language",
+      "scope": "technical_error_classification"
+    },
+    {
+      "id": "MAIN-EN-030",
+      "file": "apps/runner/src/notifications.ts",
+      "lines": [
+        883,
+        890
+      ],
+      "owner": "classifyDeliveryError",
+      "decision": "Infrastructure timeout/reset/temporary words classify notification delivery retryability",
+      "structured_reachable": "notification runtime only",
+      "disposition": "legitimate",
+      "production_call_chain": "delivery catch \u2192 classifyDeliveryError; no business action replay/authority",
+      "scope": "technical_error_classification"
+    },
+    {
+      "id": "MAIN-EN-031",
+      "file": "apps/runner/src/cli-logging.ts",
+      "lines": [
+        60,
+        75
+      ],
+      "owner": "errorStatePreserved / errorSourceDatabaseChanged / errorNextAction",
+      "decision": "Parses error prose into machine-readable state-preserved/source-changed/next-action claims",
+      "structured_reachable": "yes",
+      "disposition": "typed",
+      "production_call_chain": "CLI catch \u2192 JSON error output; use actual typed operational outcome",
+      "scope": "authoring"
+    },
+    {
+      "id": "MAIN-EN-032",
+      "file": "apps/runner/src/cli-logging.ts",
+      "lines": [
+        54,
+        55
+      ],
+      "owner": "redactCliErrorMessage",
+      "decision": "Credential-shaped tokens removed from diagnostics",
+      "structured_reachable": "yes",
+      "disposition": "legitimate",
+      "production_call_chain": "CLI catch \u2192 output sanitizer",
+      "scope": "security_redaction"
+    },
+    {
+      "id": "MAIN-EN-033",
+      "file": "apps/runner/src/cli-logging.ts",
+      "lines": [
+        86,
+        90
+      ],
+      "owner": "formatCliErrorHint",
+      "decision": "Certificate diagnostic wording chooses a troubleshooting hint, not a successful transport result",
+      "structured_reachable": "yes",
+      "disposition": "legitimate",
+      "production_call_chain": "CLI catch \u2192 hint display",
+      "scope": "technical_error_presentation"
+    },
+    {
+      "id": "MAIN-EN-034",
+      "file": "apps/runner/src/cli-files.ts",
+      "lines": [
+        40,
+        41
+      ],
+      "owner": "readJsonFileWithLocation",
+      "decision": "Parses JSON engine syntax-error coordinates, no business prose",
+      "structured_reachable": "yes",
+      "disposition": "legitimate",
+      "production_call_chain": "JSON file loader \u2192 line/column diagnostic",
+      "scope": "technical_grammar"
+    },
+    {
+      "id": "MAIN-EN-035",
+      "file": "apps/runner/src/analytics-shell-render.ts",
+      "lines": [
+        209,
+        224
+      ],
+      "owner": "populationShareWarning",
+      "decision": "Question English decides population-share warning",
+      "structured_reachable": "runtime Ask only",
+      "disposition": "typed",
+      "production_call_chain": "analytics render \u2192 populationShareWarning",
+      "scope": "ask_separate"
+    },
+    {
+      "id": "MAIN-EN-036",
+      "file": "apps/runner/src/analytics-shell-render.ts",
+      "lines": [
+        253,
+        285
+      ],
+      "owner": "modelAnswerForDisplay / polishSuccessfulModelInterpretation",
+      "decision": "Model English determines retained/rephrased answer text",
+      "structured_reachable": "runtime Ask only",
+      "disposition": "typed",
+      "production_call_chain": "Ask answer renderer",
+      "scope": "ask_separate"
+    },
+    {
+      "id": "MAIN-EN-037",
+      "file": "apps/runner/src/analytics-shell-render.ts",
+      "lines": [
+        533,
+        538
+      ],
+      "owner": "minimumCohortQuestionShapeHint",
+      "decision": "Field-name words infer identifier/name shape for a cohort hint",
+      "structured_reachable": "runtime Ask only",
+      "disposition": "typed",
+      "production_call_chain": "Ask minimum-cohort hint",
+      "scope": "ask_separate"
+    },
+    {
+      "id": "MAIN-EN-038",
+      "file": "apps/runner/src/analytics-shell-render.ts",
+      "lines": [
+        777,
+        779
+      ],
+      "owner": "measureLabel",
+      "decision": "Removes redundant total prefix for display label",
+      "structured_reachable": "runtime Ask only",
+      "disposition": "legitimate",
+      "production_call_chain": "measure label renderer",
+      "scope": "presentation_only"
+    },
+    {
+      "id": "MAIN-EN-039",
+      "file": "apps/runner/src/ask-access-summary.ts",
+      "lines": [
+        645,
+        650
+      ],
+      "owner": "asksForDerivedFormula / asksForTimeComparison",
+      "decision": "Question keywords select permitted-use summaries",
+      "structured_reachable": "runtime Ask only",
+      "disposition": "typed",
+      "production_call_chain": "Ask access summary, not structured runner-only authoring tools",
+      "scope": "ask_separate"
+    },
+    {
+      "id": "MAIN-EN-040",
+      "file": "apps/runner/src/analytics-shell.ts",
+      "lines": [
+        2456,
+        2458
+      ],
+      "owner": "showDetails",
+      "decision": "Colors already-rendered technical status rows",
+      "structured_reachable": "runtime Ask only",
+      "disposition": "legitimate",
+      "production_call_chain": "details table formatter",
+      "scope": "presentation_only"
+    },
+    {
+      "id": "MAIN-EN-041",
+      "file": "apps/runner/src/audit-candidates.ts",
+      "lines": [
+        303,
+        304
+      ],
+      "owner": "capabilityCandidate",
+      "decision": "External tool argument-name keywords infer private-field hints in proposed contracts",
+      "structured_reachable": "external audit, not structured authoring",
+      "disposition": "typed",
+      "production_call_chain": "external MCP audit \u2192 capability candidate (review required)",
+      "scope": "external_audit_separate"
+    },
+    {
+      "id": "MAIN-EN-042",
+      "file": "apps/runner/src/audit-candidates.ts",
+      "lines": [
+        352,
+        356
+      ],
+      "owner": "capabilityCandidate",
+      "decision": "Argument-name words infer free-text input constraints",
+      "structured_reachable": "external audit, not structured authoring",
+      "disposition": "typed",
+      "production_call_chain": "external MCP audit \u2192 capability candidate (review required)",
+      "scope": "external_audit_separate"
+    },
+    {
+      "id": "MAIN-EN-043",
+      "file": "apps/runner/src/contract-tools.ts",
+      "lines": [
+        191,
+        194
+      ],
+      "owner": "lintContract",
+      "decision": "Name heuristics warn about fields that look principal-scoped",
+      "structured_reachable": "code/DSL linter, not structured producer",
+      "disposition": "typed",
+      "production_call_chain": "contract lint; diagnostic suggestion only",
+      "scope": "code_authoring_separate"
+    },
+    {
+      "id": "MAIN-EN-044",
+      "file": "apps/runner/src/contract-testing.ts",
+      "lines": [
+        148,
+        152
+      ],
+      "owner": "runStaticAssertion",
+      "decision": "Tests technical model-tool authority names against declared assertion",
+      "structured_reachable": "explicit test command, not B64 producer",
+      "disposition": "legitimate",
+      "production_call_chain": "contract test \u2192 static assertion",
+      "scope": "technical_test_assertion"
+    },
+    {
+      "id": "MAIN-EN-045",
+      "file": "apps/runner/src/contract-testing.ts",
+      "lines": [
+        409,
+        411
+      ],
+      "owner": "assertDisposableSources",
+      "decision": "Explicit destructive test command requires test/demo-named source as an additional guard; not proof of ownership",
+      "structured_reachable": "explicit test command only",
+      "disposition": "legitimate",
+      "production_call_chain": "contract test \u2192 disposable source guard; actual authorization remains separate",
+      "scope": "test_safety_guard"
+    },
+    {
+      "id": "MAIN-EN-046",
+      "file": "apps/runner/src/graduated-trust.ts",
+      "lines": [
+        251,
+        253
+      ],
+      "owner": "inspectHistory",
+      "decision": "Technical event kind identifies revert/compensation events",
+      "structured_reachable": "runtime history only",
+      "disposition": "legitimate",
+      "production_call_chain": "trust history inspection; not free-form business-language interpretation",
+      "scope": "technical_event_key"
+    },
+    {
+      "id": "MAIN-EN-047",
+      "file": "apps/runner/src/proposal-formatting.ts",
+      "lines": [
+        801,
+        802
+      ],
+      "owner": "formatReceiptFirstLook",
+      "decision": "Known set_/batch_ capability prefix chooses receipt display shape",
+      "structured_reachable": "runtime receipt view",
+      "disposition": "legitimate",
+      "production_call_chain": "receipt first-look formatter",
+      "scope": "technical_presentation"
+    },
+    {
+      "id": "MAIN-EN-048",
+      "file": "apps/runner/src/proposal-formatting.ts",
+      "lines": [
+        937,
+        937
+      ],
+      "owner": "formatReplayMarkdown",
+      "decision": "Known event state words choose replay table formatting",
+      "structured_reachable": "runtime history view",
+      "disposition": "legitimate",
+      "production_call_chain": "replay Markdown formatter",
+      "scope": "technical_presentation"
+    },
+    {
+      "id": "MAIN-EN-049",
+      "file": "apps/runner/src/first-run-doctor.ts",
+      "lines": [
+        77,
+        77
+      ],
+      "owner": "firstRunDoctor",
+      "decision": "Known MCP server package names identify unsafe example wiring for advisory checks",
+      "structured_reachable": "first-run configuration doctor",
+      "disposition": "legitimate",
+      "production_call_chain": "firstRunDoctor \u2192 configuration check",
+      "scope": "external_audit"
+    },
+    {
+      "id": "MAIN-EN-050",
+      "file": "apps/runner/src/first-run-doctor.ts",
+      "lines": [
+        136,
+        139
+      ],
+      "owner": "dockerFix",
+      "decision": "Permission diagnostic chooses Docker troubleshooting advice",
+      "structured_reachable": "infrastructure doctor only",
+      "disposition": "legitimate",
+      "production_call_chain": "doctor \u2192 dockerFix",
+      "scope": "technical_error_presentation"
+    },
+    {
+      "id": "MAIN-EN-051",
+      "file": "apps/runner/src/mcp-audit.ts",
+      "lines": [
+        671,
+        681
+      ],
+      "owner": "formatMcpLaunchFailure",
+      "decision": "Known package/timeout/config errors choose safe launcher guidance",
+      "structured_reachable": "external audit launcher only",
+      "disposition": "legitimate",
+      "production_call_chain": "audit child process failure \u2192 formatted diagnostic",
+      "scope": "technical_error_presentation"
+    },
+    {
+      "id": "MAIN-EN-052",
+      "file": "apps/runner/src/hosted-provider-models.ts",
+      "lines": [
+        94,
+        96
+      ],
+      "owner": "compatibleModelId",
+      "decision": "Provider model-ID families identify provider compatibility; not operator English",
+      "structured_reachable": "yes",
+      "disposition": "legitimate",
+      "production_call_chain": "model catalog filtering",
+      "scope": "exact_external_identifier_family"
+    },
+    {
+      "id": "MAIN-EN-053",
+      "file": "apps/runner/src/terminal-prose.ts",
+      "lines": [
+        5,
+        5
+      ],
+      "owner": "proseLine",
+      "decision": "Markdown/headings are escaped for safe terminal prose",
+      "structured_reachable": "yes",
+      "disposition": "legitimate",
+      "production_call_chain": "terminal prose formatting",
+      "scope": "presentation_only"
+    },
+    {
+      "id": "MAIN-EN-054",
+      "file": "apps/runner/src/verified-action-review.ts",
+      "lines": [
+        693,
+        693
+      ],
+      "owner": "reviewSemanticSupervisedExecution",
+      "decision": "Registered STALE/CHANGED/REVIEW_REQUIRED technical code family chooses currentness error handling",
+      "structured_reachable": "yes",
+      "disposition": "legitimate",
+      "production_call_chain": "execution review catch; string is an error code rather than business prose",
+      "scope": "technical_error_codes"
+    },
+    {
+      "id": "MAIN-EN-055",
+      "file": "apps/runner/src/ask-access-summary.ts",
+      "lines": [
+        281,
+        294
+      ],
+      "owner": "exactGroupingReviewable",
+      "decision": "After structural role checks, identifier spelling id/_id still decides whether exact grouping can be reviewed",
+      "structured_reachable": "post-activation Ask/access editor only",
+      "disposition": "typed",
+      "production_call_chain": "resolveRefusalAccessGuidance \u2192 exactGroupingReviewable",
+      "scope": "ask_separate"
+    }
+  ],
+  "method": "AST literals/calls/string comparisons plus owning-function/caller inspection; grouped supporting ranges, not comparable to historical regex-line count. Exact mechanical remainder will be aggregated separately.",
+  "counts": {
+    "typed": 22,
+    "delete": 2,
+    "legitimate": 30
+  },
+  "extra_production_js": [
+    {
+      "file": "apps/runner/synapsor-writeback-handler.mjs",
+      "disposition": "legitimate",
+      "reason": "Illustrative handler uses exact Bearer header and typed request fields; no English keyword interpretation. Not B64 authoring."
+    },
+    {
+      "file": "packages/runner-alias/bin/synapsor-runner.mjs",
+      "disposition": "legitimate",
+      "reason": "Single module import; no language classification."
+    }
+  ]
+}
