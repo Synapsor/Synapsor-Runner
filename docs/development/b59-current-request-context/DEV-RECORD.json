@@ -1,0 +1,21 @@
+{
+  "base": "2ae33a766b2d10959337d5b84635c32f32fb6ac4",
+  "failing_before": "4128e4b2",
+  "cause": "Planner had only current resource IDs, so it rejected the exact operator request already mapped and reviewed in the native workload.",
+  "change": "Derive exact current supported request-to-root associations outside the CLI, keep reviewed/resumable separate, and reuse only a complete identical Read clause. New, changed, conflicting and unsupported clauses remain unresolved.",
+  "evidence": "/var/tmp/synapsor-b59-context1653-owned/evidence",
+  "results": {
+    "before": "2 fail (reuse/resume), original predicate and provider count preserved",
+    "focused": "123 pass, 0 fail: planner77 + scope36 + native projection10",
+    "types_initial": "exit2: unit projection test cast lacked full stored metadata; preserved",
+    "types_correction1": "exit0; unit projection explicitly marked unknown, no product correction"
+  },
+  "isolation": "owned0700 HOME/TMP, populated decoy parent, TMP .git boundary, bwrap unshared network, worker1, free floor8GiB",
+  "review": "Independent early_full_triage pre-sealing variants; pending verdict",
+  "remaining": [
+    "Main wires real reusable/resumable current workload ports in boundary-commands; helper did not edit that file",
+    "Run unchanged native public policy-wait regression through real port",
+    "Independent contract classifications for field/relationship positive successors remain separate",
+    "No full-suite, package, DB, provider or paid qualification claimed"
+  ]
+}

@@ -1253,3 +1253,25 @@ describe("current exact Read request bindings", () => {
     expect(requestJson).toHaveBeenCalledOnce();
   });
 });
+
+
+describe("exact saved Read association boundaries", () => {
+  it.each(["changed", "added", "ambiguous", "other_mode", "none"] as const)("keeps %s request pending", async control => {
+    const description = "Read membership names and expiry dates.";
+    const binding = { description, resource_ids: ["club.members"] };
+    const state = { ...reusableState, read: { ...reusableState.read, resource_ids: ["club.members", "archive.members"],
+      reviewed_requests: control === "other_mode" ? [] : [binding, ...(control === "ambiguous" ? [{ ...binding, resource_ids: ["archive.members"] }] : [])],
+      resumable_requests: control === "other_mode" ? [binding] : [],
+    } };
+    const jobIntent = control === "changed" ? "Read membership names and expiry dates for all customers."
+      : control === "added" ? `${description} Read outstanding obligations.` : description;
+    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "scope_boundary",
+      name: "runner__plan_boundary_job", arguments: JSON.stringify(requestJson.mock.calls.length === 1
+        ? { status: "planned", read_mode: control === "none" ? "none" : "reuse", action_mode: "none", summary: "Keep access." }
+        : { status: "clarification", question: "Which records should the changed request cover?" }) }] } }));
+    const result = await planModelBoundaryJob({ jobIntent, currentState: state, availableResourceIds: state.read.resource_ids,
+      egressAcknowledged: true, session: { provider: "openai", model: "declared-request-binding", apiKey: "local-only", dependencies: { requestJson } } });
+    expect(result).toMatchObject({ state: "clarification", authority_granted: false, source_database_changed: false });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+});

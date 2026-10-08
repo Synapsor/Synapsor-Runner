@@ -1,6 +1,8 @@
 /** Transient evidence from the complete operator request and current inspected
  * identities. Requirements are a lower bound, never permission or a claim that
  * arbitrary prose has been completely interpreted. Names nominate candidates. */
+export type ExactReadRequestBinding = { description: string; resource_ids: string[] };
+
 export type RequestedReadAssociations = {
   required: string[];
   candidates: string[][];
@@ -28,9 +30,22 @@ export function resolveRequestedReadScope(input: {
   resources: readonly { id: string; label?: string }[];
   definitions: readonly { resource: string; phrases: readonly string[] }[];
   statements: readonly string[];
+  /** Current native reviewed/resumable workload associations, never model claims. */
+  exactRequests?: readonly ExactReadRequestBinding[];
 }): RequestedReadAssociations & { excluded: string[]; conflicts: string[]; unresolved: boolean } {
   const ids = input.resources.map(resource => resource.id);
-  const text = readOrientedJobText(input.original);
+  const fragments = readOrientedJobFragments(input.original);
+  const establishedRoots = new Set<string>();
+  let conflictingRequests = false;
+  const unmatched = fragments.filter(fragment => {
+    const bindings = (input.exactRequests ?? []).filter(binding => exactRequestText(binding.description) === exactRequestText(fragment));
+    const alternatives = distinctGroups(bindings.map(binding => binding.resource_ids));
+    if (alternatives.length > 1) conflictingRequests = true;
+    if (alternatives.length !== 1 || !alternatives[0]!.length || alternatives[0]!.some(id => !ids.includes(id))) return true;
+    alternatives[0]!.forEach(id => establishedRoots.add(id));
+    return false;
+  });
+  const text = unmatched.join("; ");
   const base = requestedReadResourceAssociations(input.original, ids);
   const words = requestWords(text);
   const definitionsByPhrase = new Map<string, string[]>();
@@ -43,7 +58,7 @@ export function resolveRequestedReadScope(input: {
       definitionsByPhrase.set(key, [...new Set([...(definitionsByPhrase.get(key) ?? []), definition.resource])]);
     }
   }
-  const required = new Set(base.required);
+  const required = new Set([...base.required, ...establishedRoots]);
   const covered = new Set<number>();
   const conflictingDefinitions: string[][] = [];
   for (const [phrase, targets] of definitionsByPhrase) {
@@ -70,7 +85,7 @@ export function resolveRequestedReadScope(input: {
   }
   // An established clause cannot erase a separate unsupported positive clause.
   // This remains bounded syntax evidence, not general English entailment.
-  const unresolved = readOrientedJobFragments(input.original).some(fragment => {
+  const unresolved = conflictingRequests || unmatched.some(fragment => {
     const references = qualifiedReferences(fragment), localWords = requestWords(fragment);
     return references.some(token => !ids.some(id => token === id || token.startsWith(`${id}.`)))
       || references.length === 0 && candidateGroups(localWords, input.resources, new Set()).length === 0
@@ -243,3 +258,9 @@ const RESOURCE_MENTION_STOP_WORDS = new Set([
   "system",
   "table",
 ]);
+
+/** A native reviewed request is reusable only as the same complete Read clause;
+ * do not infer synonyms, truncate a new constraint, or use a model summary. */
+function exactRequestText(text: string): string {
+  return text.trim().replace(/\s+/gu, " ").replace(/[.;]+$/u, "");
+}

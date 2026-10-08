@@ -1,4 +1,4 @@
-import { resolveRequestedReadScope } from "./read-requested-scope.js";
+import { resolveRequestedReadScope, type ExactReadRequestBinding } from "./read-requested-scope.js";
 import { isAuthoringGenerationStop, beginAuthoringProducerInvocation, authoringInterruptedProducerCorrections,
   reserveAuthoringProducerCorrection, withAuthoringProducerCorrection, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -49,6 +49,8 @@ export type BoundaryJobReadState = {
   /** Exact model-mapped drafts saved before their final Read review. */
   resumable_draft_count?: number;
   resumable_resource_ids?: string[];
+  reviewed_requests?: ExactReadRequestBinding[];
+  resumable_requests?: ExactReadRequestBinding[];
 };
 
 export type BoundaryJobActionState = {
@@ -164,8 +166,6 @@ export async function planModelBoundaryJob(input: {
     : boundedText(input.clarificationAnswer, "Boundary job clarification", 3_000);
   const state = normalizeCurrentState(input.currentState);
   const availableResourceIds = normalizeAvailableResourceIds(input.availableResourceIds ?? []);
-  const requestedReadScope = resolveRequestedReadScope({ original: jobIntent,
-    resources: availableResourceIds.map(id => ({ id })), definitions: [], statements: [] });
   const exactRevisionRoute = input.workflow ? undefined : exactSoleSemanticActionRevisionRoute(jobIntent, state);
   if (exactRevisionRoute) {
     rememberModelAuthoringTurn(input.session.conversation, jobIntent, exactRevisionRoute.summary);
@@ -199,7 +199,7 @@ export async function planModelBoundaryJob(input: {
         return refusal("Runner accepts one job split and one bounded correction only.");
       }
       try {
-        resolution = parseJobPlan(args, state, requestedReadScope, jobIntent, input.workflow, input.expectedActionOutcomes);
+        resolution = parseJobPlan(args, state, availableResourceIds, jobIntent, input.workflow, input.expectedActionOutcomes);
         return {
           ok: true,
           value: {
@@ -493,7 +493,7 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState, workflow?: "progr
 function parseJobPlan(
   value: Record<string, unknown>,
   state: BoundaryJobCurrentState,
-  requestedReadScope: ReturnType<typeof resolveRequestedReadScope>,
+  availableResourceIds: string[],
   jobIntent: string,
   workflow?: "program",
   expectedActionOutcomes?: readonly string[],
@@ -574,6 +574,9 @@ function parseJobPlan(
   const effectiveReadIntent = readMode === "create" || readMode === "revise"
     ? readIntent
     : undefined;
+  const requestedReadScope = resolveRequestedReadScope({ original: jobIntent,
+    resources: availableResourceIds.map(id => ({ id })), definitions: [], statements: [],
+    exactRequests: readMode === "reuse" ? state.read.reviewed_requests : readMode === "resume" ? state.read.resumable_requests : undefined });
   const explicitlyRequestedReadResources = requestedReadScope.required;
   if (explicitlyRequestedReadResources.length) {
     if (readMode === "none") {
@@ -797,6 +800,8 @@ function normalizeCurrentState(input: BoundaryJobCurrentState): BoundaryJobCurre
       exact_reusable_revision_count: input.read.exact_reusable_revision_count,
       resumable_draft_count: resumableDraftCount,
       resumable_resource_ids: resumableResourceIds,
+      reviewed_requests: normalizeExactReadRequests(input.read.reviewed_requests),
+      resumable_requests: normalizeExactReadRequests(input.read.resumable_requests),
     },
     actions,
     control_plane: {
@@ -868,3 +873,8 @@ function refusal(message: string): Awaited<ReturnType<AskToolGateway["callTool"]
 }
 import { defaultProviderKeyEnv } from "./hosted-provider-settings.js";
 import { AUTHORING_PROGRAM_CAPACITY } from "./authoring-program-capacity.js";
+
+function normalizeExactReadRequests(requests: ExactReadRequestBinding[] | undefined): ExactReadRequestBinding[] {
+  return (requests ?? []).map(request => ({ description: boundedText(request.description, "saved Read request", MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS),
+    resource_ids: [...new Set(request.resource_ids.map(id => boundedText(id, "saved Read root", 300)))].sort() }));
+}
