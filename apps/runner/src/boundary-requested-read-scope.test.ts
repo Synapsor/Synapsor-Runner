@@ -277,3 +277,31 @@ function scopeBoundary(ids = resources): ExplorationBoundaryDraft {
       })) }, budgets: structuredClone(DEFAULT_REVIEWED_EXPLORATION_BUDGETS), unresolved_decisions: [],
     };
 }
+
+
+describe("native bounded requested-scope evidence", () => {
+  it.each([
+    ["Read `finance.accounts`.", "finance.payments", "REQUIRED_RESOURCE_OMITTED"],
+    ["Read finance.accounts but not finance.payments.", "finance.accounts", null],
+    ["Don’t read finance.payments.", "finance.payments", "EXCLUDED_RESOURCE"],
+  ] as const)("retains original literal request at native mapping: %s", async (original, selected, refusal) => {
+    const boundary = scopeBoundary(["finance.accounts", "finance.payments"]);
+    const before = structuredClone(boundary);
+    const requestJson = vi.fn(async (request: { body: unknown }) => {
+      const wire = JSON.stringify(request.body);
+      expect(wire).toContain(original);
+      expect(wire).toContain(selected);
+      return { status: 200, body: { output: [{ type: "function_call", call_id: "literal_scope",
+        name: "runner__submit_read_workloads", arguments: JSON.stringify({ allowed: [{ id: "public_status",
+          description: `Read ${selected} status`, plan: { kind: "rows", resource: selected, select: ["status"] } }], forbidden: [] }) }] } };
+    });
+    const operation = generateModelReadWorkload({ name: "finance_reads", generatedBoundary: boundary,
+      allowedQuestions: ["Read public status."], operatorNamingContext: original, provider: "openai",
+      model: "declared-scope-fixture", apiKey: "local-fixture-only", egressAcknowledged: true,
+      deferNarration: true, dependencies: { requestJson } });
+    if (refusal) await expect(operation).rejects.toThrow(refusal);
+    else expect(await operation).toMatchObject({ analysis: { status: "ready" }, authority_granted: false,
+      source_database_changed: false, source_query_executed: false });
+    expect(boundary).toEqual(before);
+  });
+});

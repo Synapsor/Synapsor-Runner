@@ -89,3 +89,22 @@ describe("preserved authority and explicit Read additions", () => {
     expect(requestedReadResourceIds(text, resources)).toEqual(["atelier.checks"]);
   });
 });
+
+
+describe("bounded request evidence syntax", () => {
+  const resources = [{ id: "finance.accounts" }, { id: "finance.payments" }];
+  it.each([
+    ["Read `finance.accounts`.", ["finance.accounts"], []],
+    ["Read finance.accounts but not finance.payments.", ["finance.accounts"], ["finance.payments"]],
+    ["Don’t read finance.payments.", [], ["finance.payments"]],
+  ])("keeps positive and negative evidence distinct: %s", (original, required, excluded) => {
+    const scope = resolveRequestedReadScope({ original: original as string, resources, definitions: [], statements: [] });
+    expect(scope.required).toEqual(required);
+    expect(scope.excluded).toEqual(excluded);
+  });
+  it("does not call an unrecognized business request complete without definitions", () => {
+    const scope = resolveRequestedReadScope({ original: "Read outstanding obligations.", resources, definitions: [], statements: [] });
+    expect(scope.required).toEqual([]);
+    expect(scope.unresolved).toBe(true);
+  });
+});
