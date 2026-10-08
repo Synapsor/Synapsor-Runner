@@ -1,3 +1,4 @@
+import { projectReadScopeHostContext } from "./read-current-evidence.js";
 import { operatorBusinessContext, operatorClarificationGate } from "./authoring-operator-presentation.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { createServer } from "node:http";
@@ -1544,10 +1545,23 @@ describe("model-assisted Read workload mapping", () => {
   it.each(["openai", "anthropic"] as const)(
     "uses one ephemeral structured workload tool with %s and grants no authority",
     async (provider) => {
+      const boundary = generatedBoundary(), catalog = readWorkloadCatalog(boundary);
+      const request = "What is average order amount by status?";
+      const context = projectReadScopeHostContext({ request: { id: "job", text: request },
+        catalog: { digest: catalog.digest, resources: catalog.resources, relationships: [] },
+        binding: { meaning_digest: canonicalJsonDigest(request), applicability_digest: canonicalJsonDigest("declared aggregate task"), operation_digest: canonicalJsonDigest(boundary) } });
+      const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
+        id: "average-status", intended_use: request, references: ["job"], disposition: "include", targets: [
+          { root_resource: "public.orders", resource: "public.orders", operation: "resource" },
+          { root_resource: "public.orders", resource: "public.orders", operation: "group", field: "status" },
+          { root_resource: "public.orders", resource: "public.orders", operation: "aggregate", field: "amount", qualifier: "avg" },
+        ],
+      }] };
       const requests: string[] = [];
       const requestJson = vi.fn(async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => {
         requests.push(JSON.stringify(request.body));
         const input = {
+          read_scope: proposal,
           allowed: [{
             id: "orders_by_status",
             description: "Average order amount by status",
@@ -1596,7 +1610,8 @@ describe("model-assisted Read workload mapping", () => {
         forbiddenQuestions: ["Show private row text."],
         provider,
         model: provider === "openai" ? "gpt-5.6-luna" : "claude-test",
-        generatedBoundary: generatedBoundary(),
+        generatedBoundary: boundary,
+        structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context },
         env: { TEST_PROVIDER_KEY: "provider-test-key" },
         apiKeyEnv: "TEST_PROVIDER_KEY",
         egressAcknowledged: true,

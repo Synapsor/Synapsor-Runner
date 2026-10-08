@@ -1,3 +1,4 @@
+import { declaredReadContext, preparedNativeReadContext } from "./test-fixtures/typed-read-context.js";
 import { localProviderRefusal } from "./test-fixtures/provider-refusal.js";
 import { describe, expect, it, vi } from "vitest";
 import { BoundaryJobPlanningError, planningDiagnosticLines, type BoundaryJobPlanningDiagnostic } from "./boundary-job-diagnostics.js";
@@ -261,13 +262,14 @@ describe("model Boundary job planning", () => {
     expect(state).toEqual(before);
   });
   it.each(["Customer account, subscription and recent usage.", "Read the customer's account, subscription and recent usage."])("accepts a concise typed Read intent without requiring a particular verb: %s", async (read_intent) => {
+    const typed = declaredReadContext("Read customer account, subscription and recent usage.", ["telecom.accounts", "telecom.subscriptions", "telecom.usage_daily"]);
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "plan", name: "runner__plan_boundary_job",
-      arguments: JSON.stringify({ status: "planned", read_mode: "create", read_intent, action_mode: "none", summary: "Prepare the requested customer information." }),
+      arguments: JSON.stringify({ status: "planned", read_mode: "create", read_intent, action_mode: "none", summary: "Prepare the requested customer information.", read_scope: typed.proposal }),
     }] } }));
     const result = await planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
       jobIntent: "Read customer account, subscription and recent usage.",
       availableResourceIds: ["telecom.accounts", "telecom.subscriptions", "telecom.usage_daily"],
-      currentState: reusableState, egressAcknowledged: true });
+      currentState: reusableState, egressAcknowledged: true, structuredScope: typed.structuredScope });
     expect(result).toMatchObject({ state: "planned", correction_used: false });
     expect(requestJson).toHaveBeenCalledOnce();
   });
@@ -1236,12 +1238,13 @@ describe("model Boundary job planning", () => {
 describe("typed review-only job routing", () => {
   it.each(["Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority.",
     "Check this saved job against my attached rules; keep its settings.", "Review whether the current policy is implemented. Do not draft changes."])("retains a review-only operation for %s", async jobIntent => {
+    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
     const requests: string[] = [];
-    const result = await planModelBoundaryJob({ jobIntent, currentState: reusableState, egressAcknowledged: true,
+    const result = await planModelBoundaryJob({ jobIntent, currentState: reusableState, egressAcknowledged: true, structuredScope: typed.structuredScope,
       session: { provider: "openai", model: "fixture", apiKey: "captured-only", dependencies: { requestJson: async request => {
         requests.push(JSON.stringify(request.body));
         return { status: 200, body: { output: [{ type: "function_call", call_id: "review", name: "runner__plan_boundary_job",
-          arguments: JSON.stringify({ status: "planned", operation: "review_rules", read_mode: "reuse", action_mode: "none", summary: "Review the current candidate without edits." }) }] } };
+          arguments: JSON.stringify({ status: "planned", operation: "review_rules", read_mode: "reuse", action_mode: "none", summary: "Review the current candidate without edits.", read_scope: typed.proposal }) }] } };
       } } } });
     expect(result).toMatchObject({ state: "planned", operation: "review_rules", read_mode: "reuse", action_mode: "none", authority_granted: false });
     expect(requests).toHaveLength(1); expect(requests[0]).toContain(jobIntent); expect(requests[0]).toContain("combining review and changes needs the clarification branch");
