@@ -1,3 +1,8 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { prepareReviewedReadScope } from "./test-fixtures/reviewed-read-scope.js";
+import { projectReadSubjectContext } from "./authoring-read-subject-context.js";
 import { projectReadScopeHostContext } from "./read-current-evidence.js";
 import { operatorBusinessContext, operatorClarificationGate } from "./authoring-operator-presentation.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -5,7 +10,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringTransportCheckpoint, authoringReadCheckpoint, configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, validateAuthoringTransportState, type AuthoringTransportState, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
 import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, presentOperatorQuestion,
   proposeOperatorAnswer, type OperatorQuestion } from "./authoring-operator-question.js";
@@ -22,18 +27,32 @@ import {
 import { generateModelReadWorkload, readWorkloadCatalog, type ModelReadWorkloadInput } from "./read-workload-model.js";
 import { ReadWorkloadDraftError } from "./read-workload-diagnostics.js";
 import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
-import { READ_SCOPE_PROTOCOL, resolveReadScopeProposal, assessReadScopeDraft, type ReadScopeBinding, type ReadScopeProposal, type ReadScopeReference } from "./read-structured-scope.js";
+import { READ_SCOPE_PROTOCOL, resolveReadScopeProposal, assessReadScopeDraft, type ReadScopeBinding, type ReadScopeProposal, type ReadScopeReference, type ReadSubjectBinding } from "./read-structured-scope.js";
 import { analyzeReadWorkloadSet, READ_WORKLOAD_SET_VERSION } from "./read-workload-assist.js";
 import { createReadScopeQuestion, proposeReadScopeReview, confirmReadScopeReview } from "./authoring-read-scope-question.js";
 import { readScopeConsumption } from "./authoring-read-scope-binding.js";
 import { planModelBoundaryJob } from "./boundary-job-model.js";
+
+let reviewedTestBoundary: ExplorationBoundaryDraft | undefined;
+let reviewedTestSubjects: ReadSubjectBinding[] = [];
+let reviewedFixtureRoot: string;
+beforeAll(async () => {
+  reviewedFixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "read-model-structure-"));
+  const prepared = await prepareReviewedReadScope(reviewedFixtureRoot, { resources: ["public.orders"], field: "status", primaryKey: "id",
+    fields: { id: { type: "uuid" }, status: { type: "text", enum: ["open", "closed"] }, amount: { type: "numeric" }, secret_note: { type: "text" } },
+    review: { selectable_fields: ["id", "status", "amount"], filterable_fields: ["status"], sortable_fields: ["amount"],
+      groupable_fields: ["status"], aggregate_measures: ["amount"], count_distinct_fields: ["status"], keep_out_fields: ["secret_note"] } });
+  reviewedTestBoundary = prepared.context.candidate;
+  reviewedTestSubjects = projectReadSubjectContext({ context: prepared.context, sourceDigest: canonicalJsonDigest(null) }).subject_scopes;
+});
+afterAll(async () => { if (reviewedFixtureRoot) await fs.rm(reviewedFixtureRoot, { recursive: true, force: true }); });
 
 describe("B64 structured Read producer adapter", () => {
   const original = "Show order status. Use public.orders.status for the order status; no other fields.";
   const response = (args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "structured_read",
     name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } });
   const scope = (): ReadScopeProposal => ({ protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
-    id: "order-status", intended_use: "Show order status", references: ["job"], disposition: "include", targets: [
+    id: "order-status", intended_use: "Show order status", references: ["job"], disposition: "include", subjects: [{ root_resource: "public.orders", mode: "trusted_principal" }], targets: [
       { root_resource: "public.orders", resource: "public.orders", operation: "resource" },
       { root_resource: "public.orders", resource: "public.orders", operation: "return", field: "status" },
     ],
@@ -48,7 +67,7 @@ describe("B64 structured Read producer adapter", () => {
       catalog_digest: catalog.digest, meaning_digest: canonicalJsonDigest(original), applicability_digest: canonicalJsonDigest("this-job"),
       operation_digest: canonicalJsonDigest(boundary) };
     const context = { binding, references: [{ kind: "request" as const, id: "job", digest: binding.request_digest, text: original }],
-      catalog: { resources: catalog.resources, relationships: [] } };
+      catalog: { resources: catalog.resources, relationships: [], subject_scopes: reviewedTestSubjects } };
     return { input: { name: "structured_scope", allowedQuestions: [original], operatorNamingContext: original,
       provider: "openai" as const, model: "local-scripted", generatedBoundary: boundary, apiKey: "test-key",
       egressAcknowledged: true, deferNarration: true, dependencies: { requestJson },
@@ -254,7 +273,7 @@ describe("B64 structured Read producer adapter", () => {
     const proposal = scope(); proposal.requirements[0]!.targets = analysis.authority_atoms.map(({ id: _id, ...atom }) => atom);
     const record = resolveReadScopeProposal(proposal, { expectedBinding: configured.context.binding,
       references: configured.context.references, analysis, catalog: { resources: readWorkloadCatalog(boundary).resources,
-        relationships: [{ id: "order_product", from: root.id, to: target.id }] } });
+        relationships: [{ id: "order_product", from: root.id, to: target.id }], subject_scopes: configured.context.catalog.subject_scopes } });
     expect(assessReadScopeDraft(record, analysis).status).toBe("compatible");
   });
   it("resumes a captured native answer after its durable decision without reasking or confirming its meaning", async () => {
@@ -299,7 +318,7 @@ function withDeclaredRoot(input: ModelReadWorkloadInput, definition: string): Mo
 function declaredWorkloadScope(request: string, mode: "status_rows" | "average_by_status" | "count_by_status" | "root_only", boundary = generatedBoundary()) {
   const catalog = readWorkloadCatalog(boundary);
   const context = projectReadScopeHostContext({ request: { id: "job", text: request },
-    catalog: { digest: catalog.digest, resources: catalog.resources, relationships: [] },
+    catalog: { digest: catalog.digest, resources: catalog.resources, relationships: [], subject_scopes: reviewedTestSubjects },
     binding: { meaning_digest: canonicalJsonDigest(request), applicability_digest: canonicalJsonDigest("declared workload case"), operation_digest: canonicalJsonDigest(boundary) } });
   const root = { root_resource: "public.orders", resource: "public.orders" };
   const targets: ReadScopeProposal["requirements"][number]["targets"] = [{ ...root, operation: "resource" }];
@@ -307,7 +326,7 @@ function declaredWorkloadScope(request: string, mode: "status_rows" | "average_b
   if (mode === "count_by_status") targets.push({ ...root, operation: "group", field: "status" });
   if (mode === "average_by_status") targets.push({ ...root, operation: "group", field: "status" }, { ...root, operation: "aggregate", field: "amount", qualifier: "avg" });
   const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
-    id: "declared-task", intended_use: request, disposition: "include", references: ["job"], targets,
+    id: "declared-task", intended_use: request, disposition: "include", references: ["job"], subjects: [{ root_resource: "public.orders", mode: "trusted_principal" }], targets,
   }] };
   return { proposal, structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context } };
 }
@@ -1602,10 +1621,10 @@ describe("model-assisted Read workload mapping", () => {
       const boundary = generatedBoundary(), catalog = readWorkloadCatalog(boundary);
       const request = "What is average order amount by status?";
       const context = projectReadScopeHostContext({ request: { id: "job", text: request },
-        catalog: { digest: catalog.digest, resources: catalog.resources, relationships: [] },
+        catalog: { digest: catalog.digest, resources: catalog.resources, relationships: [], subject_scopes: reviewedTestSubjects },
         binding: { meaning_digest: canonicalJsonDigest(request), applicability_digest: canonicalJsonDigest("declared aggregate task"), operation_digest: canonicalJsonDigest(boundary) } });
       const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
-        id: "average-status", intended_use: request, references: ["job"], disposition: "include", targets: [
+        id: "average-status", intended_use: request, references: ["job"], disposition: "include", subjects: [{ root_resource: "public.orders", mode: "trusted_principal" }], targets: [
           { root_resource: "public.orders", resource: "public.orders", operation: "resource" },
           { root_resource: "public.orders", resource: "public.orders", operation: "group", field: "status" },
           { root_resource: "public.orders", resource: "public.orders", operation: "aggregate", field: "amount", qualifier: "avg" },
@@ -2750,6 +2769,7 @@ describe("model-assisted Read workload mapping", () => {
 });
 
 function generatedBoundary(): ExplorationBoundaryDraft {
+  if (reviewedTestBoundary) return structuredClone(reviewedTestBoundary);
   const hash = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}` as `sha256:${string}`;
   return {
     schema_version: "synapsor.exploration-boundary.v1",

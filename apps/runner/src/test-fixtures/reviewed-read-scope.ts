@@ -6,9 +6,10 @@ import { buildAutoBoundary, writeAutoBoundaryArtifacts } from "../auto-boundary.
 import { boundaryReviewCommand, loadBoundaryReviewContext } from "../boundary-commands.js";
 import { analyzeReadWorkloadSet, READ_WORKLOAD_SET_VERSION } from "../read-workload-assist.js";
 import { prepareBoundaryResourceReviewMutation, commitBoundaryResourceReviewMutation } from "../boundary-review-mutation.js";
+import type { BoundaryResourceReviewRequest } from "../read-authoring-contract-types.js";
 import { ownedProgramInspection } from "./owned-authoring-program.js";
 
-export async function prepareReviewedReadScope(projectRoot: string, declared: { resources: string[]; field: string } = {resources:["work.items"],field:"label"}) {
+export async function prepareReviewedReadScope(projectRoot: string, declared: { resources: string[]; field: string; primaryKey?: string; fields?: Record<string, { type: string; enum?: string[] }>; review?: Pick<BoundaryResourceReviewRequest, "selectable_fields" | "filterable_fields" | "sortable_fields" | "groupable_fields" | "aggregate_measures" | "count_distinct_fields" | "time_bucket_fields" | "keep_out_fields"> } = {resources:["work.items"],field:"label"}) {
   // Reuse the declared structural fixture; only table identity changes to the
   // existing work.items test domain. No source rows or customer facts exist.
   // A real isolated repository boundary prevents parent decoy/user config discovery.
@@ -18,7 +19,21 @@ export async function prepareReviewedReadScope(projectRoot: string, declared: { 
   inspection.tables=declared.resources.map(id=>{
     const [schema,name]=id.split(".");if(!schema||!name)throw new Error("Exact schema.table fixture identity required");
     const table=structuredClone(template);table.schema=schema;table.name=name;
+    if (declared.primaryKey) {
+      const originalKey = table.primary_key[0]!;
+      table.columns.find(column => column.name === originalKey)!.name = declared.primaryKey;
+      table.primary_key = [declared.primaryKey];
+      for (const unique of table.unique_constraints) unique.columns = unique.columns.map(column => column === originalKey ? declared.primaryKey! : column);
+    }
     for(const column of table.columns)if(column.name==="label")column.name=declared.field;
+    for (const [name, field] of Object.entries(declared.fields ?? {})) {
+      const column = table.columns.find(column => column.name === name);
+      if (column) Object.assign(column, { data_type: field.type, ...(field.enum ? { enum_values: field.enum } : {}) });
+      else table.columns.push({ name, data_type: field.type, ...(field.enum ? { enum_values: field.enum } : {}),
+        ordinal_position: table.columns.length, nullable: false, generated: false,
+        suggestions: { tenant: false, conflict: false, sensitive: declared.review?.keep_out_fields?.includes(name) ?? false,
+          immutable: false, large_or_binary: false } });
+    }
     table.suggestions.default_visible_columns=table.suggestions.default_visible_columns.map(field=>field==="label"?declared.field:field);
     return table;
   });
@@ -29,7 +44,7 @@ export async function prepareReviewedReadScope(projectRoot: string, declared: { 
   for(const resource_id of declared.resources){
   const preview=await prepareBoundaryResourceReviewMutation(projectRoot,{
     resource_id,include:true,tenant_key:"tenant_id",principal_key:"principal_id",
-    selectable_fields:[declared.field],actor:"declared fixture operator",
+    selectable_fields:[declared.field], ...declared.review, actor:"declared fixture operator",
     reason:"Show the current principal's item labels inside the trusted tenant; retain private fields outside returned data.",
   },async()=>inspection);
   await commitBoundaryResourceReviewMutation(projectRoot,preview);

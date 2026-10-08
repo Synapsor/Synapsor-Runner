@@ -1,11 +1,16 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { prepareReviewedReadScope } from "./test-fixtures/reviewed-read-scope.js";
+import { projectReadSubjectContext } from "./authoring-read-subject-context.js";
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import Ajv from "ajv";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { READ_SCOPE_PROTOCOL, readScopeProposalCodec, readScopeProposalSchema, parseReadScopeProposal,
   parseReadScopeRecord, resolveReadScopeProposal, assessReadScopeDraft, assessReadScopeRecordCurrentness,
   assertReadScopeProvenance,
-  type ReadScopeProposal, type ReadScopeTarget, type ReadScopeBinding, type ReadScopeReference } from "./read-structured-scope.js";
-import { READ_WORKLOAD_ANALYSIS_VERSION, type ReadWorkloadAnalysis } from "./read-workload-assist.js";
+  type ReadScopeProposal, type ReadScopeTarget, type ReadScopeBinding, type ReadScopeReference, type ReadSubjectBinding } from "./read-structured-scope.js";
+import { type ReadWorkloadAnalysis } from "./read-workload-assist.js";
 
 const d = (text: string) => canonicalJsonDigest(text);
 const root: ReadScopeTarget = { root_resource: "work.items", resource: "work.items", operation: "resource" };
@@ -19,21 +24,26 @@ const references: ReadScopeReference[] = [
     text: "Customers can see item titles; private notes stay private." },
 ];
 const catalog = { resources: [{ id: "work.items", fields: [{ id: "title" }, { id: "private_note" }] },
-  { id: "other.items", fields: [{ id: "title" }] }], relationships: [] };
+  { id: "other.items", fields: [{ id: "title" }] }], relationships: [], subject_scopes: [] as ReadSubjectBinding[] };
+let fixtureRoot: string, compiled: ReadWorkloadAnalysis;
+beforeAll(async () => {
+  fixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "scope-codec-native-"));
+  const prepared = await prepareReviewedReadScope(fixtureRoot, { resources: ["work.items"], field: "title" });
+  compiled = prepared.analysis;
+  catalog.subject_scopes = projectReadSubjectContext({ context: prepared.context, sourceDigest: binding.source_digest as `sha256:${string}` }).subject_scopes;
+});
+afterAll(async () => { if (fixtureRoot) await fs.rm(fixtureRoot, { recursive: true, force: true }); });
 function proposal(): ReadScopeProposal {
   return { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [
-    { id: "titles", intended_use: "Show item titles", references: ["job", "policy:1"], disposition: "include", targets: [root, title] },
-    { id: "privacy", intended_use: "Keep private notes hidden", references: ["job", "policy:1"], disposition: "exclude", targets: [secret] },
+    { id: "titles", intended_use: "Show item titles", references: ["job", "policy:1"], disposition: "include", subjects: [{ root_resource: "work.items", mode: "trusted_principal" }], targets: [root, title] },
+    { id: "privacy", intended_use: "Keep private notes hidden", references: ["job", "policy:1"], disposition: "exclude", subjects: [], targets: [secret] },
   ] };
 }
 const resolve = (value: unknown = proposal()) => resolveReadScopeProposal(value, { expectedBinding: binding, references, catalog, analysis: analysis() });
 function analysis(targets: ReadScopeTarget[] = [root, title]): ReadWorkloadAnalysis {
-  return { schema_version: READ_WORKLOAD_ANALYSIS_VERSION, workload_digest: d("workloads"), workload_name: "titles",
-    status: "ready", allowed: [], forbidden: [], authority_atoms: targets.map(target => ({ id: canonicalJsonDigest(target), ...target })),
-    coverage: { allowed_supported: 1, allowed_total: 1, forbidden_denied: 1, forbidden_total: 1 },
-    exposure: { generated_resources: 2, candidate_resources: 1, generated_fields: 3, candidate_return_fields: 1,
-      candidate_operation_fields: 0, candidate_relationships: 0 }, blockers: [], authority_granted: false,
-    source_query_executed: false, explore_budget_consumed: false, source_database_changed: false };
+  // Positive atoms come from the actual compiler. Negative variants deliberately
+  // vary only the assessed atom set; they do not claim a native saved analysis.
+  return { ...structuredClone(compiled), authority_atoms: targets.map(target => ({ id: canonicalJsonDigest(target), ...target })) };
 }
 
 describe("B64 typed Read scope", () => {

@@ -1,0 +1,17 @@
+{
+  "kind": "DEV fixture migration",
+  "base": "b4a5aa70",
+  "files": [
+    "read-structured-scope.test.ts",
+    "read-workload-model.test.ts",
+    "test-fixtures/reviewed-read-scope.ts"
+  ],
+  "change": "Five remaining subject type sites use declared typed principal scope and ordinary reviewed structural inventory. Shared fixture accepts declared fields/review options through existing public mutations; no fabricated acknowledgement. Original assertions and provider call expectations unchanged.",
+  "validation": {
+    "selected_tests": "44 PASS; 130 unrelated filtered",
+    "log": "/var/tmp/synapsor-b64-read-owned/evidence/read-five-v2-type-sites-final.log",
+    "types": "No errors in changed files; four pre-existing migration errors in other test fixtures, handled by Main/helper."
+  },
+  "before": "First rich-fixture selected run 19 PASS/1 FAIL: custom catalog omitted the actual structural inventory. Passing that same actual inventory fixed the fixture; assertion unchanged.",
+  "remaining": "Seven checkpoint-host fixtures and confirmed mapping assistance adapter gaps remain."
+}
