@@ -56,22 +56,39 @@ export function redactCliErrorMessage(message: string): string {
 }
 
 
-export function errorStatePreserved(message: string): string {
-  const match = message.match(/State preserved:\s*([^]*?)(?=\s+Next:|$)/i);
-  if (match?.[1]?.trim()) return match[1].trim().replace(/\s+/g, " ");
-  return "The command stopped without discarding existing durable state; inspect that state before retrying.";
+/** Outcome facts supplied by the operation that observed them. Diagnostic prose
+ * is never an outcome record. Missing facts remain unverified. */
+export type CliOperationalRecovery = {
+  state_preserved?: string;
+  source_database_changed?: boolean | null;
+  next_action?: string;
+};
+
+function operationalRecovery(error: unknown): CliOperationalRecovery | undefined {
+  if (!(error instanceof Error)) return undefined;
+  const recovery = (error as Error & { recovery?: unknown }).recovery;
+  if (!isRecord(recovery)) return undefined;
+  return {
+    ...(typeof recovery.state_preserved === "string" && recovery.state_preserved.trim()
+      ? { state_preserved: redactCliErrorMessage(recovery.state_preserved) } : {}),
+    ...(typeof recovery.source_database_changed === "boolean"
+      ? { source_database_changed: recovery.source_database_changed } : {}),
+    ...(typeof recovery.next_action === "string" && recovery.next_action.trim()
+      ? { next_action: redactCliErrorMessage(recovery.next_action) } : {}),
+  };
 }
 
-
-export function errorSourceDatabaseChanged(message: string): false | null {
-  return /(?:source database|database)(?:\s+were|\s+was|\s+is)?\s+(?:not changed|unchanged)|no source row was changed/i.test(message)
-    ? false
-    : null;
+export function errorStatePreserved(error: unknown): string {
+  return operationalRecovery(error)?.state_preserved
+    ?? "Durable state was not verified; inspect it before retrying.";
 }
 
+export function errorSourceDatabaseChanged(error: unknown): boolean | null {
+  return operationalRecovery(error)?.source_database_changed ?? null;
+}
 
-export function errorNextAction(message: string, argv: string[]): string {
-  const explicit = message.match(/\bNext:\s*([^\n]+)/i)?.[1]?.trim();
+export function errorNextAction(error: unknown, argv: string[]): string {
+  const explicit = operationalRecovery(error)?.next_action;
   if (explicit) return explicit;
   const normalized = normalizeCliArgv(argv);
   const command = normalized

@@ -1,0 +1,4 @@
+MAIN-EN031
+Beforeb467724a: 2FAIL/1PASS; after3PASS in isolated slot1/no-network/oneworker.
+Port: actual Error may carry recovery:{state_preserved?:string,source_database_changed?:boolean|null,next_action?:string}; strings redacted, boolean exact, absent/invalid source fact ->null, absent state ->unverified inspect guidance. Message prose never establishes outcome.
+Main must pass original error at cli.ts367–369. Producers must supply only actual observed outcome facts; no message parsing producer adapter. Public CLI acceptance and independent review remain pending.
