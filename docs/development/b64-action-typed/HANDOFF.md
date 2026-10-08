@@ -6,7 +6,7 @@
 5. Actual whole-batch producer stagingdb555ee4: same open Action turn, exact consumed operation, later mutations refused.
 6. Main Read476 merged579f216b; current public-subject inheritance39321d30; private/effect reuse refused.
 7. Shared question-model typed answer adapter05a94d18; one real call for plain mapping, vague answer remains typed unresolved with follow-up.
-8. Owned review host now in code: direct/raw/Replace/readback/No and exact ACK; no lock spans human/model wait.
+8. Owned host92efd4c6: focused304P/1live skip; native CAS raw vague→Replace→clear→Yes proof1PASS (same turn3/3), no OS/public claim.
 9. Next Main wires owned host to exact native Resume q/ref/generation save; R2 independently qualifies codec/protected persistence/cold process/public routes.
 10. No-option private structural prerequisite remains explicit pending/design check; typed Source interpretation has no existing owner yet.
 11. Types: only5 inherited Read fixture missing-subject errors; Read owner owns them. [Remaining English migration](CONSTRAINT-RETIREMENT-MAP.md) is OPEN.

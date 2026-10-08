@@ -89,5 +89,15 @@
     "scope": "not independent/native cold/public acceptance; Main thin ports pending",
     "types": "only5 inherited Read fixture omissions, no Action errors",
     "next": "Main exact protected save hook and R2 native compatibility/cold-process variants; no-options structural prerequisite design pending"
+  },
+  "subject_host_native_cas": {
+    "base": "92efd4c6",
+    "tests": "1 PASS: genuine controlled provider initial stage + shared model mapping, native Resume CAS at every save and disk reload; 2 mappings exactly; same open logical turn 3 iterations/3 tools; replacement keeps old raw/history; all3 operations actually checkpointed",
+    "command": "HOME/TMPDIR owned /var/tmp + bwrap --unshare-net vitest authoring-action-subject-host.test.ts --maxWorkers=1 --minWorkers=1 --testTimeout=20000",
+    "result": "PASS; types only5 inherited Read fixture subjects errors, no Action errors",
+    "evidence_level": "native store reconstruction with actual decoder sequence; NOT separate OS process, NOT public CLI, NOT independent review",
+    "first_failures": "test adapter called native reader without required binding, then failed to unwrap ready.value; fixed test API only; no product edit",
+    "logs": "/var/tmp/synapsor-b64-action-owned/evidence/subject-native-host-{first,second,third}.log; subject-native-host-types.log",
+    "next": "R2 verdict and Main public protected hook; no-option structural prerequisite remains design-open"
   }
 }
