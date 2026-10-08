@@ -459,7 +459,7 @@ export async function writeBoundaryAuthoringResumeState(
     const observed = previous ?? await readBoundaryAuthoringResumeState(held.projectRoot, frozen.binding);
     const prior = "status" in observed ? observed.status === "ready" || observed.status === "stale" ? observed.value : undefined : observed;
     if (prior) assertAuthoringProtocolUnchanged(prior.authoring_protocol, frozen.authoring_protocol);
-    if (frozen.authoring_protocol && "status" in observed && observed.status === "invalid")
+    if ("status" in observed && observed.status === "invalid")
       throw new Error("AUTHORING_PROTOCOL_INVALID: Preserve the unreadable saved job; it cannot be replaced by a new protocol record.");
     if (prior?.authoring_protocol) {
       if (!options || prior.created_at !== frozen.created_at)
