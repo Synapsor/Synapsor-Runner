@@ -1,0 +1,22 @@
+{
+  "reviewed_source": "dafb44c9",
+  "independent_verdict": "19e5161c",
+  "integration": "227adfdc",
+  "main_hook": "Remove obsolete old clarification callbacks and compatibility presenter, unused currentEvidenceRecords/list work; native structuredScope/raw replacement/value consent unchanged. One currentness check remains immediately before each typed producer.",
+  "boundary_lines": 19247,
+  "validation": {
+    "types": "exit0",
+    "focused": {
+      "numPassedTests": 41,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "report": "/var/tmp/synapsor-b64-main-owned/evidence/read-retirement-integrated.json"
+  },
+  "remaining": [
+    "R1 Main hook source review",
+    "public revision and Replace instrumentation",
+    "typed explanation/permission hook retirement",
+    "no full gate or freeze claim"
+  ]
+}

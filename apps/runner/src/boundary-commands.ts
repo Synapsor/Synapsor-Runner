@@ -336,7 +336,6 @@ import {
 } from "./job-mapping-catalog.js";
 import {
   generateModelReadWorkload,
-  type ModelReadClarificationDecision,
   type ModelReadClarificationRequest,
   type ModelReadValueContextDecision,
   type ModelReadValueRequest,
@@ -3277,33 +3276,6 @@ function readMeaningQuestionMaterial(model: ActionModelSuggestionSession, reques
   "Explain only the business meaning. Do not paste rows, credentials, personal data, or trusted tenant/principal values.",
   "Runner will validate the resulting exact plan and will not grant or activate authority.",
   "Blank keeps this question unanswered unless you explicitly choose to decline. Escape or EOF leaves it saved and unanswered."];
-}
-
-/** Compatibility presenter without native question records. Initial native Read
- * questions instead use the shared record host and typed presenter above. */
-async function promptReadBoundaryClarification(input: {
-  session: BoundaryReviewInteractiveSession;
-  model: ActionModelSuggestionSession;
-  request: ModelReadClarificationRequest;
-  previous?: ModelReadClarificationRequest & { answer: string };
-  businessContext?: OperatorBusinessContext;
-}): Promise<ModelReadClarificationDecision | undefined> {
-  const exactTarget = `${input.request.resource}${input.request.field ? `.${input.request.field}` : ""}`;
-  input.session.rememberDetails?.("READ QUESTION DETAILS", [input.request.question, input.request.reason, `Exact reviewed metadata: ${exactTarget}`]);
-  const answer = await input.session.promptText(presentOperatorClarification(input.request.question,
-    { stage: "read", context: input.businessContext, target: input.request }), {
-    preserveWhitespace: false, recordPolicyAnswer: false,
-    context: readMeaningQuestionMaterial(input.model, input.request, input.businessContext, input.previous),
-  });
-  if (answer === undefined) return undefined;
-  if (answer.trim()) return { state: "answered", answer: answer.trim() };
-  const decline = await input.session.confirm("Decline this Read question? No keeps it pending.", {
-    defaultValue: false,
-    context: ["This is a local decision, not business meaning or a model request. No keeps the exact saved question available to answer on Resume."],
-    exactDetails: { title: "CURRENT READ QUESTION", lines: [input.request.question,
-      "Declining leaves this meaning unanswered. No keeps the exact saved question available on Resume."] },
-  });
-  return decline === true ? { state: "declined" } : undefined;
 }
 
 async function promptReadBoundaryValueContext(input: {
@@ -7127,8 +7099,6 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       let failure: BoundaryModelDraftFailure | undefined;
       try {
         await assertAuthoringResumeCurrent(undefined);
-        const meaningWorkloads = await listReadWorkloadAnalyses({ projectRoot: input.projectRoot, generatedBoundary: mappingBoundary });
-        await assertAuthoringResumeCurrent(undefined);
         const mappingAnswerIds = acknowledgedReadAnswerIds();
         mapped = await runWithProgress(
           "Mapping requested reads with the selected model",
@@ -7146,9 +7116,6 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               resolveAnswer: readMeaningHost.resolveScopeAnswer,
               replacementAnswer: readMeaningHost.answerScopeReplacement, resolveReplacementAnswer: readMeaningHost.resolveScopeReplacementAnswer },
             ...(postReviewReplacement ? { postReviewReplacement } : {}),
-            currentEvidenceRecords: () => ({ source: authoringConversation?.policySources,
-              questions: operatorQuestions, handoffs: ownerHandoffs, history: resumeRead?.assistance_history,
-              checkpoint: readAssistanceCheckpoint, workloads: meaningWorkloads, boundary: mappingBoundary }),
             ...(mappingSession.apiKey ? { apiKey: mappingSession.apiKey } : {}),
             ...(mappingSession.apiKeyEnv ? { apiKeyEnv: mappingSession.apiKeyEnv } : {}),
             ...(mappingSession.baseUrl ? { baseUrl: mappingSession.baseUrl } : {}),
@@ -7164,27 +7131,6 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               model: mappingSession,
               request,
             }),
-            ...(input.authoringChat ? { clarificationReplacementHandler: readMeaningHost.confirmReplacement } : {}),
-            clarificationHandler: async (request, clarificationContext) => {
-              if (input.authoringChat) {
-                const exactTarget = `${request.resource}${request.field ? `.${request.field}` : ""}`;
-                readAssistanceSession.rememberDetails?.("READ QUESTION DETAILS", [request.question, request.reason, `Exact reviewed metadata: ${exactTarget}`]);
-              }
-              const decision = input.authoringChat
-                ? await readMeaningHost.clarify(request, clarificationContext?.previous)
-                : await promptReadBoundaryClarification({ session: readAssistanceSession, model: mappingSession, request,
-                  businessContext: operatorBusinessContext(mappingBoundary.pack.resources),
-                  ...(clarificationContext ? { previous: clarificationContext.previous } : {}) });
-              if (decision?.state === "answered" && !input.authoringChat) {
-                rememberModelAuthoringClarification(
-                  authoringConversation,
-                  request.question,
-                  decision.answer,
-                );
-                await persistAuthoringResume("read_mapping");
-              }
-              return decision;
-            },
           }),
         );
       } catch (error) {
@@ -9221,9 +9167,6 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           const revisionKey = (revision: ModelReadBoundaryExposureRevisionInput["revision"]) =>
             canonicalJsonDigest({ changes: revision.changes, policy_changes: revision.policy_changes ?? [], read_prerequisite: revision.read_prerequisite ?? null,
               reviewed_relationship: revision.reviewed_relationship ?? null });
-          await assertAuthoringResumeCurrent(undefined);
-          const meaningWorkloads = preparedRevision ? [] : await listReadWorkloadAnalyses({
-            projectRoot: input.projectRoot, generatedBoundary: context.candidate });
           await assertAuthoringResumeCurrent(undefined);
           const revision = preparedRevision ?? await runWithProgress(
             `${boundaryModelLabel(modelSession)} is drafting the exact field-exposure revision`,
