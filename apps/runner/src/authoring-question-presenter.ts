@@ -220,7 +220,7 @@ export async function presentMetadataEgress(input: {
 }): Promise<boolean | undefined> {
   const { view } = input;
   const destination = view.destination === undefined ? [] : [`Destination: ${view.destination}`];
-  input.chat?.rememberDetails("MODEL METADATA EGRESS", [
+  const exactDetails = { title: "MODEL METADATA EGRESS", lines: [
     `Provider: ${view.providerLabel}`,
     ...destination,
     "Sends: the job you type, its read and proposal intents, and reviewed structural metadata.",
@@ -232,10 +232,13 @@ export async function presentMetadataEgress(input: {
     "Runner-only field metadata is not added to model-facing Read authority and its row values remain private.",
     "Observed values require their own exact preview and permission. Model output remains untrusted and cannot activate, approve, apply, or write.",
     "Bounded requests: one short welcome, job planning, Read mapping, Action mapping, concise validated chat replies, and one correction only after a refusal.",
-  ]);
+  ] };
+  input.chat?.rememberDetails(exactDetails.title, [...exactDetails.lines]);
   return input.session.confirm(
     `Send this Boundary-authoring conversation and reviewed structural context to ${view.providerLabel}?`, {
       defaultValue: false,
+      decisionKind: "disclosure",
+      exactDetails,
       context: [
         `Provider: ${view.providerLabel}`,
         ...destination,

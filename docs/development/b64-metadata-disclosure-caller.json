@@ -1,0 +1,10 @@
+{
+  "before_pin": "5e0dd7c2",
+  "independent_finding": "B66 CP06 atba2b47f7: actual metadata presenter did not declare disclosure to permission guide",
+  "before": "0 PASS / 1 FAIL / 12 filtered: decisionKind undefined",
+  "after": "13 PASS / 0 FAIL / 0 SKIP; tsc -b exit0",
+  "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/egress-disclosure-after.json",
+  "change": "Exact metadata egress record is supplied to confirm as exactDetails and decisionKind disclosure; same default No and returned literal decision, no permission stored here",
+  "independent_after": "PENDING actual Chat route on integrated source",
+  "remaining": "CP08 current display record owned Chat; native origin/save and Action Source hooks remain open"
+}
