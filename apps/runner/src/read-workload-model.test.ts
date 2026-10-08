@@ -888,17 +888,36 @@ describe("B41 host-owned Read meaning resolution", () => {
     expect(requestJson).toHaveBeenCalledTimes(2);
     expect(clarificationHandler).not.toHaveBeenCalled();
   });
+  // Typed successor of the retired English requested-field classifier: the
+  // model explicitly maps the exact declared target, then the compiler checks it.
+  async function exactRequestedField(text: string, answer: () => Promise<string | null>, primaryKey = "id") {
+    const h = await typedReadAssistanceFixture(text, answer, "gpt-test", {},
+      { resource: "public.tbl_7", field: "col_2", primaryKey });
+    const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
+      id: "workflow", intended_use: text, references: ["job"], disposition: "include", subjects: [{ root_resource: "public.tbl_7", mode: "trusted_principal" }],
+      targets: [{ root_resource: "public.tbl_7", resource: "public.tbl_7", operation: "resource" },
+        { root_resource: "public.tbl_7", resource: "public.tbl_7", operation: "return", field: "col_2" }],
+    }] };
+    const missing = { ...proposal, requirements: [{ ...proposal.requirements[0]!, disposition: "unresolved", unresolved: "What does the requested workflow detail mean for this task?" }] };
+    const nativeInput = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>) => ({ name: "b41_read",
+      allowedQuestions: ["Read shipment lifecycle"], operatorNamingContext: text, generatedBoundary: h.boundary,
+      provider: "openai" as const, model: "gpt-test", apiKey: "test-key", egressAcknowledged: true,
+      deferNarration: true, dependencies: { requestJson } });
+    return { h, proposal, missing, nativeInput };
+  }
   it("does not let an incomplete model plan erase an exact operator-requested field", async () => {
-    const omitted = { allowed: [{ id: "shipments", description: "Read shipments",
-      plan: { kind: "rows", resource: "public.tbl_7", select: ["col_1"] } }], forbidden: [] };
-    const requestJson = vi.fn().mockResolvedValueOnce(response({ ...omitted,
-      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }))
-      .mockResolvedValue(response(omitted));
-    const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Shipment lifecycle status" }));
-    await expect(generateModelReadWorkload({ ...setup(requestJson), operatorNamingContext: "Read public.tbl_7.col_2 for this job.", clarificationHandler }))
-      .rejects.toThrow("READ_WORKLOAD_REQUIRED_TASK_FIELD_OMITTED");
-    expect(clarificationHandler).toHaveBeenCalledOnce();
-    expect(requestJson).toHaveBeenCalledTimes(3);
+    const operatorNamingContext = "Read public.tbl_7.col_2 for this job.";
+    const clarificationHandler = vi.fn(async () => "Shipment lifecycle status");
+    const { h, proposal, missing, nativeInput } = await exactRequestedField(operatorNamingContext, clarificationHandler, "col_1");
+    let calls = 0;
+    const requestJson = vi.fn(async request => ++calls === 1 ? response({ allowed: [], forbidden: [], read_scope: missing })
+      : response({ allowed: [{ id: "shipments", description: "Read shipments", plan: { kind: "rows", resource: "public.tbl_7", select: ["col_1"] } }], forbidden: [],
+        read_scope: proposalWithVisibleAnswers(request, proposal) }));
+    try {
+      await expect(h.run({ ...nativeInput(requestJson), operatorNamingContext })).rejects.toThrow("READ_SCOPE_DELTA_REQUIRED");
+      expect(clarificationHandler).toHaveBeenCalledOnce();
+      expect(requestJson).toHaveBeenCalledTimes(3);
+    } finally { await h.cleanup(); }
   });
   it.each([
     "Read the dispatch review stage in public.tbl_7.col_2; no activation or execution.",
@@ -906,42 +925,41 @@ describe("B41 host-owned Read meaning resolution", () => {
     "Read public.tbl_7.col_2 with no execution permission.",
     "Read public.tbl_7.col_2 without executing any Action.",
   ])("refuses an omitted operator-requested field after plain meaning resolution: %s", async operatorNamingContext => {
-    const boundary = opaqueGeneratedBoundary();
-    // Use an ordinary identity field so this negative exercises the requested
-    // business-field question, not an unrelated opaque-PK naming question.
-    boundary.pack.resources[0]!.primary_key = "id";
-    boundary.pack.resources[0]!.field_types.id = "uuid";
-    boundary.pack.resources[0]!.selectable_fields.push("id");
-    const omitted = { allowed: [{ id: "shipments", description: "Read shipment stage",
-      plan: { kind: "rows", resource: "public.tbl_7", select: ["id"] } }], forbidden: [] };
-    const requestJson = vi.fn().mockResolvedValueOnce(response({ ...omitted,
-      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }))
-      .mockResolvedValue(response(omitted));
-    const clarificationHandler = vi.fn(async question => {
-      expect(question).toMatchObject({ resource: "public.tbl_7", field: "col_2" });
-      return { state: "answered" as const, answer: "The shipment workflow state" };
+    const clarificationHandler = vi.fn(async () => {
+      const q = h.state().operator_questions!.at(-1)!;
+      expect(q.read_scope!.record.proposal.requirements[0]!.targets).toContainEqual({
+        root_resource: "public.tbl_7", resource: "public.tbl_7", operation: "return", field: "col_2" });
+      return "The shipment workflow state";
     });
-    await expect(generateModelReadWorkload({ ...setup(requestJson, boundary), operatorNamingContext, clarificationHandler }))
-      .rejects.toThrow("READ_WORKLOAD_REQUIRED_TASK_FIELD_OMITTED");
-    expect(clarificationHandler).toHaveBeenCalledOnce();
-    expect(requestJson).toHaveBeenCalledTimes(3);
+    const { h, proposal, missing, nativeInput } = await exactRequestedField(operatorNamingContext, clarificationHandler);
+    let calls = 0;
+    const requestJson = vi.fn(async request => ++calls === 1 ? response({ allowed: [], forbidden: [], read_scope: missing })
+      : response({ allowed: [{ id: "shipments", description: "Read shipment stage", plan: { kind: "rows", resource: "public.tbl_7", select: ["id"] } }], forbidden: [],
+        read_scope: proposalWithVisibleAnswers(request, proposal) }));
+    try {
+      await expect(h.run({ ...nativeInput(requestJson), operatorNamingContext })).rejects.toThrow("READ_SCOPE_DELTA_REQUIRED");
+      expect(clarificationHandler).toHaveBeenCalledOnce();
+      expect(requestJson).toHaveBeenCalledTimes(3);
+    } finally { await h.cleanup(); }
   });
   it("allows the same ordinary requested-use wording when the proposed Read retains the required field", async () => {
-    const requestJson = vi.fn().mockResolvedValueOnce(response({ ...mapped,
-      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }))
-      .mockResolvedValue(response(mapped));
-    const events: string[] = [];
-    const result = await generateModelReadWorkload({ ...setup(async request => {
-      events.push("local_reply"); return requestJson(request);
-    }), operatorNamingContext: "Read the current workflow state in public.tbl_7.col_2; no Action draft or execution.",
-    onCheckpoint: async checkpoint => { events.push(checkpoint?.stage ?? "accepted"); },
-    clarificationHandler: async () => { events.push("answer"); return { state: "answered", answer: "The shipment workflow state" }; } });
-    expect(result.analysis.status).toBe("ready");
-    expect(result.workload.allowed[0]!.plan).toMatchObject({ select: ["col_2"] });
-    expect(result.authority_granted).toBe(false);
-    expect(result.source_database_changed).toBe(false);
-    expect(requestJson).toHaveBeenCalledTimes(2);
-    expect(events).toEqual(["dispatching", "local_reply", "dispatching", "waiting", "answer", "decided", "dispatching", "local_reply", "dispatching", "accepted"]);
+    const events: string[] = [], operatorNamingContext = "Read the current workflow state in public.tbl_7.col_2; no Action draft or execution.";
+    const { h, proposal, missing, nativeInput } = await exactRequestedField(operatorNamingContext, async () => { events.push("answer"); return "The shipment workflow state"; });
+    let calls = 0;
+    const requestJson = vi.fn(async request => ++calls === 1 ? response({ allowed: [], forbidden: [], read_scope: missing })
+      : response({ ...mapped, read_scope: proposalWithVisibleAnswers(request, proposal) }));
+    try {
+      const result = await h.run({ ...nativeInput(async request => {
+        events.push("local_reply"); return requestJson(request);
+      }), operatorNamingContext,
+      onCheckpoint: async checkpoint => { events.push(checkpoint?.stage ?? "accepted"); } });
+      expect(result.analysis.status).toBe("ready");
+      expect(result.workload.allowed[0]!.plan).toMatchObject({ select: ["col_2"] });
+      expect(result.authority_granted).toBe(false);
+      expect(result.source_database_changed).toBe(false);
+      expect(requestJson).toHaveBeenCalledTimes(2);
+      expect(events).toEqual(["dispatching", "local_reply", "dispatching", "waiting", "answer", "decided", "dispatching", "local_reply", "dispatching", "accepted"]);
+    } finally { await h.cleanup(); }
   });
   it("exposes the same typed pending meaning in a durable headless path before spending a correction", async () => {
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;

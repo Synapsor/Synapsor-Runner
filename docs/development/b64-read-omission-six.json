@@ -1,0 +1,19 @@
+{
+  "base": "1da9e70d",
+  "status": "Six typed native component counterparts PASS; independent assertion migration review pending",
+  "case_ids": [
+    "B64-READ-MIG-137",
+    "B64-READ-MIG-138",
+    "B64-READ-MIG-139",
+    "B64-READ-MIG-140",
+    "B64-READ-MIG-141",
+    "B64-READ-MIG-142"
+  ],
+  "before": "read-workload-full808-extracted.json preserves all6 missing-protocol failures",
+  "after": "/var/tmp/synapsor-b64-read-owned/evidence/typed-omission-six-after2.log:6PASS144filtered",
+  "preserved": "Original exact public.tbl_7.col_2 request strings, one raw operator answer, negative3model calls/positive2, full positive dispatch/wait/answer/decided/accepted event list, exact requested returned field, no authority/no Source write.",
+  "typed_contract": "Model explicitly proposes unresolved exact requested target and receives actual native raw answer reference. Its final typed proposal retains that target; omitted plan is refused by compiler scope assessment. Retired English REQ_FIELD_OMITTED error replaced with READ_SCOPE_DELTA_REQUIRED. No English request extraction, no model quote as authority. Raw answer is not confirmation; positive remains an unconfirmed disabled proposal.",
+  "fixture": "Generalized existing actual ordinary structural helper to declared resource/field/key (same original IDs); no preseeded meanings, q/answer IDs or confirmations. Model cites actual emitted native references.",
+  "harness_before": "typed-omission-six-after.log: old setup mutated resource label after protected structural review, correctly rejected. New pure options setup avoids mutation; no product change.",
+  "types": "No owned-file errors;4known other-file fixture migration errors already fixed on Main."
+}

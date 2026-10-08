@@ -17,11 +17,12 @@ import { READ_SCOPE_PROTOCOL } from "../read-structured-scope.js";
 /** Ordinary declared structural preparation, actual producer completion, native
  * question/answer owners and disk Resume CAS. No preseeded mapping or answer. */
 export async function typedReadAssistanceFixture(request: string, answer: () => Promise<string | null>, model = "gpt-5.6-luna",
-  additionalFields: Record<string, { type: string }> = {}) {
+  additionalFields: Record<string, { type: string }> = {},
+  domain = { resource: "public.orders", field: "status", primaryKey: "id" }) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "typed-read-assistance-"));
-  const prepared = await prepareReviewedReadScope(root, { resources: ["public.orders"], field: "status", primaryKey: "id",
-    fields: { id: { type: "uuid" }, status: { type: "text" }, ...additionalFields },
-    review: { selectable_fields: [...new Set(["id", "status", ...Object.keys(additionalFields)])], filterable_fields: ["status"], allow_reviewed_fields: Object.keys(additionalFields) } });
+  const prepared = await prepareReviewedReadScope(root, { resources: [domain.resource], field: domain.field, primaryKey: domain.primaryKey,
+    fields: { [domain.primaryKey]: { type: "uuid" }, [domain.field]: { type: "text" }, ...additionalFields },
+    review: { selectable_fields: [...new Set([domain.primaryKey, domain.field, ...Object.keys(additionalFields)])], filterable_fields: [domain.field], allow_reviewed_fields: Object.keys(additionalFields) } });
   const boundary = prepared.context.candidate;
   const input = { binding: { boundary_name: boundary.pack.name, generation_lock_fingerprint: boundary.generation_lock_fingerprint,
     schema_fingerprint: prepared.context.lock.schema_fingerprint, role_posture_fingerprint: boundary.role_posture_fingerprint },
