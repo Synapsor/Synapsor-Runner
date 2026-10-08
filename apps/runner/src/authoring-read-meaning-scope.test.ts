@@ -1,3 +1,4 @@
+import { projectReadScopeHostContext } from "./read-current-evidence.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -171,6 +172,19 @@ describe("B64 actual missing-scope raw-answer host", () => {
       expect(h.resolve({ ...ref!, answer_id: "another-answer" })).toBeUndefined();
       expect(await h.answer()).toEqual(ref); expect(h.seen).toHaveLength(1);
       expect(h.state().recovery?.operations).toHaveLength(1);
+    } finally { await h.cleanup(); }
+  });
+  it("projects only acknowledged native raw testimony without making it confirmed scope", async () => {
+    const h = await pendingScope(["I'm not sure"]);
+    try {
+      const ref = await h.answer(); if (!ref) throw new Error("Expected actual native answer");
+      const actual = h.resolve(ref), state = h.state();
+      const result = projectReadScopeHostContext({ request: { id: "job", text: "List my orders" },
+        catalog: { digest: canonicalJsonDigest("catalog"), resources: [{ id: "public.orders", fields: [{ id: "status" }] }], relationships: [] },
+        binding: { meaning_digest: canonicalJsonDigest("meaning"), applicability_digest: canonicalJsonDigest("purpose"), operation_digest: canonicalJsonDigest("read") },
+        records: { questions: state.questions, handoffs: state.handoffs, generation: state.recovery }, answerQuestionIds: [ref.question_id] });
+      expect(result.references.find(item => item.kind === "answer")).toMatchObject({ ...actual, id: expect.any(String) });
+      expect(result).not.toHaveProperty("native"); expect(result).not.toHaveProperty("confirmation");
     } finally { await h.cleanup(); }
   });
   it("leaves a blank pending and replaces it at the next native revision without a new model call", async () => {
