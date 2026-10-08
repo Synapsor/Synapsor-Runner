@@ -17,6 +17,8 @@ import { authoringActionCheckpoint, authoringQuestionAnswerCheckpoint, authoring
 import { askToolSurfaceDigest, completedAuthoringQuestion, resolveAskProviderConfiguration, runAskProviderTurn,
   type AskProviderDependencies, type AskToolDefinition, type AskToolGateway } from "./model-ask.js";
 
+import { OLDER_AUTHORING_SETUP_MESSAGE, STRUCTURED_AUTHORING_PROTOCOL_VERSION } from "./authoring-protocol.js";
+
 const binding: BoundaryAuthoringResumeBinding = { boundary_name: "controlled_version_resume",
   generation_lock_fingerprint: canonicalJsonDigest("Controlled exact generation lock."),
   schema_fingerprint: canonicalJsonDigest("Controlled schema binding."),
@@ -40,7 +42,8 @@ async function genuineVersion(options: { terminal?: "present" | "answer-map"; ra
   mapping?: "proposed" | "pending"; duplicate?: "present" | "answer-map" } = {}) {
   const scope = canonicalJsonDigest(intent), context = canonicalJsonDigest("Exact current Action, Read, Source and structural proof."),
     proof = canonicalJsonDigest("Labelled structural Version proof; not authority or writer behavior.");
-  let checkpoint = actionRuleAuthoringCheckpoint({ intent_digest: scope, context_digest: context, components: {},
+  let checkpoint = actionRuleAuthoringCheckpoint({ authoring_protocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION },
+    intent_digest: scope, context_digest: context, components: {},
     logical_turns: [{ id: randomUUID(), origin_context_digest: context, iterations_used: 0, tool_calls_used: 0 }] });
   let generation: AuthoringTransportState | undefined;
   let question: OperatorQuestion, handoff: AuthoringOwnerHandoff;
@@ -140,7 +143,7 @@ async function genuineVersion(options: { terminal?: "present" | "answer-map"; ra
     }
   });
   const state = buildBoundaryAuthoringResumeState({ binding, stage: "action_drafting", jobIntent: intent, provider: "openai", model: "controlled-version-resume",
-    action: { intent, checkpoint }, generationRecovery: generation, operatorQuestions: [question!], ownerHandoffs: [handoff!] });
+    authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION }, action: { intent, checkpoint }, generationRecovery: generation, operatorQuestions: [question!], ownerHandoffs: [handoff!] });
   return { state, checkpoint, question: question!, handoff: handoff!, generation: generation!, requestJson };
 }
 
@@ -196,7 +199,7 @@ describe("Version outer Resume guard with genuine consumed local decoder fixture
     try {
       expect(() => assertBoundaryAuthoringResumeState(f.state)).not.toThrow();
       const before = structuredClone(f.state);
-      await writeBoundaryAuthoringResumeState(root, f.state);
+      await writeBoundaryAuthoringResumeState(root, f.state, { expectedRevisionDigest: null });
       expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: before });
       expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: before });
       const count = terminal === "present" ? 3 : 4;
@@ -406,11 +409,14 @@ describe("Version outer Resume guard with genuine consumed local decoder fixture
     expect(f.checkpoint.logical_turns!.at(-1)!.completed).toBeUndefined();
     expect(f.checkpoint.reviewed_version_fields).toBeUndefined();
   });
-  it("keeps a legacy checkpoint with no mediated Version or fabricated completion valid", () => {
+  it("refuses an older saved setup before interpreting its unmediated Version checkpoint", () => {
     const checkpoint = actionRuleAuthoringCheckpoint({ intent_digest: canonicalJsonDigest(intent), context_digest: canonicalJsonDigest("Legacy exact context."), components: {} });
-    const state = buildBoundaryAuthoringResumeState({ binding, stage: "action_drafting", jobIntent: intent, provider: "openai", model: "controlled-version-resume", action: { intent, checkpoint } });
-    expect(() => assertBoundaryAuthoringResumeState(state)).not.toThrow();
-    expect(() => assertActionVersionQuestionHandoff(state, checkpoint)).not.toThrow();
+    // Explicit historical envelope fixture, never admitted or upgraded by the new-job builder.
+    const state = { schema_version: "synapsor.boundary-authoring-resume.v1", binding,
+      stage: "action_drafting", job_intent: intent, action: { intent, checkpoint }, generation_recovery: undefined };
+    const before = structuredClone(state);
+    expect(() => assertBoundaryAuthoringResumeState(state)).toThrow(OLDER_AUTHORING_SETUP_MESSAGE);
+    expect(state).toEqual(before);
     expect(state.generation_recovery).toBeUndefined(); expect(checkpoint.logical_turns).toBeUndefined();
   });
 });
