@@ -2131,7 +2131,7 @@ describe("boundary review terminal picker", () => {
     );
   });
 
-  it("labels unresolved sensitivity as a review state instead of claiming a data type", () => {
+  it.each(["unresolved_free_text", "review_required", "future_unknown_state"])("labels sensitivity %s as a review state instead of claiming a data type", (state) => {
     const view = reviewView();
     view.fields.push({
       ...view.fields[0]!,
@@ -2139,7 +2139,8 @@ describe("boundary review terminal picker", () => {
       data_type: "integer",
       primary_key: false,
       sensitivity: {
-        state: "unresolved_free_text",
+        // Simulate a newer producer before its union arrives in this consumer.
+        state: state as BoundaryResourceReviewView["fields"][number]["sensitivity"]["state"],
         reason_codes: ["unconstrained_free_text_name"],
         reasons: ["Legacy unresolved naming signal."],
         evidence_source: "database",
