@@ -1,0 +1,26 @@
+{
+  "inventory": [
+    "GP01"
+  ],
+  "base": "0bf2c1fd",
+  "failing_before_pin": "bb20e8c3",
+  "before": {
+    "tests": 4,
+    "failed": 4,
+    "reason": "A plain rephrase with the same lexical bag replaces the retained original, including at-most 200 becoming at-least 200."
+  },
+  "after": {
+    "tests": 23,
+    "passed": 23,
+    "files": [
+      "authoring-operator-presentation-retirement.test.ts",
+      "authoring-operator-presentation.test.ts"
+    ]
+  },
+  "isolation": "bwrap --unshare-net; owned0700 HOME/TMP; maxWorkers=minWorkers=1; slot1 allocated by Main",
+  "resource_floor_at_launch": {
+    "memory_available_kib": 20478068,
+    "disk_available_kib": 81762912
+  },
+  "proof_limits": "Producer evidence only; independent review required. No semantic equivalence claimed. Original typed caller target/outcome checks remain outside wording display. No paid calls, source writes or authority changes."
+}

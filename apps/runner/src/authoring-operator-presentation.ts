@@ -152,19 +152,17 @@ export function operatorClarificationGate(options: Parameters<typeof presentOper
     throw new Error("OPERATOR_QUESTION_WORDING_STATE_STALE: Current wording metadata or target changed; no replacement was sent.");
   let rephraseRequested = Boolean(saved);
   let original = saved?.original_question;
-  const literalConstraints = (text: string) => JSON.stringify([
-    text.match(/\b\d+(?:\.\d+)?\b/gu) ?? [],
-    (text.toLowerCase().match(/\b(?:not|never|none|all|every|each|optional|required|minimum|maximum)\b/gu) ?? [])
-      .map(word => ["all", "every", "each"].includes(word) ? "all" : word).sort(),
-  ]);
   const gate = (text: string, target?: { resource?: string; field?: string }): { state: "question"; question: string; fallback: boolean }
     | { state: "rephrase"; guidance: string } => {
     const currentTarget = exactTarget(target ?? options.target);
     if (saved && saved.context_digest !== identity(currentTarget))
       throw new Error("OPERATOR_QUESTION_WORDING_STATE_STALE: The resumed wording belongs to another exact target.");
-    if (original && literalConstraints(original) !== literalConstraints(text)) {
-      // A wording-only correction cannot change a literal bound or constraint.
-      // Keep the original question. This narrow check is not semantic proof.
+    if (original !== undefined) {
+      // The caller validates the typed target and question outcome; wording is
+      // not a proof that its constraints or provenance stayed equivalent. After
+      // the one bounded correction, render the retained original with only the
+      // mechanical metadata-label substitution. Never infer equivalence from
+      // numbers, quantifiers, negation, or a model's claim about its own prose.
       return { state: "question", question: presentOperatorClarification(original,
         { ...options, ...(target ? { target } : {}) }), fallback: true };
     }
