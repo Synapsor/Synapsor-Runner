@@ -1,15 +1,15 @@
-1. B64 Read lane active; paid CLOSED; frozen candidates untouched; no usage-based stop (Owner superseded it).
+1. B64 Read lane ACTIVE; paid CLOSED; frozen candidates untouched; no usage stop (Owner superseded it).
 2. T0 2026-10-08T06:32:23Z; end Oct13 same; final24 begins Oct12 same, unchanged.
-3. Branch codex/b64-read-replacement-20261008 in W/b57-fixture-prep; parent base3d276c08; private backup only.
-4. RLS b381 native factory independently accepted 5 controls; canonical/projector/helper incorporated by Main.
-5. cbefe133 makes Read currentness async/fresh; 3b6786ef/f8b3d8fe add native replacement testimony with no fabricated completion.
-6. New producer checkpoint: actual mapped review→decline→raw→one new mapping→separate default-No group; actual counters/history retained.
-7. Producer7P; earlier25 affectedP. R1 d312d475 independently ACCEPT8 controls incl2fixed invocation failures/repeated replacement/actual spent budget.
-8. Main hook: postReviewReplacement exact read+records+analysis; structuredScope replacementAnswer/resolveReplacementAnswer; checkpoint access.readPreparedRead.
-9. Main must wire public Resume/group routes and same held permit; public and interrupted replacement dispatch remain NOT RUN here.
-10. RP01–07 producer scope accepted; Main public/CAS wait proofs and no-Read planning continuation remain separate.
-11. Five remaining v2 subject sites ported via actual reviewed inventory:44P,130filtered; revision relationship8P fixture-only; two mapping assistance repros cover10 open adapter rows.
-12. Typed assistance:10 original controls+2 actual committed relationship transitions PASS; native raw currentness/value retention class fixes before2F each; composedb18888PASS; four durable ports4PASS found/fixed exact decided-answer cold Resume ownership; independent review pending. Paid CLOSED.
-13. Three native transport ports3PASS: exact checkpointed pending adjudicated by R1; exhausted-answer sixth-call defect fixed to original5 calls; 47 affectedPASS; eighteen inventory rows component-PASS (MIG122 correction sequence1PASS), independent limit/TA variants pending.
-14. Remaining relationship seven typed ports now whole-file25PASS, no assertion/count changes; test-only independent review/Main integration next.
-15. Full workload808=62P/88F:76 missing pins,6 unresolved-fixture subjects (fixed6P),6 legacy provenance wrappers; MIG137–142 omission successors now6PASS (independent pending), no overall PASS.
+3. Worktree W/b57-fixture-prep; branch codex/b64-read-replacement-20261008; private backup only; all checkpoints pushed.
+4. Replacement/RLS/projector predecessors independently accepted; Main owns public routes and boundary hot spots.
+5. Assistance3ed + decided-answer70d + strict-valueb188 accepted/integrated by Main; composed88PASS, records b64-read-typed-assistance-wip.json.
+6. Terminal answer-limit043 independently ACCEPT: four answers/five calls, no extra correction; real transport sidecars exact checkpointed pending (R1).
+7. Eighteen exact assistance/durable migration rows component-PASS; b64-read-migration-assistance-17.json supplements Main manifest without overwriting it.
+8. Relationship seven ports808: whole file25PASS, original guard assertions/callcounts unchanged; b64-read-relationship-seven.json.
+9. Full workload808 remains62PASS/88FAIL,0skip:76 direct missing pins,6 unresolved-fixture subjects,6 legacy provenance wrappers; raw report preserved.
+10. Six unresolved subject fixtures1da corrected (6PASS, assertions unchanged); six omission successors912 (MIG137–142)6PASS, actual native records/counts/events.
+11. Headless/long-job MIG143/192 now2PASS; shared existing description-limit guidance restored; b64-read-pending-two.json (independent review pending).
+12. Provenance counterparts require R2 plan: exact q/rev/raw refs prove provenance, not meaning; changed-target valid testimony must remain unconfirmed under real group review.
+13. Currentness pair now2PASS, original stale errors/callcounts unchanged (b64-read-currentness-two.json); next R2 provenance plan + remaining queue.
+14. Final local types show no owned-file errors;4 known other fixture migrations already fixed on Main. No full-suite or delivery acceptance claimed.
+15. Main owns integration/public checks; keep original failures and compact per-group records; no authority/Source/allowance bypasses.

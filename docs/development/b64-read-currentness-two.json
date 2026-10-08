@@ -1,0 +1,17 @@
+{
+  "base": "ea387b96",
+  "status": "2PASS; independent fixture review pending",
+  "cases": [
+    "refuses a competing Source change in the actual question handler before follow-up egress",
+    "does not reuse a stale Read catalog during naming correction"
+  ],
+  "before": "read-workload-full808-extracted.json: both missing protocol",
+  "after": "/var/tmp/synapsor-b64-read-owned/evidence/typed-currentness-two-after.log: 2PASS,148filtered",
+  "changes": "Tests only. Actual ordinary structural review, typed proposal and native question/answer/completion/CAS. Retired fabricated-quote classifier trigger replaced by invalid typed reference for bounded correction; no naming interpretation asserted.",
+  "unchanged_assertions": [
+    "Source change: CHECKPOINT_STALE, one provider call, waiting checkpoint",
+    "Catalog change: ASK_AUTHORITY_CHANGED, two provider calls"
+  ],
+  "added_control": "No native question confirmed after competing Source change.",
+  "scope": "No product edits, no model/Source writes, no full-suite claim."
+}

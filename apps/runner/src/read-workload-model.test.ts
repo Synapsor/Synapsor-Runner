@@ -985,16 +985,19 @@ describe("B41 host-owned Read meaning resolution", () => {
   });
   it("refuses a competing Source change in the actual question handler before follow-up egress", async () => {
     const conversation = policy("Use the shipment lifecycle for this task.");
-    const requestJson = vi.fn().mockResolvedValue(response({ ...mapped,
-      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }));
+    const { h, missing, nativeInput } = await exactRequestedField("Read public.tbl_7.col_2 for this job.", async () => {
+      conversation.policySources!.snapshots[0]!.text = "Changed source";
+      return "The lifecycle stage";
+    });
+    const requestJson = vi.fn().mockResolvedValue(response({ allowed: [], forbidden: [], read_scope: missing }));
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
-    await expect(generateModelReadWorkload({ ...setup(requestJson), conversation,
-      onCheckpoint: async value => { checkpoint = value; }, clarificationHandler: async () => {
-        conversation.policySources!.snapshots[0]!.text = "Changed source";
-        return { state: "answered", answer: "The lifecycle stage" };
-      } })).rejects.toThrow("CHECKPOINT_STALE");
-    expect(requestJson).toHaveBeenCalledOnce();
-    expect(checkpoint?.stage).toBe("waiting");
+    try {
+      await expect(h.run({ ...nativeInput(requestJson), conversation,
+        onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("CHECKPOINT_STALE");
+      expect(requestJson).toHaveBeenCalledOnce();
+      expect(checkpoint?.stage).toBe("waiting");
+      expect(h.state().operator_questions?.every(q => !q.confirmation)).toBe(true);
+    } finally { await h.cleanup(); }
   });
   it("does not let a generated field label suppress a necessary plain business question", async () => {
     const boundary = opaqueGeneratedBoundary();
@@ -1119,22 +1122,33 @@ describe("model-assisted Read workload mapping", () => {
   });
 
   it("does not reuse a stale Read catalog during naming correction", async () => {
-    const boundary = opaqueGeneratedBoundary();
+    // The retired quote classifier is replaced by the same bounded correction
+    // for an invalid typed reference; catalog currentness remains unchanged.
+    const h = await typedReadAssistanceFixture("Read my shipment lifecycle", undefined, "gpt-test", {},
+      { resource: "public.tbl_7", field: "col_2", primaryKey: "id" });
+    const boundary = h.boundary;
+    const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
+      id: "shipments", intended_use: "Read my shipment lifecycle", references: ["job"], disposition: "include",
+      subjects: [{ root_resource: "public.tbl_7", mode: "trusted_principal" }],
+      targets: [{ root_resource: "public.tbl_7", resource: "public.tbl_7", operation: "resource" },
+        { root_resource: "public.tbl_7", resource: "public.tbl_7", operation: "return", field: "col_2" }],
+    }] };
     let calls = 0;
     const requestJson = vi.fn(async () => {
       if (++calls === 2) boundary.pack.resources[0]!.selectable_fields = [];
       return { status: 200, body: { output: [{ type: "function_call", call_id: "stale_naming", name: "runner__submit_read_workloads",
         arguments: JSON.stringify({ allowed: [{ id: "shipments", description: "Read shipment lifecycle",
           plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
-          ...(calls === 1 ? { operator_meanings: [{ resource: "public.tbl_7", operator_quote: "Invented prefix: public.tbl_7 contains shipment requests" }] } : {}) }) }] } };
+          read_scope: calls === 1 ? { ...proposal, requirements: [{ ...proposal.requirements[0], references: ["absent-reference"] }] } : proposal }) }] } };
     });
-    await expect(generateModelReadWorkload({ name: "shipment_read", allowedQuestions: ["Read my shipment lifecycle"],
-      operatorNamingContext: "public.tbl_7 contains shipment requests", provider: "openai", model: "gpt-test", generatedBoundary: boundary,
-      apiKey: "test-key", egressAcknowledged: true, deferNarration: true, dependencies: { requestJson } }))
-      .rejects.toMatchObject({ code: "ASK_AUTHORITY_CHANGED" });
-    expect(calls).toBe(2);
+    try {
+      await expect(h.run({ name: "shipment_read", allowedQuestions: ["Read my shipment lifecycle"],
+        operatorNamingContext: "public.tbl_7 contains shipment requests", provider: "openai", model: "gpt-test", generatedBoundary: boundary,
+        apiKey: "test-key", egressAcknowledged: true, deferNarration: true, dependencies: { requestJson } }))
+        .rejects.toMatchObject({ code: "ASK_AUTHORITY_CHANGED" });
+      expect(calls).toBe(2);
+    } finally { await h.cleanup(); }
   });
-
   it("corrects shared-table reads into owned-root related projections without a scope-review detour", async () => {
     const boundary = generatedBoundary();
     const orders = boundary.pack.resources[0]!;
