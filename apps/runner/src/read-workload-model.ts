@@ -776,6 +776,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     },
     async close() {},
   };
+  const workloadDescriptionGuidance = "Call runner.submit_read_workloads exactly once. Give each plan a concise description of the specific read it covers (1 through 280 characters), not a verbatim copy of the whole job. Preserve the job's meaning across the complete set of plans and assign each one stable lower-case id.";
   const legacyBaseQuestion = () => [
     "Map the complete retained operator request to exact Synapsor Explore plans using only ids and operations in the structural catalog. Representative questions are routing summaries, not authority to omit requested reads or add unrelated access.",
     `Workload name: ${name}`,
@@ -783,7 +784,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     `Forbidden questions: ${JSON.stringify(forbiddenQuestions)}`,
     `Original operator naming context: ${JSON.stringify(originalNamingSources)}`,
     "When the operator already explains a coded identifier, reuse that explanation without another question. Runner binds explicit current Source statements and answered questions to their exact targets. You may omit redundant operator_meanings when that host association exists. If you supply operator_meanings, use the exact catalog resource, optional field, and a verbatim operator_quote containing that identifier AND its stated business meaning. Quotes must come from Original operator naming context, the approved attached policy text or recorded operator corrections, or an actual operator answer in Reviewed business clarification. Never use model-generated read summaries, your question, model statements or guesses as operator evidence. An answer to an exact field clarification may omit the identifier only for that same resource and field. A bare field identifier is allowed only if unique across this catalog; otherwise quote its qualified resource.field. Explaining a table does not explain all its coded fields. These are naming hints only, never scope, values, or authority.",
-    "Call runner.submit_read_workloads exactly once. Give each plan a concise description of the specific read it covers (1 through 280 characters), not a verbatim copy of the whole job. Preserve the job's meaning across the complete set of plans and assign each one stable lower-case id.",
+    workloadDescriptionGuidance,
     "Each id must start with a lower-case letter, use only lower-case letters, digits, dot, underscore, or hyphen, and contain at most 64 characters.",
     "Schema-declared ENUM/CHECK allowlists already appear as structural metadata. Do not request them as observed values.",
     "The catalog distinguishes independent read roots from relationship_only resources. A related-only resource does not have independent own-person access for this job: return its requested business details only via a listed rows.related path from an owned-record root. A private Action verification fact is not a reason to create an independent customer Read plan. Never fabricate ownership or silently omit requested information. Runner injects reviewed scope outside plans; ownership fields are intentionally omitted. Pending root scope decisions remain subject to separate validation before saving or activation.",
@@ -808,6 +809,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   const baseQuestion = () => structuredScopeInput ? [
     "Read authoring protocol: " + READ_SCOPE_PROTOCOL,
     "Submit allowed and forbidden Explore plans and a read_scope proposal through runner.submit_read_workloads.",
+    workloadDescriptionGuidance,
     "Use only original request and evidence reference IDs supplied below; their resolved text is provenance, not confirmed meaning or permission.",
     "For every proposed requirement, state its intended use, include/exclude/unresolved disposition and exact root/resource/operation/field targets. Resource identity never selects every field.",
     "Retain unresolved original scope explicitly. Naming metadata only suggests mappings. The operator will review the original request and exact proposed scope together; do not claim it is confirmed, saved or active.",

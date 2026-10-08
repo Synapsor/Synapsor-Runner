@@ -16,7 +16,7 @@ import { READ_SCOPE_PROTOCOL } from "../read-structured-scope.js";
 
 /** Ordinary declared structural preparation, actual producer completion, native
  * question/answer owners and disk Resume CAS. No preseeded mapping or answer. */
-export async function typedReadAssistanceFixture(request: string, answer: () => Promise<string | null>, model = "gpt-5.6-luna",
+export async function typedReadAssistanceFixture(request: string, answer: (() => Promise<string | null>) | undefined, model = "gpt-5.6-luna",
   additionalFields: Record<string, { type: string }> = {},
   domain = { resource: "public.orders", field: "status", primaryKey: "id" }) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "typed-read-assistance-"));
@@ -66,11 +66,11 @@ export async function typedReadAssistanceFixture(request: string, answer: () => 
     appendSourceMessage: async () => { throw new Error("No Source mutation expected"); } } });
   const meaning = createReadMeaningHost({ access: { ...common, readConversationTurns: () => [], assertFresh: async () => {} },
     answerTooLarge: () => {}, interact: async view => {
-      if (locked || view.kind !== "question") throw new Error("Expected unlocked actual raw question");
+      if (locked || view.kind !== "question" || !answer) throw new Error("Expected unlocked actual raw question");
       return { kind: "answer", binding: view.binding, raw: await answer() };
     } });
   const structuredScope = { protocol: READ_SCOPE_PROTOCOL, current: references,
-    answer: meaning.answerScope, resolveAnswer: meaning.resolveScopeAnswer };
+    answer: answer ? meaning.answerScope : undefined, resolveAnswer: meaning.resolveScopeAnswer };
   return { boundary, structuredScope, state: () => state, coldState: () => readBoundaryAuthoringResumeState(root, input.binding),
     run: (options: ModelReadWorkloadInput) => withAuthoringGenerationRecovery(async () => {
       configureAuthoringGenerationRecovery({ available: () => true, read: () => state.generation_recovery,

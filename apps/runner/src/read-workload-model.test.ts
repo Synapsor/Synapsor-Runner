@@ -890,7 +890,7 @@ describe("B41 host-owned Read meaning resolution", () => {
   });
   // Typed successor of the retired English requested-field classifier: the
   // model explicitly maps the exact declared target, then the compiler checks it.
-  async function exactRequestedField(text: string, answer: () => Promise<string | null>, primaryKey = "id") {
+  async function exactRequestedField(text: string, answer: (() => Promise<string | null>) | undefined, primaryKey = "id") {
     const h = await typedReadAssistanceFixture(text, answer, "gpt-test", {},
       { resource: "public.tbl_7", field: "col_2", primaryKey });
     const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
@@ -962,14 +962,21 @@ describe("B41 host-owned Read meaning resolution", () => {
     } finally { await h.cleanup(); }
   });
   it("exposes the same typed pending meaning in a durable headless path before spending a correction", async () => {
+    const { h, missing, nativeInput } = await exactRequestedField("Read public.tbl_7.col_2 for this job.", undefined);
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
-    const requestJson = vi.fn().mockResolvedValue(response({ ...mapped,
-      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }));
-    await expect(generateModelReadWorkload({ ...setup(requestJson), onCheckpoint: async value => { checkpoint = value; } }))
-      .rejects.toThrow("READ_WORKLOAD_CLARIFICATION_REQUIRED");
-    expect(requestJson).toHaveBeenCalledOnce();
-    expect(checkpoint).toMatchObject({ stage: "waiting", state: { call_count: 1, correction_used: false },
-      pending_question: { kind: "clarification", request: { resource: "public.tbl_7", field: "col_2" } } });
+    const requestJson = vi.fn().mockResolvedValue(response({ allowed: [], forbidden: [], read_scope: missing }));
+    try {
+      await expect(h.run({ ...nativeInput(requestJson), onCheckpoint: async value => { checkpoint = value; } }))
+        .rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
+      expect(requestJson).toHaveBeenCalledOnce();
+      expect(checkpoint).toMatchObject({ stage: "waiting", state: { call_count: 1, correction_used: false },
+        pending_question: { kind: "scope", request: { scope: { proposal: missing } } } });
+      const cold = await h.coldState(); expect(cold.status).toBe("ready");
+      if (cold.status !== "ready") throw new Error("Expected actual pending native scope");
+      expect(cold.value.operator_questions!.at(-1)?.raw_answer).toBeUndefined();
+      expect(cold.value.operator_questions!.at(-1)?.confirmation).toBeUndefined();
+      expect(cold.value.owner_handoffs!.at(-1)?.state).toBe("waiting");
+    } finally { await h.cleanup(); }
   });
   it("does not equate a generated label with meaning when an opaque field has no model quote", async () => {
     const boundary = opaqueGeneratedBoundary();
@@ -1490,13 +1497,17 @@ describe("model-assisted Read workload mapping", () => {
   it("keeps a long original job while requesting concise schema-compatible plan descriptions", async () => {
     const job = "Help customers read their account, bills, services, support history, and eligible plan offers. ".repeat(4).trim();
     expect(job.length).toBeGreaterThan(280);
-    const requestJson = vi.fn().mockResolvedValue(diagnosticResponse("valid"));
+    const typed = declaredWorkloadScope(job, "root_only");
+    const missing = { ...typed.proposal, requirements: [{ ...typed.proposal.requirements[0]!, disposition: "unresolved", subjects: [], targets: [],
+      unresolved: "Which exact reviewed information belongs in this broad task?" }] };
+    const requestJson = vi.fn().mockResolvedValue({ status: 200, body: { output: [{ type: "function_call", call_id: "long_job",
+      name: "runner__submit_read_workloads", arguments: JSON.stringify({ allowed: [], forbidden: [], read_scope: missing }) }] } });
     await expect(generateModelReadWorkload({
       name: "long_job", allowedQuestions: [job],
       provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
       generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
-      dependencies: { requestJson },
-    })).rejects.toThrow("READ_WORKLOAD_CLARIFICATION_REQUIRED");
+      dependencies: { requestJson }, structuredScope: typed.structuredScope,
+    })).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
     const sent = JSON.stringify(requestJson.mock.calls[0]?.[0].body);
     expect(sent).toContain(job);
     expect(sent).toContain("1 through 280 characters");

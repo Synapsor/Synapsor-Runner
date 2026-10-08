@@ -1,0 +1,15 @@
+{
+  "base": "9125de75",
+  "case_ids": [
+    "B64-READ-MIG-143",
+    "B64-READ-MIG-192"
+  ],
+  "status": "2PASS component review pending",
+  "before": "full808 missing-pin results preserved; typed-pending-two-after.log1PASS1FAIL exposes missing existing description-length guidance in typed prompt",
+  "product": "Share existing plan-description guidance with typed prompt (1through280 characters) while retaining original request in full. No inference, extra request or authority. Schema already enforces same length.",
+  "after": "typed-pending-two-after3.log:2PASS148filtered",
+  "assertions": "One model call each; full long original request and schema-compatible concise description guidance retained. Headless saves actual native waiting q/handoff/completion with no raw/confirmation and no correction. Retired lexical clarification code becomes AUTHORING_PAUSED with explicit unresolved scope.",
+  "fixture": "Existing native helper supports absent operator handler; unexpected interaction throws. No fabricated raw answer, mapping or native confirmation.",
+  "harness_incident": "after2 log TMPDIR spelling /var/tmp-synapsor... caused EACCES before test collection; corrected to existing owned /var/tmp/... then same2tests passed.",
+  "types": "Optional callback type guarded explicitly; final no owned errors, four known other-file migrations remain on this branch."
+}
