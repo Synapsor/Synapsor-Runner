@@ -1,0 +1,4 @@
+MAIN-EN-019 deletion
+Base0bf2c1fd source static ownership/caller inspection: legacyBoundaryReviewDecisions has only its private definition; reviewDecision and reviewDecisionSuffix have no callers outside that dead function block.
+Removed the complete 134-line unreachable English decision decoder and two private helpers. Supported boundaryReviewDecisions still delegates directly to sharedBoundaryReviewDecisions; no legacy fallback retained.
+No behavior test claimed for unreachable source. Main types and independent review pending.
