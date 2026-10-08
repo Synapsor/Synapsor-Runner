@@ -1678,6 +1678,36 @@ describe("proposal store", () => {
     }
   });
 
+  it("retains an original Source binding through local/shared restore and refuses changed or missing binding", async () => {
+    const first = new ProposalStore(), restored = new ProposalStore();
+    const pool = new FakePostgresRuntimePool();
+    const fleet = new PostgresWritebackIntentStore({ pool, autoMigrate: true });
+    try {
+      first.createProposal(changeSet);
+      first.approveProposal("wrp_123", { approver: "support_lead", proposal_hash: "sha256:proposal", proposal_version: 1 });
+      const job = first.recordWritebackJob(writebackJob);
+      // Persistence contract only; no Source completion/activation is claimed.
+      const body = { schema_version: "synapsor.source-completion-binding.v1" as const,
+        job_digest: canonicalJsonDigest(job), source_binding_digest: canonicalJsonDigest({ fixtureDestination: "owned" }),
+        execution_binding_digest: canonicalJsonDigest({ fixtureExecution: "reviewed" }), writer_reference: "OWNED_WRITE_URL" };
+      const binding = { ...body, digest: canonicalJsonDigest(body) };
+      first.claimWritebackIntent(job, "runner_a", binding);
+      first.markWritebackIntentApplying("wbi:wbj_123", "runner_a");
+      restored.importSharedLedgerEntries(first.sharedLedgerEntries());
+      expect(restored.getWritebackIntent("wbi:wbj_123")?.source_completion_binding).toEqual(binding);
+      expect(restored.claimWritebackIntent(job, "runner_b", binding)).toMatchObject({ decision: "reconciliation_required" });
+      expect(() => restored.claimWritebackIntent(job, "runner_b")).toThrowError(expect.objectContaining({ code: "WRITEBACK_INTENT_SOURCE_BINDING_MISMATCH" }));
+      const changedBody = { ...body, source_binding_digest: canonicalJsonDigest({ fixtureDestination: "foreign" }) };
+      const changed = { ...changedBody, digest: canonicalJsonDigest(changedBody) };
+      expect(() => restored.claimWritebackIntent(job, "runner_b", changed)).toThrowError(expect.objectContaining({ code: "WRITEBACK_INTENT_SOURCE_BINDING_MISMATCH" }));
+      await fleet.claimWritebackIntent(job, "runner_a", binding);
+      await fleet.markWritebackIntentApplying("wbi:wbj_123", "runner_a");
+      expect(pool.rows.get("writeback_intents:wbi:wbj_123")?.payload_json).toMatchObject({ source_completion_binding: binding });
+      await expect(fleet.claimWritebackIntent(job, "runner_b", changed)).rejects.toMatchObject({ code: "WRITEBACK_INTENT_SOURCE_BINDING_MISMATCH" });
+      expect(restored.getWritebackIntent("wbi:wbj_123")?.status).toBe("applying");
+    } finally { first.close(); restored.close(); await fleet.close(); }
+  });
+
   it("records a signed reconciliation as an immutable terminal receipt", () => {
     const store = new ProposalStore();
     try {

@@ -4,6 +4,9 @@ import { postgresControlPolicyRepository, type ControlPolicyRepository } from ".
 import { automaticApprovalActionRevision, assertAutomaticApprovalActionRevision } from "./automatic-approval-authority.js";
 import {
   canonicalJsonStringify,
+  canonicalJsonDigest,
+  parseSourceCompletionBinding,
+  type SourceCompletionBinding,
   parseWritebackJob,
   parseWritebackResult,
   type FreshnessProofV1,
@@ -104,11 +107,18 @@ export class PostgresWritebackIntentStore {
     if (this.closePool) await this.pool.end?.();
   }
 
-  async claimWritebackIntent(jobInput: unknown, runnerId: string): Promise<WritebackIntentClaim> {
+  async claimWritebackIntent(jobInput: unknown, runnerId: string, sourceBinding?: SourceCompletionBinding): Promise<WritebackIntentClaim> {
     const job = parseWritebackJob(jobInput);
+    const binding = sourceBinding === undefined ? undefined : parseSourceCompletionBinding(sourceBinding);
+    if (binding && binding.job_digest !== canonicalJsonDigest(job)) throw new ProposalStoreError("WRITEBACK_INTENT_SOURCE_BINDING_MISMATCH", "source completion binding does not match the original job");
     return await this.withIntent(job.job_id, async (client, existing) => {
       const intentId = `wbi:${job.job_id}`;
       if (existing) {
+        if ((existing.source_completion_binding || binding) && (!existing.source_completion_binding || !binding
+          || canonicalJsonDigest(existing.source_completion_binding) !== canonicalJsonDigest(binding)
+          || canonicalJsonDigest(existing.intent) !== binding.job_digest)) {
+          throw new ProposalStoreError("WRITEBACK_INTENT_SOURCE_BINDING_MISMATCH", "the original source binding is missing or changed; preserve the attempt");
+        }
         assertIntentMatchesJob(existing, job);
         if (["applied", "already_applied", "conflict", "failed"].includes(existing.status)) {
           if (!existing.result) return { decision: "reconciliation_required", intent_id: intentId, reason: "terminal intent is missing its durable result" };
@@ -130,6 +140,7 @@ export class PostgresWritebackIntentStore {
         operation: job.operation ?? "single_row_update",
         status: "intent_recorded",
         intent: job,
+        ...(binding ? { source_completion_binding: binding } : {}),
         created_at: now,
         updated_at: now,
       });

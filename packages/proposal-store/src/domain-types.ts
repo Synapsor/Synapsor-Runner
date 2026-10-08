@@ -11,6 +11,7 @@ import type {
   ActionBoundarySharedLimitV1,
   WritebackJob,
   WritebackResult,
+  SourceCompletionBinding,
 } from "@synapsor-runner/protocol";
 
 export type LocalProposalState =
@@ -241,6 +242,8 @@ export type StoredWritebackIntent = {
   intent: WritebackJob;
   result?: WritebackResult;
   reconciliation_reason?: string;
+  /** Original native binding, recorded before Source mutation; legacy absence cannot be repaired by inference. */
+  source_completion_binding?: SourceCompletionBinding;
   created_at: string;
   updated_at: string;
 };

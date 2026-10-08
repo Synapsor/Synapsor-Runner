@@ -305,6 +305,7 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
           intent_json TEXT NOT NULL,
           result_json TEXT,
           reconciliation_reason TEXT,
+          source_completion_binding_json TEXT,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           FOREIGN KEY (proposal_id) REFERENCES proposals(proposal_id)
@@ -569,6 +570,7 @@ export const proposalStoreSchemaMethods: ProposalStoreSchemaMethods & ProposalSt
     },
   
   ensureSearchColumns(): void {
+      this.ensureColumn("writeback_intents", "source_completion_binding_json", "TEXT");
       this.ensureColumn("proposals", "principal", "TEXT");
       this.ensureColumn("proposals", "capability", "TEXT");
       this.ensureColumn("proposals", "interaction_id", "TEXT");

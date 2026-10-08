@@ -4,7 +4,7 @@ export { sourceCompletionBinding } from "./source-completion-binding.js";
 import crypto from "node:crypto";
 import type { ActionRuleFactLoaderAdapterV1 } from "@synapsor-runner/action-rules";
 import { ControlPlaneClient, type ClaimedWritebackJob } from "@synapsor-runner/control-plane-client";
-import { canonicalJsonDigest, parseWritebackJob, protocolVersions, type InverseDescriptorV1, type NormalizedWritebackJobV5, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseWritebackJob, protocolVersions, type InverseDescriptorV1, type NormalizedWritebackJobV5, type WritebackJob, type WritebackResult, type SourceCompletionBinding } from "@synapsor-runner/protocol";
 
 export * from "./mcp-audit.js";
 export * from "./semantic-atomic-updates.js";
@@ -109,7 +109,7 @@ export type WritebackIntentClaim =
   | { decision: "reconciliation_required"; intent_id: string; reason: string };
 
 export type WritebackIntentStore = {
-  claimWritebackIntent(job: WritebackJob, runnerId: string): Promise<WritebackIntentClaim> | WritebackIntentClaim;
+  claimWritebackIntent(job: WritebackJob, runnerId: string, sourceBinding?: SourceCompletionBinding): Promise<WritebackIntentClaim> | WritebackIntentClaim;
   markWritebackIntentApplying(intentId: string, runnerId: string): Promise<void> | void;
   completeWritebackIntent(intentId: string, result: WritebackResult): Promise<void> | void;
   requireWritebackReconciliation(intentId: string, reason: string): Promise<void> | void;

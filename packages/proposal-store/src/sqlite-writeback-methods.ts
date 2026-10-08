@@ -1,5 +1,5 @@
 import { blockedClosureStoreBinding, type BlockedRollbackEvidence } from "./blocked-closure.js";
-import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, parseSourceCompletionBinding, type SourceCompletionBinding } from "@synapsor-runner/protocol";
 import {
   type SQLInputValue,
 } from "node:sqlite";
@@ -157,8 +157,10 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
         .filter((job): job is StoredWritebackJob => Boolean(job));
     },
   
-  claimWritebackIntent(jobInput: unknown, runnerId: string): WritebackIntentClaim {
+  claimWritebackIntent(jobInput: unknown, runnerId: string, sourceBinding?: SourceCompletionBinding): WritebackIntentClaim {
+      const binding = sourceBinding === undefined ? undefined : parseSourceCompletionBinding(sourceBinding);
       const job = parseWritebackJob(jobInput);
+      if (binding && binding.job_digest !== canonicalJsonDigest(job)) throw new ProposalStoreError("WRITEBACK_INTENT_SOURCE_BINDING_MISMATCH", "source completion binding does not match the original job");
       const proposal = this.requireProposal(job.proposal_id);
       assertWritebackAllowed(proposal, "recorded with a writeback intent");
       const proposalHash = proposalHashFromWritebackJob(job);
@@ -166,6 +168,11 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
       const intentId = `wbi:${job.job_id}`;
       const existing = this.getWritebackIntent(intentId);
       if (existing) {
+        if ((existing.source_completion_binding || binding) && (!existing.source_completion_binding || !binding
+          || canonicalJsonDigest(existing.source_completion_binding) !== canonicalJsonDigest(binding)
+          || canonicalJsonDigest(existing.intent) !== binding.job_digest)) {
+          throw new ProposalStoreError("WRITEBACK_INTENT_SOURCE_BINDING_MISMATCH", "the original source binding is missing or changed; preserve the attempt");
+        }
         if (
           existing.idempotency_key !== job.idempotency_key
           || existing.writeback_job_id !== job.job_id
@@ -195,8 +202,8 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
         this.db.prepare(`
           INSERT INTO writeback_intents (
             intent_id, idempotency_key, writeback_job_id, proposal_id, proposal_hash,
-            runner_id, operation, status, intent_json, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'intent_recorded', ?, ?, ?)
+            runner_id, operation, status, intent_json, source_completion_binding_json, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'intent_recorded', ?, ?, ?, ?)
         `).run(
           intentId,
           job.idempotency_key,
@@ -206,6 +213,7 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
           runnerId,
           job.operation ?? "single_row_update",
           JSON.stringify(job),
+          binding === undefined ? null : JSON.stringify(binding),
           now,
           now,
         );
