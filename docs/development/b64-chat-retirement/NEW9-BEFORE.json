@@ -1,0 +1,140 @@
+{
+  "schema": "B64-CHAT-NEW9-BEFORE-v1",
+  "presealed_test_commit": "8864aeb0e3c058d043eb1c5554c42d80a4540730",
+  "product_pin": "267d39e1a02fab47fd78a17d61046d1e857d65f0",
+  "process_exit": 1,
+  "counts": {
+    "selected": 30,
+    "passed": 3,
+    "failed": 27,
+    "filtered": 32
+  },
+  "failures": [
+    {
+      "name": "B64 NEW9 typed operational projections I03556 does not turn certificate prose into TLS cause or weaker verification advice",
+      "failure": "AssertionError: expected '\\n\\nHint:\\n  The database is reachabl\u2026' to be '' // Object.is equality"
+    },
+    {
+      "name": "B64 NEW9 typed operational projections I03556 uses an actual TLS error code without asserting database reachability or no-verify",
+      "failure": "AssertionError: expected '' to contain 'TLS certificate verification failed'"
+    },
+    {
+      "name": "B64 NEW9 typed operational projections I03553 actual dispatch retry state uses typed transport facts ('NOTIFICATION_TRANSPORT_FAILED', false)",
+      "failure": "AssertionError: expected { delivery_id: 'ntd_new9', \u2026(6) } to match object { retryable: false, \u2026(1) }"
+    },
+    {
+      "name": "B64 NEW9 typed operational projections I03553 actual dispatch retry state uses typed transport facts ('NOTIFICATION_TRANSPORT_TRANSIENT', true)",
+      "failure": "AssertionError: expected { delivery_id: 'ntd_new9', \u2026(6) } to match object { retryable: true, \u2026(1) }"
+    },
+    {
+      "name": "B64 NEW9 typed operational projections I03553 actual dispatch retry state uses typed transport facts ('NOTIFICATION_TRANSPORT_FAILED', false)",
+      "failure": "AssertionError: expected { delivery_id: 'ntd_new9', \u2026(6) } to match object { retryable: false, \u2026(1) }"
+    },
+    {
+      "name": "B64 NEW9 I03573 actual first-run Docker check does not infer socket/group or daemon cause from stderr (undefined)",
+      "failure": "AssertionError: expected 'Docker daemon is not reachable.' not to match /daemon is not reachable/iu"
+    },
+    {
+      "name": "B64 NEW9 I03573 actual first-run Docker check does not infer socket/group or daemon cause from stderr ('EACCES')",
+      "failure": "AssertionError: expected 'Docker daemon is not reachable.' not to match /daemon is not reachable/iu"
+    },
+    {
+      "name": "graduated trust B64 NEW9 I03569 does not count an ordinary proposal as reverted from event fragment compensation_proposal_created",
+      "failure": "AssertionError: expected { ok: false, \u2026(3) } to match object { ok: false, \u2026(2) }"
+    },
+    {
+      "name": "graduated trust B64 NEW9 I03569 does not count an ordinary proposal as reverted from event fragment revert_refused",
+      "failure": "AssertionError: expected { ok: false, \u2026(3) } to match object { ok: false, \u2026(2) }"
+    },
+    {
+      "name": "graduated trust B64 NEW9 I03569 does not count an ordinary proposal as reverted from event fragment compensation_failed",
+      "failure": "AssertionError: expected { ok: false, \u2026(3) } to match object { ok: false, \u2026(2) }"
+    },
+    {
+      "name": "hosted provider model discovery B64 NEW9 I03575 leaves openai model-ID capability unknown without provider facts",
+      "failure": "AssertionError: expected [ 'gpt-text-tools' ] to deeply equal []"
+    },
+    {
+      "name": "hosted provider model discovery B64 NEW9 I03575 leaves anthropic model-ID capability unknown without provider facts",
+      "failure": "AssertionError: expected [ 'claude-text-tools' ] to deeply equal []"
+    },
+    {
+      "name": "B64 NEW9 actual local UI projections I03543 reports unverified tool exposure independently of configured names",
+      "failure": "AssertionError: expected false to be null"
+    },
+    {
+      "name": "B64 NEW9 actual local UI projections I03544 uses exact successful approval record/event facts ('policy_auto_approval_deferred', 'none')",
+      "failure": "AssertionError: expected 'policy_auto' to be 'none' // Object.is equality"
+    },
+    {
+      "name": "B64 NEW9 actual local UI projections I03544 uses exact successful approval record/event facts ('policy_auto_approval_deferred', 'human')",
+      "failure": "AssertionError: expected 'policy_auto' to be 'human' // Object.is equality"
+    },
+    {
+      "name": "B64 NEW9 actual local UI projections I03544 uses exact successful approval record/event facts ('proposal_approved', 'policy_auto')",
+      "failure": "AssertionError: expected 'human' to be 'policy_auto' // Object.is equality"
+    },
+    {
+      "name": "stdio launch diagnostics B64 NEW9 I03574 uses exact launcher codes, never diagnostic prose ('MCP_LAUNCH_CHECK_FAILED:')",
+      "failure": "AssertionError: expected 'ETARGET: The configured package versi\u2026' to contain 'MCP_LAUNCH_CHECK_FAILED:'"
+    },
+    {
+      "name": "stdio launch diagnostics B64 NEW9 I03574 uses exact launcher codes, never diagnostic prose ('MCP_LAUNCH_TIMEOUT:')",
+      "failure": "AssertionError: expected 'MCP_LAUNCH_CHECK_FAILED: The configur\u2026' to contain 'MCP_LAUNCH_TIMEOUT:'"
+    },
+    {
+      "name": "stdio launch diagnostics B64 NEW9 I03574 uses exact launcher codes, never diagnostic prose ('MCP_LAUNCH_TIMEOUT:')",
+      "failure": "AssertionError: expected 'MCP_LAUNCH_CHECK_FAILED: The configur\u2026' to contain 'MCP_LAUNCH_TIMEOUT:'"
+    },
+    {
+      "name": "stdio launch diagnostics B64 NEW9 I03574 actual failed child stderr cannot manufacture package or binding causes",
+      "failure": "AssertionError: expected 'ETARGET: The configured package versi\u2026' to contain 'MCP_LAUNCH_CHECK_FAILED:'"
+    },
+    {
+      "name": "stdio launch diagnostics B64 NEW9 I03574 actual handshake timeout retains its structured local/SDK cause",
+      "failure": "AssertionError: expected Error: MCP_LAUNCH_TIMEOUT: The configured\u2026 to match object { code: 'MCP_LAUNCH_TIMEOUT' }"
+    },
+    {
+      "name": "runtime doctor RLS denied-identity canary B64 NEW9 I03550 uses structured probe facts and keeps unknown prose generic ('database probe failed')",
+      "failure": "AssertionError: expected 'Live RLS canary failed (permission de\u2026' to contain '(database probe failed)'"
+    },
+    {
+      "name": "runtime doctor RLS denied-identity canary B64 NEW9 I03550 uses structured probe facts and keeps unknown prose generic ('permission denied')",
+      "failure": "AssertionError: expected 'Live RLS canary failed (database prob\u2026' to contain '(permission denied)'"
+    },
+    {
+      "name": "runtime doctor RLS denied-identity canary B64 NEW9 I03550 uses structured probe facts and keeps unknown prose generic ('authentication failed')",
+      "failure": "AssertionError: expected 'Live RLS canary failed (database prob\u2026' to contain '(authentication failed)'"
+    },
+    {
+      "name": "runtime doctor RLS denied-identity canary B64 NEW9 I03550 uses structured probe facts and keeps unknown prose generic ('timeout')",
+      "failure": "AssertionError: expected 'Live RLS canary failed (database prob\u2026' to contain '(timeout)'"
+    },
+    {
+      "name": "runtime doctor RLS denied-identity canary B64 NEW9 I03550 uses structured probe facts and keeps unknown prose generic ('connection failed')",
+      "failure": "AssertionError: expected 'Live RLS canary failed (database prob\u2026' to contain '(connection failed)'"
+    },
+    {
+      "name": "runtime doctor RLS denied-identity canary B64 NEW9 I03550 uses structured probe facts and keeps unknown prose generic ('configured object not found')",
+      "failure": "AssertionError: expected 'Live RLS canary failed (database prob\u2026' to contain '(configured object not found)'"
+    }
+  ],
+  "raw": [
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/before.json",
+      "sha256": "db61130b7dbb7603d94d44e30b0f63ed36d10673727c54923ea273432b7db06c"
+    },
+    {
+      "path": ".b64-chat-private/new9-checks-e4uxvQ/before.txt",
+      "sha256": "4698bc54ff16aa3fbb98020626028ce043c28f588b7deba4f13ab025256f1688"
+    }
+  ],
+  "fixture_transport_failures": 0,
+  "scope": {
+    "typed": 9,
+    "delete": 0,
+    "typed_remaining": 9,
+    "delete_remaining": 0
+  },
+  "review": "Actual failing baseline; candidate not implemented or independently reviewed."
+}
