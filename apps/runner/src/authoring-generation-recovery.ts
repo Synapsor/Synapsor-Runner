@@ -55,7 +55,7 @@ export type AuthoringTransportOperation = {
   action_checkpoint?: { consumer: "action_rule_components"; kind: "version_interpretation" | "compiled_draft";
     material_digest: `sha256:${string}`; response_digest: `sha256:${string}` };
   /** Consumption of this exact native Read adapter result, separate from human consent. */
-  read_checkpoint?: { consumer: "read_revision"; kind: "private_prerequisite" | "prerequisite_mapping";
+  read_checkpoint?: { consumer: "read_revision" | "read_scope"; kind: "private_prerequisite" | "prerequisite_mapping" | "scope_proposal";
     material_digest: `sha256:${string}`; response_digest: `sha256:${string}`;
     decision?: { digest: `sha256:${string}`; actor: "local_installation_operator"; recorded_at: string } };
   producer_input?: ProviderHttpInput["authoringInput"];
@@ -189,7 +189,7 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
       const c = op.read_checkpoint;
       if (!c || typeof c !== "object" || Array.isArray(c)
         || !exactKeys(c, ["consumer", "kind", "material_digest", "response_digest", "decision"])
-        || c.consumer !== "read_revision" || !["private_prerequisite", "prerequisite_mapping"].includes(c.kind)
+        || (c.consumer === "read_scope" ? c.kind !== "scope_proposal" : c.consumer !== "read_revision" || !["private_prerequisite", "prerequisite_mapping"].includes(c.kind))
         || !digest(c.material_digest) || !digest(c.response_digest)
         || op.state !== "checkpointed" || op.checkpoint_seen !== true || op.attempts.at(-1)?.outcome !== "response") throw invalid();
     }

@@ -575,3 +575,16 @@ holds; only existing focused edit and final rehearsal slots. Paid admission is
 currently CLOSED. Early immutable DEV focused edit requires independent protocol,
 privacy, consent, save/recovery and admission acceptance; final rehearsal requires
 accepted installed successor. Tester alone may operate paid calls; no new samples.
+
+B64 native Read scope slice (development, not publicly enabled): the existing
+OperatorQuestion v2 owns the typed scope proposal and explicit decision;
+missing-answer mode retains its actual owner handoff/raw answer and cannot
+confirm the full scope. Review mode has no fabricated raw answer or answered
+handoff. The native generation owner checkpoints the actual completed proposal
+as read_scope/scope_proposal before waiting. Existing Resume CAS saves questions,
+actual consumed generation and decisions. Replacement links retain preceding
+records; cancelled or pending successors never resurrect an older Yes.
+The owning review must recheck current analysis, Source/reference inventory and
+applicability after waiting. The current WIP checks exact analyzed/view identity;
+production reference/currentness wiring and independent native acceptance remain
+open. This does not add a provider allowance, meaning store or activation path.

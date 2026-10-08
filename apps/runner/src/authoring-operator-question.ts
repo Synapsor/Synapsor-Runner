@@ -1,3 +1,5 @@
+import { parseReadScopeQuestionBinding, readScopeConsumption, type ReadScopeQuestionBinding } from "./authoring-read-scope-binding.js";
+import { assertAuthoringReadCheckpoint } from "./authoring-generation-recovery.js";
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { AskAuthoringEpisodeBudget } from "./model-ask.js";
@@ -8,6 +10,7 @@ import { parseOperatorClarificationGateState, type OperatorClarificationGateStat
 
 type Digest = `sha256:${string}`;
 export type OperatorQuestionValue =
+  | { kind: "read_scope"; scope_digest: Digest }
   | { kind: "attributed_meaning" }
   | { kind: "input_bounds"; requirements: Array<{ outcomes: string[]; input: string;
       start?: number; end?: number; min_length: number; max_length: number }> }
@@ -19,7 +22,8 @@ export type OperatorQuestionValue =
  * Source fact nor an authority revision. The consumer owns currentness/CAS and
  * validates domain values again before its ordinary reviewed save. */
 export type OperatorQuestion = {
-  version: 1;
+  version: 1 | 2;
+  read_scope?: ReadScopeQuestionBinding;
   id: string;
   revision: number;
   handoff_id?: string;
@@ -82,9 +86,9 @@ export function createOperatorQuestion(input: Pick<OperatorQuestion,
 
 export function parseOperatorQuestion(value: unknown): OperatorQuestion {
   if (!object(value) || !exact(value, ["version", "id", "revision", "handoff_id", "kind", "scope_digest", "context_digest", "target",
-    "material", "evidence", "receipt_selection", "continuation", "source_binding", "budget_owner_id", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
-    || value.version !== 1 || !id(value.id) || value.handoff_id !== undefined && !text(value.handoff_id, 100) || !count(value.revision, Number.MAX_SAFE_INTEGER, 1)
-    || !["attributed_meaning", "input_bounds", "writer_maintenance", "receipt_requirement"].includes(value.kind as string)
+    "material", "evidence", "receipt_selection", "read_scope", "continuation", "source_binding", "budget_owner_id", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
+    || ![1, 2].includes(value.version as number) || !id(value.id) || value.handoff_id !== undefined && !text(value.handoff_id, 100) || !count(value.revision, Number.MAX_SAFE_INTEGER, 1)
+    || !["attributed_meaning", "input_bounds", "writer_maintenance", "receipt_requirement", "read_scope"].includes(value.kind as string)
     || !digest(value.scope_digest) || !digest(value.context_digest) || !digest(value.digest)
     || !object(value.target) || !exact(value.target, ["phase", "resource", "field", "outcomes"])
     || !text(value.target.phase, 100) || value.target.resource !== undefined && !text(value.target.resource, 256)
@@ -96,8 +100,19 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     || value.evidence.some(e => !object(e) || !exact(e, ["id", "digest"]) || !text(e.id, 256) || !digest(e.digest))
     || !["read_mapping", "action_rule_review", "input_policy_review", "version_mapping", "receipt_requirement_review"].includes(value.continuation as string)
     || Buffer.byteLength(JSON.stringify(value)) > 128 * 1024) invalid("The saved question envelope is malformed or too large.");
-  const continuation = { attributed_meaning: "read_mapping", input_bounds: "input_policy_review", writer_maintenance: "version_mapping",
+  const continuation = { read_scope: "read_mapping", attributed_meaning: "read_mapping", input_bounds: "input_policy_review", writer_maintenance: "version_mapping",
     receipt_requirement: "receipt_requirement_review" };
+  if (value.version === 2 ? value.kind !== "read_scope" : value.kind === "read_scope" || value.read_scope !== undefined)
+    invalid("The question version does not support this typed interaction.");
+  if (value.kind === "read_scope") {
+    const binding = parseReadScopeQuestionBinding(value.read_scope);
+    if (value.target.phase !== "read_scope" || value.target.resource !== undefined || value.target.field !== undefined
+      || value.target.outcomes.length || value.source_binding !== undefined || value.budget !== undefined
+      || value.budget_owner_id !== undefined || value.wording_state !== undefined
+      || (binding.mode === "review" ? value.handoff_id !== undefined || value.raw_answer !== undefined
+        : !text(value.handoff_id, 100) || value.confirmation !== undefined || value.proposal !== undefined))
+      invalid("The typed Read review and a missing raw answer must remain separate decisions.");
+  }
   if (value.kind === "receipt_requirement") {
     const selection = value.receipt_selection;
     if (!object(selection) || !exact(selection, ["source", "mode", "dependencies_digest"])
@@ -116,7 +131,7 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
         source_digest: s.source_digest, store_digest: s.store_digest, outcomes: value.target.outcomes })) {
       invalid("The input interpretation is not bound to its exact current Source and agenda.");
     }
-  } else if (!text(value.handoff_id, 100)) invalid("A raw-answer question requires its actual owner handoff.");
+  } else if (!(value.kind === "read_scope" && (value.read_scope as ReadScopeQuestionBinding).mode === "review") && !text(value.handoff_id, 100)) invalid("A raw-answer question requires its actual owner handoff.");
   if (value.budget_owner_id !== undefined && (!id(value.budget_owner_id) || value.budget_owner_id === value.id
     || !["input_bounds", "receipt_requirement"].includes(value.kind as string) || value.source_binding !== undefined
     || value.kind === "input_bounds" && value.budget !== undefined || value.kind === "receipt_requirement" && value.budget === undefined))
@@ -183,16 +198,24 @@ function validateProposal(q: OperatorQuestion, proposal: unknown): asserts propo
   if (!object(proposal) || !exact(proposal, ["question_id", "revision", "answer_id", "source_reference", "disposition", "value"])
     || proposal.question_id !== q.id || proposal.revision !== q.revision
     || !["pending", "proposed"].includes(proposal.disposition as string)) invalid("The proposed answer belongs to another question or response.");
-  if (q.source_binding) {
+  if (q.read_scope?.mode === "review") {
+    if (proposal.answer_id !== undefined || proposal.source_reference !== canonicalJsonDigest(q.read_scope))
+      invalid("The Read review must bind its complete typed proposal, without invented raw testimony.");
+  } else if (q.source_binding) {
     if (proposal.answer_id !== undefined || proposal.source_reference !== canonicalJsonDigest(q.source_binding))
       invalid("The interpretation references another Source or invented raw testimony.");
   } else if (proposal.source_reference !== undefined || !q.raw_answer || proposal.answer_id !== q.raw_answer.id)
     invalid("The proposed answer belongs to another trusted response.");
   if (proposal.disposition === "pending") { if (proposal.value !== undefined) invalid("A pending answer cannot carry a resolved value."); return; }
-  if (!q.source_binding && !q.raw_answer!.text.trim()) invalid("A blank response has no resolved meaning.");
+  if (!q.source_binding && !q.read_scope && !q.raw_answer!.text.trim()) invalid("A blank response has no resolved meaning.");
   const v = proposal.value;
   if (!object(v) || v.kind !== q.kind) invalid("The proposal changed the decision kind.");
-  if (v.kind === "attributed_meaning") { if (!exact(v, ["kind"])) invalid("Meaning comes from the trusted raw words, not a model quote."); }
+  if (v.kind === "read_scope") {
+    if (!exact(v, ["kind", "scope_digest"]) || !q.read_scope || q.read_scope.mode !== "review"
+      || v.scope_digest !== q.read_scope.record.digest || !q.read_scope.record.analysis_digest
+      || q.read_scope.record.proposal.requirements.some(r => r.disposition === "unresolved"))
+      invalid("A scope review requires its exact analyzed, fully resolved proposal.");
+  } else if (v.kind === "attributed_meaning") { if (!exact(v, ["kind"])) invalid("Meaning comes from the trusted raw words, not a model quote."); }
   else if (v.kind === "writer_maintenance") {
     if (!exact(v, ["kind", "maintenance"]) || v.maintenance !== "all_writers_increment") invalid("Unknown writer behavior cannot become a different assurance.");
   } else if (v.kind === "receipt_requirement") {
@@ -321,12 +344,34 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
         invalid("The terminal Input refusal has no consumed generation in its saved history.");
       }
     }
+    if (q.read_scope) {
+      assertAuthoringReadCheckpoint(generation, q.read_scope.completion, readScopeConsumption(q.read_scope));
+      const predecessor = q.read_scope.predecessor_id ? result.find(p => p.id === q.read_scope!.predecessor_id) : undefined;
+      if (q.read_scope.predecessor_id ? !predecessor || !seen.has(predecessor.id) || predecessor.id === q.id
+        || predecessor.kind !== "read_scope" || predecessor.read_scope?.mode !== q.read_scope.mode
+        || predecessor.scope_digest !== q.scope_digest || q.revision !== predecessor.revision + 1
+        || result.some(other => other.id !== q.id && other.read_scope?.predecessor_id === predecessor.id)
+        : q.revision !== 1) invalid("A Read replacement must retain its exact preceding question, without branching history.");
+      for (const ref of q.read_scope.record.references) {
+        if (ref.kind !== "answer") continue;
+        const captured = result.find(item => item.id === ref.question_id);
+        if (!captured || !seen.has(captured.id) || captured.id === q.id || captured.revision !== ref.question_revision
+          || !captured.raw_answer || !captured.raw_answer.text.trim()
+          || captured.raw_answer.id !== ref.answer_id || captured.raw_answer.text !== ref.text
+          || canonicalJsonDigest(captured.raw_answer) !== ref.digest)
+          invalid("The Read proposal references stale, replaced or invented operator testimony.");
+      }
+      if (q.read_scope.mode === "review") continue;
+    }
     if (q.source_binding) continue;
     const h = handoffs.find(handoff => handoff.id === q.handoff_id);
     if (!h || h.scope_digest !== q.scope_digest || h.context_digest !== q.context_digest
       || q.kind === "attributed_meaning" && q.presentation && q.presentation.text !== h.question
       || q.kind === "attributed_meaning" && !(q.continuation === "action_rule_review"
         ? h.consumer === "policy_clarification" : ["read_clarification", "read_revision_clarification", "read_revision_prerequisite"].includes(h.consumer))
+      || q.kind === "read_scope" && (!["read_clarification", "read_revision_clarification"].includes(h.consumer)
+        || q.presentation && q.presentation.text !== h.question
+        || canonicalJsonDigest(h.completion ?? null) !== canonicalJsonDigest(q.read_scope!.completion))
       || q.kind === "input_bounds" && h.consumer !== "input_policy"
       || q.kind === "writer_maintenance" && h.consumer !== "version_maintenance"
       || q.kind === "receipt_requirement" && h.consumer !== "policy_clarification"
@@ -382,6 +427,7 @@ export function assertOperatorQuestionsAdvance(previous: readonly OperatorQuesti
       ...(q.handoff_id ? { handoff_id: q.handoff_id } : {}),
       kind: q.kind, scope_digest: q.scope_digest, context_digest: q.context_digest, target: q.target,
       material: q.material, evidence: q.evidence, continuation: q.continuation,
+      ...(q.read_scope ? { read_scope: q.read_scope } : {}),
       ...(q.receipt_selection ? { receipt_selection: q.receipt_selection } : {}),
       ...(q.source_binding ? { source_binding: q.source_binding } : {}),
       ...(q.budget_owner_id ? { budget_owner_id: q.budget_owner_id } : {}) });
@@ -404,6 +450,13 @@ export function operatorQuestionReadback(q: OperatorQuestion): string[] {
   parseOperatorQuestion(q);
   const v = q.proposal?.value;
   if (!v || q.proposal?.disposition !== "proposed") return ["This answer is still pending. No interpretation or permission will be recorded.", ...q.material];
+  if (v.kind === "read_scope") return [
+    "Review the complete proposed Read scope. This decision does not activate access.",
+    ...q.read_scope!.record.proposal.requirements.flatMap(requirement => [
+      `${requirement.disposition}: ${requirement.intended_use}`,
+      ...requirement.targets.map(target => `${target.operation}: ${target.root_resource} / ${target.resource}${target.field ? ` / ${target.field}` : ""}${target.relationship ? ` / ${target.relationship}` : ""}${target.qualifier ? ` / ${target.qualifier}` : ""}`),
+    ]), ...q.material,
+  ];
   if (v.kind === "attributed_meaning") return [
     q.continuation === "action_rule_review" ? "Record your exact words as a business statement for this Action question:"
       : `Record your exact words as the business meaning of ${q.target.resource}${q.target.field ? ` / ${q.target.field}` : ""}:`,

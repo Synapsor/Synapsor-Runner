@@ -728,6 +728,8 @@ export function assertBoundaryAuthoringResumeState(
       assertAnsweredOwnerHandoff(value.generation_recovery as AuthoringTransportState | undefined, handoff);
     }
   }
+  if (!value.authoring_protocol && (value.operator_questions as OperatorQuestion[] | undefined)?.some(q => q.version === 2))
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Typed questions require the pinned structured authoring protocol.");
   if (value.operator_questions !== undefined) parseOperatorQuestions(value.operator_questions, parseOwnerHandoffs(value.owner_handoffs ?? []),
     value.generation_recovery as AuthoringTransportState | undefined);
   assertReadAssistanceHandoff(value);

@@ -202,7 +202,7 @@
     "branch": "codex/b64-authoring-protocol-20261008",
     "base": "7e0ab607",
     "initial_contract": "540edca1",
-    "status": "OWNER_ACCOUNT_SWITCH_PAUSE",
+    "status": "ACTIVE_RESUMED",
     "existing_paid_admission": "CLOSED",
     "owner_instructions": [
       "278bb60b-def9-47f2-b425-0e481dc78ad2",
@@ -258,6 +258,33 @@
         "status": "PAUSED_OWNER_ACCOUNT_SWITCH"
       }
     },
-    "pause_audit": "All active lanes confirmed clean, private-backed-up, zero owned tests/Runner/model processes and no stale owned locks; history/held resources preserved"
+    "pause_audit": "All active lanes confirmed clean, private-backed-up, zero owned tests/Runner/model processes and no stale owned locks; history/held resources preserved",
+    "overnight_usage_rule": "Check after every commit/test group/slice; at about97%used finishsmallstep, no newwork, allownerprivatepush + <=15line handoffs unchangedclock + zero processes/locks; timestamp USAGE PAUSE \u2014 ready to switch thenstop. Paid CLOSED.",
+    "native_scope_wip": {
+      "base": "3d6aab70",
+      "before": "native-scope-before.log 1FAIL unsupported v2",
+      "checks": "native-scope-affected.log239PASS; native-scope-types3.log exit0",
+      "harness_correction": "first lifecycle3PASS1FAIL reopened.state typo; existing reader field value used, preserved rawresult",
+      "ownership": "OperatorQuestionv2 Readscope binding; actual consumed native read checkpoint; existing Resume CAS; no invented answer. scope review and missing raw answer distinct. exactanalysis/display binding; cancelled successor masks oldYes.",
+      "remaining": [
+        "native source-reference current inventory check",
+        "remove provisional currentReadScope confirmation port",
+        "missing-answer host wiring",
+        "public flow / independent variants",
+        "no-read applicability integration"
+      ],
+      "public_enabled": false
+    },
+    "retained_protocol_fix": {
+      "commit": "6d8bc338",
+      "before": "R2 actualCAS2PASS2FAIL; wrong-mode writes preserved",
+      "after_main": "unchanged independent4cases PASS retained-mode-after.log",
+      "independent_after": "pending",
+      "change": "same live checkpoint parser includes pending_action_addition.retained_action.checkpoint; historical dispositions untouched"
+    },
+    "last_usage_check": {
+      "at": "2026-10-08T07:19:10.541089+00:00",
+      "used_percent": 11
+    }
   }
 }
