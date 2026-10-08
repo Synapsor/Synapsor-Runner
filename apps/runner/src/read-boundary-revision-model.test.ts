@@ -125,6 +125,21 @@ function privatePrerequisite(): ReviewedReadCurrentStatePrerequisite {
   };
 }
 
+// Component contract for staging a technical path only. Business scope remains
+// explicitly unresolved; this fixture neither fabricates analysis nor grants Read.
+function typedRelationshipRevision(draft: ExplorationBoundaryDraft, instruction: string) {
+  const catalog = readBoundaryRevisionCatalog(draft);
+  const context = { binding: { request_digest: canonicalJsonDigest(instruction), source_digest: canonicalJsonDigest(null),
+    catalog_digest: catalog.digest, meaning_digest: canonicalJsonDigest(instruction),
+    applicability_digest: canonicalJsonDigest("declared relationship edit"), operation_digest: explorationBoundaryCandidateDigest(draft) },
+    references: [{ kind: "request" as const, id: "job", text: instruction, digest: canonicalJsonDigest(instruction) }],
+    catalog: { resources: catalog.resources, relationships: [] } };
+  const proposal = { protocol: READ_SCOPE_PROTOCOL, applicability: "read_requested", original_request: "job", requirements: [{
+    id: "relationship-read", intended_use: instruction, references: ["job"], disposition: "unresolved", subjects: [], targets: [],
+    unresolved: "The business Read scope still needs mapping." }] };
+  return { context, proposal, structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context } };
+}
+
 describe("model-assisted Read Boundary field exposure revisions", () => {
   it.each([false, true])("stages a host-reviewed relationship without accepting model joins (also privacy: %s)", async privacy => {
     const draft = boundary();
@@ -133,15 +148,16 @@ describe("model-assisted Read Boundary field exposure revisions", () => {
     const reviewed: ReviewedReadRelationship = { schema_version: "synapsor.reviewed-read-relationship.v1",
       candidate_digest: explorationBoundaryCandidateDigest(draft), resource: "public.orders",
       relationship_id: "orders_private_customer_fk", relationship_fingerprint: `sha256:${"e".repeat(64)}` };
-    const reviewRelationship = vi.fn(async () => reviewed), validateRevision = vi.fn(async () => undefined);
+    const typed = typedRelationshipRevision(draft, "Restore each order's reviewed customer link and preserve privacy.");
+    const reviewRelationship = vi.fn(async () => reviewed), validateRevision = vi.fn(async () => ({ scope: typed.context }));
     let calls = 0;
     const result = await generateModelReadBoundaryRevision({ instruction: "Restore each order's reviewed customer link and preserve privacy.",
       provider: "openai", model: "gpt-test", apiKey: "test-key", boundary: draft, egressAcknowledged: true,
-      reviewRelationship, validateRevision, dependencies: { requestJson: async request => {
+      structuredScope: typed.structuredScope, reviewRelationship, validateRevision, dependencies: { requestJson: async request => {
         calls++;
         const payload = calls === 1 ? { relationship_review_request: {
           from_resource: "public.orders", to_resource: "public.customers", reason: "Restore the requested exact association." },
-        } : { resource_changes: privacy ? [{ resource: "public.orders", field_exposure: [{ field: "id", exposure: "runner_only" }] }] : [] };
+        } : { read_scope: typed.proposal, resource_changes: privacy ? [{ resource: "public.orders", field_exposure: [{ field: "id", exposure: "runner_only" }] }] : [] };
         const body = request.body as { tools: Array<{ parameters: object }> };
         expect(new Ajv2020({ strict: false }).compile(body.tools[0]!.parameters)(payload)).toBe(true);
         expect(JSON.stringify(request.body)).not.toContain(reviewed.relationship_id);
@@ -165,11 +181,12 @@ describe("model-assisted Read Boundary field exposure revisions", () => {
     const reviewed: ReviewedReadRelationship = { schema_version: "synapsor.reviewed-read-relationship.v1",
       candidate_digest: explorationBoundaryCandidateDigest(draft), resource: "public.orders",
       relationship_id: "orders_private_customer_fk", relationship_fingerprint: `sha256:${"e".repeat(64)}` };
+    const typed = typedRelationshipRevision(draft, "Restore the reviewed customer association.");
     const reviewRelationship = vi.fn(async () => failure === "declined" ? undefined : reviewed);
     const validateRevision = vi.fn(async () => undefined);
     await expect(generateModelReadBoundaryRevision({ instruction: "Restore the reviewed customer association.",
       provider: "openai", model: "gpt-test", apiKey: "test-key", boundary: draft, egressAcknowledged: true,
-      privacyOnly: failure === "privacy", vocabularyOnly: failure === "vocabulary", reviewRelationship, validateRevision,
+      structuredScope: typed.structuredScope, privacyOnly: failure === "privacy", vocabularyOnly: failure === "vocabulary", reviewRelationship, validateRevision,
       dependencies: { requestJson: async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "unavailable_path",
         name: "runner__submit_read_boundary_revision", arguments: JSON.stringify(failure === "forged_proof"
           ? { reviewed_relationship: reviewed, resource_changes: [] }

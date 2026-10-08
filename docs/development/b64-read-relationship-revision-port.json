@@ -1,0 +1,11 @@
+{
+  "base": "9b435e30",
+  "cases": ["MIG042", "MIG043", "MIG044", "MIG045", "MIG046", "MIG047", "MIG048", "MIG049"],
+  "file": "apps/runner/src/read-boundary-revision-model.test.ts",
+  "classification": "existing_typed_adapter_available; prior missing-protocol failures did not establish a product gap",
+  "change": "Explicit v2 context for the original request. The relationship-only component leaves business scope unresolved; it returns only a protected preview context, never fabricated analysis or confirmation. Positive second model response carries that unresolved scope. Original provider counts, exact hidden host proof, privacy, refusal, no-save and no-source-change assertions retained.",
+  "result": { "pass": 8, "fail": 0, "filtered_unrelated": 76 },
+  "command": "vitest run apps/runner/src/read-boundary-revision-model.test.ts -t 'stages a host-reviewed relationship|refuses unavailable relationship review' --maxWorkers=1 --minWorkers=1",
+  "evidence": "/var/tmp/synapsor-b64-read-owned/evidence/revision-relationship-eight-v2.log",
+  "limits": "Component staging only; no public/native full relationship grant or business-mapping completion claim. Remaining ten provisional adapter-gap rows require typed reproduction; none are waived."
+}
