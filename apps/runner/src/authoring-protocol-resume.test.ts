@@ -71,4 +71,18 @@ describe("B64 protocol pin in native Resume", () => {
     expect(program.schema_version).toBe("synapsor.boundary-authoring-resume.v3");
   });
 
+  it("preserves an unsupported saved protocol against legacy explicit replacement", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-b64-unknown-"));
+    try {
+      const fresh = structured();
+      const relative = await writeBoundaryAuthoringResumeState(root, fresh, { expectedRevisionDigest: null });
+      const file = path.resolve(root, relative);
+      const unsupported = JSON.stringify(seal({ ...fresh, authoring_protocol: { version: "synapsor.structured-authoring.v99" } }));
+      await fs.writeFile(file, unsupported);
+      await expect(writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState(base)))
+        .rejects.toThrow("AUTHORING_PROTOCOL_INVALID");
+      expect(await fs.readFile(file, "utf8")).toBe(unsupported);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
 });
