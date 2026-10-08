@@ -7,7 +7,7 @@ import { saveAuthoringRecoveryResume } from "./authoring-recovery-resume.js";
 import { createAuthoringRecoveryHost } from "./authoring-recovery-host.js";
 import { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
 export { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
-import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, authoringActionCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, authoringInterruptedRecoveryNeeded, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringConsumedTurnCheckpoint, type AuthoringQuestionCompletion, authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, authoringActionCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, authoringInterruptedRecoveryNeeded, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import { type OperatorQuestion } from "./authoring-operator-question.js";
 import { operatorBusinessContext, operatorBusinessLabel, operatorBusinessReadback, presentOperatorClarification,
@@ -4624,7 +4624,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     return sourceInputFidelity(source,sources,store,[draft]).findings;
   };
   const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage, permit?: ProjectAuthorityMutationPermit,
-    acknowledgeGeneration = true): Promise<void> => {
+    acknowledgeGeneration: boolean | AuthoringQuestionCompletion = true): Promise<void> => {
     assertRunning();
     if (!input.authoringChat
       || !currentResumeBinding
@@ -4659,7 +4659,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         conversation: authoringConversation?.turns,
         // A pre-dispatch controller snapshot reserves existing limits. It is
         // not a consumer acknowledgement of a response or uncertain save.
-        generationRecovery: acknowledgeGeneration ? authoringTransportCheckpoint(generationRecovery) : generationRecovery,
+        generationRecovery: typeof acknowledgeGeneration === 'object'
+          ? authoringConsumedTurnCheckpoint(generationRecovery, acknowledgeGeneration)
+          : acknowledgeGeneration ? authoringTransportCheckpoint(generationRecovery) : generationRecovery,
         ownerHandoffs,
         operatorQuestions,
         readAssistanceCheckpoint: readAssistanceCheckpoint ?? null,
@@ -6220,6 +6222,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             }),
           );
           if (jobPlan.state === "clarification") handoff = await persistOwnerQuestion(jobPlan.question, "planning", jobPlan.completion);
+          else if (jobPlan.completion) {
+            await persistAuthoringResume("planning", undefined, jobPlan.completion);
+            if (resumePersistenceBlocked) throw checkpointSaveFailure("The completed planning turn");
+          }
           }
           if (jobPlan.state === "clarification" && modelTurn >= 2) {
             return boundaryAssistResult({ tone: "warning", title: "Planning clarification limit reached.",

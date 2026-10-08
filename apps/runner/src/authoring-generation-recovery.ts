@@ -675,27 +675,38 @@ export function authoringQuestionSequenceCompletion(completions: readonly Author
   return structuredClone(last);
 }
 
-/** A durable producer record may retain a refused semantic result. Acknowledge
- * only its live decoded turn after the owning record's guarded save returns.
- * This grants no business acceptance and never promotes other handled output. */
-export async function acknowledgeAuthoringProducer(
+/** Prepare the exact live consumed sequence for its owner's protected save.
+ * This is not a scan of unresolved work and cannot mint a completion from JSON. */
+export function authoringConsumedTurnCheckpoint(state: AuthoringTransportState | undefined,
   completion: AuthoringQuestionCompletion,
-  producer: NonNullable<ProviderHttpInput["authoringInput"]>,
-): Promise<void> {
-  const frame = storage.getStore(), host = frame?.host;
-  if (!host?.available()) return;
+  producer?: NonNullable<ProviderHttpInput["authoringInput"]>): AuthoringTransportState {
+  const frame = storage.getStore();
   const known = authoringQuestionSequenceCompletion([completion]);
-  const refs = frame!.completedTurns.get(canonicalJsonDigest(completion));
-  if (!known || !refs?.length || canonicalJsonDigest(known) !== canonicalJsonDigest(completion)) throw invalid();
-  const next = structuredClone(host.read()!);
+  const refs = frame?.completedTurns.get(canonicalJsonDigest(completion));
+  if (!state || !known || !refs?.length || canonicalJsonDigest(known) !== canonicalJsonDigest(completion)) throw invalid();
+  const next = structuredClone(state);
   for (const ref of refs) {
     const op = next.operations.find(item => item.id === ref.id);
-    if (!op || canonicalJsonDigest(op.producer_input ?? null) !== canonicalJsonDigest(producer))
+    if (!op || disposedOperation(next,op.id) || !frame?.owned.has(op.id)
+      || op.request_digest !== ref.request_digest || op.context_digest !== ref.context_digest
+      || op.attempts.at(-1)?.id !== ref.attempt_id || op.attempts.at(-1)?.outcome !== "response"
+      || !["handled", "checkpointed", "refused"].includes(op.state)
+      || producer && canonicalJsonDigest(op.producer_input ?? null) !== canonicalJsonDigest(producer))
       throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION",
         "The saved producer record does not match this completed turn. No historical operation was acknowledged.", 409);
     if (op.state === "handled") { op.state = "checkpointed"; op.checkpoint_seen = true; }
   }
-  await writeRecoveryState(host, next);
+  validateAuthoringTransportState(next);
+  return next;
+}
+
+/** A durable producer record may retain a refused semantic result. Its Source
+ * save must return before this separate native Resume acknowledgement. */
+export async function acknowledgeAuthoringProducer(completion: AuthoringQuestionCompletion,
+  producer: NonNullable<ProviderHttpInput["authoringInput"]>): Promise<void> {
+  const host = storage.getStore()?.host;
+  if (!host?.available()) return;
+  await writeRecoveryState(host, authoringConsumedTurnCheckpoint(host.read(), completion, producer));
 }
 
 /** Prepare only this live, actually consumed Action sequence for the SAME

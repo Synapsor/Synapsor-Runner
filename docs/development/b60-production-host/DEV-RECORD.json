@@ -45,6 +45,14 @@
     "boundary_lines_after": 20072,
     "types": 0,
     "public_status": "ACK successor reachesmapping+confirmation, unchanged expectedboundedconsents1 sees2 across differentbefore/aftermeaningcontexts; independentcontractjudgmentpending; originalfinalreuse/countchecksuntouched",
-    "proof_scope": "Real publicsetup/Review/edit/Resume/Replace-cancel and studio underconstruction; notyetaccepted"
+    "proof_scope": "Real publicsetup/Review/edit/Resume/Replace-cancel and studio underconstruction; notyetaccepted",
+    "affected": "exacte9f59609:13files778P0F0S,types0,310.07sec; fixedsource"
+  },
+  "planned_route_consumer": {
+    "before": "helper01f97f8d real planner ordinaryResume: native PLANNING_ACCEPTED1, coverage1, receiptmapping0, ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION; resume-native-v1 retained",
+    "cause": "planned review-only returns into saved Review before normal planning persistence; unlike clarification, planned result discarded actual decoded completion sidecar",
+    "fix": "Every actually decoded planned routing sequence carries its host-only completion. Existing planning Resume CAS saves conversation and checkpoints only those exact owned turns before dispatch. Shared consumed-turn checkpoint also underlies durable Source producer ACK. No receipt-specific branch, no new schema or authority, no historical/partial/unknown promotion. Completed correction turns are included from actual returned objects.",
+    "validation": "types0, existinggeneration+planning200P; actualpublicsuccessor pending",
+    "boundary_size": "20078; +6 for generic completion protected-save wiring over routeextraction20072, net-22 vs20100"
   }
 }
