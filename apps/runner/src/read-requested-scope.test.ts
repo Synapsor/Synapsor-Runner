@@ -157,3 +157,16 @@ it("preserves exact reviewed business literals and their interior whitespace", (
   expect(request('Read records marked "ready".')).toMatchObject({ required: [], unresolved: true });
   expect(request('Previously the owner said: "Read records marked \'awaiting  response\'."')).toMatchObject({ required: [] });
 });
+
+
+it.each([
+  "Keep Read unchanged.",
+  "Require two reviewers instead of one. Keep the second Action at one reviewer and every other Read, Input, Version, private eligibility, units, effect, time limit and client responsibility unchanged.",
+])("does not treat preserved capability noun as a new Read request: %s", original => {
+  const scope = resolveRequestedReadScope({ original, resources: [{ id: "service.q8" }], definitions: [], statements: [] });
+  expect(scope).toMatchObject({ required: [], candidates: [], unresolved: false });
+  expect(resolveRequestedReadScope({ original: `${original} Read outstanding obligations.`, resources: [{ id: "service.q8" }], definitions: [], statements: [] }))
+    .toMatchObject({ unresolved: true });
+  expect(resolveRequestedReadScope({ original: `${original} But read service.q8.`, resources: [{ id: "service.q8" }], definitions: [], statements: [] }))
+    .toMatchObject({ required: ["service.q8"] });
+});
