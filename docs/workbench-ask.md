@@ -131,139 +131,32 @@ the original strict schema runs. Required fields, enum values, cardinality
 bounds, unknown-key rejection, reviewed resource/relationship allowlists, and
 trusted scope are never relaxed.
 
-If a loopback model describes catalog metadata instead of querying data, Runner
-allows one focused correction and one JSON-plan response. Runner compares that
-plan with exact terms in the question and reviewed catalog before source
-execution. A mismatch runs no query. A matching rescued plan executes through
-the normal validator/compiler, and Runner renders the verified result directly
-instead of asking the weak model to summarize values it may misread. Models that
-use the tool protocol correctly keep the normal model-prose path.
+### Typed plans and Runner readbacks
 
-The pre-execution substitution check is not limited to local models. Official
-OpenAI and Anthropic Ask calls pass through the same focused reviewed-metadata
-check before `app.explore_data` reaches the gateway. If a question explicitly
-names an unavailable entity or grouping and the model substitutes a different
-reviewed table or field, Runner returns `ASK_PLAN_INTENT_MISMATCH`. The
-substituted plan executes no source query, consumes no Explore query or
-differencing budget, and is never returned to the provider for a prose summary.
-Unfamiliar business wording by itself is not a contradiction. After Runner has
-checked the complete private catalog, a valid reviewed plan may proceed when the
-question does not positively name a different reviewed resource or field. The
-normal Explore validator remains authoritative for fields, operations, scope,
-suppression, drift, and budgets. This keeps Ask useful on unfamiliar domains
-without permitting a plausible answer to a clearly different question.
+The model interprets the question and submits a typed Explore plan. Runner
+validates that plan against the active reviewed catalog: exact resources,
+fields, operations, relationships, trusted scope, privacy controls and limits.
+It does not parse the question to choose resources, invent a plan, or decide
+whether a permitted plan answers the question. This contract is the same for
+local Ask and external Explore clients.
 
-### Per-boundary local Ask plan check
+For each submitted plan, the terminal renders a Runner plan readback containing
+the actual plan structure and limits, with literal values redacted, and the
+actual success or refusal status. Model explanation remains untrusted and
+separate from Runner results. A permitted query is not proof of correct business
+interpretation. A tool-free answer does not imply that any query ran.
 
-Local CLI and Workbench Ask have two per-boundary modes:
+Runner does not synthesize a query when the model omits or misuses a tool.
+Existing bounded syntax correction may ask the model to resubmit an exact
+structural correction; the corrected plan still passes the same validator.
+Authority currentness, cancellation, provider/tool budgets, cohort suppression
+and read-only compilation remain enforced. There is no English-comparison
+mode or setting that relaxes these controls.
 
-- **Balanced** is the default. Runner applies the contradiction check described
-  above before it sends a proposed plan to `app.explore_data`.
-- **Boundary only** turns that English question-to-plan comparison completely
-  off. The model's proposed plan goes directly to the same local Explore tool
-  path used by an MCP client.
-
-`Boundary only` does not mean validation is off. The plan must still use an
-active boundary and reviewed resource, field, operation, relationship, and
-shape. Runner still injects trusted tenant and principal scope, checks schema
-and role drift, compiles only bounded read-only SQL, suppresses small groups,
-and charges query, extraction, and differencing budgets. An invalid plan still
-refuses. The setting changes no boundary digest or database authority and needs
-no activation.
-
-In the terminal boundary editor, highlight a boundary and press `T Ask plan
-check`. Turning the comparison off requires an explicit confirmation; press
-`T` again to restore Balanced mode. Workbench exposes the same choice under
-**Local Ask plan check** in the selected boundary's settings. The choice is
-stored locally in `.synapsor/ask-preferences.json`, separately for each
-boundary. It applies only to Runner's local `synapsor>` and Workbench Ask
-sessions. It does not affect local MCP Explore or production Streamable HTTP
-Explore, because those clients submit a typed plan without giving Runner the
-original English question.
-
-Exact field IDs can be written with their original separators (`encounter_type`),
-hyphens (`encounter-type`), or spaces (`encounter type`). A reviewed field label
-is also valid intent evidence. A trailing term may be used when the question
-names the resource and exactly one of its reviewed direct grouping fields or
-labels ends with that term. For example, `shipments by mode` identifies
-`carrier_mode` and `shipments per zone` identifies `warehouse_zone`. If both
-`carrier_mode` and `delivery_mode` are reviewed, `shipments by mode` refuses
-before execution and names both choices. Use the full ID or a reviewed label to
-disambiguate. This resolution is derived from reviewed metadata; it contains no
-domain vocabulary.
-
-Ask also tolerates a narrowly bounded typo when exactly one reviewed resource,
-field, label, enum value, or relationship dimension explains it. The matcher
-allows at most one insertion, deletion, substitution, or adjacent transposition
-per token, and no more than two edits across a multiword name. For example,
-`reagions` can resolve to the unique reviewed field `region`, and
-`contrac ttype` can resolve to `contract_type`. Exact wording always takes
-precedence. If two reviewed names remain plausible, Ask refuses and names the
-exact IDs or labels the user must choose between. Polite prefixes such as
-`show me`, `give me`, `tell me`, and `please show` are removed before entity
-comparison rather than becoming part of the inferred resource.
-
-When a rejected plan has one concrete reviewed correction, OpenAI and
-Anthropic receive the refusal and one bounded opportunity to submit a corrected
-plan. Runner sends a versioned correction contract plus a separate provider
-instruction naming the exact required resource or dimension and the rejected
-choice. The model must author the corrected plan; Runner does not rewrite it.
-The original plan never executes. A second mismatch ends the turn and carries
-no additional retry allowance. Ambiguous, unavailable, or permission-blocked
-requests are not retried merely to guess again. This Ask-side check does not
-apply to external Explore clients, which submit plans without giving Runner the
-original natural-language question.
-
-Reviewed enum values also participate in intent checking. Normally, if the
-question names an allowed value such as `emergency`, the plan must constrain the
-matching exact field in `where`; merely grouping all values does not answer that
-question. A categorical comparison is the deliberate exception: “are
-apprentices slower than senior staff?” may group the reviewed grade enum, and
-must not filter the result down to only one side. A time comparison such as
-“emergency visits this month versus last month” still filters `emergency` and
-compares periods. An `in` filter must contain exactly the values named by a
-normal filter question, not a wider set, and a value that exists on more than
-one reviewed field is refused as ambiguous. OpenAI and Anthropic receive one
-bounded correction containing the exact requirement. A refused first attempt
-runs no source query and spends no Explore budget.
-
-The same guard treats a schema-proven code domain such as
-`ph_code = P1 | P2 | P3` as semantically unreviewed. Ask may use the exact field
-or an exact code named by the user, but it refuses to map business language such
-as “phase” onto that field until a reviewer adds a label or description.
-Production HTTP clients receive this state as `semantic_status: "coded_values"`
-and must apply the same non-inference rule.
-
-Magnitude comparisons need reviewed numeric grouping. If a question asks
-whether bigger, older, or heavier records have a different outcome but the
-intended field has no fixed or automatic numeric band, Ask refuses before
-execution and points to `G Reviewed metrics and numeric bands`. Raw numeric
-values never become a grouping fallback, and an unrelated categorical field is
-not substituted. A cross-table version also names the need for a reviewed
-relationship or child-count path.
-
-A deliberately discrete numeric value, such as a calendar year stored as an
-integer, may instead receive a human-reviewed exact grouping grant. In
-`/access`, select the field and press `X`; in Workbench, use **Exact numeric
-groups**. This is not a fallback for magnitude questions and is never enabled
-by a model. It remains a disabled revision until activation, and all cohort,
-group, response, timeout, query, extraction, and differencing bounds continue
-to apply.
-
-For business-data questions, official-provider prose is not accepted as an
-answer until a reviewed Explore plan succeeds. If a provider answers from
-general knowledge without tools, Runner forces one catalog pass and one chance
-to call `app.explore_data`; otherwise it discards the prose and reports that no
-query ran. Generic row words such as `records`, `rows`, or `cases` are not
-treated as physical resource names unless the reviewed catalog actually
-contains that exact resource. For an unqualified trend, the provider is told to
-use reviewed `time_coverage` and `maximum_groups` and choose a month, quarter,
-or year grain when a finer bucket would omit or exceed the covered series.
-
-This is a correctness guard in Runner's built-in Ask client. An external MCP
-host sends only a structured plan to production HTTP Runner, so that host must
-retain the original question and apply its own semantic evaluation; server-side
-scope, grammar, suppression, and budgets remain fail-closed regardless.
+Numeric grouping still requires the corresponding reviewed operation. In
+`/access`, use the field's explicit grouping review; in Workbench, use **Exact
+numeric groups**. Such a grant remains disabled until activation, and all
+cohort, response, timeout, extraction and differencing limits still apply.
 
 Without a positional question, the command opens the conversational
 `Synapsor Analytics` shell. Ask natural-language follow-ups directly. The
@@ -293,19 +186,11 @@ cannot run another query. If it still returns no text, Runner preserves the
 verified structured result and displays a deterministic local explanation
 instead of discarding the answer.
 
-For an unqualified question such as `Which product category is growing
-fastest?`, Ask first reads cohort-safe reviewed time coverage and uses one
-reviewed two-period comparison: the latest 28 reviewed days against the
-preceding 28 days, ordered by reviewed percentage change. It uses the current
-UTC date only when the reviewed coverage reaches it. `Largest increase` uses
-signed absolute change; `fastest decline` uses ascending percentage change.
-The rendered interpretation states the two ranges. Ask does not request an
-all-history category-by-week cube.
-Runner validates the complete population against the separately reviewed ranked
-candidate ceiling, suppresses small cohorts, and only then ranks the result.
-This is an Ask interpretation default, not broader authority; both periods, the
-measure, the dimension, the time field, and every relationship still pass the
-exact active boundary.
+For time comparisons, the model submits the reviewed measure, dimension, time
+field and explicit or supported relative ranges. Runner resolves typed relative
+windows and validates the entire ranked population against its reviewed limit
+before suppression and ranking. It does not infer a default period, comparison
+or ordering from question wording.
 
 The shell keeps short project-local references silently for governance:
 
@@ -354,7 +239,7 @@ nullable relationships require an explicit unmatched-row choice because that
 choice changes totals. The full `boundary review` route remains available for
 the advanced grouped sign-off and audit workflow.
 
-When a question needs a relationship absent from the active boundary, Runner
+When a submitted plan needs a relationship absent from the active boundary, Runner
 may show a **Human review path** after the provider turn. This is local
 operator-plane metadata, derived from inspected foreign-key proof in the
 disabled draft; it is not sent to the provider and is not an MCP tool. The path

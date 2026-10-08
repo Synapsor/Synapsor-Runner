@@ -760,12 +760,11 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain('id="boundary-pack-name"');
     expect(html).toContain('id="save-boundary-name"');
     expect(html).toContain("The name is included in its final review fingerprint.");
-    expect(html).toContain("Local Ask plan check · ");
-    expect(html).toContain('id="boundary-ask-intent-mode"');
-    expect(html).toContain("Boundary only — trust the model&apos;s reviewed plan");
-    expect(html).toContain('post("/api/boundary/ask-intent-check"');
-    expect(html).toContain("It affects only Runner&apos;s local CLI and Workbench Ask");
-    expect(html).toContain("production HTTP are unchanged");
+    // Owner's typed-plan contract retires only the English-comparison control.
+    expect(html).toContain("Local Ask validates the model&apos;s typed plan");
+    expect(html).toContain("reviewed fields, operations, scope, privacy controls and limits");
+    expect(html).not.toContain('id="boundary-ask-intent-mode"');
+    expect(html).not.toContain('post("/api/boundary/ask-intent-check"');
     expect(html).toContain("Model response details · ");
     expect(html).toContain("[SEMANTIC] exact hashes stay operator-only");
     expect(html).toContain('id="boundary-model-output-mode"');

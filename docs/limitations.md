@@ -88,16 +88,11 @@ enterprise SLA.
   labels model prose as untrusted, renders Runner-verified results
   independently, and keeps expiring analysis references out of routine output.
   `/protect` remains an operator command and never becomes a model tool.
-  The built-in OpenAI, Anthropic, and OpenAI-compatible adapters refuse an
-  explicit entity/grouping substitution before Explore execution. A generic
-  production HTTP resource server receives a plan without the original human
-  question, so an external MCP host remains responsible for that semantic
-  question-to-plan check.
-  A local operator may deliberately switch one boundary to **Boundary only**
-  mode from the CLI or Workbench. That disables only this Ask-side semantic
-  comparison; the complete reviewed Explore validator, scope injection, drift
-  checks, suppression, and budgets remain mandatory. The setting never applies
-  to MCP or production HTTP Explore.
+  Models submit typed Explore plans. Runner validates reviewed fields,
+  operations, scope, privacy controls and budgets, and renders an exact plan
+  readback with literal values redacted. It does not interpret question wording
+  or certify that a permitted plan answers the intended business question.
+  Local CLI, Workbench and external MCP plans use the same authority checks.
 - Reviewed bounded aggregate Explore with `count`, `count_distinct`, `sum`,
   `avg`, categorical dimensions, fixed UTC time buckets, typed filters,
   bounded top/bottom-N over a separately reviewed candidate population,

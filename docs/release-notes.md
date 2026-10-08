@@ -15,6 +15,14 @@ for the Synapsor Cloud CLI.
 Prepared package versions: `@synapsor/runner@1.8.0`,
 `@synapsor/spec@1.11.0`, and `@synapsor/dsl@1.11.0`.
 
+### Typed Ask Plan Validation
+
+- Ask now executes model-submitted typed plans through the reviewed Explore
+  validator and renders the plan, redacted literals and actual outcome. The
+  English question-to-plan parser and its local mode toggle are retired;
+  Runner no longer synthesizes plans or claims semantic question matching.
+  Reviewed authority, privacy, currentness and budget checks remain mandatory.
+
 ### Boundary Assist And Unified Read-to-Action Onboarding
 
 - Read drafting retains sanitized initial/correction diagnostics and distinguishes
