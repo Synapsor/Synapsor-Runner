@@ -80,8 +80,7 @@ describe("original requested Read scope versus routing summary", () => {
       egressAcknowledged: true, deferNarration: true, dependencies: { requestJson },
     })).rejects.toThrow(exact ? /REQUIRED_RESOURCE_OMITTED/iu : /CLARIFICATION_REQUIRED/iu);
   });
-  it("does not expand an exact only-request because the model summary names another inspected area", async () => {
-    const request = "Read only studio.accounts.";
+  it.each(["Read only studio.accounts.", "Read only `studio.accounts`.", 'Read only "studio.accounts".'])("does not expand an exact only-request: %s", async request => {
     const response = { allowed: ["studio.accounts", "studio.payments"].map((resource, index) => ({ id: `extra_${index}`,
       description: `Read ${resource} status`, plan: { kind: "rows", resource, select: ["status"] } })), forbidden: [] };
     const requestJson = vi.fn(async (wire: { body: unknown }) => {
