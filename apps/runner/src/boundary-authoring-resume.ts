@@ -554,14 +554,16 @@ function resumeChanged(): Error {
   return Object.assign(new Error(`${code}: The saved job changed, was removed, or cannot be verified. Reopen the current saved job before reviewing sources or saving more work. This operation did not overwrite its checkpoint or change active authority.`), { code });
 }
 
-/** Check only the saved protocol envelope before public authoring entry can
- * refresh project metadata or open UI. Current records still go through the
- * ordinary binding/integrity loader; old records are never interpreted. */
+/** Refuse incompatible envelopes before interpreting their records, then
+ * validate the current native records before public metadata or UI can change.
+ * Filesystem/binding currentness still belongs to the ordinary native loader. */
 export async function assertSavedBoundaryAuthoringEnvelopeCurrent(projectRoot: string): Promise<void> {
   let source: string;
   try { source = await fs.readFile(resumePath(path.resolve(projectRoot)), "utf8"); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
-  assertCurrentAuthoringEnvelope(JSON.parse(source));
+  const parsed: unknown = JSON.parse(source);
+  assertCurrentAuthoringEnvelope(parsed);
+  assertBoundaryAuthoringResumeState(parsed);
 }
 
 export async function readBoundaryAuthoringResumeState(

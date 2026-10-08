@@ -142,6 +142,26 @@ describe("B64 protocol pin in native Resume", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
+
+  it("refuses invalid current records before public metadata or menus", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-b64-invalid-current-"));
+    try {
+      const relative = await writeBoundaryAuthoringResumeState(root, structured(), { expectedRevisionDigest: null });
+      const file = path.resolve(root, relative);
+      const bytes = JSON.stringify(seal({ ...structured(), operator_questions: [{ incompatible_native_record: true }] }));
+      await fs.writeFile(file, bytes);
+      const files = await fs.readdir(path.join(root, ".synapsor"));
+      let chat = 0, inspected = 0;
+      await expect(boundaryReviewCommand(["--project-root", root, "--access", "--job-first"],
+        async () => { inspected++; throw new Error("Source must not be inspected"); }, undefined, undefined,
+        { boundaryAuthoringChatFactory: () => { chat++; throw new Error("Chat must not be opened"); } }))
+        .rejects.toThrow("AUTHORING_QUESTION_INVALID");
+      expect({ chat, inspected }).toEqual({ chat: 0, inspected: 0 });
+      expect(await fs.readdir(path.join(root, ".synapsor"))).toEqual(files);
+      expect(await fs.readFile(file, "utf8")).toBe(bytes);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
   it.each(["future", "null", "array", "string"] as const)("refuses a %s native envelope before public metadata or menus", async shape => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-b64-future-envelope-"));
     try {

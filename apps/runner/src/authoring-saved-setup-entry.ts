@@ -3,7 +3,7 @@ import { OLDER_AUTHORING_SETUP_MESSAGE } from "./authoring-protocol.js";
 import type { BoundaryAccessNotice } from "./boundary-cli-picker.js";
 
 /** Public entry gate precedes metadata/menu construction. It reads only the
- * native envelope; unsupported records never select a compatibility route. */
+ * native envelope and current records; unsupported records never select a compatibility route. */
 export async function enterSavedAuthoringSetup(projectRoot: string, present: (notice: BoundaryAccessNotice) => void): Promise<boolean> {
   try { await assertSavedBoundaryAuthoringEnvelopeCurrent(projectRoot); return true; }
   catch (error) {
