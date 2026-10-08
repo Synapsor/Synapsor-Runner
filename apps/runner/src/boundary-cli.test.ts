@@ -7119,7 +7119,13 @@ describe("boundary operator-plane CLI", () => {
     });
     const session: BoundaryReviewInteractiveSession = { chooseResource: async () => undefined, editFieldTiers: async () => undefined,
       promptText: async () => "Keep all existing settings and business rules unchanged.",
-      chooseOption: async (title, choices) => {
+      chooseOption: async (title, choices, options) => {
+        if (title === "CHOOSE THE SAVED JOB OPERATION") {
+          expect(choices.map(choice => choice.value)).toEqual(["continue", "review", "pause"]);
+          expect(options).toMatchObject({ initialValue: "continue", reviewOnly: true,
+            context: expect.arrayContaining(["Saved request: Keep all existing settings and business rules unchanged."]) });
+          return "continue";
+        }
         expect(title).toBe("START BOUNDARY DRAFTING");
         expect(choices.find(choice => choice.value === "model")?.label).toContain("Draft a change with");
         return "model";
@@ -7143,6 +7149,9 @@ describe("boundary operator-plane CLI", () => {
         boundaryAuthoringChatFactory: () => chat,
       });
       expect(modelBoundaryJobPlanner.mock.calls.length, JSON.stringify(vi.mocked(chat.streamCheckpoint).mock.calls)).toBe(1);
+      expect(await readBoundaryAuthoringResumeState(root, boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(root)).bundle)))
+        .toMatchObject({ status: "ready", value: { pending_job_revision: "Keep all existing settings and business rules unchanged.",
+          intended_client: "claude-code", conversation: expect.arrayContaining(conversation) } });
       expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(context.bundle.candidate_digest);
       expect((await loadPolicySources(root, policy.id)).snapshots).toEqual(policy.snapshots);
       await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });

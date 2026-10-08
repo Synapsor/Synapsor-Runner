@@ -31,7 +31,7 @@
     "No full suite/final package/freeze/installed or paid qualification claimed",
     "Initial affected command named three nonexistent files; actual matched7-file result is reported; corrected names included in next affected run."
   ],
-  "runtime_head": "09921c3e3988f0438ed460c7af5bc8553efa54a8",
+  "runtime_head": "a5706ef7de2933477fb8c7c8d6adaa9e1ce8894b",
   "post_reboot_route_fix": {
     "before": "public fixture817f6ff0 ready-v6: completed refused coverage1, receipt mappings0; ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION; unchanged test preserved",
     "cause": "Coverage saved the completed unaccepted submission in Source but only canonical-report success acknowledged its recovery consumer. The receipt host was reached, and correctly refused a new question over handled/uncheckpointed output.",
@@ -67,6 +67,14 @@
     "before": "independent staticR2 thennative52455ce4 planner-race-before-v1 0P1F: actualPLANNING_ACCEPTED\u2192competing nativeResume\u2192publicreturns0 silently, noSETUPNEEDSATTENTION; competingrecordretained, noadditionalprovider inthisprefix",
     "fix": "Generic planning catch propagates any failure after a validated planned result before the planned break. It cannot reuse that result for dispatch or open a fresh planner fallback after its protected checkpoint failed.",
     "after": "Exact native race + healthy actual Resume2P0F/12.41sec; competing record preserved, error surfaced, no downstream dispatch; helper97cb2dfc/types0; planner-race-after-v1. Independent adjudication pending.",
-    "boundary_lines_root": 20093
+    "boundary_lines_root": 20093,
+    "independent": "R2 a600979c23checks/10hashes scoped ACCEPT"
+  },
+  "current_program_input_binding": {
+    "before": "studio-edit-route-v3 receipt1/1/1 saved; Source2 Input review skipped because singleton edit resumeAction omitted intended_outcomes. Diagnostic-v5 exact SOURCE_INPUT_REQUIREMENT_PENDING from Action validation; historical partial operation untouched.",
+    "fix": "Use the exact retained program record selected by native Resume persistence for Input initial and live agenda readers. Existing Input host performs fresh Source2 review/defaultNo confirmation, preserving old records. No inferred meaning or receipt-specific logic.",
+    "after": "helper93e6cb09: saved route6P, supplemental studio setup/edit+original unchanged-Source edit3P, types0. v6 original copied Input/report counts failed1P1F preserved; R2 independently requires currentSource2 root/child/raw mapping/review and before/after receipt coverage contexts; only supplemental counts corrected with stronger exact identities.",
+    "root_affected": "types0; 684P1F/5files at a570; one old callback test assumes only initial menu and throws on existing CHOOSE THE SAVED JOB OPERATION. Diagnostic preserved; adjudication pending.",
+    "line_count": "20093 root; 20098 with accepted B59 current-record ports (under original20100)."
   }
 }
