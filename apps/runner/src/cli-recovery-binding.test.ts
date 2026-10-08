@@ -47,4 +47,25 @@ describe("actual CLI typed recovery binding", () => {
     expect(text).not.toContain("syn_private_recovery_value");
     expect(text).not.toContain("syn_private_next_action");
   });
+
+  it("retains the original typed TLS error at the public hint boundary", async () => {
+    const error = Object.assign(new Error("Connection failed; token=private_hint_token."), {
+      code: "CERT_HAS_EXPIRED",
+      recovery: { state_preserved: "Saved draft remains unchanged.", source_database_changed: false,
+        next_action: "Inspect configured certificates." },
+    });
+    const { payload, text } = await rejectThroughCli(error);
+    expect(text).toContain("TLS certificate verification failed.");
+    expect(text).toContain("keep certificate verification enabled");
+    expect(text).not.toContain("private_hint_token");
+    expect(text).not.toContain("no-verify");
+    expect(payload.recovery).toEqual(error.recovery);
+  });
+
+  it("does not infer a TLS cause from diagnostic words at the public hint boundary", async () => {
+    const { payload, text } = await rejectThroughCli(new Error("self-signed certificate; unable to verify"));
+    expect(text).not.toContain("Hint:");
+    expect(payload.recovery.source_database_changed).toBeNull();
+  });
+
 });
