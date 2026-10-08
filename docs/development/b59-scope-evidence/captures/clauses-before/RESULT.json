@@ -1,0 +1,28 @@
+{
+  "stage": "clauses-before",
+  "exit": 1,
+  "seconds": 7.008497139002429,
+  "head_before": "84c70ad907171bdd13765381280e2032c561d2c5",
+  "head_after": "84c70ad907171bdd13765381280e2032c561d2c5",
+  "status_before": "",
+  "status_after": "",
+  "owned_outer_closed": true,
+  "stop": null,
+  "root": "/var/tmp/synapsor-b59-1647-clauses-before",
+  "native_argv": [
+    "/usr/bin/node",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/read-requested-scope.test.ts",
+    "apps/runner/src/boundary-requested-read-scope.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "--reporter=json",
+    "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/clauses-before/vitest.json",
+    "-t",
+    "unsupported positive clauses"
+  ],
+  "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+}

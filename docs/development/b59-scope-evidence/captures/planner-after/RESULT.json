@@ -1,0 +1,25 @@
+{
+  "stage": "planner-after",
+  "exit": 1,
+  "seconds": 5.0070947500062175,
+  "head_before": "16cf288b4fb1ff6cb57f3090a63a58198117537b",
+  "head_after": "16cf288b4fb1ff6cb57f3090a63a58198117537b",
+  "status_before": "",
+  "status_after": "",
+  "owned_outer_closed": true,
+  "stop": null,
+  "root": "/var/tmp/synapsor-b59-1647-planner-after",
+  "native_argv": [
+    "/usr/bin/node",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/boundary-job-model.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "--reporter=json",
+    "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/planner-after/vitest.json"
+  ],
+  "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+}

@@ -1,5 +1,5 @@
 {
-  "status": "CHARACTERIZATION_CLOSED_RUNTIME_UNCHANGED",
+  "status": "TARGETED_CLOSED_BROAD_FIXTURE_CLASSIFICATION_PENDING",
   "base": "04497a793e6345f6d8e75a291e78b5a19a1b99e2",
   "test_pin": "15a7c098e5e1f045928ffb9490298d4fefdd641a",
   "baseline": {
@@ -12,21 +12,590 @@
   "scope": "Transient request evidence and native workload consumer only. No database/provider/activation. Historical label assertion passes before correction; not credited as desired semantics.",
   "owners": {
     "read-requested-scope.ts": "Explicit request references/current attributed definitions versus candidate associations and unresolved/conflict evidence",
-    "read-workload-model.ts": "Consume evidence with native bounded clarification and existing validation",
+    "read-workload-model.ts": "Scope evidence and native host-generated typed purpose/currentness consumer",
     "read-meaning-evidence.ts": "Existing current Source evidence only; no expansion presently planned",
-    "boundary-job-model.ts": "Existing exact requirements lower-bound caller; inspect compatibility",
+    "boundary-job-model.ts": "Planner none/reuse/resume transient scope consumer",
     "boundary-commands.ts": "Main only; no edits",
-    "authoring-policy-evidence.ts": "Main only; no edits"
+    "authoring-policy-evidence.ts": "Main only; no edits",
+    "read-authoring-contract-types.ts": "Optional host-only requested scope reason binding",
+    "read-workload-assistance-checkpoint.ts": "Exact optional binding parsing; legacy bytes/digests unmodified"
   },
   "open": [
-    "Independent public preseal before runtime edits",
-    "Replace names-as-requirement inference with transient candidate evidence without dropping omissions",
-    "Main-owned typed question/context binding; no reason-prose identity"
+    "47 existing broad workload fixtures classified for independent agreement before changes",
+    "Related-only projection and genuine answered root reuse remain separate consumer investigations",
+    "Independent presealed typed/legacy/currentness set pending on immutable2d724",
+    "No full/public CLI/DB/provider/activation qualification claimed"
   ],
   "worker": {
     "maxWorkers": 1,
     "native_session_closed": true,
     "network": "unshare-net",
     "floor_GiB": 8
-  }
+  },
+  "head": "2d72454704ac1753509ce61850ff78f473ebc37c",
+  "runtime": "6c207c8279eb21c114f3e764da34d9580f94aa70",
+  "runs": [
+    {
+      "stage": "baseline",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/baseline",
+      "result": {
+        "stage": "baseline",
+        "exit": 1,
+        "seconds": 7.410943187016528,
+        "head_before": "15a7c098e5e1f045928ffb9490298d4fefdd641a",
+        "head_after": "15a7c098e5e1f045928ffb9490298d4fefdd641a",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-baseline",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-requested-scope.test.ts",
+          "apps/runner/src/boundary-requested-read-scope.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/baseline/vitest.json",
+          "-t",
+          "bounded request evidence syntax|native bounded requested-scope evidence|metadata label suppress"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 2,
+        "numFailedTests": 6,
+        "numPendingTests": 47,
+        "numTotalTests": 55
+      }
+    },
+    {
+      "stage": "affected-v1",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/affected-v1",
+      "result": {
+        "stage": "affected-v1",
+        "exit": 1,
+        "seconds": 7.410869414976332,
+        "head_before": "4de6ab4f8c14b332bf4b77c0c17cedbc7962ae43",
+        "head_after": "4de6ab4f8c14b332bf4b77c0c17cedbc7962ae43",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-affected-v1",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-requested-scope.test.ts",
+          "apps/runner/src/boundary-requested-read-scope.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/affected-v1/vitest.json"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 51,
+        "numFailedTests": 4,
+        "numPendingTests": 0,
+        "numTotalTests": 55
+      }
+    },
+    {
+      "stage": "affected-v2",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/affected-v2",
+      "result": {
+        "stage": "affected-v2",
+        "exit": 0,
+        "seconds": 7.209859102003975,
+        "head_before": "81eee5b11bb68cb824d7dbfa49798ff3975def1a",
+        "head_after": "81eee5b11bb68cb824d7dbfa49798ff3975def1a",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-affected-v2",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-requested-scope.test.ts",
+          "apps/runner/src/boundary-requested-read-scope.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/affected-v2/vitest.json"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 63,
+        "numFailedTests": 0,
+        "numPendingTests": 0,
+        "numTotalTests": 63
+      }
+    },
+    {
+      "stage": "types-v1",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/types-v1",
+      "result": {
+        "stage": "types-v1",
+        "exit": 0,
+        "seconds": 22.222195334994467,
+        "head_before": "81eee5b11bb68cb824d7dbfa49798ff3975def1a",
+        "head_after": "81eee5b11bb68cb824d7dbfa49798ff3975def1a",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-types-v1",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/typescript/bin/tsc",
+          "-b",
+          "--pretty",
+          "false"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      }
+    },
+    {
+      "stage": "planner-before",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/planner-before",
+      "result": {
+        "stage": "planner-before",
+        "exit": 1,
+        "seconds": 4.406623980001314,
+        "head_before": "7b94614057b4827f1713564a85bc93820d5c6df2",
+        "head_after": "7b94614057b4827f1713564a85bc93820d5c6df2",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-planner-before",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/boundary-job-model.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/planner-before/vitest.json",
+          "-t",
+          "unestablished requested Read routing"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 4,
+        "numPendingTests": 66,
+        "numTotalTests": 70
+      }
+    },
+    {
+      "stage": "planner-after",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/planner-after",
+      "result": {
+        "stage": "planner-after",
+        "exit": 1,
+        "seconds": 5.0070947500062175,
+        "head_before": "16cf288b4fb1ff6cb57f3090a63a58198117537b",
+        "head_after": "16cf288b4fb1ff6cb57f3090a63a58198117537b",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-planner-after",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/boundary-job-model.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/planner-after/vitest.json"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 69,
+        "numFailedTests": 1,
+        "numPendingTests": 0,
+        "numTotalTests": 70
+      }
+    },
+    {
+      "stage": "quoted-only-before",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/quoted-only-before",
+      "result": {
+        "stage": "quoted-only-before",
+        "exit": 1,
+        "seconds": 6.409023596002953,
+        "head_before": "ea32152fb50e6f48414198eff4bbda7ae4e2f96a",
+        "head_after": "ea32152fb50e6f48414198eff4bbda7ae4e2f96a",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-quoted-only-before",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-requested-scope.test.ts",
+          "apps/runner/src/boundary-requested-read-scope.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/quoted-only-before/vitest.json",
+          "-t",
+          "exact only-request"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 1,
+        "numFailedTests": 2,
+        "numPendingTests": 62,
+        "numTotalTests": 65
+      }
+    },
+    {
+      "stage": "consumers-v1",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/consumers-v1",
+      "result": {
+        "stage": "consumers-v1",
+        "exit": 1,
+        "seconds": 11.613764645997435,
+        "head_before": "b428a47b08e832a0f19edacb796ae40d0c228aa6",
+        "head_after": "b428a47b08e832a0f19edacb796ae40d0c228aa6",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-consumers-v1",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-requested-scope.test.ts",
+          "apps/runner/src/boundary-requested-read-scope.test.ts",
+          "apps/runner/src/boundary-job-model.test.ts",
+          "apps/runner/src/read-workload-model.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/consumers-v1/vitest.json"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 221,
+        "numFailedTests": 48,
+        "numPendingTests": 0,
+        "numTotalTests": 269
+      }
+    },
+    {
+      "stage": "affected-v3",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/affected-v3",
+      "result": {
+        "stage": "affected-v3",
+        "exit": 1,
+        "seconds": 7.209697118989425,
+        "head_before": "9d556f423acdae9b631c3777ad89b790c6d43674",
+        "head_after": "9d556f423acdae9b631c3777ad89b790c6d43674",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-affected-v3",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-requested-scope.test.ts",
+          "apps/runner/src/boundary-requested-read-scope.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/affected-v3/vitest.json"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 66,
+        "numFailedTests": 1,
+        "numPendingTests": 0,
+        "numTotalTests": 67
+      }
+    },
+    {
+      "stage": "types-v2",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/types-v2",
+      "result": {
+        "stage": "types-v2",
+        "exit": 0,
+        "seconds": 7.409088104002876,
+        "head_before": "9d556f423acdae9b631c3777ad89b790c6d43674",
+        "head_after": "9d556f423acdae9b631c3777ad89b790c6d43674",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-types-v2",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/typescript/bin/tsc",
+          "-b",
+          "--pretty",
+          "false"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      }
+    },
+    {
+      "stage": "typed-before",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/typed-before",
+      "result": {
+        "stage": "typed-before",
+        "exit": 1,
+        "seconds": 6.207212961977348,
+        "head_before": "20213f98f99ce6af40dc19beb445f7cf3ddccec4",
+        "head_after": "20213f98f99ce6af40dc19beb445f7cf3ddccec4",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-typed-before",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-requested-scope.test.ts",
+          "apps/runner/src/boundary-requested-read-scope.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/typed-before/vitest.json",
+          "-t",
+          "reopens the native ambiguous question"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 2,
+        "numPendingTests": 65,
+        "numTotalTests": 67
+      }
+    },
+    {
+      "stage": "clauses-before",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/clauses-before",
+      "result": {
+        "stage": "clauses-before",
+        "exit": 1,
+        "seconds": 7.008497139002429,
+        "head_before": "84c70ad907171bdd13765381280e2032c561d2c5",
+        "head_after": "84c70ad907171bdd13765381280e2032c561d2c5",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-clauses-before",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-requested-scope.test.ts",
+          "apps/runner/src/boundary-requested-read-scope.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/clauses-before/vitest.json",
+          "-t",
+          "unsupported positive clauses"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 0,
+        "numFailedTests": 2,
+        "numPendingTests": 67,
+        "numTotalTests": 69
+      }
+    },
+    {
+      "stage": "affected-v4",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/affected-v4",
+      "result": {
+        "stage": "affected-v4",
+        "exit": 1,
+        "seconds": 5.6071925059950445,
+        "head_before": "6c207c8279eb21c114f3e764da34d9580f94aa70",
+        "head_after": "6c207c8279eb21c114f3e764da34d9580f94aa70",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-affected-v4",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-requested-scope.test.ts",
+          "apps/runner/src/boundary-requested-read-scope.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/affected-v4/vitest.json"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 69,
+        "numFailedTests": 1,
+        "numPendingTests": 0,
+        "numTotalTests": 70
+      }
+    },
+    {
+      "stage": "types-v3",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/types-v3",
+      "result": {
+        "stage": "types-v3",
+        "exit": 1,
+        "seconds": 31.634742202004418,
+        "head_before": "409e2b49cdbcbdef0e80d06d67ded641e1b7099b",
+        "head_after": "409e2b49cdbcbdef0e80d06d67ded641e1b7099b",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-types-v3",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/typescript/bin/tsc",
+          "-b",
+          "--pretty",
+          "false"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      }
+    },
+    {
+      "stage": "tag-refusal-after",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/tag-refusal-after",
+      "result": {
+        "stage": "tag-refusal-after",
+        "exit": 0,
+        "seconds": 7.009495043021161,
+        "head_before": "2d72454704ac1753509ce61850ff78f473ebc37c",
+        "head_after": "2d72454704ac1753509ce61850ff78f473ebc37c",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-tag-refusal-after",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+          "run",
+          "apps/runner/src/read-requested-scope.test.ts",
+          "apps/runner/src/boundary-requested-read-scope.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000",
+          "--reporter=json",
+          "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/tag-refusal-after/vitest.json",
+          "-t",
+          "host-only scope reason binding"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      },
+      "tests": {
+        "numPassedTests": 1,
+        "numFailedTests": 0,
+        "numPendingTests": 69,
+        "numTotalTests": 70
+      }
+    },
+    {
+      "stage": "types-v4",
+      "native": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/types-v4",
+      "result": {
+        "stage": "types-v4",
+        "exit": 0,
+        "seconds": 6.608613511984004,
+        "head_before": "2d72454704ac1753509ce61850ff78f473ebc37c",
+        "head_after": "2d72454704ac1753509ce61850ff78f473ebc37c",
+        "status_before": "",
+        "status_after": "",
+        "owned_outer_closed": true,
+        "stop": null,
+        "root": "/var/tmp/synapsor-b59-1647-types-v4",
+        "native_argv": [
+          "/usr/bin/node",
+          "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/typescript/bin/tsc",
+          "-b",
+          "--pretty",
+          "false"
+        ],
+        "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+      }
+    }
+  ],
+  "owned_process_closure": {
+    "groups": [
+      3824429,
+      3830034,
+      3832840,
+      3835322,
+      3837739,
+      3838968,
+      3842406,
+      3843562,
+      3848745,
+      3850610,
+      3853418,
+      3858147,
+      3859410,
+      3860280,
+      3862071,
+      3863040
+    ],
+    "live": []
+  },
+  "compatibility": "Optional host-created requested_read_scope digest; model cannot assert it. Untagged old scope purpose remains pending without rewriting history/digest. Older strict parsers may reject new optional field; no downgrade-success claim."
 }

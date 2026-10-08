@@ -1,0 +1,262 @@
+{
+  "status": "PROPOSED_CLASSIFICATION_AWAITING_INDEPENDENT_AGREEMENT",
+  "failed_capture": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/consumers-v1/vitest.json",
+  "failed_pin": "b428a47b",
+  "current_pin": "2d72454704ac1753509ce61850ff78f473ebc37c",
+  "counts": {
+    "durable-orders": 7,
+    "B41-field": 7,
+    "related-projection-HOLD": 1,
+    "root-answer-HOLD": 1,
+    "field-provenance": 15,
+    "long-wire-only": 1,
+    "ordinary-orders": 15
+  },
+  "classes": {
+    "durable-orders": "Shared setup line45 declares List my orders but no current root definition. Proposed labeled successor adds public.orders means orders as a real operator input, while original request, field/value replies, CAS, correction/iteration history, unknown/EOF/ACK and existing call counts stay exact.",
+    "B41-field": "Shared setup line369 labels opaque public.tbl_7 Shipments; metadata is not a root definition. Proposed declared public.tbl_7 means shipments input establishes only root mapping; unknown/conflicting/unquoted col_2 meaning, current Source and all existing field/callback assertions stay unchanged.",
+    "field-provenance": "Individual opaque-resource tests supply field meaning/provenance but only a metadata Orders label for root. Proposed actual operator root definition public.tbl_7 means orders must not establish any field meaning or approve an attachment. Keep each existing unauthorized quote/answer-ref/unknown/decline/value assertion and call count. Review per named row before editing.",
+    "ordinary-orders": "Individual mechanics/compiler/values tests use List my orders but no current attributed root definition. Proposed public.orders means orders declared input supplies only root association. All original request text, native compile diagnostics, trusted ownership, exact values, correction cap and original callback count remain.",
+    "related-projection-HOLD": "Do not patch automatically. Request purchases with product details + owned orders / related-only products tests native root routing. Need inspect whether known relationship-root refusal should precede candidate association; a products root definition could falsely require independent products. No new reply/field fact proposed.",
+    "root-answer-HOLD": "Do not add a root definition to bypass this test. Existing first real root answer Order records must be examined for attributable scope reuse without authorizing col_2. Current failure may be consumer gap; preserve two real question/three provider count and native quote checks.",
+    "long-wire-only": "Fixture catalog only orders cannot establish complete account/bills/services/support/offers job. Proposed retain exact long job/body/count assertions and explicitly expect native pending clarification. Do not invent all-area mapping to orders or claim ready."
+  },
+  "rows": [
+    {
+      "test": "durable Read assistance producer checkpoint saves a canonical answer separately and resumes its real next mapping without reprompting",
+      "class": "durable-orders",
+      "observed_error": "Error: READ_WORKLOAD_AUTHORING_PAUSED: The assistance question remains pending. No decline, replacement generation or Read authority was inferred."
+    },
+    {
+      "test": "durable Read assistance producer checkpoint leaves Escape or EOF at the value wait pending and accepts intentional without_values only as its typed decision",
+      "class": "durable-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at public.orders. Use interactive Boundary review to answer or decline. No source query ran."
+    },
+    {
+      "test": "durable Read assistance producer checkpoint keeps a used correction across resume and does not buy another invalid mapping attempt",
+      "class": "durable-orders",
+      "observed_error": "AssertionError: expected [ { \u2026(5) }, { \u2026(4) } ] to match object [ { resource: 'public.orders', \u2026(2) } ]"
+    },
+    {
+      "test": "durable Read assistance producer checkpoint exposes a cleared checkpoint only with the actual accepted Read result and stops if its CAS commit fails",
+      "class": "durable-orders",
+      "observed_error": "AssertionError: expected [Function] to throw error including 'OWNED_ACCEPTED_READ_CAS_CHANGED' but got 'READ_WORKLOAD_CLARIFICATION_REQUIRED:\u2026'"
+    },
+    {
+      "test": "durable Read assistance producer checkpoint checkpoints the exact bounded Read correction sequence before its question and continues once after restart",
+      "class": "durable-orders",
+      "observed_error": "AssertionError: expected 1 to be 2 // Object.is equality"
+    },
+    {
+      "test": "durable Read assistance producer checkpoint retains exact typed history through dispatch without reopening the decided value request",
+      "class": "durable-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at public.orders. Use interactive Boundary review to answer or decline. No source query ran."
+    },
+    {
+      "test": "durable Read assistance producer checkpoint outer controller callback reservation survives a raw save acknowledgement loss without accepting its result",
+      "class": "durable-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at public.orders. Use interactive Boundary review to answer or decline. No source query ran."
+    },
+    {
+      "test": "B41 host-owned Read meaning resolution 901 retains an explicitly unknown answer as pending and resumes without an initial replay",
+      "class": "B41-field",
+      "observed_error": "AssertionError: expected \"spy\" to be called 2 times, but got 3 times"
+    },
+    {
+      "test": "B41 host-owned Read meaning resolution requires a new attributed interpretation for no_model_quote rather than selecting a Source definition",
+      "class": "B41-field",
+      "observed_error": "AssertionError: expected 'What information should these records\u2026' to contain 'new interpretation'"
+    },
+    {
+      "test": "B41 host-owned Read meaning resolution 901 routes unknown Source knowledge to a plain attributed decision, not first-match meaning",
+      "class": "B41-field",
+      "observed_error": "AssertionError: expected \"spy\" to be called once, but got 2 times"
+    },
+    {
+      "test": "B41 host-owned Read meaning resolution 901 routes conflicting Source knowledge to a plain attributed decision, not first-match meaning",
+      "class": "B41-field",
+      "observed_error": "AssertionError: expected \"spy\" to be called once, but got 2 times"
+    },
+    {
+      "test": "B41 host-owned Read meaning resolution repairs a misquoted established Source meaning without requiring quote echo or another owner answer",
+      "class": "B41-field",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_DECLINED: no business meaning was supplied for public.tbl_7; Runner accepted no model draft."
+    },
+    {
+      "test": "B41 host-owned Read meaning resolution does not equate a generated label with meaning when an opaque field has no model quote",
+      "class": "B41-field",
+      "observed_error": "AssertionError: expected \"spy\" to be called once, but got 2 times"
+    },
+    {
+      "test": "B41 host-owned Read meaning resolution does not let a generated field label suppress a necessary plain business question",
+      "class": "B41-field",
+      "observed_error": "AssertionError: expected \"spy\" to be called once, but got 2 times"
+    },
+    {
+      "test": "model-assisted Read workload mapping corrects shared-table reads into owned-root related projections without a scope-review detour",
+      "class": "related-projection-HOLD",
+      "observed_error": "Error: READ_WORKLOAD_AUTHORING_PAUSED: The assistance question remains pending. No decline, replacement generation or Read authority was inferred."
+    },
+    {
+      "test": "model-assisted Read workload mapping does not let a table-only clarification establish an unexplained coded field meaning",
+      "class": "root-answer-HOLD",
+      "observed_error": "AskError: Local handling did not complete with a known outcome. Inspect the current saved job before continuing; no generation or callback replay is permitted."
+    },
+    {
+      "test": "model-assisted Read workload mapping uses only actual authorized operator naming sources: approved_attachment",
+      "class": "field-provenance",
+      "observed_error": "TypeError: Cannot read properties of undefined (reading 'status')"
+    },
+    {
+      "test": "model-assisted Read workload mapping uses only actual authorized operator naming sources: saved_answer",
+      "class": "field-provenance",
+      "observed_error": "TypeError: Cannot read properties of undefined (reading 'status')"
+    },
+    {
+      "test": "model-assisted Read workload mapping asks for col_2 meaning instead of accepting or trapping a fabricated naming quote",
+      "class": "field-provenance",
+      "observed_error": "AssertionError: expected \"spy\" to be called once, but got 2 times"
+    },
+    {
+      "test": "model-assisted Read workload mapping asks for q_av meaning instead of accepting or trapping a fabricated naming quote",
+      "class": "field-provenance",
+      "observed_error": "AssertionError: expected \"spy\" to be called once, but got 2 times"
+    },
+    {
+      "test": "model-assisted Read workload mapping delivers a model clarification requested by the bounded validation correction",
+      "class": "field-provenance",
+      "observed_error": "AssertionError: expected \"spy\" to be called once, but got 2 times"
+    },
+    {
+      "test": "model-assisted Read workload mapping reuses a coded field meaning for col_2 without another question or metadata mutation",
+      "class": "field-provenance",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_DECLINED: no business meaning was supplied for public.tbl_7; Runner accepted no model draft."
+    },
+    {
+      "test": "model-assisted Read workload mapping reuses a coded field meaning for tbl_7.col_2 without another question or metadata mutation",
+      "class": "field-provenance",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_DECLINED: no business meaning was supplied for public.tbl_7; Runner accepted no model draft."
+    },
+    {
+      "test": "model-assisted Read workload mapping reuses a coded field meaning for public.tbl_7.col_2 without another question or metadata mutation",
+      "class": "field-provenance",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_DECLINED: no business meaning was supplied for public.tbl_7; Runner accepted no model draft."
+    },
+    {
+      "test": "model-assisted Read workload mapping uses an exact host answer reference without asking the model to copy raw words (valid)",
+      "class": "field-provenance",
+      "observed_error": "TypeError: canonical JSON does not accept undefined values"
+    },
+    {
+      "test": "model-assisted Read workload mapping accepts verbatim naming evidence from the answered clarification: col_2 means the order lifecycle status",
+      "class": "field-provenance",
+      "observed_error": "AssertionError: expected \"spy\" to be called once, but got 2 times"
+    },
+    {
+      "test": "model-assisted Read workload mapping accepts verbatim naming evidence from the answered clarification: Order lifecycle status",
+      "class": "field-provenance",
+      "observed_error": "AssertionError: expected \"spy\" to be called once, but got 2 times"
+    },
+    {
+      "test": "model-assisted Read workload mapping keeps a long original job while requesting concise schema-compatible plan descriptions",
+      "class": "long-wire-only",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at public.orders. Use interactive Boundary review to answer or decline. No source query ran."
+    },
+    {
+      "test": "model-assisted Read workload mapping retains initial and correction diagnostics for invalid_id without mutating the boundary",
+      "class": "ordinary-orders",
+      "observed_error": "AssertionError: expected Error: READ_WORKLOAD_CLARIFICATION_REQUIR\u2026 to be an instance of ReadWorkloadDraftError"
+    },
+    {
+      "test": "model-assisted Read workload mapping recovers invalid_id with one valid correction",
+      "class": "ordinary-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at public.orders. Use interactive Boundary review to answer or decline. No source query ran."
+    },
+    {
+      "test": "model-assisted Read workload mapping recovers malformed with one valid correction",
+      "class": "ordinary-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at public.orders. Use interactive Boundary review to answer or decline. No source query ran."
+    },
+    {
+      "test": "model-assisted Read workload mapping recovers arguments with one valid correction",
+      "class": "ordinary-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at public.orders. Use interactive Boundary review to answer or decline. No source query ran."
+    },
+    {
+      "test": "model-assisted Read workload mapping recovers missing with one valid correction",
+      "class": "ordinary-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at public.orders. Use interactive Boundary review to answer or decline. No source query ran."
+    },
+    {
+      "test": "model-assisted Read workload mapping does not lose rejected draft details when correction returns missing",
+      "class": "ordinary-orders",
+      "observed_error": "AssertionError: expected Error: READ_WORKLOAD_CLARIFICATION_REQUIR\u2026 to be an instance of ReadWorkloadDraftError"
+    },
+    {
+      "test": "model-assisted Read workload mapping does not lose rejected draft details when correction returns malformed",
+      "class": "ordinary-orders",
+      "observed_error": "AssertionError: expected Error: READ_WORKLOAD_CLARIFICATION_REQUIR\u2026 to be an instance of ReadWorkloadDraftError"
+    },
+    {
+      "test": "model-assisted Read workload mapping retains compiler blockers from both submitted attempts in a blocked result",
+      "class": "ordinary-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at public.orders. Use interactive Boundary review to answer or decline. No source query ran."
+    },
+    {
+      "test": "model-assisted Read workload mapping preserves a validation refusal when its correction times out without another automatic retry",
+      "class": "ordinary-orders",
+      "observed_error": "AssertionError: expected undefined to deeply equal [ ObjectContaining{\u2026}, \u2026(1) ]"
+    },
+    {
+      "test": "model-assisted Read workload mapping keeps an invalid model mapping blocked and non-authoritative",
+      "class": "ordinary-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at public.orders. Use interactive Boundary review to answer or decline. No source query ran."
+    },
+    {
+      "test": "model-assisted Read workload mapping resolves trusted ownership mechanics without asking the operator",
+      "class": "ordinary-orders",
+      "observed_error": "AssertionError: expected \"spy\" to not be called at all, but actually been called 1 times"
+    },
+    {
+      "test": "model-assisted Read workload mapping resolves opaque selection mechanics without exposing a database key: Is public.orders.id an approved opaque record reference for signed-in users, or is there another reviewed field that should be used for that reference?",
+      "class": "ordinary-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_DECLINED: no business meaning was supplied for public.orders; Runner accepted no model draft."
+    },
+    {
+      "test": "model-assisted Read workload mapping resolves opaque selection mechanics without exposing a database key: Which reviewed public.orders field provides the opaque record reference for users to select an order?",
+      "class": "ordinary-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_DECLINED: no business meaning was supplied for public.orders; Runner accepted no model draft."
+    },
+    {
+      "test": "model-assisted Read workload mapping keeps ambiguous customer-facing reference meaning as an operator decision: Does this field identify the customer-facing invoice reference or the order lifecycle status?",
+      "class": "field-provenance",
+      "observed_error": "TypeError: Cannot read properties of undefined (reading 'body')"
+    },
+    {
+      "test": "model-assisted Read workload mapping keeps ambiguous customer-facing reference meaning as an operator decision: Does this opaque reference printed on the customer's bill mean the invoice number or the support case number?",
+      "class": "field-provenance",
+      "observed_error": "TypeError: Cannot read properties of undefined (reading 'body')"
+    },
+    {
+      "test": "model-assisted Read workload mapping allows one naming clarification followed by one separately approved value request",
+      "class": "field-provenance",
+      "observed_error": "AssertionError: expected \"spy\" to be called 3 times, but got 4 times"
+    },
+    {
+      "test": "model-assisted Read workload mapping preserves approved values when one naming clarification follows the value request",
+      "class": "field-provenance",
+      "observed_error": "AssertionError: expected \"spy\" to be called 3 times, but got 4 times"
+    },
+    {
+      "test": "model-assisted Read workload mapping sends only separately approved exact values after a model value request",
+      "class": "ordinary-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at public.orders. Use interactive Boundary review to answer or decline. No source query ran."
+    },
+    {
+      "test": "model-assisted Read workload mapping corrects a non-grammar filters key without requesting approved values again",
+      "class": "ordinary-orders",
+      "observed_error": "Error: READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at public.orders. Use interactive Boundary review to answer or decline. No source query ran."
+    }
+  ],
+  "invariants": "No fixture edit yet. No private oracle input. No automatic replies/count increase. Preserve all old failed captures. Root definitions only as new declared actual model-visible facts; no studio/Luna policy change."
+}

@@ -1,0 +1,20 @@
+{
+  "stage": "types-v3",
+  "exit": 1,
+  "seconds": 31.634742202004418,
+  "head_before": "409e2b49cdbcbdef0e80d06d67ded641e1b7099b",
+  "head_after": "409e2b49cdbcbdef0e80d06d67ded641e1b7099b",
+  "status_before": "",
+  "status_after": "",
+  "owned_outer_closed": true,
+  "stop": null,
+  "root": "/var/tmp/synapsor-b59-1647-types-v3",
+  "native_argv": [
+    "/usr/bin/node",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/typescript/bin/tsc",
+    "-b",
+    "--pretty",
+    "false"
+  ],
+  "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+}

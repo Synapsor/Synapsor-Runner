@@ -1,0 +1,4 @@
+apps/runner/src/boundary-requested-read-scope.test.ts(136,48): error TS2339: Property 'reason_binding' does not exist on type 'ModelReadValueRequest | ModelReadClarificationRequest'.
+  Property 'reason_binding' does not exist on type 'ModelReadValueRequest'.
+apps/runner/src/boundary-requested-read-scope.test.ts(145,40): error TS2339: Property 'reason_binding' does not exist on type 'ModelReadValueRequest | ModelReadClarificationRequest'.
+  Property 'reason_binding' does not exist on type 'ModelReadValueRequest'.

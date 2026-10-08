@@ -1,0 +1,26 @@
+{
+  "stage": "affected-v2",
+  "exit": 0,
+  "seconds": 7.209859102003975,
+  "head_before": "81eee5b11bb68cb824d7dbfa49798ff3975def1a",
+  "head_after": "81eee5b11bb68cb824d7dbfa49798ff3975def1a",
+  "status_before": "",
+  "status_after": "",
+  "owned_outer_closed": true,
+  "stop": null,
+  "root": "/var/tmp/synapsor-b59-1647-affected-v2",
+  "native_argv": [
+    "/usr/bin/node",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b56-owned-dir-remedy/node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/read-requested-scope.test.ts",
+    "apps/runner/src/boundary-requested-read-scope.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "--reporter=json",
+    "--outputFile=/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470/b59-scope-evidence1647/affected-v2/vitest.json"
+  ],
+  "decoy_sha256": "20b70562630eff35a10e1fe8e063b56c761a6c6802add10f67cadd6626afdcaa"
+}
