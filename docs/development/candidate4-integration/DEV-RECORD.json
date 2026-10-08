@@ -113,5 +113,11 @@
     "conditional candidate4 freeze then existing paid admission"
   ],
   "paid": "CLOSED",
-  "frozen_candidate_changed": false
+  "frozen_candidate_changed": false,
+  "reboot": {
+    "early_full": "INTERRUPTED; originalpartiallog preserved; 50prefailure reports not attributed to cut",
+    "triage": "f55f454f; threefile representative B59 beforePASS/afterFAIL; all3timeouts unchangedcleanPASS",
+    "b61_supplement": "independentlyaccepted2a09 nowcherried2c39faa4 tests/docs only",
+    "next": "await B59 scopedfix+review and B60 genuine publicproof before clean full; no assertions relaxed"
+  }
 }
