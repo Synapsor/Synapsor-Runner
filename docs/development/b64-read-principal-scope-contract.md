@@ -1,6 +1,6 @@
 # Proposed typed Read subject scope
 
-Design only, awaiting Main/R2 pre-seal. The existing English `jobRequestsPrincipalIsolation` controls both principal review and mapping-root presentation. Its deletion must not make unreviewed roots generally available. No new store, identity source, DB capability or automatic migration is proposed.
+Historical proposal below; the current ownership and evidence checkpoints at the end supersede its pending status. The former English `jobRequestsPrincipalIsolation` controls both principal review and mapping-root presentation. Its deletion must not make unreviewed roots generally available. No new store, identity source, DB capability or automatic migration is proposed.
 
 ## Smallest canonical addition
 
@@ -72,3 +72,18 @@ RLS native ownership repair (DEV, awaiting independent variant): `boundary-princ
 `authoring-principal-scope-host.ts` owns structural candidate presentation, exact selection, and calling the existing preview/commit writers; its requirement reader is refreshed before saving. `boundary-commands.ts` only binds protected native records, actor and ports. The old jobRequestsPrincipalIsolation English reader and its catalog-root filtering are deleted; no replacement lexical rules exist. This extraction reduces the file to 19,702 lines (from 20,204 before extraction).
 
 Evidence level: actual native structural preparation/projection/typed principal-vs-tenant/staleness checks plus existing principal interpreter controls: 3 PASS. Full types currently reports 14 legacy typed-fixture migration errors, no product errors. Public verification on this final dispatch pin remains required; the earlier eight public passes apply only to 604dc679+c7aaa085. No full/installed/freeze claim.
+
+### Current integrated checkpoint: typed public replacement and manual boundary
+
+The exact public projection now includes the selected native question and its immutable stored analysis, checked against the saved analysis digest and the same Resume revision. Public Replace consumes the original producer budget; it never treats completed assistance history as an active dispatch. `authoring-read-prompt-binding` selects the unique unretired native correction for the actual waiting handoff. The existing meaning host protected-saves cancellation reopening or a blank-answer successor before the B48 wait; old blank testimony remains immutable.
+
+Independent R1 evidence: `81ffbf99` six public cases PASS (ordinary replacement, cancellation, cancel/blank reentry, competing native save, original Read positive); checkpoint `fe874956`. Replacement-specific separate-process reopen at `476cdb3b` made zero requests. This is not activation, source effects, installed acceptance or a full-suite verdict. No-Read planning-origin replacement remains open.
+
+| Requirement | Existing record / owner | Effects and binding | Entry / protected save / evidence |
+| --- | --- | --- | --- |
+| Current Read scope | Read.v2 question + stored analysis / native scope adapter | Current structural inventory and exact saved analysis; no inferred meaning | planning/mapping/Review/Resume; existing Resume CAS; scoped native + public proofs |
+| Raw correction | replacement_answer + owner handoff / Read meaning host | Exact declined review, actual raw answer, immutable predecessor; no new allowance | Replace/cancel/blank Resume; protected native question save before wait; six public cases |
+| Correction mapping | saved assistance history / existing Read producer | Stable actual invocation binding, cumulative calls, actual completed operation | ordinary mapping owner, checkpoint host, Source/Resume acknowledgement; eight independent producer controls |
+| Manual exact plans | operator_exact_plan workload + compiler / manual selection owner | OPEN: shared principal port currently incorrectly requires model Resume | supported no-model cards flow fails; original full-flow assertions retained; no fabricated model/consent workaround |
+
+Manual repair must use actual typed plan selection and current reviewed structural scope, never the job's words or `source.kind` alone. Show the exact scopes to the operator, bind selection through compiler/currentness and the existing exact Read review/save, preserve default-No and separate activation. Remove English ranking and automatically inferred Action-support plans; explicit plan choices may replace those suggestions. Whether the existing selected-plan/current-review records suffice is under independent contract review; no new record or product bypass has been implemented. A new business subject requirement cannot be invented from metadata.
