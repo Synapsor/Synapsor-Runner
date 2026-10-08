@@ -135,7 +135,7 @@ describe("Boundary authoring chat", () => {
     expect(await chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
       { value: "finish", label: "Keep Read Boundary disabled and finish" },
     ], { initialValue: "finish" })).toBe("finish");
-    expect(memory.choices[0]).toMatchObject({ title: "PERMISSION REQUIRED", initialValue: "finish" });
+    expect(memory.choices[0]).toMatchObject({ title: "ACTIVATE READ BOUNDARY", initialValue: "finish" });
     expect(memory.choices[0]!.labels).toContain("Keep Read Boundary disabled and finish");
     chat.close();
   });
@@ -857,8 +857,8 @@ describe("Boundary authoring chat", () => {
     const transcript = memory.writes.join("");
     expect(transcript).toContain("Boundary drafting · openai[gpt-5.6-luna]");
     expect(transcript).not.toContain("runner> BOUNDARY DRAFTING");
-    expect(transcript).not.toContain("runner> SET UP ONE AGENT JOB");
-    expect(transcript).not.toContain("runner> What job are you giving this agent?");
+    expect(transcript).toContain("runner> SET UP ONE AGENT JOB");
+    expect(transcript).toContain("runner> What job are you giving this agent?");
     expect(transcript).toContain("model> I mapped ticket trends");
     expect(transcript).not.toContain("synapsor>");
     expect(memory.close).toHaveBeenCalledOnce();
@@ -882,7 +882,7 @@ describe("Boundary authoring chat", () => {
     )).resolves.toBe(true);
     await expect(chat.session.confirm(
       "Send reviewed structural metadata to openai[gpt-5.6-luna]?",
-      { defaultValue: false },
+      { decisionKind: "disclosure", defaultValue: false },
     )).resolves.toBe(false);
     await expect(chat.actionPrompter.choose("ACTIVATE PROPOSAL ACTION", [
       { value: "activate", label: "Activate this exact proposal-only action" },

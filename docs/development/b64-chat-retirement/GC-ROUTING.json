@@ -1,0 +1,29 @@
+{
+  "inventory": [
+    "GC01 partial",
+    "GC03",
+    "GC04 partial",
+    "ACTION-FINAL01",
+    "ACTION-FINAL02",
+    "ACTION-FINAL03",
+    "ACTION-FINAL04"
+  ],
+  "before_pin": "2c5a4c7b",
+  "before": {
+    "chat": {
+      "passed": 1,
+      "failed": 5
+    },
+    "candidate_evidence": {
+      "failed": 1
+    }
+  },
+  "after": {
+    "chat_files": 2,
+    "chat_passed": 92,
+    "picker_passed": 103
+  },
+  "contract_migration": "Untyped title and exactDetails alone do not select permission/model route. Existing decisionKind, activationView, reviewOnly and onModelQuestion route explicitly. Initial job text is no longer suppressed by English prompt/title. Main caller typed-kind audit remains required. Legacy actionPrompter English route remains open and is not claimed retired.",
+  "isolation": "slot1; bwrap --unshare-net; owned0700 HOME/TMP; one worker; memory20,565,060KiB and disk81,738,860KiB at launch",
+  "independent_review": "Pending; no acceptance claim."
+}

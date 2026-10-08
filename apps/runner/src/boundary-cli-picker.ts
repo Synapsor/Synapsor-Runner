@@ -762,7 +762,7 @@ async function resolveBlockedResource(
       const evidence = selectedDecision === 0
         ? view.row_identity.alternatives_considered
           .find((candidate) => candidate.value === selectedValue)?.evidence[0]
-          ?? view.row_identity.evidence.find((item) => item.detail.includes(String(selectedValue)))?.detail
+          ?? (view.row_identity.selected === selectedValue ? view.row_identity.evidence[0]?.detail : undefined)
         : tenantOption?.kind === "derived"
           ? "database foreign key is non-null and points many-to-one to a unique key on the scoped ancestor"
           : tenantOption?.kind === "shared_reference"
@@ -771,7 +771,7 @@ async function resolveBlockedResource(
               ? "the reviewed boundary binds every row to one fixed organization outside model arguments"
             : view.tenant_key.alternatives_considered
             .find((candidate) => candidate.value === selectedValue)?.evidence[0]
-            ?? view.tenant_key.evidence.find((item) => item.detail.includes(String(selectedValue)))?.detail;
+            ?? (view.tenant_key.selected === selectedValue ? view.tenant_key.evidence[0]?.detail : undefined);
       render([
         theme.title(`RESOLVE TABLE ACCESS - ${safeTerminalText(view.resource_id)}`),
         view.organization_scope
@@ -805,7 +805,7 @@ async function resolveBlockedResource(
         ),
         "",
         ...(selectedValue
-          ? [theme.dim(`Evidence: ${safeTerminalText(evidence ?? "inspected database structure")}`)]
+          ? [theme.dim(`Evidence: ${safeTerminalText(evidence ?? "No evidence is bound to this candidate")}`)]
           : [theme.danger(
             selectedDecision === 0
               ? "No single-column primary or unique key was proven by the database."

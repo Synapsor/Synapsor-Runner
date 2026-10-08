@@ -235,38 +235,9 @@ function permissionQuestion(value: string): string {
     .find(Boolean) ?? "Review this exact permission.";
 }
 
-function isModelQuestion(title: string | undefined, context: string[] | undefined): boolean {
-  const heading = title ?? context?.[0] ?? "";
-  return /^(?:ANSWER ONE BUSINESS QUESTION|(?:SET|CONFIRM) (?:PROPOSAL RANGE|PROPOSAL FIELDS|ACTION TARGET|PROPOSAL EFFECT|CONFLICT AND RETRY GUARD)|CLARIFY ONE REVIEWED NAME|MODEL QUESTION|DESCRIBE THE AUTO-APPROVAL RULE)/iu
-    .test(heading.trim());
-}
-
 function contextValue(context: string[] | undefined, prefix: string): string | undefined {
   const line = context?.find((candidate) => candidate.trimStart().startsWith(prefix));
   return line?.trimStart().slice(prefix.length).trim() || undefined;
-}
-
-function modelQuestionTurn(
-  prompt: string,
-  title: string | undefined,
-  context: string[] | undefined,
-): string[] {
-  const target = contextValue(context, "Action:") ?? contextValue(context, "Target:");
-  const heading = title?.trim() ?? "";
-  const purpose = /PROPOSAL RANGE$/iu.test(heading)
-    ? target
-      ? [`This is the hard proposal range for ${target}.`, "Auto-approval can be narrower."]
-      : ["This is the hard proposal range. Auto-approval can be narrower."]
-    : /PROPOSAL FIELDS$/iu.test(heading)
-      ? ["Only these business fields may come from the agent.", "Trusted scope stays with Runner."]
-      : /ACTION TARGET$/iu.test(heading)
-        ? ["This selects one reviewed table; it grants no authority."]
-        : /PROPOSAL EFFECT$/iu.test(heading)
-          ? ["This selects a proposal effect; it does not execute the change."]
-          : /CONFLICT AND RETRY GUARD$/iu.test(heading)
-            ? ["This guard rejects duplicate or stale proposals before approval."]
-            : undefined;
-  return [prompt.replace(/:\s*$/u, ""), ...(purpose ?? [])];
 }
 
 function compactRoutineCheckpoint(
@@ -334,11 +305,6 @@ function compactRoutineCheckpoint(
     return { title, lines: lines.slice(0, 1) };
   }
   return undefined;
-}
-
-function isPermissionPrompt(prompt: string, context: string[] | undefined): boolean {
-  const value = `${context?.[0] ?? ""} ${prompt}`;
-  return /(?:\bSEND\b|EGRESS|ACTIVATE|GRANT|APPROV|APPLY|MUTATE|WRITE|TRUSTED SCOPE)/iu.test(value);
 }
 
 function choiceSummary(choice: BoundaryPromptChoice | undefined): string {
@@ -1035,8 +1001,7 @@ export function createBoundaryAuthoringChat(input: {
         failure.guidance, ...(failure.mismatch ? [`Mismatch: ${failure.mismatch}`] : []), "Pending authority revision unchanged."] : [])]);
     };
     retainExact();
-    const hasExactDetailsChoice = choice.options.some((option) =>
-      /\b(?:details|inspect exact|view exact)\b/iu.test(`${option.label} ${option.detail ?? ""}`));
+    const hasExactDetailsChoice = choice.options.some((option) => option.value === "details");
 
     const explain = async (operatorQuestion?: string): Promise<void> => {
       if (!permissionGuide) return;
@@ -1168,7 +1133,7 @@ export function createBoundaryAuthoringChat(input: {
     options: NonNullable<Parameters<BoundaryReviewInteractiveSession["confirm"]>[1]> = {},
     kind: "decision" | "permission" = options.decisionKind
       ? options.decisionKind === "business_review" ? "decision" : "permission"
-      : isPermissionPrompt(prompt, options.context) ? "permission" : "decision",
+      : options.activationView ? "permission" : "decision",
   ): Promise<boolean | undefined> => {
     const permission = kind === "permission";
     const decisionContext = meaningfulContext(options.context);
@@ -1193,7 +1158,7 @@ export function createBoundaryAuthoringChat(input: {
       ...(options.activationView ? { activationView: options.activationView } : {}),
       ...(!permission ? { exactDetails: exactDecision }
         : options.exactDetails ? { exactDetails: options.exactDetails } : {}),
-      ...(/^Activate verified Action Boundary\b/u.test(prompt) ? { explainOnRequest: true } : {}),
+      ...(options.activationView?.kind === "proposal" ? { explainOnRequest: true } : {}),
       options: [
         {
           value: "yes",
@@ -1210,7 +1175,7 @@ export function createBoundaryAuthoringChat(input: {
       ],
     } satisfies ChoiceInput;
     const selected = permission && !options.localOnly
-      ? await choosePermission(choice, permissionContext, /^Activate verified Action Boundary\b/u.test(prompt) ? "ACTION REVIEW" : undefined)
+      ? await choosePermission(choice, permissionContext, options.activationView?.kind === "proposal" ? "ACTION REVIEW" : undefined)
       : await chooseReviewedDecision(choice);
     return selected === undefined ? undefined : selected === "yes";
   };
@@ -1226,24 +1191,13 @@ export function createBoundaryAuthoringChat(input: {
     chooseResource: async () => undefined,
     editFieldTiers: async () => undefined,
     promptText: async (prompt, options) => {
-      const firstJobPrompt = prompt.trim() === "What job are you giving this agent?"
-        && options?.context?.some((line) => line.trim() === "SET UP ONE AGENT JOB");
-      if (firstJobPrompt) {
-        rememberDetails("SET UP ONE AGENT JOB", options?.context ?? []);
-        return readAnswer();
-      }
-      const speaker = !options?.localOnly && isModelQuestion(undefined, options?.context) ? "model" : "runner";
-      if (speaker === "model") {
-        await streamModel(modelQuestionTurn(prompt, options?.context?.[0], options?.context));
-        return readAnswer(undefined, options?.recordPolicyAnswer !== false, undefined, true, options?.preserveWhitespace === true);
-      }
       await writeContext(options?.context);
-      return read(prompt.replace(/:\s*$/u, ""), speaker, options?.defaultValue, options?.recordPolicyAnswer, options?.preserveWhitespace, options?.localOnly);
+      return read(prompt.replace(/:\s*$/u, ""), "runner", options?.defaultValue, options?.recordPolicyAnswer, options?.preserveWhitespace, options?.localOnly);
     },
     chooseOption: async (title, choices, options) => {
       const permission = options?.decisionKind
         ? options.decisionKind !== "business_review"
-        : Boolean(options?.exactDetails) || /^(?:ACTIVATE|APPROVE|APPLY|GRANT)\b/iu.test(title.trim());
+        : Boolean(options?.activationView);
       if (permission) {
         if (options?.exactDetails) rememberDetails(options.exactDetails.title, options.exactDetails.lines);
         else rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options?.context), title]);
@@ -1264,17 +1218,18 @@ export function createBoundaryAuthoringChat(input: {
         ...(options?.activationView ? { activationView: options.activationView } : {}),
         ...(options?.initialValue ? { initialValue: options.initialValue } : {}),
         ...(options?.exactDetails ? { exactDetails: options.exactDetails } : {}),
-        ...(options?.explainOnRequest ? { explainOnRequest: true } : {}),
+        ...(options?.explainOnRequest || !permission ? { explainOnRequest: true } : {}),
         ...(options?.onModelQuestion ? { onModelQuestion: options.onModelQuestion } : {}),
         ...(options?.explanationContext ? { explanationContext: options.explanationContext } : {}),
       } satisfies ChoiceInput;
-      return permission && !options?.localOnly
+      return !options?.localOnly && (permission || options?.onModelQuestion || options?.reviewOnly)
         ? choosePermission(choice, options?.context)
         : choose(choice);
     },
     confirm: (prompt, options) => confirm(prompt, options),
     confirmActivation: (prompt, options) => confirm(prompt, {
       ...options,
+      decisionKind: "activation",
       defaultValue: false,
     }, "permission"),
     confirmReviewedDisabled: (prompt, options) => confirm(prompt, {
