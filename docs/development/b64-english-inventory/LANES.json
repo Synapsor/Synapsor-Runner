@@ -38,10 +38,10 @@
     }
   },
   "heavy_slots": {
-    "1": "Action finite before/affected tests (Ask released)",
-    "2": "B65runtime bounded activated-hardlimit and SourceTxn tests; MainAsk complete",
-    "3": "R2 Privacy missing-origin independent regression",
-    "4": "Chat CP08 typed record before/fix"
+    "1": "Action next finite focused group max2; announce start/end",
+    "2": "B65 runtime bounded activated hard-limit repair, max2",
+    "3": "R2 native Read persistence932 independent controls; no stale af477 grant",
+    "4": "Privacy finite scope characterization max2; announce start/end"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -1012,12 +1012,12 @@
       "source": "ScopedR2sourceaccepted; auto15/vocab6/index2 remain; subsequentemptyreduce5b56pendingseed128PASS sourcefix, nativeportsinreview"
     },
     "chat_presentation": {
-      "pin": "444573cf",
+      "pin": "768d85e6",
       "branch_typed": 0,
       "branch_delete": 0,
       "main_pending_typed": 0,
       "main_pending_delete": 0,
-      "source": "Allsourceintegratedd73;340P5F before+affected5PASS standardprofile/types0; CP08owner267 independentpending; CP0618dindependentpending"
+      "source": "All canonical source integrated; CP05/06/08 exact composition independently accepted c9e08389 (3PASS/types0); CP08 source/tests byte-identical after selective Main integration. Other provenance/public integration remains open."
     },
     "action": {
       "pin": "5f04859d",

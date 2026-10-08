@@ -9,8 +9,6 @@
     "four_guided": "Launcher omitted standard repo --testTimeout=20000 and used default5000; failures at5000ms. Rerun affected only under unchanged official profile, no source timeout change"
   },
   "open": [
-    "CP08 current exact display owner fix",
-    "CP06 actual shared Chat independent after",
     "Action/Main narration provenance callers",
     "Privacy typed protocol/native persistence"
   ],
@@ -23,5 +21,13 @@
     "typed": 0,
     "delete": 0,
     "note": "All29typed/1delete source integrated; caller/provenance/independent fixes remain open, not all public acceptance"
+  },
+  "caller_composition": {
+    "verdict": "Independent scoped ACCEPT c9e08389",
+    "product": "267d39e1; exact source integrated 768d85e6",
+    "tests": "165ca7e + 2ac6b9fb integrated b4b3b904 + 6ddf393e",
+    "independent_result": "CP05/CP06/CP08 3PASS0FAIL7filtered/types0; strengthened CP08 /diff oracle1PASS",
+    "identity_check": "git diff 267d39e1 -- Chat product and retirement tests: empty on Main768d85e6",
+    "limits": "No new broad public/native Resume/Action acceptance claim; unchanged reviewed composition not rerun"
   }
 }
