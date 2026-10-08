@@ -25,7 +25,7 @@ export async function prepareReviewedReadScope(projectRoot: string) {
   },async()=>inspection);
   await commitBoundaryResourceReviewMutation(projectRoot,preview);
   const shown:Array<{message:string;context:readonly string[];defaultValue:boolean|undefined}>=[];
-  await boundaryReviewCommand(["--project-root",projectRoot,"--confirm","--actor","declared fixture operator"],async()=>inspection,{
+  await boundaryReviewCommand(["--project-root",projectRoot,"--confirm","--actor","declared fixture operator","--output",path.join(projectRoot,"reviewed-structure.json")],async()=>inspection,{
     presentationMode:"conversation",promptText:async()=>undefined,
     confirm:async(message,options)=>{
       if(!options?.context?.length)throw new Error("Structural review must show its actual current settings");

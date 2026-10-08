@@ -2,7 +2,7 @@
   "status": "WIP_NOT_ACCEPTED",
   "base": "74787a27 (Main fe0a22cb + Read0814/e8/003 projector)",
   "scope": "Only disposable fixture setup and unchanged safety tests; no product edits",
-  "structural_preparation": "9c760464: ordinary prepare/commit resource mutation, actual grouped review confirmation, actual analyzeReadWorkloadSet candidate; one focused PASS",
+  "structural_preparation": "9c760464 original1PASS also activated test boundary; NOT preactivation proof. Successor uses ordinary --confirm --output to export actual signoffs without activation, explicit ENOENT active-artifact assertion.",
   "native_fixture": "Replaced fabricated global bindings/analysis/completion with actual structural context, real catalog/projected subjects, actual provider request responder and native completion/CAS; 17 cases currently refuse before provider because projector returns no subjects",
   "evidence_root": "/var/tmp/synapsor-b64-action-clarification-owned/out",
   "preserved_results": {
@@ -11,7 +11,9 @@
     "read-structural-prep2.json": "0PASS1FAIL decoy parent config; added isolated .git test boundary",
     "read-structural-prep3.json": "1PASS",
     "read-fixture-after1.json": "0PASS17FAIL actual structural projector yields no subjects",
-    "read-fixture-types2.log": "14 existing Read.v1/missing subjects test migrations; zero new native fixture type diagnostics"
+    "read-fixture-types2.log": "14 existing Read.v1/missing subjects test migrations; zero new native fixture type diagnostics",
+    "read-structural-disabled4.json": "0PASS1FAIL: test expected [] but actual no-active API refuses ENOENT",
+    "read-structural-disabled5.json": "1PASS preactivation structural export/signoffs + no active artifact"
   },
   "unchanged_assertions": "Default-No, pending, declined/replacement, counter=1, history, currentness and raw testimony assertions retained",
   "next": "Read owner diagnoses real projector from9c helper; rerun same17 after smallest product fix, then independent review. No invented refs/readyanalysis."
