@@ -671,6 +671,7 @@ export function assertBoundaryAuthoringResumeState(
   const liveActionCheckpoints = [
     (value.action as BoundaryAuthoringResumeAction | undefined)?.checkpoint,
     (value.pending_action_revision as BoundaryAuthoringActionRevision | undefined)?.checkpoint,
+    (value.pending_action_addition as BoundaryAuthoringActionAddition | undefined)?.retained_action?.checkpoint,
   ].filter((checkpoint): checkpoint is ActionRuleAuthoringCheckpoint => checkpoint !== undefined);
   for (const checkpoint of liveActionCheckpoints) {
     const parsed = parseActionRuleAuthoringCheckpoint(checkpoint);
