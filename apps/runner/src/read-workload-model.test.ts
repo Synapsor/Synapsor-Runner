@@ -18,9 +18,17 @@ import {
   rememberModelAuthoringClarification,
   rememberModelAuthoringTurn,
 } from "./model-authoring-conversation.js";
-import { generateModelReadWorkload, readWorkloadCatalog } from "./read-workload-model.js";
+import { generateModelReadWorkload, readWorkloadCatalog, type ModelReadWorkloadInput } from "./read-workload-model.js";
 import { ReadWorkloadDraftError } from "./read-workload-diagnostics.js";
 import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
+
+// Labeled fixture successor: these are additional declared operator root facts,
+// never inferred from metadata. Preserve the complete original request/context;
+// field meaning, Source approval and every native response remain independent.
+function withDeclaredRoot(input: ModelReadWorkloadInput, definition: string): ModelReadWorkloadInput {
+  const original = input.operatorNamingContext ?? input.allowedQuestions.join("\n");
+  return { ...input, operatorNamingContext: `${original}\n${definition}` };
+}
 
 function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malformed" | "arguments" | "blocked") {
   if (kind === "malformed") return { status: 200, body: { output: [] } };
@@ -43,6 +51,7 @@ describe("durable Read assistance producer checkpoint", () => {
   const response = (args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "owned_read_assistance", name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } });
   const request = { resource: "public.orders", field: "status", reason: "Missing business explanation for this view", question: "Which fulfillment stages should this view describe?" };
   const setup = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>) => ({ name: "owned_assistance", allowedQuestions: ["List my orders"],
+    operatorNamingContext: "List my orders\npublic.orders means orders.",
     provider: "openai" as const, model: "owned-local-fixture", generatedBoundary: generatedBoundary(), apiKey: "test-key", egressAcknowledged: true,
     deferNarration: true, dependencies: { requestJson } });
 
@@ -367,6 +376,7 @@ describe("B41 host-owned Read meaning resolution", () => {
   const setup = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>, boundary = opaqueGeneratedBoundary()) => {
     boundary.pack.resources[0]!.label = "Shipments";
     return { name: "b41_read", allowedQuestions: ["Read shipment lifecycle"], generatedBoundary: boundary,
+      operatorNamingContext: "Read shipment lifecycle\npublic.tbl_7 means shipments.",
       provider: "openai" as const, model: "gpt-test", apiKey: "test-key", egressAcknowledged: true,
       deferNarration: true, dependencies: { requestJson } };
   };
@@ -821,10 +831,10 @@ describe("model-assisted Read workload mapping", () => {
       name: "runner__submit_read_workloads", arguments: JSON.stringify({ allowed: [{ id: "orders", description: "Read lifecycle",
         plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
         operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: quote }] }) }] } });
-    const result = await generateModelReadWorkload({ name: "source_provenance", allowedQuestions: [source === "model_summary" ? quote : "Read lifecycle"],
+    const result = await generateModelReadWorkload(withDeclaredRoot({ name: "source_provenance", allowedQuestions: [source === "model_summary" ? quote : "Read lifecycle"],
       operatorNamingContext: "Read my orders", provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary,
       egressAcknowledged: true, env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, conversation,
-      dependencies: { requestJson } }).catch(error => error);
+      dependencies: { requestJson } }, "public.tbl_7 means orders.")).catch(error => error);
     if (source === "approved_attachment" || source === "saved_answer") {
       expect(result.analysis.status).toBe("ready");
       expect(requestJson).toHaveBeenCalledOnce();
@@ -852,9 +862,9 @@ describe("model-assisted Read workload mapping", () => {
     const requestJson = vi.fn().mockResolvedValueOnce(response("col_2 is order status"))
       .mockResolvedValue(response("Order lifecycle status"));
     const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Order lifecycle status" }));
-    const result = await generateModelReadWorkload({ name: "recover_meaning", allowedQuestions: ["Read my order status"],
+    const result = await generateModelReadWorkload(withDeclaredRoot({ name: "recover_meaning", allowedQuestions: ["Read my order status"],
       provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
-      env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+      env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler }, "public.tbl_7 means orders."));
     expect(clarificationHandler).toHaveBeenCalledOnce();
     expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({ resource: "public.tbl_7", field }));
     expect(requestJson).toHaveBeenCalledTimes(2);
@@ -876,9 +886,9 @@ describe("model-assisted Read workload mapping", () => {
       .mockResolvedValue(response({ allowed: [{ id: "orders", description: "Read order lifecycle",
         plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [] }));
     const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Order lifecycle status" }));
-    const result = await generateModelReadWorkload({ name: "correct_then_clarify", allowedQuestions: ["Read my orders"],
+    const result = await generateModelReadWorkload(withDeclaredRoot({ name: "correct_then_clarify", allowedQuestions: ["Read my orders"],
       provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
-      env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+      env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler }, "public.tbl_7 means orders."));
     expect(clarificationHandler).toHaveBeenCalledOnce();
     expect(requestJson).toHaveBeenCalledTimes(3);
     expect(result.analysis.status).toBe("ready");
@@ -920,10 +930,10 @@ describe("model-assisted Read workload mapping", () => {
       }),
     }] } }));
     const clarificationHandler = vi.fn(async () => ({ state: "declined" as const }));
-    const result = await generateModelReadWorkload({ name: "known_meaning", allowedQuestions: ["Read order lifecycle"],
+    const result = await generateModelReadWorkload(withDeclaredRoot({ name: "known_meaning", allowedQuestions: ["Read order lifecycle"],
       operatorNamingContext: `Read my own orders. ${quote}. Do not change any source rows.`, provider: "openai", model: "gpt-5.6-terra",
       generatedBoundary: boundary, egressAcknowledged: true, env: { OPENAI_API_KEY: "test-key" }, deferNarration: true,
-      dependencies: { requestJson }, clarificationHandler });
+      dependencies: { requestJson }, clarificationHandler }, "public.tbl_7 means orders."));
     expect(result.analysis.status).toBe("ready");
     expect(result.authority_granted).toBe(false);
     expect(clarificationHandler).not.toHaveBeenCalled();
@@ -1003,11 +1013,11 @@ describe("model-assisted Read workload mapping", () => {
         env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler,
         operatorQuestions: () => saved ? [saved] : [] };
       if (variant === "valid") {
-        const result = await generateModelReadWorkload(input);
+        const result = await generateModelReadWorkload(withDeclaredRoot(input, "public.tbl_7 means orders."));
         expect(result.analysis.status).toBe("ready"); expect(requestJson).toHaveBeenCalledTimes(2);
         expect(bodies[1]).toContain(saved!.raw_answer!.id);
         expect(saved!.raw_answer!.text).toBe(raw);
-      } else await expect(generateModelReadWorkload(input)).rejects.toThrow();
+      } else await expect(generateModelReadWorkload(withDeclaredRoot(input, "public.tbl_7 means orders."))).rejects.toThrow();
       expect(clarificationHandler).toHaveBeenCalledOnce();
     });
 
@@ -1027,9 +1037,9 @@ describe("model-assisted Read workload mapping", () => {
           operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: answer }] }),
       }] } });
       const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer }));
-      const result = await generateModelReadWorkload({ name: "answered_meaning", allowedQuestions: ["Read my order lifecycle"],
+      const result = await generateModelReadWorkload(withDeclaredRoot({ name: "answered_meaning", allowedQuestions: ["Read my order lifecycle"],
         provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, egressAcknowledged: true,
-        env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+        env: { OPENAI_API_KEY: "test-key" }, deferNarration: true, dependencies: { requestJson }, clarificationHandler }, "public.tbl_7 means orders."));
       expect(clarificationHandler).toHaveBeenCalledOnce();
       expect(requestJson).toHaveBeenCalledTimes(2);
       expect(result.analysis.status).toBe("ready");
@@ -1064,12 +1074,12 @@ describe("model-assisted Read workload mapping", () => {
     const job = "Help customers read their account, bills, services, support history, and eligible plan offers. ".repeat(4).trim();
     expect(job.length).toBeGreaterThan(280);
     const requestJson = vi.fn().mockResolvedValue(diagnosticResponse("valid"));
-    await generateModelReadWorkload({
+    await expect(generateModelReadWorkload({
       name: "long_job", allowedQuestions: [job],
       provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
       generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
       dependencies: { requestJson },
-    });
+    })).rejects.toThrow("READ_WORKLOAD_CLARIFICATION_REQUIRED");
     const sent = JSON.stringify(requestJson.mock.calls[0]?.[0].body);
     expect(sent).toContain(job);
     expect(sent).toContain("1 through 280 characters");
@@ -1089,12 +1099,12 @@ describe("model-assisted Read workload mapping", () => {
       requests.push(JSON.stringify(request.body));
       return diagnosticResponse(kind);
     });
-    const error = await generateModelReadWorkload({
+    const error = await generateModelReadWorkload(withDeclaredRoot({
       name: "diagnostic_test", allowedQuestions: ["List my orders"],
       provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
       generatedBoundary: boundary, egressAcknowledged: true, deferNarration: true,
       dependencies: { requestJson },
-    }).catch((error) => error);
+    }, "public.orders means orders.")).catch((error) => error);
     expect(error).toBeInstanceOf(ReadWorkloadDraftError);
     expect(error.diagnostics).toEqual([
       expect.objectContaining({ attempt: 1, phase: "initial", category, code }),
@@ -1109,12 +1119,12 @@ describe("model-assisted Read workload mapping", () => {
   it.each(["invalid_id", "malformed", "arguments", "missing"] as const)("recovers %s with one valid correction", async (kind) => {
     const requestJson = vi.fn().mockResolvedValueOnce(diagnosticResponse(kind))
       .mockResolvedValueOnce(diagnosticResponse("valid"));
-    const result = await generateModelReadWorkload({
+    const result = await generateModelReadWorkload(withDeclaredRoot({
       name: "corrected_read", allowedQuestions: ["List my orders"],
       provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
       generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
       dependencies: { requestJson },
-    });
+    }, "public.orders means orders."));
     expect(result.analysis.status).toBe("ready");
     expect(result.authority_granted).toBe(false);
     expect(result.diagnostics).toHaveLength(1);
@@ -1124,12 +1134,12 @@ describe("model-assisted Read workload mapping", () => {
   it.each(["missing", "malformed"] as const)("does not lose rejected draft details when correction returns %s", async (kind) => {
     const requestJson = vi.fn().mockResolvedValueOnce(diagnosticResponse("invalid_id"))
       .mockResolvedValueOnce(diagnosticResponse(kind));
-    const error = await generateModelReadWorkload({
+    const error = await generateModelReadWorkload(withDeclaredRoot({
       name: "mixed_failure", allowedQuestions: ["List my orders"],
       provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
       generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
       dependencies: { requestJson },
-    }).catch((error) => error);
+    }, "public.orders means orders.")).catch((error) => error);
     expect(error).toBeInstanceOf(ReadWorkloadDraftError);
     expect(error.diagnostics[0]).toMatchObject({ phase: "initial", category: "validation" });
     expect(error.diagnostics[1]).toMatchObject({ phase: "correction", category: kind === "missing" ? "required_tool" : "provider_response" });
@@ -1139,12 +1149,12 @@ describe("model-assisted Read workload mapping", () => {
 
   it("retains compiler blockers from both submitted attempts in a blocked result", async () => {
     const requestJson = vi.fn().mockResolvedValue(diagnosticResponse("blocked"));
-    const result = await generateModelReadWorkload({
+    const result = await generateModelReadWorkload(withDeclaredRoot({
       name: "blocked_reads", allowedQuestions: ["List my orders"],
       provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
       generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
       dependencies: { requestJson },
-    });
+    }, "public.orders means orders."));
     expect(result.analysis.status).toBe("blocked");
     expect(result.diagnostics).toHaveLength(2);
     expect(result.diagnostics?.every((diagnostic) => diagnostic.category === "validation")).toBe(true);
@@ -1154,12 +1164,12 @@ describe("model-assisted Read workload mapping", () => {
   it("preserves a validation refusal when its correction times out without another automatic retry", async () => {
     const requestJson = vi.fn().mockResolvedValueOnce(diagnosticResponse("invalid_id"))
       .mockRejectedValueOnce(new AskError("ASK_PROVIDER_TIMEOUT", "The provider did not respond within the Ask timeout.", 504));
-    const error = await generateModelReadWorkload({
+    const error = await generateModelReadWorkload(withDeclaredRoot({
       name: "timed_out_correction", allowedQuestions: ["List my orders"],
       provider: "openai", model: "gpt-5.6-terra", env: { OPENAI_API_KEY: "test-key" },
       generatedBoundary: generatedBoundary(), egressAcknowledged: true, deferNarration: true,
       dependencies: { requestJson },
-    }).catch((error) => error);
+    }, "public.orders means orders.")).catch((error) => error);
     expect(error.diagnostics).toEqual([
       expect.objectContaining({ phase: "initial", category: "validation" }),
       expect.objectContaining({ phase: "correction", category: "provider_request", code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" }),
@@ -1710,7 +1720,7 @@ describe("model-assisted Read workload mapping", () => {
       answer: "The operator should never have to identify trusted scope fields.",
     }));
 
-    const result = await generateModelReadWorkload({
+    const result = await generateModelReadWorkload(withDeclaredRoot({
       name: "own_order_reads",
       allowedQuestions: ["Show an authenticated customer their own orders"],
       provider: "openai",
@@ -1720,7 +1730,7 @@ describe("model-assisted Read workload mapping", () => {
       egressAcknowledged: true,
       clarificationHandler,
       dependencies: { requestJson },
-    });
+    }, "public.orders means orders."));
 
     expect(clarificationHandler).not.toHaveBeenCalled();
     expect(requestJson).toHaveBeenCalledTimes(2);
@@ -1744,9 +1754,9 @@ describe("model-assisted Read workload mapping", () => {
         reason: "The user must select a record without exposing its internal database identity.", question } }),
     }] } }).mockResolvedValueOnce(diagnosticResponse("valid"));
     const clarificationHandler = vi.fn(async () => ({ state: "declined" as const }));
-    const result = await generateModelReadWorkload({ name: "private_selection", allowedQuestions: ["Show my orders using opaque selection references"],
+    const result = await generateModelReadWorkload(withDeclaredRoot({ name: "private_selection", allowedQuestions: ["Show my orders using opaque selection references"],
       provider: "openai", model: "gpt-5.6-terra", generatedBoundary: boundary, env: { OPENAI_API_KEY: "test-key" },
-      egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+      egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler }, "public.orders means orders."));
     expect(clarificationHandler).not.toHaveBeenCalled();
     expect(requestJson).toHaveBeenCalledTimes(2);
     const initialPrompt = JSON.stringify(requestJson.mock.calls[0]?.[0].body);
@@ -1769,9 +1779,9 @@ describe("model-assisted Read workload mapping", () => {
         question } }),
     }] } }).mockResolvedValueOnce(diagnosticResponse("valid"));
     const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "It is the order lifecycle status." }));
-    const result = await generateModelReadWorkload({ name: "business_reference", allowedQuestions: ["Show my order status"],
+    const result = await generateModelReadWorkload(withDeclaredRoot({ name: "business_reference", allowedQuestions: ["Show my order status"],
       provider: "openai", model: "gpt-5.6-terra", generatedBoundary: generatedBoundary(), env: { OPENAI_API_KEY: "test-key" },
-      egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+      egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler }, "public.orders means orders."));
     expect(clarificationHandler).toHaveBeenCalledOnce();
     expect(result.analysis.status).toBe("ready");
   });
@@ -2076,7 +2086,7 @@ describe("model-assisted Read workload mapping", () => {
       egressAcknowledged: true as const,
     }));
 
-    const result = await generateModelReadWorkload({
+    const result = await generateModelReadWorkload(withDeclaredRoot({
       name: "two_step_read_help",
       allowedQuestions: ["List active orders"],
       provider: "openai",
@@ -2087,7 +2097,7 @@ describe("model-assisted Read workload mapping", () => {
       clarificationHandler,
       valueRequestHandler,
       dependencies: { requestJson },
-    });
+    }, "public.orders means orders."));
 
     expect(requestJson).toHaveBeenCalledTimes(3);
     expect(clarificationHandler).toHaveBeenCalledOnce();
@@ -2149,7 +2159,7 @@ describe("model-assisted Read workload mapping", () => {
       };
     });
 
-    const result = await generateModelReadWorkload({
+    const result = await generateModelReadWorkload(withDeclaredRoot({
       name: "value_then_name_help",
       allowedQuestions: ["List active orders"],
       provider: "openai",
@@ -2169,7 +2179,7 @@ describe("model-assisted Read workload mapping", () => {
         answer: "status is the order lifecycle state.",
       }),
       dependencies: { requestJson },
-    });
+    }, "public.orders means orders."));
 
     expect(requestJson).toHaveBeenCalledTimes(3);
     expect(requests[2]).toContain("approved these exact values");
@@ -2227,7 +2237,7 @@ describe("model-assisted Read workload mapping", () => {
       egressAcknowledged: true as const,
     }));
 
-    const result = await generateModelReadWorkload({
+    const result = await generateModelReadWorkload(withDeclaredRoot({
       name: "value_assisted_reads",
       allowedQuestions: ["List active orders"],
       provider: "openai",
@@ -2237,7 +2247,7 @@ describe("model-assisted Read workload mapping", () => {
       egressAcknowledged: true,
       valueRequestHandler,
       dependencies: { requestJson },
-    });
+    }, "public.orders means orders."));
 
     expect(valueRequestHandler).toHaveBeenCalledWith(expect.objectContaining({
       resource: "public.orders",
@@ -2296,7 +2306,7 @@ describe("model-assisted Read workload mapping", () => {
       };
     });
 
-    const result = await generateModelReadWorkload({
+    const result = await generateModelReadWorkload(withDeclaredRoot({
       name: "correct_value_filter_grammar",
       allowedQuestions: ["List active orders"],
       provider: "openai",
@@ -2312,7 +2322,7 @@ describe("model-assisted Read workload mapping", () => {
         egressAcknowledged: true,
       }),
       dependencies: { requestJson },
-    });
+    }, "public.orders means orders."));
 
     expect(requestJson).toHaveBeenCalledTimes(3);
     expect(requests[2]).toContain("Do not request them again");
