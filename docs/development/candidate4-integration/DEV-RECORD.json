@@ -173,5 +173,26 @@
       "Settled integrated gates/installed/composed qualification"
     ],
     "paid": "CLOSED"
+  },
+  "pause_checkpoint": {
+    "status": "OWNER_PAUSE",
+    "main_product": "7a2b3d6e",
+    "main_branch": "codex/b59-foundation-integration-20261008",
+    "public_native_controls": {
+      "pass": 3,
+      "fail": 3,
+      "evidence": "/var/tmp/synapsor-main-candidate4-final-20261008-owned/evidence/READ-NATIVE-PUBLIC-RESULT.json",
+      "failures": [
+        "native meaning retention: redundant root question",
+        "Read acknowledgement race not reached",
+        "Resume acknowledgement race not reached"
+      ]
+    },
+    "independent_composed": "e07ee76c: saved short meaning -> unrelated edit -> cold Review PASS; zero provider calls",
+    "owner_wip": "e3ae27a7 unaccepted, pause checkpoint ed4d7017",
+    "consent": "ed2d7566 paused; revised explicit format decision pending",
+    "paid": "CLOSED",
+    "handoff": "MAIN-PAUSE-HANDOFF-FOUNDATION.md",
+    "resume_only": "Finish shared evidence bindings/Review, currentness and admission-before-consent controls, consent decision/compatibility, independent acceptance before settled gates"
   }
 }
