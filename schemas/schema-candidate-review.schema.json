@@ -127,6 +127,7 @@
                   "enum": [
                     "high_confidence_sensitive",
                     "unresolved_free_text",
+                    "review_required",
                     "structurally_low_risk"
                   ]
                 },

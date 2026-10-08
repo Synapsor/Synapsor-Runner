@@ -1186,7 +1186,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         &&!(reviewReport.resources||[]).some(resource=>decision.startsWith(resource.id+":"))
       );
     const classificationFor=(id,field)=>{const resource=reviewResource(id);return resource&&resource.fields&&resource.fields.find(item=>item.name===field)?.sensitivity};
-    const stateLabel=state=>state==="high_confidence_sensitive"?"Sensitive":state==="unresolved_free_text"?"Needs review":"Low structural risk";
+    const stateLabel=state=>state==="high_confidence_sensitive"?"Sensitive":state==="structurally_low_risk"?"Low structural risk":"Needs review";
     const hasActiveAuthority=()=>activeBoundaries.length>0||journey?.authority_active===true;
     function showDeploymentProfile(profile){
       byId("deployment-profile").value=profile;
@@ -2200,7 +2200,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      const sources=(reviewReport.resources||[]).filter(review=>{
 	        const source=original.pack.resources.find(resource=>resource.id===review.id);
 	        const raw=source?.selectable_fields.length||0;
-	        const unresolved=(review.fields||[]).some(field=>field.sensitivity?.state==="unresolved_free_text");
+	        const unresolved=(review.fields||[]).some(field=>field.sensitivity?.state!=="structurally_low_risk"&&field.sensitivity?.state!=="high_confidence_sensitive");
 	        if(resourceFilter==="risks")return riskCount({id:review.id})>0;
 	        if(resourceFilter==="exposed")return raw>0;
 	        if(resourceFilter==="unresolved")return review.status!=="draft_read"||unresolved;
