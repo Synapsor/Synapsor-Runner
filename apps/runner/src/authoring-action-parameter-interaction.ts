@@ -87,7 +87,9 @@ export async function runActionParameterInteraction(input: {
     await assertCurrent();
     if (!equal(decision.binding, expected.binding)) stale();
     const ack = checkedAck(await input.ports.recordDecision({ expected, accepted: decision.accepted }), current);
-    if (ack.binding.proposal_digest !== expected.binding.proposal_digest || ack.binding.view_digest !== expected.binding.view_digest) stale();
+    // A grouped decision records the displayed proposal, never a new proposal
+    // or answer revision. Only its protected question digest may advance.
+    if (!equal(ack.binding, expected.binding) || ack.native.question_revision !== expected.native.question_revision) stale();
     return { kind: decision.accepted === true ? "confirmed" : "pending", acknowledged: ack };
   }
 }

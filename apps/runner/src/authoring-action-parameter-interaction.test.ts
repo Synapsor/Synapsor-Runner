@@ -95,6 +95,17 @@ describe("bounded direct Action parameter interaction", () => {
     f.change({ ...current, view: { ...current.view, normalized_lines: ["short false claim"] } });
     await expect(runActionParameterInteraction({ ports: f.ports, session: ui })).rejects.toThrow("INTERACTION_STALE"); expect(ui.chooseOption).not.toHaveBeenCalled();
   });
+  it.each(["proposal", "question"] as const)("refuses a final decision ACK advancing the displayed %s revision", async changed => {
+    const f = fixture(), ui = session(["review"], [], true);
+    const ports = { ...f.ports, recordDecision: async (input: Parameters<ActionParameterInteractionPorts["recordDecision"]>[0]) => {
+      const acknowledged = await f.ports.recordDecision(input);
+      return changed === "proposal"
+        ? { ...acknowledged, binding: { ...acknowledged.binding, proposal_revision: acknowledged.binding.proposal_revision + 1 } }
+        : { ...acknowledged, native: { ...acknowledged.native, question_revision: acknowledged.native.question_revision + 1 } };
+    } };
+    await expect(runActionParameterInteraction({ ports, session: ui })).rejects.toThrow("INTERACTION_STALE");
+    expect(f.calls).toEqual(["load", "load", "decision:true"]);
+  });
   it("actual B48 conversation session uses the same production interaction without a provider", async () => {
     const f = fixture(), choices = ["edit", "field:0", "review", "yes"], words = ["2"], writes: string[] = [];
     const io: AnalyticsShellIo = { read: async () => words.shift(), readWithEscape: async () => words.shift(), readConversation: async () => words.shift(),
