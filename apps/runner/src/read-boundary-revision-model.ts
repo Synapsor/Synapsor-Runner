@@ -18,8 +18,8 @@ import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionCheckpoint, ty
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
 import { exploreBoundaryVocabularyGaps } from "./explore-vocabulary.js";
-import { createCurrentReadEvidence, currentReadEvidenceStatements, currentStructuredReadEvidence, currentReadScopeContextDigest,
-  type CurrentStructuredReadEvidence, type CurrentReadEvidenceRecords } from "./read-current-evidence.js";
+import { currentStructuredReadEvidence, currentReadScopeContextDigest,
+  type CurrentStructuredReadEvidence } from "./read-current-evidence.js";
 import { READ_SCOPE_PROTOCOL, READ_SUBJECT_SCOPE_GUIDANCE, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
   type ReadScopeBinding, type ReadScopeReference, type ReadScopeCatalog, type ReadScopeRecord } from "./read-structured-scope.js";
 import type { ReadWorkloadAnalysis } from "./read-workload-assist.js";
@@ -88,9 +88,6 @@ export async function generateModelReadBoundaryRevision(input: {
   vocabularyOnly?: boolean;
   /** Original operator job, separate from the short revision instruction. */
   operatorNamingContext?: string;
-  /** Native evidence loaded by the protected authoring host. A model quote or
-   * saved presentation alone never establishes current business meaning. */
-  currentEvidenceRecords?: () => CurrentReadEvidenceRecords;
   structuredScope?: { protocol: typeof READ_SCOPE_PROTOCOL; current: () => ReadRevisionScopeContext | Promise<ReadRevisionScopeContext> };
   env?: NodeJS.ProcessEnv;
   apiKey?: string;
@@ -136,14 +133,6 @@ export async function generateModelReadBoundaryRevision(input: {
   const structuredDigest = currentReadScopeContextDigest(structured);
   const nativeScope = structured?.native ? currentStructuredReadEvidence({ ...structured.native,
     expectedBinding: structured.binding, references: structured.references, catalog: structured.catalog }) : undefined;
-  const currentMeanings = () => {
-    if (structured) return [];
-    const statements = currentReadEvidenceStatements({ original: [operatorNamingContext ?? instruction], conversation: input.conversation });
-    return createCurrentReadEvidence({ catalog, statements, answers: [],
-      context_digest: canonicalJsonDigest({ boundary: boundaryDigest, statements }),
-      requested_use_digest: canonicalJsonDigest({ instruction, original: operatorNamingContext ?? null }), records: input.currentEvidenceRecords?.() })
-      .view().filter(evidence => evidence.status !== "missing" || evidence.progression);
-  };
   if (Buffer.byteLength(serializedCatalog) > 96 * 1024) {
     throw new Error(
       "READ_BOUNDARY_REVISION_CATALOG_TOO_LARGE: narrow the reviewed Read Boundary or use the manual field editor.",
@@ -402,17 +391,9 @@ export async function generateModelReadBoundaryRevision(input: {
     "Ask one concise clarification rather than guessing. Call the required tool exactly once.",
   ].join(" ");
   const providerTurn = (question: string) => {
-    // The protected host supplies only acknowledged current records. Bind each
-    // individual send to that exact view; no stale upfront snapshot and no
-    // adoption of a concurrent change between projection and transport.
-    const evidence = currentMeanings(), evidenceDigest = canonicalJsonDigest(evidence);
     return runAskProviderTurn({
     configuration,
     question: [question,
-      ...(evidence.length ? [
-        `Runner-derived current Read evidence: ${JSON.stringify(evidence)}`,
-        "These exact target associations are business evidence, never authority or proof that a changed request is already satisfied. Reuse established applicable meanings; ask only the missing delta. Stale, conflicting, unsupported or awaiting-mapping entries are not completed decisions. Preserve raw answers and use the ordinary mapping/review route; do not invent a replacement or reinterpret an old Yes.",
-      ] : []),
       ...(callCount > 0 && issue ? [`Exact validation issue from the rejected revision: ${issue.slice(0, 1_500)}. Correct this mismatch without dropping requested privacy changes.`] : []),
       ...(reviewedPrerequisite ? [`Runner's confirmed private access condition remains staged: ${JSON.stringify(reviewedPrerequisite)}. Do not request it again or drop it while correcting other settings.`] : []),
       ...(reviewedRelationship ? ["Runner's confirmed relationship remains staged locally. Do not request it again or supply its proof. Return only the remaining edits; Runner merges the exact reviewed path."] : []),
@@ -428,7 +409,6 @@ export async function generateModelReadBoundaryRevision(input: {
     requiredInitialToolName: SUBMIT_READ_BOUNDARY_REVISION_TOOL,
     completeAfterRequiredTool: true,
     authorityGuard: async () => readBoundaryRevisionCatalog(input.boundary).digest === catalog.digest
-      && canonicalJsonDigest(currentMeanings()) === evidenceDigest
       && currentReadScopeContextDigest(await input.structuredScope?.current()) === structuredDigest
       ? authorityDigest
       : canonicalJsonDigest({ stale: true }),
