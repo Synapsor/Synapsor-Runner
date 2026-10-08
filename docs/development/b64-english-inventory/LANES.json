@@ -38,10 +38,10 @@
     }
   },
   "heavy_slots": {
-    "1": "B64 chat/presentation (B65 PG completed and released)",
-    "2": "B64 Ask (B65 MySQL completed and released)",
-    "3": "B64 Read",
-    "4": "B64 privacy"
+    "1": "B65 Source/native runtime qualification",
+    "2": "Read missing public instrumentation/fixture batch (R1 returned)",
+    "3": "R2 sealed Action Source-cycle",
+    "4": "B66 native MySQL writer repair"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -989,5 +989,12 @@
       "reason": "Typed sensitivity presentation consumer hook; privacy lane requests review_required pending rather than low-risk rendering."
     }
   ],
-  "slot_rule": "Finite reviewer checks share released lane slot; do not assume reservation means an active process. Main integration/types/review coordinates a released slot; four actual heavy jobs max."
+  "slot_rule": "Finite reviewer checks share released lane slot; do not assume reservation means an active process. Main integration/types/review coordinates a released slot; four actual heavy jobs max.",
+  "exclusive_external_hotspot": {
+    "task": "01a11d25-18fd-7b12-aff5-adec1c9679c6",
+    "finding": "B66",
+    "file": "packages/schema-inspector/src/index.ts",
+    "owner": "B66 implementer; Privacy must coordinate before further index edits",
+    "handoff": "../b66-mysql-writer"
+  }
 }

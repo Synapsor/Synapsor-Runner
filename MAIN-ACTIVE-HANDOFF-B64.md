@@ -1,15 +1,15 @@
-ACTIVE B64 — Owner removed usage pauses; continuous work/private checkpoints. Paid CLOSED.
-Clock unchanged: T0 2026-10-08T06:32:23Z; end 2026-10-13T06:32:23Z; final24h 2026-10-12T06:32:23Z. Frozen candidate3/history/holds untouched.
-Main codex/b64-authoring-protocol-20261008 @6264e47c (R1 signoff-owner accepted642e5c57); boundary19247 (was20204). [Contract](docs/development/adr-b51-shared-input-interaction.md).
-Reviewed Read canonical/projector/RLS integrated; native entry and typedprincipal accepted scoped. R1public8PASS includes freshOS0replay; Replace separately accepted at81ff.
-Read Replace accepted scoped: R1producer8PASS, public81ff6PASS inclcancel/blank/CAS; separateprocessReplace4760requests. Exact histories/default-No/counters retained.
-Main NEXT: typed permission hooks/public Actionv2 adapter; Read hook accepted93603/types0/41PASS; [exclusive retirement lanes](docs/development/b64-english-inventory/LANES.json): Read10/privacy13/chat7/Ask8/Action17/Main6 files. Failing-before→typed replacement→independent review; no English fallback.
-Action ae90 host integrated2887: R2native25PASS, Main305PASS/1optinskip/typesPASS; publichook/proofpendingactualsupportedtarget andconstraintretirement open.
-Action7a NOT integrated/HOLD: wrong-selector normalization finding, failing-before+fix+review next; consent hook6264/Main10PASS; full Action English constraint/focused/legacy-suggestion retirement remains OPEN. Main owns boundary hook points only.
-Read dafb44c9 accepted scoped19e5161c/integrated227adfdc; privacy583c0738/chat9a7f1c7e review pending; [compact parallel evidence](docs/development/b64-english-inventory/PARALLEL-CHECKPOINT.json). Ask Balanced refusal retirement HELD for Owner contract decision; other Ask work continues.
-Helper890 five typedplanningcounterparts integrateda5e:91PASS/types0; R1accepted scoped. Zero-call typededit/publicpending persistence remain open.
-Version integrated65PASS/3files at81ad, R2f77projection+3d6fixture scopedaccepted; manual420R1twelvePASS; fullRead80862PASS88FAIL beforeports retained; nofull/installedclaim.
-B65 native be941b72: fresh25 reaches55 FAIL; fresh10 reaches40 PASS; PG7 recorded; qualified B61 reconcilePASS. MySQL14PASS/public-grant BLOCKED. R2 receipt repair rejected: native stale job/attempt binding gaps reproduced; complete shared repair active, no public-effect claim.
-[Storage audit](docs/development/storage-audit-20261008/REPORT.txt): KEEP EVERYTHING per Owner; revisit only below~30GB free,8GiBfloor unchanged; nothing deleted. Actionv2 Main110PASS/7files/types0; publicadapterOPEN; save guard8PASS/types0; R1 unchanged6PASS; actualpublic adapter OPEN.
-Tester CLOSED backup21c3b3dc; Luna35total, liabilities15.27063125 inclhold1.2693125, remaining19.72936875. No paid/uncertain operation open.
-Owner limits:4actual heavy jobs,max8workers/run,MemAvailable/disk>=8GiB; current slots nativeB65/Ask-R2/Action-runtime/Privacy; Chat static. One file editor; privatepush; paidCLOSED; no usagepause.
+ACTIVE B64 + B65 + Owner-authorized B66; paid CLOSED; usage pauses removed.
+B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z; final24h Oct12. Frozen candidate3/history/holds untouched.
+Main codex/b64-authoring-protocol-20261008 @38eb51dc; [contract](docs/development/adr-b51-shared-input-interaction.md); boundary19203 lines; private backup only.
+Main typed permission projection38eb: before6F1P + missing actual adapter metadata1F; after17PASS/types0; independent f85cbe81 15PASS/types0 scoped ACCEPT.
+Read dafb accepted19e5161c/integrated227adfdc+a550; Main41PASS/types0; hook93603accepted; Read owner resumed missing public revision/Replace instrumentation then finite fixture batch.
+Action selector7c73 independently57bd9e4c accepted3PASS after2F1P; constraint packet not yet integrated. Source-cycle4fa17fa0 pending R2 sealed8; public whole-Source protected completion Main-owned/OPEN.
+Privacy2e6/4d/829 source scopedR2accepted; full typed review bindings85a, codec/actual old-reader refusal, vocabulary/current-meaning and global scope remain OPEN.
+Chat product9aba/docs444573cf: original331PASS4FAIL/types0; separate unchanged-product guided fixtureports4PASS/types0; R2source scopedaccepted, Main CLI/caller integration pending.
+Ask seven-file2d7db correction acceptedR1da1b2a73 5PASS; whole branch NONINTEGRABLE (Balanced decision/held cases/transitive privacy helper); no Owner answer inferred.
+B65 native49233: fresh30+25=55 FAIL; fresh10=40PASS; actual stricter ACTION_RULE_AUTHORITY_STALE beforeSource; signed human+separate executor oneeffect/receipt.
+B65 receipt e94 independent21PASS scoped native/helper ACCEPT ac2f0847; originals preserved; Runtime now Source-trigger equivalence controls, not activated hard-limit acceptance.
+B66 task01a11d25-18fd-7b12-aff5-adec1c9679c6 active pinned; own b66-mysql-writer/index+grant generators, native failing-before→general narrow-grant repair→R2review→Tester public MySQL30/40.
+Main NEXT integrate reviewed bounded packets without overwriting shared owners, implement actual Source pending completion fence/CLI typed error hook; [compact evidence](docs/development/b64-english-inventory/PARALLEL-CHECKPOINT.json).
+Slots runtime1/Read2/R2-Action3/B664; four actual heavy max8workers/run; isolated0700HOME/TMP/DB,8GiB RAM/disk floors. Keepallstorage; revisit below30GB.
+No paid/model operation open; Luna35total/liabilities15.27063125 inclhold1.2693125/remain19.72936875. Commit/privatepush all checkpoints; never origin/rootconfig/secrets.

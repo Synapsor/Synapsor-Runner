@@ -1,6 +1,6 @@
 {
   "recorded_at": "2026-10-08T20:10:14.699046+00:00",
-  "main_pin": "pending permission checkpoint after3ada6e2d",
+  "main_pin": "38eb51dc",
   "owner_map": "LANES.json",
   "paid": "CLOSED",
   "main_hooks": {
@@ -12,7 +12,7 @@
     "typecheck": "exit0 before enum-only JSON change",
     "json_parse": "exit0",
     "independent_privacy_acceptance": "PENDING",
-    "permission": "Typed projection17PASS/types0; R1 independent pending"
+    "permission": "R1f85cbe81 scopedACCEPT15PASS/types0; Main17PASS/types0"
   },
   "read": {
     "pin": "f1a74e84",
@@ -38,7 +38,7 @@
     "before": "17 controls:7PASS10FAIL",
     "held_contract": "Default Balanced currently promises contradiction refusal, and explicit confirmation to opt out. AT02/03/05 would permit wrong-resource/changed-constraint/accidental reads with false semantic-proof flag. Owner decision requested; no approval inferred.",
     "continue": "Typed suppression, truthful result display, catalog tokens, metadata guidance; existing safety checks unchanged.",
-    "independent": "7c93 regression AQ01 shared aggregate defaults; baselinePASS/current4P1F. Narrow2d7db fix uses existing owner; R1 rerun active."
+    "independent": "R1da1b2a73 scoped seven-file/test-port ACCEPT after exact2d7db repair5PASS; fullbranchNONINTEGRABLE"
   },
   "b65": {
     "native_pin": "49233e92",
@@ -69,5 +69,13 @@
     "next": "Review Source cycle; integrate accepted constraint packet with current shared modules, no file overwrite.",
     "review_limits": "Earlier d185 scoped acceptance did not establish this counterexample. Source/public continuation still open.",
     "source_cycle_design": "R2 scoped design agreement4cd explicit source_review_required result; implementation and exact ordinary finish fence still pending."
+  },
+  "b66": {
+    "task": "01a11d25-18fd-7b12-aff5-adec1c9679c6",
+    "base": "38eb51dc",
+    "native_before": "Tester49233/G5 evidence kept; implementer new native regression",
+    "scope": "Exact MySQL column grants, minimal reviewed lock-key purpose, generated narrow administrator grant; refuse real excess; checkPG",
+    "independent": "R2 preseal/review; nativeTester publicMySQLrace afterward",
+    "status": "ACTIVE, no acceptance claimed"
   }
 }
