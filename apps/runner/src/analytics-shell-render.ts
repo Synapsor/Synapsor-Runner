@@ -121,7 +121,7 @@ export function renderAnalyticsTurn(
     ...(boundaryOnly.length > 0
       ? [
         styledNotice(
-          `Local Ask plan check: BOUNDARY ONLY${boundaryOnly[0]?.boundary_name ? ` for ${safeTerminalText(boundaryOnly[0].boundary_name)}` : ""}. The English question was not compared with the model plan; reviewed Explore validation remained active.`,
+          `Local Ask plan check: BOUNDARY ONLY${boundaryOnly[0]?.boundary_name ? ` for ${safeTerminalText(boundaryOnly[0].boundary_name)}` : ""}. Reviewed Explore validation remained active.`,
           options.ansi === true,
         ),
         "",
@@ -148,6 +148,15 @@ export function renderAnalyticsTurn(
       : []),
     "",
   ];
+  for (const analysis of analyses.filter((item) => item.plan !== undefined)) {
+    lines.push(
+      styledHeading("RUNNER PLAN READBACK", "runner", options.ansi === true),
+      `Analysis ${analysis.index} status: ${analysis.status}${analysis.error_code ? ` (${safeTerminalText(analysis.error_code)})` : ""}`,
+      "Question meaning was not verified. Reviewed Explore validation determines access.",
+      renderTerminalJsonFrame(redactPlanLiterals(analysis.plan!), { title: "Submitted Explore plan (literals redacted)", columns: width, color: options.ansi === true }),
+      "",
+    );
+  }
   if (successfulData.length === 0 && refused.length === 0) {
     lines.push(
       styledSystemStatus("RUNNER STATUS", options.ansi === true),
