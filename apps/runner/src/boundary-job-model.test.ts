@@ -426,53 +426,23 @@ describe("model Boundary job planning", () => {
     expect(requestBody).not.toContain("memory-key");
   });
 
-  it("keeps Action thresholds out of job routing and repairs to a focused Action intent", async () => {
-    const typed = await preparedNativeReadContext(reusableState.read.resource_ids);
-    let attempt = 0;
-    const requestJson = vi.fn(async () => {
-      attempt += 1;
-      return {
-        status: 200,
-        body: {
-          output: [{
-            type: "function_call",
-            call_id: `call_policy_routing_${attempt}`,
-            name: "runner__plan_boundary_job",
-            arguments: JSON.stringify(attempt === 1
-              ? {
-                  status: "clarification",
-                  question: "What maximum approval count and rolling window should apply to this proposal?",
-                }
-              : {
-                  status: "planned", read_scope: typed.proposal,
-                  read_mode: "reuse",
-                  action_mode: "create",
-                  action_intent: "Prepare the bounded spend-alert proposal and retain its unresolved rolling approval policy for focused Action authoring.",
-                  action_strategy: "discretionary",
-                  summary: "I will keep the reviewed reads and continue the requested Action setup.",
-                }),
-          }],
-        },
-      };
-    });
-
-    await expect(planModelBoundaryJob({
-      session: {
-        provider: "openai",
-        model: "gpt-test",
-        apiKey: "memory-key",
-        dependencies: { requestJson },
-      },
-      jobIntent: "Keep the current reads and add a spend-alert proposal with a rolling approval limit.",
-      currentState: reusableState,
-      egressAcknowledged: true, structuredScope: typed.structuredScope,
-    })).resolves.toMatchObject({
-      state: "planned",
-      read_mode: "reuse",
-      action_mode: "create",
-      correction_used: true,
-    });
-    expect(requestJson).toHaveBeenCalledTimes(2);
+  // PF01: B64 accepts a typed question as pending; no English threshold redirect.
+  it("retains a valid typed Action-threshold clarification pending with one planner call", async () => {
+    const typed=await preparedNativeReadContext(reusableState.read.resource_ids),before=structuredClone(reusableState);
+    const requestJson=vi.fn(async()=>({status:200,body:{output:[{type:"function_call",call_id:"pending_threshold",name:"runner__plan_boundary_job",
+      arguments:JSON.stringify({status:"clarification",question:"What maximum approval count and rolling window should apply to this proposal?"})}]}}));
+    const result=await planModelBoundaryJob({session:{provider:"openai",model:"gpt-test",apiKey:"memory-key",dependencies:{requestJson}},
+      jobIntent:"Keep the current reads and add a spend-alert proposal with a rolling approval limit.",currentState:reusableState,egressAcknowledged:true,structuredScope:typed.structuredScope});
+    expect(result).toMatchObject({state:"clarification",correction_used:false,authority_granted:false,source_database_changed:false});
+    expect(result).not.toHaveProperty("read_mode");expect(result).not.toHaveProperty("action_mode");expect(requestJson).toHaveBeenCalledOnce();expect(reusableState).toEqual(before);
+  });
+  it("accepts a separately submitted typed Action plan retaining its unresolved approval policy",async()=>{
+    const typed=await preparedNativeReadContext(reusableState.read.resource_ids);
+    const requestJson=vi.fn(async()=>({status:200,body:{output:[{type:"function_call",call_id:"typed_action_route",name:"runner__plan_boundary_job",arguments:JSON.stringify({status:"planned",read_scope:typed.proposal,read_mode:"reuse",action_mode:"create",
+      action_intent:"Prepare the bounded spend-alert proposal and retain its unresolved rolling approval policy for focused Action authoring.",action_strategy:"discretionary",summary:"Keep the reviewed reads and continue the requested Action setup."})}]}}));
+    const result=await planModelBoundaryJob({session:{provider:"openai",model:"gpt-test",apiKey:"memory-key",dependencies:{requestJson}},jobIntent:"Keep the current reads and add a spend-alert proposal with a rolling approval limit.",currentState:reusableState,egressAcknowledged:true,structuredScope:typed.structuredScope});
+    expect(result).toMatchObject({state:"planned",read_mode:"reuse",action_mode:"create",correction_used:false,authority_granted:false,source_database_changed:false});
+    expect(requestJson).toHaveBeenCalledOnce();expect(result).not.toHaveProperty("required_approvals");
   });
 
   it("routes new outcomes to fixed tools even when a model uses the legacy strategy label", async () => {
@@ -1226,7 +1196,7 @@ describe("model Boundary job planning", () => {
     expect(requestJson).toHaveBeenCalledOnce();
   });
 
-  it("routes an explicit policy-only edit of the sole semantic outcome without a fragile model split", async () => {
+  it("refuses raw English sole-outcome editing without a current typed scope", async () => {
     const requestJson = vi.fn(async () => {
       throw new Error("The general planner must not be needed for an exact sole-outcome revision.");
     });
@@ -1254,19 +1224,20 @@ describe("model Boundary job planning", () => {
         }],
       },
       egressAcknowledged: true,
-    })).resolves.toMatchObject({
-      state: "planned",
-      read_mode: "reuse",
-      action_mode: "revise",
-      action_outcome: "support.refund_request_submitted",
-      action_strategy: "rule_derived",
-      action_intent: jobIntent,
-      correction_used: false,
-      authority_granted: false,
-      source_database_changed: false,
-    });
+    })).rejects.toThrow("READ_SCOPE_PROTOCOL_REQUIRED");
     expect(requestJson).not.toHaveBeenCalled();
   });
+  it("routes a declared typed sole-outcome edit with one model plan and no inferred local authority",async()=>{
+    const typed=await preparedNativeReadContext(reusableState.read.resource_ids);
+    const jobIntent="Require two reviewers for the existing refund outcome; keep all other settings unchanged.";
+    const currentState:BoundaryJobCurrentState={...reusableState,actions:[{capability:"app.request_change",kind:"rule_derived",action_boundary_name:"support_actions",outcome:"support.refund_request_submitted",operation:"insert",resource:"support_ops.refund_requests",authority:"active"}]};
+    const before=structuredClone(currentState),sent:string[]=[];
+    const requestJson=vi.fn(async(request)=>{sent.push(JSON.stringify(request.body));return{status:200,body:{output:[{type:"function_call",call_id:"typed_edit",name:"runner__plan_boundary_job",arguments:JSON.stringify({status:"planned",read_scope:typed.proposal,read_mode:"reuse",action_mode:"revise",action_outcome:"support.refund_request_submitted",action_intent:jobIntent,action_strategy:"rule_derived",summary:"Prepare an exact disabled replacement; preserve unrelated settings."})}]}};});
+    const result=await planModelBoundaryJob({session:{provider:"openai",model:"gpt-test",apiKey:"memory-key",dependencies:{requestJson}},jobIntent,currentState,egressAcknowledged:true,structuredScope:typed.structuredScope});
+    expect(result).toMatchObject({state:"planned",read_mode:"reuse",action_mode:"revise",action_outcome:"support.refund_request_submitted",action_strategy:"rule_derived",action_intent:jobIntent,correction_used:false,authority_granted:false,source_database_changed:false});
+    expect(sent[0]).toContain(jobIntent);expect(sent[0]).toContain("support.refund_request_submitted");expect(requestJson).toHaveBeenCalledOnce();expect(currentState).toEqual(before);
+  });
+
 });
 
 describe("typed review-only job routing", () => {
@@ -1294,25 +1265,21 @@ describe("typed review-only job routing", () => {
 });
 
 
-it("replays both complete captured planning requests and unchanged submitted tool replies", async () => {
-  const fs = await import("node:fs/promises");
-  const { createModelAuthoringConversation } = await import("./model-authoring-conversation.js");
-  const captures = JSON.parse(await fs.readFile(new URL("./fixtures/review-routing-captures.json", import.meta.url), "utf8"));
-  for (const capture of captures) {
-    const conversation = createModelAuthoringConversation(); conversation.policySources = capture.source_session;
-    const sent: string[] = [];
-    const result = await planModelBoundaryJob({ jobIntent: capture.operator_job, currentState: capture.current_state,
-      availableResourceIds: capture.current_state.read.resource_ids, egressAcknowledged: true,
-      session: { provider: "openai", model: "gpt-5.6-terra", apiKey: "captured-only", conversation, dependencies: { requestJson: async request => {
-        sent.push(JSON.stringify(request.body)); return { status: 200, body: capture.response };
-      } } } });
-    expect(sent).toHaveLength(1);
-    expect(sent[0]).toContain(capture.source_session.snapshots.find((s: { version: number }) => s.version === capture.source_session.active).digest);
-    expect(result.state).toBe(capture.case === "counting-wording-control" ? "clarification" : "planned");
-    if (result.state === "clarification") expect(result.question).toBe(JSON.parse(capture.response.output[0].arguments).question);
-    else expect(result.operation).toBeUndefined(); // Historical no-change plan is not retroactively rewritten as a review verdict.
+it("preserves unchanged historical planning captures and refuses their missing typed context without replay", async()=>{
+  const fs=await import("node:fs/promises");const file=new URL("./fixtures/review-routing-captures.json",import.meta.url);
+  const bytes=await fs.readFile(file),captures=JSON.parse(bytes.toString("utf8"));
+  const {createModelAuthoringConversation}=await import("./model-authoring-conversation.js");
+  for(const capture of captures){const original=structuredClone(capture),conversation=createModelAuthoringConversation();conversation.policySources=capture.source_session;
+    const send=vi.fn(async()=>({status:200,body:capture.response}));
+    await expect(planModelBoundaryJob({jobIntent:capture.operator_job,currentState:capture.current_state,availableResourceIds:capture.current_state.read.resource_ids,egressAcknowledged:true,
+      session:{provider:"openai",model:"gpt-5.6-terra",apiKey:"captured-only",conversation,dependencies:{requestJson:send}}})).rejects.toThrow("READ_SCOPE_PROTOCOL_REQUIRED");
+    expect(send).not.toHaveBeenCalled();expect(capture).toEqual(original);
   }
+  expect(await fs.readFile(file)).toEqual(bytes);
 });
+// Fresh typed review-only positive scenarios above are separate from historical
+// captures: actual native prepared scope, current model-visible facts, one call.
+
 
 
 describe("unestablished requested Read routing", () => {
@@ -1340,22 +1307,29 @@ describe("unestablished requested Read routing", () => {
 });
 
 
-describe("current exact Read request bindings", () => {
-  it.each(["reuse", "resume"] as const)("retains a current exact %s request without another question", async readMode => {
-    const description = "Read membership names and expiry dates.";
-    const state = { ...reusableState, read: { ...reusableState.read,
-      resource_ids: ["club.members"], resumable_draft_count: 1, resumable_resource_ids: ["club.members"],
-      [readMode === "reuse" ? "reviewed_requests" : "resumable_requests"]: [{ description, resource_ids: ["club.members"] }],
-    } };
-    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "retained_read",
-      name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: readMode, action_mode: "none", summary: "Retain the exact saved request." }) }] } }));
-    const result = await planModelBoundaryJob({ jobIntent: `Prepare the requested program. ${description}`, currentState: state,
-      availableResourceIds: ["club.members"], egressAcknowledged: true,
-      session: { provider: "openai", model: "declared-request-binding", apiKey: "local-only", dependencies: { requestJson } } });
-    expect(result).toMatchObject({ state: "planned", read_mode: readMode, authority_granted: false, source_database_changed: false });
-    expect(requestJson).toHaveBeenCalledOnce();
+describe("current exact native Read request bindings",()=>{
+  it.each(["reuse","resume"] as const)("retains current confirmed consumed scope through %s with one planner and zero remap calls",async readMode=>{
+    const typed=await preparedNativeReadContext(["club.members"]),prepared=typed.structuredScope.current();
+    const before=structuredClone(prepared),state:BoundaryJobCurrentState={...reusableState,read:{...reusableState.read,resource_ids:["club.members"],resumable_draft_count:1,resumable_resource_ids:["club.members"]}};
+    const current=()=>readMode==="reuse"?prepared:{...prepared,reusable:undefined,resumable:prepared.reusable};
+    const requestJson=vi.fn(async()=>({status:200,body:{output:[{type:"function_call",call_id:"native_retained",name:"runner__plan_boundary_job",arguments:JSON.stringify({status:"planned",read_scope:typed.proposal,read_mode:readMode,action_mode:"none",summary:"Retain the exact confirmed saved scope."})}]}}));
+    const result=await planModelBoundaryJob({jobIntent:"Keep exactly the confirmed membership-name access.",currentState:state,availableResourceIds:["club.members"],egressAcknowledged:true,structuredScope:{protocol:READ_SCOPE_PROTOCOL,current},session:{provider:"openai",model:"declared-request-binding",apiKey:"local-only",dependencies:{requestJson}}});
+    expect(result).toMatchObject({state:"planned",read_mode:readMode,authority_granted:false,source_database_changed:false});expect(requestJson).toHaveBeenCalledOnce();expect(prepared).toEqual(before);
+    expect(prepared.reusable.generation?.operations).toHaveLength(1);expect(prepared.reusable.questions[0]?.confirmation).toBeDefined();
+  });
+  it.each(["stale","unconfirmed","wrong_root","wrong_mode"] as const)("does not adopt %s Read evidence",async control=>{
+    const typed=await preparedNativeReadContext(["club.members"]),prepared=structuredClone(typed.structuredScope.current());
+    const pure=declaredReadContext("Show membership names.",["club.members"]);
+    if(control==="stale")prepared.binding.source_digest=canonicalJsonDigest("changed source");
+    const current=control==="unconfirmed"?()=>pure.context:control==="wrong_mode"?()=>({...prepared,reusable:undefined,resumable:prepared.reusable}):()=>prepared;
+    const proposal=structuredClone(control==="unconfirmed"?pure.proposal:typed.proposal);
+    if(control==="wrong_root")proposal.requirements[0]!.targets[0]!.root_resource="archive.members";
+    const requestJson=vi.fn(async()=>({status:200,body:{output:[{type:"function_call",call_id:"bad_native",name:"runner__plan_boundary_job",arguments:JSON.stringify({status:"planned",read_scope:proposal,read_mode:"reuse",action_mode:"none",summary:"Keep access."})}]}}));
+    await expect(planModelBoundaryJob({jobIntent:"Keep exactly the confirmed membership-name access.",currentState:{...reusableState,read:{...reusableState.read,resource_ids:["club.members"]}},egressAcknowledged:true,structuredScope:{protocol:READ_SCOPE_PROTOCOL,current},session:{provider:"openai",model:"declared-request-binding",apiKey:"local-only",dependencies:{requestJson}}})).rejects.toThrow(/READ_SCOPE/u);
+    expect(requestJson.mock.calls.length).toBeLessThanOrEqual(2);
   });
 });
+
 
 
 describe("exact saved Read association boundaries", () => {

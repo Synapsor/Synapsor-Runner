@@ -1,0 +1,22 @@
+{
+  "status": "COUNTERPART_FOCUSED_PASS_INDEPENDENT_REVIEW_PENDING",
+  "base": "e433fdad",
+  "scope": "boundary-job-model.test.ts only; no product or historical-capture edits",
+  "authorization": "R2 PF01-PF05 semantic adjudication via Main; Main contract review3bbb9338. Owner no-legacy-English decision; previous expectations preserved at974c47b1 and raw80PASS5FAIL.",
+  "before": "/var/tmp/synapsor-b64-action-clarification-owned/out/planning-fixture-final.json (80PASS5FAIL)",
+  "after": "/var/tmp/synapsor-b64-action-clarification-owned/out/planning-counterparts-first.json (91PASS0FAIL0SKIP)",
+  "types": "/var/tmp/synapsor-b64-action-clarification-owned/out/planning-counterparts-types.log (tsc -b exit0)",
+  "cases": {
+    "PF01": "Valid typed question returns clarification pending with exactly1call, no invented Action/Read plan, no state mutation. Separate typed Action plan1call retains unresolved approval policy and false authority/source flags. No English threshold reroute.",
+    "PF02": "Raw English alone with no typed current context is refused before provider. Fresh declared exact-outcome model plan1call preserves full operator intent and false authority/write flags; unchanged current state. Local zero-call typed-edit producer is NOT added or claimed.",
+    "PF03": "Original two historical capture bytes unchanged, SHA git blob4afd1c076d726f0f6d1c2c9fe22a13b0ae600824. Missing typed context refuses before replay. Fresh positive coverage is the separate3 review-only typed scenarios with real native saved scope and actual current input. Historical no-change plan is not relabelled as review approval.",
+    "PF04_PF05": "Actual prepared native structural review/Read compiler/generation/question/confirmation/CAS/cold records establish reuse/resume. One planner request, generation evidence unchanged with1operation, no remap. Stale Source/unconfirmed/wrong root/wrong mode refuse in existing bound."
+  },
+  "preserved": "Unrelated Source/currentness/privacy assertions and counts untouched. Old five legacy-positive expectations remain in prior immutable source/log; no silent before relabel.",
+  "limits": [
+    "Scope tests do not persist a returned planner clarification through the public pending-question owner; native pending/cold resume acceptance remains Main/R1 integration proof.",
+    "Planner API exposes no local typed baseline/outcome/delta edit input, so zero-provider local edit is not asserted. Existing separate typed Action interaction component proofs are not substituted for planner/public wiring.",
+    "Native prepared names-only fixture states its actual saved scope. It does not pretend original description-string membership expiry mapping was reviewed."
+  ],
+  "next": "R1 independent review of finite counterpart proof, Main integrates only accepted scope."
+}
