@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest as d } from "@synapsor-runner/protocol";
-import { parseOperatorQuestion } from "./authoring-operator-question.js";
+import { parseOperatorQuestion, proposeOperatorAnswer } from "./authoring-operator-question.js";
 import { READ_SCOPE_PROTOCOL, resolveReadScopeProposal, readScopeProposalSchema, type ReadScopeRecord } from "./read-structured-scope.js";
 import { READ_WORKLOAD_ANALYSIS_VERSION, type ReadWorkloadAnalysis } from "./read-workload-assist.js";
 
@@ -28,6 +28,17 @@ function question() {
   return { ...body, digest: d(body) };
 }
 describe("B64 native scope question", () => {
+  it("records explicit no-Read review without fabricating an analyzed workload", () => {
+    const original = question();
+    const record = resolveReadScopeProposal({ protocol: READ_SCOPE_PROTOCOL, applicability: "no_read_requested", original_request: "job", requirements: [] },
+      { expectedBinding: binding, references: original.read_scope.record.references, catalog: { resources: [], relationships: [] } });
+    const { digest: _, ...body } = original;
+    const qbody = { ...body, read_scope: { ...body.read_scope, record } };
+    const q = parseOperatorQuestion({ ...qbody, digest: d(qbody) });
+    const review = proposeOperatorAnswer(q, { question_id: q.id, revision: q.revision, source_reference: d(q.read_scope),
+      disposition: "proposed", value: { kind: "read_scope", scope_digest: record.digest } });
+    expect(review.read_scope!.record.analysis_digest).toBeUndefined(); expect(review.confirmation).toBeUndefined();
+  });
   it("retains a typed proposal in the existing question owner without inventing raw testimony", () => {
     const q = parseOperatorQuestion(question());
     expect(q.version).toBe(2); expect(q.raw_answer).toBeUndefined(); expect(q.confirmation).toBeUndefined();

@@ -212,7 +212,8 @@ function validateProposal(q: OperatorQuestion, proposal: unknown): asserts propo
   if (!object(v) || v.kind !== q.kind) invalid("The proposal changed the decision kind.");
   if (v.kind === "read_scope") {
     if (!exact(v, ["kind", "scope_digest"]) || !q.read_scope || q.read_scope.mode !== "review"
-      || v.scope_digest !== q.read_scope.record.digest || !q.read_scope.record.analysis_digest
+      || v.scope_digest !== q.read_scope.record.digest
+      || (q.read_scope.record.proposal.applicability === "read_requested" ? !q.read_scope.record.analysis_digest : q.read_scope.record.analysis_digest !== undefined)
       || q.read_scope.record.proposal.requirements.some(r => r.disposition === "unresolved"))
       invalid("A scope review requires its exact analyzed, fully resolved proposal.");
   } else if (v.kind === "attributed_meaning") { if (!exact(v, ["kind"])) invalid("Meaning comes from the trusted raw words, not a model quote."); }
