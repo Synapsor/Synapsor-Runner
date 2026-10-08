@@ -7,7 +7,7 @@ import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import { createBusinessStatementHost, type BusinessStatementRecordUpdate } from './authoring-business-statement-host.js';
 import type { BusinessStatementInteraction, BusinessStatementResponse } from './authoring-business-statement-interaction.js';
 import { assertOperatorQuestionsAdvance, parseOperatorQuestions } from './authoring-operator-question.js';
-import { newPolicySourceSession, policyTextSnapshot, savePolicySources, loadPolicySources } from './authoring-policy-source.js';
+import { newPolicySourceSession, policyTextSnapshot, savePolicySources, loadPolicySources, PolicySourceChangedError } from './authoring-policy-source.js';
 import { createReceiptRequirementHost, receiptRequirementCheckpoint, type ReceiptRequirementAnswerReview } from './authoring-receipt-requirement-host.js';
 import { currentReceiptRequirement, receiptRequirementDependencies, receiptRequirementPreparedContext,
   receiptRequirementQuestionContext, receiptRequirementSourceBinding } from './authoring-receipt-requirement.js';
@@ -21,7 +21,7 @@ import { createModelAuthoringConversation } from './model-authoring-conversation
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, {recursive:true,force:true}); });
-async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceText?:string;productionHost?:boolean;nominateTarget?:boolean}={}) {
+async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceText?:string;productionHost?:boolean;nominateTarget?:boolean;onRefresh?:()=>Promise<void>}={}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'receipt-host-')); roots.push(root);
   const source = policyTextSnapshot(Buffer.from(options.sourceText ?? 'Describe a change as complete only from its trusted completion receipt.'), 'declared-policy.txt');
   const sources = newPolicySourceSession(); sources.snapshots = [source]; sources.active = source.version;
@@ -81,9 +81,9 @@ async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceTe
   const productionInvoke=(interact:(view:BusinessStatementInteraction)=>Promise<BusinessStatementResponse>)=>createReceiptRequirementHost({
     projectRoot:root,modelSession,businessContext:{references:[]},attemptKey,
     readSources:()=>sources,readQuestions:()=>state.questions!,readHandoff:()=>state.handoffs!.at(-1),
-    scopeDigest:()=>scope,storeDigest:()=>store,currentDraft:prepared as never,refreshEvidence:async()=>{events.push('Evidence refresh');},
+    scopeDigest:()=>scope,storeDigest:()=>store,currentDraft:prepared as never,refreshEvidence:async()=>{events.push('Evidence refresh');await options.onRefresh?.();},
     readConfiguration:async()=>draft.runner_evidence.runtime_contract.receipt_configuration as never,
-    questionContext:async()=>{expect(canonicalJsonDigest(await loadPolicySources(root,sources.id))).toBe(canonicalJsonDigest(sources));return context();},
+    questionContext:async()=>{if(canonicalJsonDigest(await loadPolicySources(root,sources.id))!==canonicalJsonDigest(sources))throw new PolicySourceChangedError();return context();},
     mutate:operation=>withProjectAuthorityMutation(root,operation),
     acknowledgeResume:async()=>{events.push('Source acknowledgment');await fs.writeFile(file,JSON.stringify(state));},
     assertGenerationAdmission:()=>{events.push('Generation admission');},reviewAnswer:review=>invoke(interact,review),
@@ -218,6 +218,22 @@ it('the production owner completes only the missing Source projection after the 
   expect(await f.productionInvoke(async()=>{throw new Error('Recovery must not prompt or map');}))
     .toEqual({kind:'saved',disposition:'projection_recovered'});
   expect(f.inspect()).toEqual(native);expect(f.requests).toHaveLength(1);
+});
+it('refuses a reused receipt interpretation when Source changes during evidence refresh',async()=>{
+  let onRefresh=async()=>{};
+  const f=await fixture({nominateTarget:true,onRefresh:()=>onRefresh()});
+  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed'});
+  const before=f.inspect(),calls=f.requests.length;
+  let winner: Awaited<ReturnType<typeof loadPolicySources>> | undefined;
+  onRefresh=async()=>{
+    const current=await loadPolicySources(f.root,f.sources.id);
+    winner={...current,active:2,snapshots:[...current.snapshots,policyTextSnapshot(Buffer.from('Require completion evidence inside the source transaction.'),'replacement.txt',2)]};
+    await savePolicySources(f.root,winner,{expectedDigest:canonicalJsonDigest(current)});
+  };
+  await expect(f.productionInvoke(async()=>{throw new Error('A stale interpretation must not ask again or be reused');}))
+    .rejects.toThrow('POLICY_SOURCE_CHANGED');
+  expect(await loadPolicySources(f.root,f.sources.id)).toEqual(winner);
+  expect(f.inspect()).toEqual(before);expect(f.requests).toHaveLength(calls);
 });
 it.each([2_000,2_001,16_000])('production target nomination and mapping preserve a %i-character Source',async length=>{
   const text='R'.repeat(length-4)+' 😀';
