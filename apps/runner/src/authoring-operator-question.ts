@@ -428,11 +428,21 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
               || !answerQuestion.raw_answer || !answerQuestion.raw_answer.text.trim() || answerQuestion.raw_answer.id !== support.answer_id
               || canonicalJsonDigest(answerQuestion.raw_answer) !== support.answer_digest)
               invalid("The subject meaning cites missing or changed operator words.");
+          } else if (support.kind === "read_subject") {
+            const read = result.find(item => item.id === support.question_id);
+            const target = q.action_subject.material.targets.find(t => t.target_digest === entry.target_digest)?.target;
+            const requirement = read?.read_scope?.record.proposal.requirements.find(r => r.id === support.requirement_id);
+            if (!read || !seen.has(read.id) || read.id === q.id || read.kind !== "read_scope" || read.read_scope?.mode !== "review" || !read.confirmation || read.disposition
+              || read.revision !== support.question_revision || read.digest !== support.question_digest
+              || read.read_scope.record.digest !== support.scope_record_digest || target?.kind !== "verification_subject"
+              || !requirement || requirement.disposition !== "include"
+              || !requirement.subjects.some(subject => subject.root_resource === target.resource && subject.mode !== "unresolved")
+              || !requirement.targets.some(t => t.root_resource === target.resource && t.resource === target.resource))
+              invalid("The retained public subject support has no exact confirmed Read requirement.");
+            // This proves retained provenance only. The Action host must resolve
+            // current Read applicability/replacement/dependencies before use.
           } else {
-            // No current general typed Source-interpretation owner exists here.
-            // Read inheritance also needs exact current request/subject applicability,
-            // which cannot be established merely by equal resource names.
-            invalid("This inherited subject support has no current resolved owning binding; retain the target as pending.");
+            invalid("No typed Source-interpretation owner establishes this subject support; retain it as pending.");
           }
         }
       }

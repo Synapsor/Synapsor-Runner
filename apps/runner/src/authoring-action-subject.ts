@@ -82,7 +82,8 @@ export function proposeActionSubjectAnswer(question: OperatorQuestion, entries: 
     answer_id: q.raw_answer.id, answer_digest: canonicalJsonDigest(q.raw_answer), context_digest: q.context_digest };
   const parsed = parseActionSubjectEntries(entries, binding.material);
   for (const entry of parsed) {
-    if (entry.state === "awaiting") continue;
+    const previous = record.entries.find(old => old.target_digest === entry.target_digest);
+    if (canonicalJsonDigest(previous ?? null) === canonicalJsonDigest(entry) || entry.state === "awaiting") continue;
     if (entry.support && canonicalJsonDigest(entry.support) !== canonicalJsonDigest(answer)) invalid();
     if (entry.state === "proposed" && !entry.support) invalid();
   }

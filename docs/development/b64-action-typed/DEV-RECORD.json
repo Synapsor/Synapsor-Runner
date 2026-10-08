@@ -69,5 +69,12 @@
     "actual_batch": "two actual tool calls consumed in one provider response; second mutation refused; first staged projection/native question saved; one iteration/two tools; logical turn remains open",
     "ownership": "thin subjectReview stage/review/assertCurrent ports; Main protected owner must atomically persist native q/ref/generation; not public acceptance",
     "remaining": "inherited Read support resolver, independent fresh-process/native persistence/compat; public Main hookup; remaining English constraints"
+  },
+  "subject_read_reuse_wip": {
+    "base_merge": "579f216b integrates acceptedMain476cdb3b; product files auto-merged, newer lane docs retained",
+    "tests": "58 PASS: subject codec/host22, exactReadreuse2, Readquestion8, question26",
+    "scope": "Read.v2 existing current evidence resolver; only exact public verification_subject, no effect/write/private reuse; pending/changed/replaced Read stays pending",
+    "types": "5 existing Read fixture subjects omissions in read-structured-scope.test.ts/read-workload-model.test.ts; no Action type errors",
+    "remaining": "Main protected native/public hook, freshprocess and R2 acceptance; exact Source interpreted support unavailable until owning typed record exists"
   }
 }
