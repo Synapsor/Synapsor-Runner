@@ -60,7 +60,7 @@ function record(): ActionSubjectProposal {
 function direct(previous = record()): ActionSubjectProposal {
   const event: TypedFieldEvent = { kind: "select_option", binding: previous.view.binding, field_id: "subject-0", target_digest: targetDigest,
     dependencies_digest: previous.view.fields[0]!.dependencies_digest, value: material.targets[0]!.options[0]!.reference };
-  const entries = [{ state: "proposed" as const, target_digest: targetDigest, meaning: "trusted_principal" as const, scope_reference: event.value,
+  const entries = [{ state: "proposed" as const, target_digest: targetDigest, meaning: "trusted_principal" as const, scope_reference: material.targets[0]!.options[0]!.reference,
     support: { kind: "operator_choice" as const, proposal_revision: 2, event_digest: hash(event) } }];
   let view: TypedReviewView = { ...previous.view, binding: { ...previous.view.binding, proposal_revision: 2, proposal_digest: hash(entries) }, unresolved: [] };
   view = { ...view, binding: { ...view.binding, view_digest: actionSubjectViewDigest(view) } };
@@ -79,7 +79,7 @@ describe("Action subject full retained proposal history", () => {
   it("rejects a changed previous full meaning, stale event, or omitted history", () => {
     const initial = record(), next = direct(initial);
     expect(() => assertActionSubjectSequence(binding(), [next])).toThrow(/ACTION_SUBJECT/);
-    const changed = structuredClone(initial); changed.view.title = "Changed after display";
+    const changed = structuredClone(initial); changed.view = { ...changed.view, title: "Changed after display" };
     expect(() => assertActionSubjectSequence(binding(), [changed, next])).toThrow(/ACTION_SUBJECT/);
     if (next.provenance.kind === "operator_field") next.provenance.event = { ...next.provenance.event, target_digest: hash("wrong-target") };
     expect(() => assertActionSubjectSequence(binding(), [initial, next])).toThrow();
@@ -96,5 +96,75 @@ describe("Action subject full retained proposal history", () => {
     expect(() => parseActionSubjectProposal({ ...initial, meaning_digest: hash("other") }, binding())).toThrow(/ACTION_SUBJECT/);
     const b = binding(); b.origin.material_digest = hash("unconsumed");
     expect(() => assertActionSubjectSequence(b, [initial])).toThrow(/ACTION_SUBJECT/);
+  });
+});
+
+import { parseOperatorQuestion, confirmOperatorAnswer, proposeOperatorAnswer, assertOperatorQuestionsAdvance, type OperatorQuestion } from "./authoring-operator-question.js";
+function question(): OperatorQuestion {
+  const b = binding();
+  const body = { version: 2 as const, id: "30303030-3030-4030-8030-303030303030", revision: 1, kind: "action_subject" as const,
+    scope_digest: hash("action-scope"), context_digest: hash("context"), target: { phase: "action_subject", outcomes: [material.outcome] },
+    material: [], evidence: [], continuation: "action_rule_review" as const, action_subject: b,
+    proposal: { question_id: "30303030-3030-4030-8030-303030303030", revision: 1, source_reference: hash(b), disposition: "proposed" as const,
+      value: { kind: "action_subject" as const, record: record() } } };
+  return parseOperatorQuestion({ ...body, digest: hash(body) });
+}
+describe("Action subject native question composition", () => {
+  it("round trips the existing question store and refuses confirming awaiting subjects", () => {
+    const q = question(); expect(parseOperatorQuestion(JSON.parse(JSON.stringify(q)))).toEqual(q);
+    expect(() => confirmOperatorAnswer(q)).toThrow(/Unresolved Action subjects/);
+    expect(q.confirmation).toBeUndefined();
+  });
+  it("preserves full prior records through a real direct event and separate group decision", () => {
+    const before = question(), next = proposeOperatorAnswer(before, { ...before.proposal!, value: { kind: "action_subject", record: direct() } });
+    assertOperatorQuestionsAdvance([before], [next]);
+    expect(next.proposal_history).toEqual([before.proposal]);
+    expect(next.confirmation).toBeUndefined();
+    expect(confirmOperatorAnswer(next).confirmation?.proposal_digest).toBe(hash(next.proposal));
+  });
+  it("rejects a changed fixed binding and any fresh independent allowance", () => {
+    const q = question();
+    const { digest: _, ...body } = q;
+    expect(() => parseOperatorQuestion({ ...body, budget: { iterations_used: 0, tool_calls_used: 0, correction_used: false },
+      digest: hash({ ...body, budget: { iterations_used: 0, tool_calls_used: 0, correction_used: false } }) })).toThrow(/existing producer turn/);
+    const changed = structuredClone(body); changed.action_subject!.material.logical_turn_id = "new-reset-turn";
+    expect(() => assertOperatorQuestionsAdvance([q], [{ ...changed, digest: hash(changed) }])).toThrow();
+  });
+  it("rejects malformed current-v2 subject records instead of retrofitting or inferring them", () => {
+    const { digest: _, action_subject: __, ...body } = question();
+    expect(() => parseOperatorQuestion({ ...body, digest: hash(body) })).toThrow(/ACTION_SUBJECT/);
+  });
+});
+
+import { createActionSubjectQuestion, applyActionSubjectFieldEvent, proposeActionSubjectAnswer } from "./authoring-action-subject.js";
+import { captureOperatorAnswer, presentOperatorQuestion } from "./authoring-operator-question.js";
+describe("Action subject local host adapters", () => {
+  it("renders distinct exact target identities and applies a real choice without confirming", () => {
+    const q = createActionSubjectQuestion({ binding: binding(), entries: awaiting, scope_digest: hash("scope"), context_digest: hash("context") });
+    if (q.proposal?.value?.kind !== "action_subject") throw Error("missing");
+    const v = q.proposal.value.record.view, f = v.fields[0]!;
+    expect(v.technical_lines?.join("\n")).toContain("service.requests");
+    const next = applyActionSubjectFieldEvent(q, { kind: "select_option", binding: v.binding, field_id: f.id,
+      target_digest: f.target_digest, dependencies_digest: f.dependencies_digest, value: material.targets[0]!.options[0]!.reference });
+    expect(next.raw_answer).toBeUndefined(); expect(next.confirmation).toBeUndefined();
+    expect(next.proposal_history).toEqual([q.proposal]);
+    expect(confirmOperatorAnswer(next).confirmation).toBeDefined();
+  });
+  it("retains leave-pending as an actual event and refuses group confirmation", () => {
+    const q = createActionSubjectQuestion({ binding: binding(), entries: awaiting, scope_digest: hash("scope"), context_digest: hash("context") });
+    if (q.proposal?.value?.kind !== "action_subject") throw Error("missing");
+    const v = q.proposal.value.record.view, f = v.fields[0]!;
+    const next = applyActionSubjectFieldEvent(q, { kind: "leave_pending", binding: v.binding, field_id: f.id, target_digest: f.target_digest, dependencies_digest: f.dependencies_digest });
+    expect(next.proposal_history).toHaveLength(1); expect(() => confirmOperatorAnswer(next)).toThrow();
+  });
+  it("maps only the actual captured answer and cannot consume an unrelated raw answer", () => {
+    const q = captureOperatorAnswer(presentOperatorQuestion(question(), "Which records may this action affect?"), "Only records belonging to the signed-in person.");
+    const support = { kind: "operator_answer" as const, question_id: q.id, question_revision: q.revision, answer_id: q.raw_answer!.id,
+      answer_digest: hash(q.raw_answer), context_digest: q.context_digest };
+    const entries = [{ state: "proposed" as const, target_digest: targetDigest, meaning: "trusted_principal" as const,
+      scope_reference: material.targets[0]!.options[0]!.reference, support }];
+    const next = proposeActionSubjectAnswer(q, entries, { ...completion, operation_id: "actual-answer-operation" });
+    expect(next.raw_answer).toEqual(q.raw_answer); expect(next.confirmation).toBeUndefined();
+    expect(() => proposeActionSubjectAnswer(q, [{ ...entries[0]!, support: { ...support, answer_digest: hash("invented") } }], completion)).toThrow();
   });
 });

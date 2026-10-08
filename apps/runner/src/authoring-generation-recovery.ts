@@ -52,7 +52,7 @@ export type AuthoringTransportOperation = {
   question_handoff?: AuthoringQuestionHandoff;
   /** Exact durable consumption of a non-question Action result. Minted only
    * from the live decoder sequence and committed with its owning Resume CAS. */
-  action_checkpoint?: { consumer: "action_rule_components"; kind: "version_interpretation" | "compiled_draft";
+  action_checkpoint?: { consumer: "action_rule_components"; kind: "version_interpretation" | "compiled_draft" | "subject_proposal";
     material_digest: `sha256:${string}`; response_digest: `sha256:${string}` };
   /** Consumption of this exact native Read adapter result, separate from human consent. */
   read_checkpoint?: { consumer: "read_revision" | "read_scope"; kind: "private_prerequisite" | "prerequisite_mapping" | "scope_proposal";
@@ -181,7 +181,7 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
       const c = op.action_checkpoint;
       if (!c || typeof c !== "object" || Array.isArray(c)
         || !exactKeys(c, ["consumer", "kind", "material_digest", "response_digest"])
-        || c.consumer !== "action_rule_components" || !["version_interpretation", "compiled_draft"].includes(c.kind)
+        || c.consumer !== "action_rule_components" || !["version_interpretation", "compiled_draft", "subject_proposal"].includes(c.kind)
         || !digest(c.material_digest) || !digest(c.response_digest)
         || op.state !== "checkpointed" || op.checkpoint_seen !== true || op.attempts.at(-1)?.outcome !== "response") throw invalid();
     }

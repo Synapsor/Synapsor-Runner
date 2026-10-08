@@ -97,6 +97,7 @@ export type ActionRuleAuthoringCheckpoint = {
   components: Partial<Record<"verification" | "effect" | "rule" | "approval", Record<string, unknown>>>;
   logical_turns?: ActionAuthoringLogicalTurn[];
   pending_version?: ActionAuthoringPendingVersion;
+  subject_question?: { id: string; revision: number; question_digest: Digest };
   operator_messages?: string[];
   pending_question?: {
     question: string;
@@ -124,7 +125,7 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const record = value as Record<string, unknown>;
   if ((record.schema_version !== "synapsor.action-authoring-checkpoint.v1" && record.schema_version !== "synapsor.action-authoring-checkpoint.v2")
-    || Object.keys(record).some((key) => !["schema_version", "authoring_protocol", "intent_digest", "context_digest", "components", "operator_messages", "pending_question", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "source_repair", "logical_turns", "pending_version", "digest"].includes(key))
+    || Object.keys(record).some((key) => !["schema_version", "authoring_protocol", "intent_digest", "context_digest", "components", "operator_messages", "pending_question", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "source_repair", "logical_turns", "pending_version", "subject_question", "digest"].includes(key))
     || ![record.intent_digest, record.context_digest, record.digest].every((digest) => typeof digest === "string" && /^sha256:[a-f0-9]{64}$/u.test(digest))
     || !record.components || typeof record.components !== "object" || Array.isArray(record.components)) throw fail();
   if (record.schema_version === "synapsor.action-authoring-checkpoint.v2") parseStructuredAuthoringProtocol(record.authoring_protocol);
@@ -179,6 +180,14 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
           || !digest(legacy.checkpoint_digest) || !completion(legacy.completion)) throw fail();
       }
     }
+  }
+  if (record.subject_question !== undefined) {
+    const q = record.subject_question as ActionRuleAuthoringCheckpoint["subject_question"];
+    if (record.schema_version !== "synapsor.action-authoring-checkpoint.v2" || !q || typeof q !== "object" || Array.isArray(q)
+      || Object.keys(q).some(k => !["id", "revision", "question_digest"].includes(k))
+      || typeof q.id !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(q.id)
+      || !Number.isSafeInteger(q.revision) || q.revision < 1 || typeof q.question_digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(q.question_digest)
+      || !(record.logical_turns as ActionAuthoringLogicalTurn[] | undefined)?.length) throw fail();
   }
   if (record.pending_version !== undefined) {
     const v = record.pending_version as ActionAuthoringPendingVersion;

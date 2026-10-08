@@ -1,3 +1,4 @@
+import { parseActionSubjectBinding, parseActionSubjectProposal, assertActionSubjectSequence, assertActionSubjectGeneration, type ActionSubjectBinding, type ActionSubjectProposal } from "./authoring-action-subject-binding.js";
 import { parseTypedParameterBinding, parseTypedParameterRecord, assertTypedParameterSequence, assertTypedParameterGeneration, typedParameterPendingFields, type TypedParameterBinding, type TypedParameterRecord } from "./authoring-typed-parameter-binding.js";
 import { parseReadScopeQuestionBinding, readScopeConsumption, type ReadScopeQuestionBinding } from "./authoring-read-scope-binding.js";
 import { assertAuthoringReadCheckpoint } from "./authoring-generation-recovery.js";
@@ -11,6 +12,7 @@ import { parseOperatorClarificationGateState, type OperatorClarificationGateStat
 
 type Digest = `sha256:${string}`;
 export type OperatorQuestionValue =
+  | { kind: "action_subject"; record: ActionSubjectProposal }
   | { kind: "typed_parameters"; record: TypedParameterRecord }
   | { kind: "read_scope"; scope_digest: Digest }
   | { kind: "attributed_meaning" }
@@ -27,6 +29,7 @@ export type OperatorQuestion = {
   version: 1 | 2;
   read_scope?: ReadScopeQuestionBinding;
   typed_parameters?: TypedParameterBinding;
+  action_subject?: ActionSubjectBinding;
   id: string;
   revision: number;
   handoff_id?: string;
@@ -89,9 +92,9 @@ export function createOperatorQuestion(input: Pick<OperatorQuestion,
 
 export function parseOperatorQuestion(value: unknown): OperatorQuestion {
   if (!object(value) || !exact(value, ["version", "id", "revision", "handoff_id", "kind", "scope_digest", "context_digest", "target",
-    "material", "evidence", "receipt_selection", "read_scope", "typed_parameters", "continuation", "source_binding", "budget_owner_id", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
+    "material", "evidence", "receipt_selection", "read_scope", "typed_parameters", "action_subject", "continuation", "source_binding", "budget_owner_id", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
     || ![1, 2].includes(value.version as number) || !id(value.id) || value.handoff_id !== undefined && !text(value.handoff_id, 100) || !count(value.revision, Number.MAX_SAFE_INTEGER, 1)
-    || !["attributed_meaning", "input_bounds", "writer_maintenance", "receipt_requirement", "read_scope", "typed_parameters"].includes(value.kind as string)
+    || !["attributed_meaning", "input_bounds", "writer_maintenance", "receipt_requirement", "read_scope", "typed_parameters", "action_subject"].includes(value.kind as string)
     || !digest(value.scope_digest) || !digest(value.context_digest) || !digest(value.digest)
     || !object(value.target) || !exact(value.target, ["phase", "resource", "field", "outcomes"])
     || !text(value.target.phase, 100) || value.target.resource !== undefined && !text(value.target.resource, 256)
@@ -103,10 +106,19 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     || value.evidence.some(e => !object(e) || !exact(e, ["id", "digest"]) || !text(e.id, 256) || !digest(e.digest))
     || !["read_mapping", "action_rule_review", "input_policy_review", "version_mapping", "receipt_requirement_review"].includes(value.continuation as string)
     || Buffer.byteLength(JSON.stringify(value)) > 128 * 1024) invalid("The saved question envelope is malformed or too large.");
-  const continuation = { typed_parameters: "action_rule_review", read_scope: "read_mapping", attributed_meaning: "read_mapping", input_bounds: "input_policy_review", writer_maintenance: "version_mapping",
+  const continuation = { action_subject: "action_rule_review", typed_parameters: "action_rule_review", read_scope: "read_mapping", attributed_meaning: "read_mapping", input_bounds: "input_policy_review", writer_maintenance: "version_mapping",
     receipt_requirement: "receipt_requirement_review" };
-  if (value.version === 2 ? !["read_scope", "typed_parameters"].includes(value.kind as string) : ["read_scope", "typed_parameters"].includes(value.kind as string) || value.read_scope !== undefined || value.typed_parameters !== undefined)
+  if (value.version === 2 ? !["read_scope", "typed_parameters", "action_subject"].includes(value.kind as string) : ["read_scope", "typed_parameters", "action_subject"].includes(value.kind as string) || value.read_scope !== undefined || value.typed_parameters !== undefined || value.action_subject !== undefined)
     invalid("The question version does not support this typed interaction.");
+  if (value.kind === "action_subject") {
+    const binding = parseActionSubjectBinding(value.action_subject);
+    if (value.read_scope !== undefined || value.typed_parameters !== undefined || value.source_binding !== undefined
+      || value.handoff_id !== undefined || value.budget !== undefined || value.budget_owner_id !== undefined
+      || value.wording_state !== undefined || value.terminal_failure !== undefined || value.target.phase !== "action_subject"
+      || value.target.resource !== undefined || value.target.field !== undefined
+      || canonicalJsonDigest(value.target.outcomes) !== canonicalJsonDigest([binding.material.outcome]))
+      invalid("An Action subject review retains its existing producer turn and exact target without a new allowance.");
+  } else if (value.action_subject !== undefined) invalid("Action subject material belongs to its own typed review.");
   if (value.kind === "typed_parameters") {
     const binding = parseTypedParameterBinding(value.typed_parameters);
     if (value.read_scope !== undefined || value.handoff_id !== undefined || value.raw_answer !== undefined
@@ -143,7 +155,7 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
         source_digest: s.source_digest, store_digest: s.store_digest, outcomes: value.target.outcomes })) {
       invalid("The input interpretation is not bound to its exact current Source and agenda.");
     }
-  } else if (value.kind !== "typed_parameters" && !(value.kind === "read_scope" && (value.read_scope as ReadScopeQuestionBinding).mode === "review") && !text(value.handoff_id, 100)) invalid("A raw-answer question requires its actual owner handoff.");
+  } else if (value.kind !== "typed_parameters" && value.kind !== "action_subject" && !(value.kind === "read_scope" && (value.read_scope as ReadScopeQuestionBinding).mode === "review") && !text(value.handoff_id, 100)) invalid("A raw-answer question requires its actual owner handoff.");
   if (value.budget_owner_id !== undefined && (!id(value.budget_owner_id) || value.budget_owner_id === value.id
     || !["input_bounds", "receipt_requirement"].includes(value.kind as string) || value.source_binding !== undefined
     || value.kind === "input_bounds" && value.budget !== undefined || value.kind === "receipt_requirement" && value.budget === undefined))
@@ -178,6 +190,12 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     const records = assertTypedParameterSequence(parseTypedParameterBinding(value.typed_parameters), [...((value.proposal_history as OperatorQuestion["proposal_history"]) ?? []), ...(value.proposal ? [value.proposal as NonNullable<OperatorQuestion["proposal"]>] : [])]);
     if (value.confirmation !== undefined && typedParameterPendingFields(records).length)
       invalid("Retained pending events cannot be confirmed by changing their display.");
+  }
+  if (value.kind === "action_subject") {
+    const proposals = [...((value.proposal_history as OperatorQuestion["proposal_history"]) ?? []), ...(value.proposal ? [value.proposal as NonNullable<OperatorQuestion["proposal"]>] : [])];
+    const records = assertActionSubjectSequence(parseActionSubjectBinding(value.action_subject), proposals.map(p => p.value?.kind === "action_subject" ? p.value.record : undefined));
+    if (value.confirmation !== undefined && (records.at(-1)!.entries.some(e => e.state !== "proposed") || records.at(-1)!.view.unresolved.length))
+      invalid("Unresolved Action subjects cannot acquire grouped confirmation.");
   }
   if (value.confirmation !== undefined && (!value.proposal || !object(value.confirmation)
     || !exact(value.confirmation, ["actor", "recorded_at", "proposal_digest", "decision"])
@@ -219,7 +237,10 @@ function validateProposal(q: OperatorQuestion, proposal: unknown): asserts propo
   if (!object(proposal) || !exact(proposal, ["question_id", "revision", "answer_id", "source_reference", "disposition", "value"])
     || proposal.question_id !== q.id || proposal.revision !== q.revision
     || !["pending", "proposed"].includes(proposal.disposition as string)) invalid("The proposed answer belongs to another question or response.");
-  if (q.typed_parameters) {
+  if (q.action_subject) {
+    if (proposal.answer_id !== undefined || proposal.source_reference !== canonicalJsonDigest(q.action_subject))
+      invalid("The Action subject proposal must retain its actual fixed producer origin.");
+  } else if (q.typed_parameters) {
     if (proposal.answer_id !== undefined || proposal.source_reference !== canonicalJsonDigest(q.typed_parameters))
       invalid("The typed proposal must retain its exact origin without fabricated raw words.");
   } else if (q.read_scope?.mode === "review") {
@@ -231,10 +252,13 @@ function validateProposal(q: OperatorQuestion, proposal: unknown): asserts propo
   } else if (proposal.source_reference !== undefined || !q.raw_answer || proposal.answer_id !== q.raw_answer.id)
     invalid("The proposed answer belongs to another trusted response.");
   if (proposal.disposition === "pending") { if (proposal.value !== undefined) invalid("A pending answer cannot carry a resolved value."); return; }
-  if (!q.source_binding && !q.read_scope && !q.typed_parameters && !q.raw_answer!.text.trim()) invalid("A blank response has no resolved meaning.");
+  if (!q.source_binding && !q.read_scope && !q.typed_parameters && !q.action_subject && !q.raw_answer!.text.trim()) invalid("A blank response has no resolved meaning.");
   const v = proposal.value;
   if (!object(v) || v.kind !== q.kind) invalid("The proposal changed the decision kind.");
-  if (v.kind === "typed_parameters") {
+  if (v.kind === "action_subject") {
+    if (!exact(v, ["kind", "record"]) || !q.action_subject) invalid("Unknown Action subject proposal.");
+    parseActionSubjectProposal(v.record, q.action_subject);
+  } else if (v.kind === "typed_parameters") {
     if (!exact(v, ["kind", "record"]) || !q.typed_parameters) invalid("Unknown typed parameter record.");
     parseTypedParameterRecord(v.record, q.typed_parameters);
   } else if (v.kind === "read_scope") {
@@ -374,6 +398,46 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
         invalid("The terminal Input refusal has no consumed generation in its saved history.");
       }
     }
+    if (q.action_subject) {
+      assertActionSubjectGeneration(q.action_subject, generation);
+      const ref = q.action_subject.predecessor;
+      const predecessor = ref && result.find(p => p.id === ref.question_id);
+      if (ref ? !predecessor || !seen.has(predecessor.id) || predecessor.id === q.id || predecessor.digest !== ref.question_digest
+        || predecessor.kind !== q.kind || predecessor.scope_digest !== q.scope_digest || q.revision !== predecessor.revision + 1
+        || canonicalJsonDigest(predecessor.target) !== canonicalJsonDigest(q.target)
+        || predecessor.action_subject?.material.logical_turn_id !== q.action_subject.material.logical_turn_id
+        || result.some(other => other.id !== q.id && other.action_subject?.predecessor?.question_id === predecessor.id)
+        : q.revision !== 1) invalid("An Action subject replacement must retain its exact predecessor and owning turn.");
+      const records = [...(q.proposal_history ?? []), ...(q.proposal ? [q.proposal] : [])];
+      for (const proposal of records) {
+        if (proposal.value?.kind !== "action_subject") invalid("An Action subject cannot omit its retained full proposal.");
+        const record = proposal.value.record;
+        if (record.provenance.kind === "model_answer") {
+          const c = record.provenance.completion, op = generation?.operations.find(o => o.id === c.operation_id);
+          if (!op || op.state !== "checkpointed" || !op.checkpoint_seen || op.request_digest !== c.request_digest || op.context_digest !== c.context_digest
+            || op.attempts.at(-1)?.outcome !== "response" || canonicalJsonDigest(op.action_checkpoint ?? null) !== canonicalJsonDigest({ consumer: "action_rule_components",
+              kind: "subject_proposal", material_digest: canonicalJsonDigest({ binding: q.action_subject, record }), response_digest: c.response_digest }))
+            invalid("The subject mapping has no corresponding actual consumed model response.");
+        }
+        for (const entry of record.entries) {
+          if (entry.state === "awaiting" || !entry.support || entry.support.kind === "operator_choice") continue;
+          const support = entry.support;
+          if (support.kind === "operator_answer") {
+            const answerQuestion = [q, predecessor].find(p => p?.id === support.question_id);
+            if (!answerQuestion || answerQuestion.revision !== support.question_revision || answerQuestion.context_digest !== support.context_digest
+              || !answerQuestion.raw_answer || !answerQuestion.raw_answer.text.trim() || answerQuestion.raw_answer.id !== support.answer_id
+              || canonicalJsonDigest(answerQuestion.raw_answer) !== support.answer_digest)
+              invalid("The subject meaning cites missing or changed operator words.");
+          } else {
+            // No current general typed Source-interpretation owner exists here.
+            // Read inheritance also needs exact current request/subject applicability,
+            // which cannot be established merely by equal resource names.
+            invalid("This inherited subject support has no current resolved owning binding; retain the target as pending.");
+          }
+        }
+      }
+      continue;
+    }
     if (q.typed_parameters) {
       assertTypedParameterGeneration(q.typed_parameters, generation);
       const ref = q.typed_parameters.predecessor;
@@ -484,6 +548,7 @@ export function assertOperatorQuestionsAdvance(previous: readonly OperatorQuesti
       material: q.material, evidence: q.evidence, continuation: q.continuation,
       ...(q.read_scope ? { read_scope: q.read_scope } : {}),
       ...(q.typed_parameters ? { typed_parameters: q.typed_parameters } : {}),
+      ...(q.action_subject ? { action_subject: q.action_subject } : {}),
       ...(q.receipt_selection ? { receipt_selection: q.receipt_selection } : {}),
       ...(q.source_binding ? { source_binding: q.source_binding } : {}),
       ...(q.budget_owner_id ? { budget_owner_id: q.budget_owner_id } : {}) });
@@ -506,6 +571,7 @@ export function operatorQuestionReadback(q: OperatorQuestion): string[] {
   parseOperatorQuestion(q);
   const v = q.proposal?.value;
   if (!v || q.proposal?.disposition !== "proposed") return ["This answer is still pending. No interpretation or permission will be recorded.", ...q.material];
+  if (v.kind === "action_subject") return [...v.record.view.normalized_lines, ...v.record.view.change_lines, ...v.record.view.unresolved];
   if (v.kind === "typed_parameters") return [...v.record.view.normalized_lines, ...v.record.view.change_lines, ...v.record.view.unresolved];
   if (v.kind === "read_scope") return [
     "Review the complete proposed Read scope. This decision does not activate access.",

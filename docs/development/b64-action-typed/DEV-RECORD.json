@@ -54,5 +54,14 @@
     "before": "subject-codec-before.log: new module missing (expected preimplementation failure)",
     "types": "Main-owned deleted boundary import is the only known branch error",
     "next": "native question/generation/checkpoint binding, staged producer, Main protected-save hooks"
+  },
+  "subject_native_wip": {
+    "status": "not yet producer/public wired; NOT independently accepted",
+    "subject_tests": "21 PASS",
+    "existing_question_tests": "26 PASS",
+    "generation_tests": "133 PASS / 1 planning fixture missing protocol pin",
+    "checkpoint_tests": "26 PASS / 3 old Resume fixtures switch authoring protocol at setup",
+    "types": "Main-owned removed boundary import remains only branch error; recheck after current edit",
+    "next": "actual consumed provider staging, protected native hook, cold persistence"
   }
 }
