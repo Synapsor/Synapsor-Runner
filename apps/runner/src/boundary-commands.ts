@@ -1,3 +1,4 @@
+import { policyReviewNextStep, policyDecisionAllowsSavedReview, resumePolicyDecision, resolvePolicyDecision, reviewPolicyWithDecision } from './authoring-policy-decision-route.js';
 import { createReadRevisionCheckpointHost } from "./authoring-read-revision-checkpoint-host.js";
 import { createReadAssistanceCheckpointHost } from "./authoring-read-assistance-checkpoint-host.js";
 import { presentAuthoringRecovery } from "./authoring-interrupted-step-review.js";
@@ -5119,9 +5120,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let sourceReviewOutcome: BoundaryAssistOutcome | undefined;
   const runSavedPolicyReview = async (request = "Review attached rules and unresolved decisions", confirmedReviewRequest?: string) => {
     const waiting = ownerHandoffs.at(-1);
-    const pendingReceiptQuestion = waiting?.state === 'waiting'
-      && operatorQuestions.some(question => question.handoff_id === waiting.id && question.kind === 'receipt_requirement');
-    if (waiting?.state === "waiting" && !pendingReceiptQuestion) return boundaryAssistResult({ tone: "warning", title: "Saved owner question is still pending.",
+    if (!policyDecisionAllowsSavedReview(waiting, operatorQuestions)) return boundaryAssistResult({ tone: "warning", title: "Saved owner question is still pending.",
       lines: [ownerHandoffs.at(-1)!.question, "Use Resume the interrupted job to inspect and answer this exact question in its current context. A new Review cannot replace its meaning or clear the wait."] });
     if (!activeResume || !authoringConversation?.policySources || !selectedResumeModel || revalidateSavedJob) {
       return boundaryAssistResult({ tone: "warning", title: "Saved review context is unavailable.",
@@ -5368,10 +5367,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     // pinned review. Explicit Review retains its own current-candidate checks.
     selectCurrentReviewContext ||= selected === "review_rules";
     const waitingOwner = ownerHandoffs.at(-1);
-    const resumeReceiptQuestion = waitingOwner?.state === 'waiting'
-      && operatorQuestions.some(question => question.handoff_id === waitingOwner.id && question.kind === 'receipt_requirement');
     selectedPolicyReview ||= selected === "review_rules" || selected === "resume" && !revalidateSavedJob
-      && (waitingOwner?.state !== "waiting" || resumeReceiptQuestion)
+      && policyDecisionAllowsSavedReview(waitingOwner, operatorQuestions)
       && !availableResume?.pending_job_revision && !availableResume?.pending_read_revision && !availableResume?.pending_action_revision
       && !availableResume?.pending_action_removal
       && Boolean(availableResume?.pending_policy_review);
@@ -7209,13 +7206,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         `Next supported step: ${publicPlan.recommended??'inspect the saved review'}.`,
         "The draft and source snapshot remain saved. No rule was dropped and no authority was activated."]);
       input.authoringChat.checkpoint("Rules check remains pending", [policyFailure.message,
-        publicPlan.recommended==='scoped_correction'
-          ? "A bounded correction may be available within the existing review episode; the complete replacement must validate."
-          : publicPlan.recommended==='source_transaction_scope_review'
-            ? "Use the exact local source-outcome scope decision. Another model opinion cannot establish owner meaning."
-            : publicPlan.recommended==='receipt_requirement_review'
-              ? "Review the completion rule in ordinary business language, then confirm its exact applicability. Existing receipt storage is supplied separately; another model opinion cannot establish your meaning."
-            : "Inspect the saved review and its actual prerequisite before starting another model episode."], "warning");
+        policyReviewNextStep(publicPlan)], "warning");
       return { source, key: state.attemptKey ?? "", draftRecord: currentPolicyCoverageDraft(proposedAuthority), report: undefined };
     }
   };
@@ -10647,11 +10638,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const chat = input.authoringChat;
     if (!chat?.readOperator || !modelAssistSession) return undefined;
     let handoff = ownerHandoffs.at(-1);
-    const receiptQuestion = handoff?.state === 'waiting' && operatorQuestions.filter(q => q.handoff_id === handoff!.id).at(-1)?.kind === 'receipt_requirement';
-    if (receiptQuestion) {
-      const result = await reviewCurrentReceiptRequirement();
-      return result.kind === 'saved' ? { answer: '', question: handoff!.question } : undefined;
-    }
+    const resumedDecision = await resumePolicyDecision({handoff, questions: operatorQuestions, review: reviewCurrentReceiptRequirement});
+    if (resumedDecision.handled) return resumedDecision.answer;
     if (handoff?.state === "waiting") {
       if (handoff.consumer !== "policy_clarification" || handoff.scope_digest !== ownerQuestionScope()) {
         throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Inspect the saved question before replacing it with a rules clarification.");
@@ -10712,12 +10700,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     let current = await ensurePolicyCoverage();
     let retriedCoverage = false;
-    if (!current?.report && policyFailure?.resolution?.options.some(option =>
-      option.operation === 'receipt_requirement_review' && option.availability === 'available')) {
-      const receipt = await reviewCurrentReceiptRequirement();
-      if (receipt.kind === 'saved') { await ensurePolicyCoverage(true); return; }
-      if (receipt.kind === 'pending' || receipt.kind === 'blocked') return;
-    }
+    if (await resolvePolicyDecision({resolution: current?.report ? undefined : policyFailure?.resolution,
+      review: reviewCurrentReceiptRequirement, recheck: () => ensurePolicyCoverage(true)}) === 'handled') return;
     // Choosing Resolve authorizes this bounded recheck. Do not ask the user to
     // navigate a second retry screen for the same operation.
     if (!current?.report && explicitRetry) {
@@ -10953,11 +10937,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   const clarifyAttachedRules = async (current: NonNullable<Awaited<ReturnType<typeof ensurePolicyCoverage>>>) => {
     const chat = input.authoringChat;
     if (!chat?.readOperator || !modelAssistSession) return;
-    if (policyFailure?.resolution?.options.some(option => option.operation === 'receipt_requirement_review' && option.availability === 'available')) {
-      const receipt = await reviewCurrentReceiptRequirement();
-      if (receipt.kind === 'saved') { await ensurePolicyCoverage(true); return; }
-      if (receipt.kind === 'pending' || receipt.kind === 'blocked') return;
-    }
+    if (await resolvePolicyDecision({resolution: policyFailure?.resolution, review: reviewCurrentReceiptRequirement,
+      recheck: () => ensurePolicyCoverage(true)}) === 'handled') return;
     const passages = current.report ? unresolvedPolicyPassages(current.report) : [];
     const question = "What should be clarified in these requirements, or what would you like explained?";
     const answered = await readPolicyOwnerAnswer(async () => {
@@ -12628,25 +12609,16 @@ async function reviewSavedBoundaryPolicyInner(input: {
         savedResume(next);
       },
     });
-    let checked: Awaited<ReturnType<typeof ensurePreparedPolicyCoverage>>;
-    try { checked = await check(); }
-    catch (error) {
-      if (!(error instanceof ReviewResolutionError) || error.plan.recommended !== 'receipt_requirement_review'
-        || !input.reviewReceiptRequirement) throw error;
-      // Exactly one existing-host decision, then the ordinary complete review.
-      // Pending/declined answers never buy another review episode or clear work.
-      const receipt = await input.reviewReceiptRequirement({ context, currentDraft,
-        modelSession: input.modelSession, attemptKey: state.attemptKey,
+    const checked = await reviewPolicyWithDecision({check,
+      review: input.reviewReceiptRequirement ? () => input.reviewReceiptRequirement!({ context, currentDraft,
+        modelSession: input.modelSession!, attemptKey: state.attemptKey,
         receiptSources: authority?.authority.rules.map(rule => rule.rule.source) ?? [],
         assertReviewCurrent: assertCurrent,
         assertEvidenceCurrent: () => assertPolicyReviewSourceCurrent(sourceInspection, input.schemaInspector),
-      });
-      currentResume();
-      if (receipt.kind === 'blocked') input.session.rememberDetails?.('Receipt setup needs review', [...receipt.lines]);
-      if (receipt.kind !== 'saved') throw error;
-      await assertCurrent();
-      checked = await check();
-    }
+      }) : undefined,
+      acknowledgeCurrent: currentResume, assertCurrent,
+      presentBlocked: lines => input.session.rememberDetails?.('Receipt setup needs review', [...lines]),
+    });
     if (checked.report) {
       const section = policyCoverageSection(source, checked.report, checked.draftRecord);
       input.session.rememberDetails?.(section.title, reviewSectionLines(section));

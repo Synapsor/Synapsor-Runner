@@ -38,5 +38,13 @@
     "design": "Shared producer acknowledgement uses the actual decoded completion identity plus exact producer episode/context/submission, only after the guarded durable Source submission save and a currentness recheck. Native recovery writer separately CAS-saves Resume. It marks only that consumed turn checkpointed; no acceptance, new allowance, question, copied response or historical output is minted. Partial/unknown and unrelated handled output remain fenced.",
     "results": "types0; three exact-consumer controls PASS (unrelated handled retained, wrong producer refused unchanged, cold JSON cannot acknowledge); initial unit fixture invalid UUID3F retained then corrected test-only UUID; public successor pending",
     "boundary_lines": 20100
+  },
+  "route_extraction": {
+    "owner": "authoring-policy-decision-route: thin current typed-resolution/waiting-kind adapters to existing receipt host; no engine/authority/records",
+    "boundary_lines_before": 20100,
+    "boundary_lines_after": 20072,
+    "types": 0,
+    "public_status": "ACK successor reachesmapping+confirmation, unchanged expectedboundedconsents1 sees2 across differentbefore/aftermeaningcontexts; independentcontractjudgmentpending; originalfinalreuse/countchecksuntouched",
+    "proof_scope": "Real publicsetup/Review/edit/Resume/Replace-cancel and studio underconstruction; notyetaccepted"
   }
 }

@@ -13,3 +13,14 @@ B60 receipt interaction ownership (candidate 4 development; independent acceptan
 The existing generic coverage-failure record retains its current typed resolution for route dispatch; it does not own receipt meaning or applicability. Native question kind is checked before reopen and again under adoption, independently of whether a domain adapter is present.
 
 The large session only wires current records, shared presentation and protected writers. It no longer selects receipt targets/configuration/predecessors or owns a pending flag. The shared business host does not own receipt mapping/storage or a separate receipt lifecycle. Owner meaning, configured storage, technical guarantees and observed completion remain distinct. The original studio case has not acquired capabilities; the finite declared studio receipt fixture is explicitly supplemental.
+
+Route completion follow-up (power-loss recovery)
+
+| Requirement | Current record | Handler | Entry routes | Protected save | View |
+|---|---|---|---|---|---|
+| Acknowledge consumed complete refusal without accepting it | Actual decoded completion + exact producer episode/context/submission, completed unaccepted Source submission | ensurePreparedPolicyCoverage -> acknowledgeAuthoringProducer | Every native coverage consumer, independent of failure family | Source episode CAS first; currentness; exact native Resume recovery CAS second | Original refusal remains pending; next legitimate owner question can open |
+| Dispatch a current business decision once | Typed current resolution or exact waiting question kind | authoring-policy-decision-route -> createReceiptRequirementHost | Setup Resolve, saved Review, edit clarification, ordinary Resume, Replace/cancel return | None in route adapter; existing host owns all saves | no_target / pending / saved / blocked; validated reuse never invokes decision |
+
+The route adapter contains no question engine, passage selection, model call, persistence, authority or new counters. It centralizes existing entry binding and bounded recheck around the production host. boundary-commands shrinks from20100 to20072 lines; no receipt-specific condition or copied question selection remains there. Real public route tests are owned independently in b60-public-receipt-proof1650; passed host tests are not substituted for these.
+
+Before evidence: immutable817f6ff0 ready-v6 (completed refusal1/mapping0) and additive9e69b621 routes-before0P3F. Initial fix reaches mapping/confirmation; unchanged consent-count assertion now fails2vs1. Independent contract adjudication is required before any expectation change; final validated_reuse/no-extra-call assertions stay intact.
