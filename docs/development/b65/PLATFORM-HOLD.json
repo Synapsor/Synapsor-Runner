@@ -6,5 +6,11 @@
   "last_completed": "G3 both winner orders public Source parent lock wait and stale refusal",
   "next": "G4 preseal4fcb1a46: fresh30then25 and prior-state30/10, NOT RUN",
   "containment": "Read-only /proc inspection found0 owned processes; all5 B65 tester PG containers Exited; no G4 owned runtime directory. No database effects replayed and no alternative execution route opened.",
-  "safe_work": "B64 and independently authorized offline compiler/transport review continue; paid CLOSED; retain everything per owner storage decision"
+  "safe_work": "B64 and independently authorized offline compiler/transport review continue; paid CLOSED; retain everything per owner storage decision",
+  "later_owner_resume": {
+    "recorded_at": "2026-10-08T18:45:47Z",
+    "thread": "01a117fd-4600-76a3-baf7-e404eb16d0d3",
+    "state": "ACTIVE on same existing thread after explicit Owner resume",
+    "observation": "Fresh public 30 then new25 both applied:55 against intended50; exact evidence being sealed by independent tester. Prior interruption preserved above."
+  }
 }
