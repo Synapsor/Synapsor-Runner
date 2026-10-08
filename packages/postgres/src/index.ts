@@ -1,5 +1,6 @@
 import { sourceRollbackBinding } from "@synapsor-runner/worker-core";
 import crypto from "node:crypto";
+import { observePostgresClientErrors, postgresClientConnectionFailed } from "./connection-lifetime.js";
 import { isCompleteCollectionScopeExpression } from "./complete-collection-scope.js";
 import { assertPostgresRequiredSingletonRelationship } from "./required-singleton.js";
 export { isCompleteCollectionScopeExpression } from "./complete-collection-scope.js";
@@ -126,7 +127,14 @@ export function postgresPoolConfig(connectionString: string): PoolConfig {
 }
 
 export function createPostgresPool(connectionString: string, overrides: PoolConfig = {}): Pool {
-  return new Pool({ ...postgresPoolConfig(connectionString), ...overrides, connectionString });
+  const pool = new Pool({ ...postgresPoolConfig(connectionString), ...overrides, connectionString });
+  pool.on("connect", observePostgresClientErrors);
+  // pg has already removed/destroyed an idle failed client before this event.
+  // Keep the event owned; callers may attach their own observation listener.
+  // Checked-out failures still reject their original query and are classified
+  // by sourceTransaction; this listener supplies no transaction outcome.
+  pool.on("error", () => undefined);
+  return pool;
 }
 
 export function quotePostgresIdentifier(identifier: string): string {
@@ -1202,13 +1210,17 @@ export async function applyPostgresJob(job: WritebackJob, config: RunnerConfig):
   if (!config.databaseUrl) return failedResult(job, config, "DATABASE_UNAVAILABLE");
   const pool = createPostgresPool(config.databaseUrl);
   let client: PoolClient | undefined;
+  let discardClient = false;
   try {
     client = await pool.connect();
-    return await applyPostgresJobWithClient(job, config, client);
+    const result = await applyPostgresJobWithClient(job, config, client);
+    discardClient = result.status === "reconciliation_required";
+    return result;
   } catch (error) {
     return failedResult(job, config, safeErrorCode(error, operationOf(job)));
   } finally {
-    try { client?.release(); } catch { /* cleanup must not make a committed write look retryable */ }
+    try { if (client) client.release(discardClient || postgresClientConnectionFailed(client)); }
+    catch { /* cleanup must not make a committed write look retryable */ }
     await pool.end().catch(() => undefined);
   }
 }
