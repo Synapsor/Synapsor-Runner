@@ -1,0 +1,16 @@
+{
+  "source": "f2c21e90",
+  "status": "WIP; independent native/public review pending",
+  "change": "Shared protected disabled/active Read signoff writer returns exact acknowledged commit and verified continuation; no authority activation added",
+  "boundary_lines": 19366,
+  "boundary_line_delta": -51,
+  "types": "exit0 (before trivial null-safe comparison/indent final edit)",
+  "unchanged_public_lifecycle": {
+    "passed": 1,
+    "filtered": 448,
+    "seconds": 12.29,
+    "log": "/var/tmp/synapsor-b64-main-owned/evidence/signoff-public-f2c.log"
+  },
+  "preseal": "R1 7ec2af1e SR01\u201306; real governed binding, cancellation, stale wait, unknown ACK, competing postcommit, public callback",
+  "remaining": "R1 independent verdict; actual Action v2 public ports/cold recovery. No final acceptance claimed."
+}

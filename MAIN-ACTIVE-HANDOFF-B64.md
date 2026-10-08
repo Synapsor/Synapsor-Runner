@@ -1,9 +1,9 @@
 ACTIVE B64 — Owner removed usage pauses; continuous work/private checkpoints. Paid CLOSED.
 Clock unchanged: T0 2026-10-08T06:32:23Z; end 2026-10-13T06:32:23Z; final24h 2026-10-12T06:32:23Z. Frozen candidate3/history/holds untouched.
-Main codex/b64-authoring-protocol-20261008 @81ad3cbf; boundary19417 (was20204). [Contract](docs/development/adr-b51-shared-input-interaction.md).
+Main codex/b64-authoring-protocol-20261008 @f2c21e90 WIPsignoff; boundary19366 (was20204). [Contract](docs/development/adr-b51-shared-input-interaction.md).
 Reviewed Read canonical/projector/RLS integrated; native entry and typedprincipal accepted scoped. R1public8PASS includes freshOS0replay; Replace separately accepted at81ff.
 Read Replace accepted scoped: R1producer8PASS, public81ff6PASS inclcancel/blank/CAS; separateprocessReplace4760requests. Exact histories/default-No/counters retained.
-Main NEXT: owned disabled structural-signoff ACK extraction (R1preseal); Actionv2publicports after owner/R2; noRead planning Replace stillopen.
+Main NEXT: R1 native/public disabled-signoff ACK review (7ecpreseal; originalpublic1PASS); integrate accepted Read ports then Actionv2publicports; noRead planning Replace open.
 Action ae90 host integrated2887: R2native25PASS, Main305PASS/1optinskip/typesPASS; publichook/proofpendingactualsupportedtarget andconstraintretirement open.
 Action accepted dispatch regressions340PASS/1 paid-testskip; full Action English constraint/focused/legacy-suggestion retirement remains OPEN. Main owns boundary hook points only.
 Read owner @3c944be9/9d51ba40: typed provenance/currentness ports in review; ea387 description guidance awaiting variant; 212-row migration continues.
