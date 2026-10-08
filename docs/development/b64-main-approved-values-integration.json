@@ -1,0 +1,15 @@
+{
+  "owner_pin": "bef98b49",
+  "independent_review": "R1 a981c4c0: 14 PASS; literal binding independent from comparator semantics; earlier neq-negative/display-literal oracles superseded and preserved",
+  "integration": "Native provenance9d51/22b7, bounded interruption2513, unknown97a7 imported; combined1aa..bef final delta applied without intermediate comparator ban",
+  "contract": "Check every exact root.field filter literal against separately approved values; require one match; relationship-qualified fields cannot impersonate root field. No operator whitelist. Scope/compiler/default-No review remain separate.",
+  "main_validation": {
+    "command": "vitest run apps/runner/src/read-workload-model.test.ts --maxWorkers=1 --minWorkers=1 --testTimeout=20000 --hookTimeout=20000 -t exact-approved/value/unknown/interruption/provenance selections (exact command in tool log)",
+    "result": "24 PASS, 144 filtered; 11.02s",
+    "types": "tsc -b --pretty false exit0",
+    "log": "/var/tmp/synapsor-b64-main-owned/evidence/read-integrated-bef-focused.log",
+    "types_log": "/var/tmp/synapsor-b64-main-owned/evidence/read-integrated-bef-types.log",
+    "isolation": "owned0700 HOME/TMP; bwrap unshare-net; memory19.4GiB/free disk82GiB at launch"
+  },
+  "limits": "No full suite/public installed continuation acceptance; provenance16 and raw-save2 independently tested on owner branch. Relationship-qualified exclusion needs separate actual relationship variant."
+}

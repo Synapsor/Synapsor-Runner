@@ -832,28 +832,34 @@ describe("B41 host-owned Read meaning resolution", () => {
     } finally { await h.cleanup(); }
   });
   it.each(["save_failed", "acknowledgement_uncertain"])("does not dispatch after an unknown-answer %s", async mode => {
-    const requestJson = vi.fn().mockResolvedValue(response(mapped));
-    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
-    const handler = vi.fn(async () => ({ state: "answered" as const, answer: "I don't know" }));
-    await expect(generateModelReadWorkload({ ...setup(requestJson), clarificationHandler: handler,
-      onCheckpoint: async value => {
-        if (value?.state.unresolved_answers?.length) {
-          if (mode === "acknowledgement_uncertain") checkpoint = structuredClone(value);
-          throw new Error("OWNED_UNKNOWN_ANSWER_SAVE_NOT_ACKNOWLEDGED");
-        }
-        checkpoint = structuredClone(value);
-      } })).rejects.toThrow("OWNED_UNKNOWN_ANSWER_SAVE_NOT_ACKNOWLEDGED");
-    expect(requestJson).toHaveBeenCalledOnce();
-    expect(handler).toHaveBeenCalledOnce();
-    expect(checkpoint?.stage).toBe("waiting");
-    expect(checkpoint?.pending_question).not.toHaveProperty("decision");
-    expect(checkpoint?.state.unresolved_answers?.length ?? 0).toBe(mode === "acknowledgement_uncertain" ? 1 : 0);
-    const before = structuredClone(checkpoint), noSend = vi.fn();
-    await expect(generateModelReadWorkload({ ...setup(noSend), resumeCheckpoint: checkpoint,
-      onCheckpoint: async value => { checkpoint = structuredClone(value); }, clarificationHandler: async () => undefined }))
-      .rejects.toThrow("AUTHORING_PAUSED");
-    expect(noSend).not.toHaveBeenCalled();
-    expect(checkpoint).toEqual(before);
+    const raw = "I don't know", handler = vi.fn(async () => raw);
+    const { h, missing, nativeInput } = await exactRequestedField("Read public.tbl_7.col_2 for this job.", handler);
+    h.faults.rawSave = mode === "save_failed" ? "before_write" : "after_write";
+    const requestJson = vi.fn(async () => response({ allowed: [], forbidden: [], read_scope: missing }));
+    try {
+      await expect(h.run(nativeInput(requestJson))).rejects.toThrow("OWNED_RAW_SAVE_NOT_ACKNOWLEDGED");
+      expect(requestJson).toHaveBeenCalledOnce(); expect(handler).toHaveBeenCalledOnce();
+      const cold = await h.coldState(); expect(cold.status).toBe("ready");
+      if (cold.status !== "ready") throw new Error("Expected exact disk state, not guessed save outcome");
+      const original = cold.value.operator_questions!.at(-1)!;
+      expect(cold.value.read_assistance?.stage).toBe(mode === "save_failed" ? "waiting" : "decided");
+      expect(original.raw_answer?.text).toBe(mode === "save_failed" ? undefined : raw);
+      expect(cold.value.owner_handoffs!.at(-1)?.state).toBe(mode === "save_failed" ? "waiting" : "answered");
+      expect(original.confirmation).toBeUndefined();
+      h.faults.rawSave = undefined; await h.reload();
+      const remap = vi.fn(async request => response({ allowed: [], forbidden: [], read_scope: {
+        ...proposalWithVisibleAnswers(request, missing as ReadScopeProposal),
+        requirements: proposalWithVisibleAnswers(request, missing as ReadScopeProposal).requirements.map(r => ({ ...r,
+          unresolved: "Which business detail can be established before mapping?" })),
+      } }));
+      await expect(h.run({ ...nativeInput(remap), resumeCheckpoint: cold.value.read_assistance },
+        { ...h.structuredScope, answer: undefined })).rejects.toThrow("AUTHORING_PAUSED");
+      expect(remap).toHaveBeenCalledTimes(mode === "save_failed" ? 0 : 1);
+      expect(handler).toHaveBeenCalledOnce();
+      expect(h.state().operator_questions!.find(q => q.id === original.id)).toEqual(original);
+      expect(h.state().operator_questions!.every(q => !q.confirmation)).toBe(true);
+      expect(h.state().read_assistance!.state.correction_used).toBe(false);
+    } finally { await h.cleanup(); }
   });
   it.each(["verbatim_conflicting_quote", "no_model_quote"])("requires a new attributed interpretation for %s rather than selecting a Source definition", async mode => {
     const first = "public.tbl_7.col_2 is the shipment lifecycle stage.";
@@ -2756,6 +2762,65 @@ describe("model-assisted Read workload mapping", () => {
     expect(result.source_query_executed).toBe(false);
     } finally { await h.cleanup(); }
   });
+
+  it.each(["omitted", "unapproved", "foreign_field", "correction", "cold_resume", "mixed_filters", "mixed_entries", "neq"] as const)(
+    "enforces the exact approved-value filter in typed mapping (%s)", async mode => {
+      const h = await typedReadAssistanceFixture("List active orders", undefined, "gpt-5.6-luna", { alternative_status: { type: "text" } },
+        { resource: "public.orders", field: "status", primaryKey: "id" }, ["alternative_status"]);
+      const proposal: ReadScopeProposal = { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
+        id: "active-orders", intended_use: "List active orders", disposition: "include", references: ["job"],
+        subjects: [{ root_resource: "public.orders", mode: "trusted_principal" }], targets: [
+          { root_resource: "public.orders", resource: "public.orders", operation: "resource" },
+          { root_resource: "public.orders", resource: "public.orders", operation: "return", field: "status" },
+          ...(mode === "omitted" ? [] : [{ root_resource: "public.orders", resource: "public.orders", operation: "filter" as const,
+            field: mode === "foreign_field" ? "alternative_status" : "status", qualifier: mode === "neq" ? "neq" : "eq" }]),
+        ],
+      }] };
+      const valueRequest = { resource: "public.orders", field: "status", reason: "Exact active code is absent from metadata", question: "May the separately reviewed active code be used?" };
+      const approved = { state: "provided" as const, resource: "public.orders", field: "status", values: ["OPEN"], egressAcknowledged: true as const };
+      const handler = vi.fn(async () => approved), bodies: string[] = [];
+      let calls = 0;
+      const bad = { read_scope: proposal, allowed: [{ id: "active_orders", description: "List active orders", plan: {
+        kind: "rows", resource: "public.orders", select: ["status"], ...(mode === "omitted" ? {} : { where: [{
+          field: mode === "foreign_field" ? "alternative_status" : "status", op: mode === "neq" ? "neq" : "eq", value: ["mixed_filters", "mixed_entries", "neq"].includes(mode) ? "OPEN" : "NOT_APPROVED" }] }),
+      } }], forbidden: [] };
+      if (mode === "mixed_filters") bad.allowed[0]!.plan.where!.push({ field: "status", op: "eq", value: "NOT_APPROVED" });
+      if (mode === "mixed_entries") bad.allowed.push({ ...bad.allowed[0]!, id: "unapproved_orders", plan: { ...bad.allowed[0]!.plan,
+        where: [{ field: "status", op: "eq", value: "NOT_APPROVED" }] } });
+      const requestJson = vi.fn(async request => {
+        bodies.push(JSON.stringify(request.body)); calls++;
+        const args = calls === 1 ? { value_request: valueRequest } : mode === "correction" && calls === 2
+          ? { ...bad, allowed: [{ ...bad.allowed[0], id: "INVALID ID" }] } : bad;
+        return { status: 200, body: { output: [{ type: "function_call", call_id: `approved-value-${calls}`, name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } };
+      });
+      const input = { name: "exact_approved_values", allowedQuestions: ["List active orders"], generatedBoundary: h.boundary,
+        provider: "openai" as const, model: "gpt-5.6-luna", apiKey: "test-key", egressAcknowledged: true, deferNarration: true,
+        dependencies: { requestJson }, valueRequestHandler: handler };
+      try {
+        if (mode === "cold_resume") {
+          await expect(h.run({ ...input, onCheckpoint: async cp => { if (cp?.stage === "decided") throw new Error("OWNED_VALUE_DECISION_PAUSE"); } }))
+            .rejects.toThrow("OWNED_VALUE_DECISION_PAUSE");
+          const cold = await h.coldState(); expect(cold.status).toBe("ready");
+          if (cold.status !== "ready") throw new Error("Expected exact saved approved value context");
+          await expect(h.run({ ...input, resumeCheckpoint: cold.value.read_assistance })).rejects.toThrow("READ_WORKLOAD_APPROVED_VALUE_UNUSED");
+        } else if (mode === "neq") {
+          // Source-value disclosure consent is not permission to restrict the
+          // comparator grammar. The exact plan still requires new business review.
+          const result = await h.run(input); expect(result.analysis.status).toBe("ready");
+          expect(result.authority_granted).toBe(false);
+          expect(h.state().operator_questions!.every(q => !q.confirmation)).toBe(true);
+          expect((await h.reviewScope(async view => {
+            if (view.kind !== "readback") throw new Error("Expected the exact neq plan readback");
+            expect(view.defaultValue).toBe(false); expect(view.lines.join("\n")).toContain('"op":"neq"');
+            return { kind: "decision", binding: view.binding, accepted: false };
+          })).state).toBe("pending");
+        } else await expect(h.run(input)).rejects.toThrow("READ_WORKLOAD_APPROVED_VALUE_UNUSED");
+        expect(handler).toHaveBeenCalledOnce(); expect(requestJson).toHaveBeenCalledTimes(mode === "neq" ? 2 : 3);
+        expect(bodies[0]).not.toContain('"OPEN"'); expect(bodies[1]).toContain("OPEN");
+        if (mode !== "neq") expect(h.state().read?.analysis_digest).toBeUndefined();
+        expect(h.state().operator_questions?.every(q => !q.confirmation) ?? true).toBe(true);
+      } finally { await h.cleanup(); }
+    });
 
   it("sends only separately approved exact values after a model value request", async () => {
     const typed = declaredWorkloadScope("List active orders", "active_orders_in", generatedBoundary());

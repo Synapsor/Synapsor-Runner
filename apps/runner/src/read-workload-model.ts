@@ -671,6 +671,25 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       // a business answer. Keep native diagnostics/correction; a ready analysis
       // still passes every scope, meaning and approved-value check below.
       if (candidateAnalysis.status === "blocked") return recordCandidateAnalysis();
+      // Approved literal context is a finite constraint on every admitted
+      // mapping, including typed correction and cold continuation.
+      const approvedValueIssue = approvedValueContext
+        ? approvedValueContextIssue(args, approvedValueContext)
+        : undefined;
+      if (approvedValueIssue) {
+        workloadValidationBlockers = [approvedValueIssue];
+        return {
+          ok: false,
+          value: {
+            error_code: "READ_WORKLOAD_APPROVED_VALUE_UNUSED",
+            message: approvedValueIssue,
+            authority_granted: false,
+            source_query_executed: false,
+            source_database_changed: false,
+          },
+          error_code: "READ_WORKLOAD_APPROVED_VALUE_UNUSED",
+        };
+      }
       if (structuredScopeInput) {
         // All structured submissions, including bounded corrections, pass the
         // same finite checker. Neither labels nor English clauses select scope.
@@ -754,23 +773,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           };
         }
         opaqueGuessBlockers = [];
-        const approvedValueIssue = approvedValueContext
-          ? approvedValueContextIssue(args, approvedValueContext)
-          : undefined;
-        if (approvedValueIssue) {
-          workloadValidationBlockers = [approvedValueIssue];
-          return {
-            ok: false,
-            value: {
-              error_code: "READ_WORKLOAD_APPROVED_VALUE_UNUSED",
-              message: approvedValueIssue,
-              authority_granted: false,
-              source_query_executed: false,
-              source_database_changed: false,
-            },
-            error_code: "READ_WORKLOAD_APPROVED_VALUE_UNUSED",
-          };
-        }
+
       }
       return recordCandidateAnalysis();
     },
@@ -2081,17 +2084,19 @@ function approvedValueContextIssue(
     if (!isRecord(entry) || !isRecord(entry.plan) || entry.plan.resource !== context.resource) continue;
     if (!Array.isArray(entry.plan.where)) continue;
     for (const filter of entry.plan.where) {
-      if (!isRecord(filter) || filter.field !== context.field) continue;
+      if (!isRecord(filter) || filter.field !== context.field || filter.relationship !== undefined) continue;
       matchingFieldFound = true;
       const values = Array.isArray(filter.value) ? filter.value : [filter.value];
-      if (values.length
-        && values.every((value) => value !== undefined && value !== null && approved.has(String(value)))) {
-        return undefined;
+      // One permitted comparison cannot launder a later unapproved one.
+      // Literal consent does not grant comparison semantics or result scope;
+      // those remain subject to the compiler and explicit typed scope review.
+      if (!values.length
+        || !values.every((value) => value !== undefined && value !== null && approved.has(String(value)))) {
+        return `The corrected workload used an unapproved value for ${context.resource}.${context.field}. Use only the separately approved value context.`;
       }
     }
   }
-  return matchingFieldFound
-    ? `The corrected workload used an unapproved value for ${context.resource}.${context.field}. Use only the separately approved value context.`
+  return matchingFieldFound ? undefined
     : `The corrected workload omitted the required filter on ${context.resource}.${context.field} after requesting its separately approved value context.`;
 }
 

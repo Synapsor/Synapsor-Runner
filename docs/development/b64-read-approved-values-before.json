@@ -1,0 +1,31 @@
+{
+  "base": "1aa76d4c",
+  "status": "SUCCESSOR14PASS_OPERATOR_WHITELIST_REMOVED_INDEPENDENT_PENDING",
+  "evidence": "/var/tmp/synapsor-b64-read-owned/evidence/typed-approved-values-five-before.log",
+  "cases": [
+    "omitted required approved field filter",
+    "unapproved literal",
+    "approved literal applied to foreign field only",
+    "unapproved literal after existing bounded correction",
+    "unapproved literal after actual decided native checkpoint/cold Resume"
+  ],
+  "finding": "All5 actual typed producer calls resolve with a saved ready candidate instead of existing READ_WORKLOAD_APPROVED_VALUE_UNUSED refusal. Existing helper only called below typed finite return. No equivalent literal-binding check in scope authority atoms; those bind field/op, not the approved value list.",
+  "guard_contract": "After separately approved exact resource/field values, existing finite guard requires that exact field filter with an approved value. This is distinct from English meaning or business scope, and remains mandatory for typed mapping.",
+  "privacy": "Values OPEN/NOT_APPROVED are declared fixture literals; handler is existing controlled consent-result port, not sampling proof. First request contains no approved literal, no database query. Native generation/checkpoint/CAS real.",
+  "proposed_fix": "Move existing approvedValueContextIssue validation into common ready-candidate path before typed return, no new logic or store. Preserve5 before and require independent variant.",
+  "additional_preexisting_question": "Helper currently returns on first approved matching filter; ignores a later unapproved matching entry/operator. R1 noted, characterize separately before broadening helper.",
+  "classification_correction": "Original before4/5 returned ready; foreign_field=id was already compiler-blocked, not a bypass. Corrected fixture now reviews alternative_status through ordinary mutation/confirmation; its exact foreignfield filter is then caught by moved guard.",
+  "intermediate": "typed-approved-values-eight-guard-moved.log:5PASS3FAIL. Moving guard alone fixes5 true admitted cases; new actual ready mixed_filters/mixed_entries/neq still bypass first-match predicate.",
+  "predicate_adjudication": "Main+R1 cc126828: inspect all exactconsented root.field filters; only eq/in and all literals approved, require>=1match; relationship-qualified filters not rootmatches; unrelated fields/tasks unchanged. Existing prompt explicitly instructs eq/in.",
+  "complete_fix": "Common ready-candidate approved-value guard; all exactroot.field values subset approved; >=1matching required; relationship-qualified matches excluded. No comparison whitelist: compiler/typed scope/native full review owns operator/result semantics.",
+  "after": "typed-approved-literal-scope-after.log:14PASS154filtered (7value negatives, neq actual new unconfirmed/defaultNo/decline,4existingvalue positives,2rawsave controls).",
+  "types": "No owned errors,4 pre-existing external fixture migrations on isolated branch.",
+  "independent_before": "R1 cc126828 on22:2PASS2FAIL exacteq/in positive; mixedentry+neq acceptready (actual model-visible approvedvalues). Await unchanged after.",
+  "remaining": [
+    "Independent R1 unchanged negatives + corrected comparator contract variant before integration",
+    "Real public approved-value continuation not claimed",
+    "Relationship-qualified foreign filter finite exclusion code inspected; actual relation-specific variant still not executed"
+  ],
+  "controlling_contract_correction": "Main/R2 supersedes earlier eq/in predicate adjudication: consent binds exact root.field literal set, NOT comparison semantics. 566d4928 and earlier R1 neq-negative preserved as superseded evidence, not accepted successor.",
+  "resources": "Focused1worker; MemAvailable18.69GiB/disk79GiB at material change. New rule4heavyglobal/max8workersPERRUN/B65dedicatedslot and>=8GiBmemory+disk floor retained."
+}

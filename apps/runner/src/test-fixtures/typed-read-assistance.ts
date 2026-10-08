@@ -19,11 +19,11 @@ import { READ_SCOPE_PROTOCOL } from "../read-structured-scope.js";
  * question/answer owners and disk Resume CAS. No preseeded mapping or answer. */
 export async function typedReadAssistanceFixture(request: string, answer: (() => Promise<string | null>) | undefined, model = "gpt-5.6-luna",
   additionalFields: Record<string, { type: string }> = {},
-  domain = { resource: "public.orders", field: "status", primaryKey: "id" }) {
+  domain = { resource: "public.orders", field: "status", primaryKey: "id" }, additionalFilterFields: string[] = []) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "typed-read-assistance-"));
   const prepared = await prepareReviewedReadScope(root, { resources: [domain.resource], field: domain.field, primaryKey: domain.primaryKey,
     fields: { [domain.primaryKey]: { type: "uuid" }, [domain.field]: { type: "text" }, ...additionalFields },
-    review: { selectable_fields: [...new Set([domain.primaryKey, domain.field, ...Object.keys(additionalFields)])], filterable_fields: [domain.field], allow_reviewed_fields: Object.keys(additionalFields) } });
+    review: { selectable_fields: [...new Set([domain.primaryKey, domain.field, ...Object.keys(additionalFields)])], filterable_fields: [domain.field, ...additionalFilterFields], allow_reviewed_fields: Object.keys(additionalFields) } });
   const boundary = prepared.context.candidate;
   const input = { binding: { boundary_name: boundary.pack.name, generation_lock_fingerprint: boundary.generation_lock_fingerprint,
     schema_fingerprint: prepared.context.lock.schema_fingerprint, role_posture_fingerprint: boundary.role_posture_fingerprint },
@@ -47,12 +47,16 @@ export async function typedReadAssistanceFixture(request: string, answer: (() =>
     if (locked) throw new Error("Nested test mutation"); locked = true; const previous = staged;
     try { return await fn({ fixturePermit: true } as never); } catch (error) { staged = previous; throw error; } finally { locked = false; }
   };
+  const faults: { rawSave?: "before_write" | "after_write" } = {};
   const save = async () => {
     if (!locked) throw new Error("Native save outside protected fixture port");
+    const rawWrite = staged.questions?.some(q => q.raw_answer && !state.operator_questions?.find(old => old.id === q.id)?.raw_answer);
+    if (rawWrite && faults.rawSave === "before_write") throw new Error("OWNED_RAW_SAVE_NOT_ACKNOWLEDGED");
     await persist(buildBoundaryAuthoringResumeState({ ...input, previous: state,
       readAssistanceCheckpoint: "checkpoint" in staged ? staged.checkpoint ?? null : state.read_assistance,
       read: staged.read ?? state.read, generationRecovery: staged.recovery ?? state.generation_recovery,
       operatorQuestions: staged.questions ?? state.operator_questions, ownerHandoffs: staged.handoffs ?? state.owner_handoffs })); staged = {};
+    if (rawWrite && faults.rawSave === "after_write") throw new Error("OWNED_RAW_SAVE_NOT_ACKNOWLEDGED");
   };
   const common = { mutate, scopeDigest: () => scopeDigest, contextDigest: async () => contextDigest,
     readQuestions: () => staged.questions ??= structuredClone(state.operator_questions ?? []), readHandoffs: () => staged.handoffs ??= structuredClone(state.owner_handoffs ?? []),
@@ -102,7 +106,13 @@ export async function typedReadAssistanceFixture(request: string, answer: (() =>
     }, interact: async view => { if (locked) throw new Error("Lease over human wait"); return interact(view); } });
     return host.review(state.read!.scope_question_id!);
   };
-  return { boundary, structuredScope, currentReview, reviewScope, state: () => state, coldState: () => readBoundaryAuthoringResumeState(root, input.binding),
+  return { boundary, structuredScope, currentReview, reviewScope, faults, state: () => state, coldState: () => readBoundaryAuthoringResumeState(root, input.binding),
+    reload: async () => {
+      if (locked) throw new Error("Cannot reload across an owned mutation");
+      const disk = await readBoundaryAuthoringResumeState(root, input.binding);
+      if (disk.status !== "ready") throw new Error("Exact native cold state unavailable");
+      state = disk.value; staged = {}; return disk.value;
+    },
     run: (options: ModelReadWorkloadInput, scopeAdapter: NonNullable<ModelReadWorkloadInput["structuredScope"]> = structuredScope) => withAuthoringGenerationRecovery(async () => {
       configureAuthoringGenerationRecovery({ available: () => true, read: () => state.generation_recovery,
         current: async () => contextDigest, progress: () => {},
