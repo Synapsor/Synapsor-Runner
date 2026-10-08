@@ -1,0 +1,237 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b64-action-typed
+
+(node:611878) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/action-rule-model.test.ts (205 tests | 1 failed | 202 skipped) 445ms
+   ↓ structured Action draft schema > accepts the compiler-valid nested update fixture without merging component names
+   ↓ structured Action draft schema > accepts the compiler-valid nested insert fixture without merging component names
+   ↓ structured Action draft schema > retains nested policy predicates, shared limits and expression definitions
+   ↓ structured Action draft schema > rejects flattened phases, provider envelopes, unknown fields and invalid effect variants
+   ↓ conversational Action authoring tools > corrects an impossible constant in the focused effect phase before draft readiness
+   ↓ conversational Action authoring tools > reviews an existing counter through a bounded host operation and restores it before resuming draft components
+   ↓ conversational Action authoring tools > does not repeat declined counter review or treat it as mapped
+   ↓ conversational Action authoring tools > refuses an unbounded or inconsistent counter mapping (extra)
+   ↓ conversational Action authoring tools > refuses an unbounded or inconsistent counter mapping (invalid_name)
+   ↓ conversational Action authoring tools > refuses an unbounded or inconsistent counter mapping (changed_read)
+   ↓ conversational Action authoring tools > refuses an unbounded or inconsistent counter mapping (wrong_field)
+   ↓ conversational Action authoring tools > revalidates retained partial components after a host-mediated Read edit without asking answered questions
+   ↓ conversational Action authoring tools > restores a reviewed private source before checkpoint validation and carries it through later components
+   ↓ conversational Action authoring tools > cannot turn a retained checkpoint into authority when the current catalog no longer supports its fields
+   ↓ conversational Action authoring tools > retains partial business work but requires the current private proof after rescan (reviewed)
+   ↓ conversational Action authoring tools > retains partial business work but requires the current private proof after rescan (declined)
+   ↓ conversational Action authoring tools > retains partial business work but requires the current private proof after rescan (public_read_changed)
+   ↓ conversational Action authoring tools > retains partial business work but requires the current private proof after rescan (unrelated_intent)
+   ↓ conversational Action authoring tools > does not repeat a declined source transfer or send its metadata into later model turns
+   ↓ conversational Action authoring tools > rejects an alleged private mapping that changes public reads
+   ↓ conversational Action authoring tools > qualifies live creation and a day-two edit through the same tools
+   ↓ conversational Action authoring tools > B50 gates the actual Terra Action question before streaming or handoff (structured=false)
+   ↓ conversational Action authoring tools > B50 gates the actual Terra Action question before streaming or handoff (structured=true)
+   ↓ conversational Action authoring tools > mediated Version actual producer batch and owning checkpoint > hands the twelfth validated Action batch to Runner without a thirteenth narration call
+   ↓ conversational Action authoring tools > mediated Version actual producer batch and owning checkpoint > consumes the full validated batch while preserving the existing later-edit refusal
+   ↓ conversational Action authoring tools > mediated Version actual producer batch and owning checkpoint > does not hand off a compiler-refused twelfth Action validation as a ready draft
+   ↓ conversational Action authoring tools > mediated Version actual producer batch and owning checkpoint > consumes the actual Version batch before outside UI, preserving pending counters across restart
+   ↓ conversational Action authoring tools > mediated Version actual producer batch and owning checkpoint > known later mutations in the same actual compatible batch are refused before outside UI
+   ↓ conversational Action authoring tools > mediated Version actual producer batch and owning checkpoint > actual 11/23 producer batch and normal mapping consume the same final 12/24 allowance
+   ↓ conversational Action authoring tools > mediated Version actual producer batch and owning checkpoint > allows genuine ordinary question, real INPUT acknowledgement and next ordinary turn
+   ↓ conversational Action authoring tools > mediated Version actual producer batch and owning checkpoint > exact saved Version proof is locally reused, while a changed proof mediates (changed=false)
+   ↓ conversational Action authoring tools > mediated Version actual producer batch and owning checkpoint > exact saved Version proof is locally reused, while a changed proof mediates (changed=true)
+   ↓ conversational Action authoring tools > mediated Version actual producer batch and owning checkpoint > unknown interrupted legacy counters cannot be guessed as a fresh allowance
+   ↓ conversational Action authoring tools > mediated Version actual producer batch and owning checkpoint > a failed initial journal CAS admits no provider call
+   ↓ conversational Action authoring tools > current work-unit contract > projects exact existing Read interpretation only when Source, Read, catalog and exposure still match
+   ↓ conversational Action authoring tools > current work-unit contract > keeps finite length implication distinct from exact local input acceptance and Source equivalence
+   ↓ conversational Action authoring tools > current work-unit contract > refuses a falsely current local Source pass: source
+   ↓ conversational Action authoring tools > current work-unit contract > refuses a falsely current local Source pass: read
+   ↓ conversational Action authoring tools > current work-unit contract > refuses a falsely current local Source pass: draft
+   ↓ conversational Action authoring tools > current work-unit contract > refuses a falsely current local Source pass: answers
+   ↓ conversational Action authoring tools > current work-unit contract > refuses a falsely current local Source pass: unrelated
+   ↓ conversational Action authoring tools > current work-unit contract > refuses a falsely current local Source pass: conflict
+   ↓ conversational Action authoring tools > current work-unit contract > nominates one exact predicate deletion and preserves every outside-parent field and untouched array member
+   ↓ conversational Action authoring tools > current work-unit contract > uses the current host Source nomination for bounded conversational repair before returning structural readiness
+   ↓ conversational Action authoring tools > current work-unit contract > uses the current host Source nomination for bounded focused repair before returning structural readiness
+   ↓ conversational Action authoring tools > current work-unit contract > preserves unknown Source assessment without a compiler correction or fabricated pass: owner_meaning_pending
+   ↓ conversational Action authoring tools > current work-unit contract > preserves unknown Source assessment without a compiler correction or fabricated pass: currentness_pending
+   ↓ conversational Action authoring tools > current work-unit contract > preserves unknown Source assessment without a compiler correction or fabricated pass: unclassified_error
+   ↓ conversational Action authoring tools > current work-unit contract > restores an existing Source correction parent before resumed focused generation: precise
+   ↓ conversational Action authoring tools > current work-unit contract > restores an existing Source correction parent before resumed focused generation: outside_parent
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > commits one repair invocation before sending and retains it on pause/reopen without resend
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > keeps the original parent after an outside-scope attempt and accepts the exact next repair
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > refuses an exhausted saved Source repair before any send
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > confines focused fallback to nominated phases with the same saved allowance: proper
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > confines focused fallback to nominated phases with the same saved allowance: outside_then_proper
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > cannot reset exhaustion by switching to the focused fallback
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > saves a fresh host nomination before generation and refuses dispatch if its save fails
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > refuses a focused repair whose saved producer context changed before dispatch: baseline
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > refuses a focused repair whose saved producer context changed before dispatch: outcome
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > refuses a focused repair whose saved producer context changed before dispatch: intent
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > keeps the compact nomination under 96 KiB and rejects oversized parents and arbitrary proof fields
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > requires actual current host reassessment before a saved repair send: missing
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > requires actual current host reassessment before a saved repair send: report
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > requires actual current host reassessment before a saved repair send: nomination
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > requires actual current host reassessment before a saved repair send: answers
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > requires actual current host reassessment before a saved repair send: read
+   ↓ conversational Action authoring tools > current work-unit contract > durable Source repair restart > requires actual current host reassessment before a saved repair send: catalog
+   ↓ conversational Action authoring tools > current work-unit contract > rejects a stale retained Source correction before any provider request
+   ↓ conversational Action authoring tools > current work-unit contract > keeps malformed external Source assessment distinct from a repairable representation: {}
+   ↓ conversational Action authoring tools > current work-unit contract > keeps malformed external Source assessment distinct from a repairable representation: {"state":"future_unknown_result"}
+   ↓ conversational Action authoring tools > current work-unit contract > keeps malformed external Source assessment distinct from a repairable representation: {"state":"representation_mismatch"}
+   ↓ conversational Action authoring tools > current work-unit contract > encodes current subject, evidence, effect and Source provenance for conversational openai drafting
+   ↓ conversational Action authoring tools > current work-unit contract > encodes current subject, evidence, effect and Source provenance for conversational openai_compatible drafting
+   ↓ conversational Action authoring tools > current work-unit contract > encodes the same contract in every focused openai phase and does not infer Source acceptance
+   ↓ conversational Action authoring tools > current work-unit contract > encodes the same contract in every focused openai_compatible phase and does not infer Source acceptance
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > B35 restores the originating owner answer and program frame through the real producer after restart: same
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > B35 restores the originating owner answer and program frame through the real producer after restart: changed_answer
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > B35 restores the originating owner answer and program frame through the real producer after restart: missing_origin
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > B35 restores the originating owner answer and program frame through the real producer after restart: changed_program
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > saves the complete pending question before undefined at the human boundary
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > saves the complete pending question before thrown cancellation at the human boundary
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > does not expose an unsaved question as a successful human handoff
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > redisplays the actual saved unanswered question without another provider request
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > persists one genuine answer before any next provider request
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > refuses a pending question after changed read before prompting or egress
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > refuses a pending question after changed catalog before prompting or egress
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > refuses a pending question after changed source before prompting or egress
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > refuses a pending question after changed outcome before prompting or egress
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > refuses a pending question after changed intent before prompting or egress
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > can redisplay a no-attachment question in a fresh empty source session
+   ↓ conversational Action authoring tools > B33 owner-question consumer boundary > a failed answer save cannot enter a later generation
+   ↓ conversational Action authoring tools > delivers a current bound requirement through openai correction before structural readiness
+   ↓ conversational Action authoring tools > delivers a current bound requirement through openrouter correction before structural readiness
+   ↓ conversational Action authoring tools > keeps an exact program work item when the model submits a sibling identity
+   ↓ conversational Action authoring tools > requires exact host operator review for a guided history-selector change (true)
+   ↓ conversational Action authoring tools > requires exact host operator review for a guided history-selector change (false)
+   ↓ conversational Action authoring tools > keeps generated repair diagnostics separate from original counter intent
+   ↓ conversational Action authoring tools > preserves the saved role explanation without demanding an unrequested principal quota during revision
+   ↓ conversational Action authoring tools > refuses model-added history filters during remove_extra and retains the exact existing selectors
+   ↓ conversational Action authoring tools > refuses model-added history filters during numeric_edit and retains the exact existing selectors
+   ↓ conversational Action authoring tools > refuses model-added history filters during noop and retains the exact existing selectors
+   ↓ conversational Action authoring tools > recognizes the existing implicit current-outcome filter of capability scope
+   ↓ conversational Action authoring tools > corrects an unaccepted extra quota through disabled revision, with restart and stale-save protection
+   ↓ conversational Action authoring tools > honors an explicit later scope replacement without carrying the old principal quota forward
+   ↓ conversational Action authoring tools > saves and reloads a fresh clarification without converting its role definition into accounting
+   ↓ conversational Action authoring tools > still enforces original scope and accepted operator decisions during a generated repair
+   ↓ conversational Action authoring tools > preserves setup pending an authoritative source without treating the operator answer as a source fact
+   ↓ conversational Action authoring tools > does not honor a fabricated pause or claim a failed checkpoint was saved
+   ↓ conversational Action authoring tools > validates explicit nullable clears through conversational effect submission (valid)
+   ↓ conversational Action authoring tools > validates explicit nullable clears through conversational effect submission (nonnullable)
+   ↓ conversational Action authoring tools > validates explicit nullable clears through conversational effect submission (unknown_enum)
+   ↓ conversational Action authoring tools > validates explicit nullable clears through conversational effect submission (timestamp_value)
+   ↓ conversational Action authoring tools > scopes private linked facts separately from subjects and every changed record (atomic=false)
+   ↓ conversational Action authoring tools > scopes private linked facts separately from subjects and every changed record (atomic=true)
+   ↓ conversational Action authoring tools > authors public discovery vocabulary through the same bounded rule tool
+   ↓ conversational Action authoring tools > changes discovery only with a declared revision scope (false)
+   ↓ conversational Action authoring tools > changes discovery only with a declared revision scope (true)
+   ↓ conversational Action authoring tools > repairs per-action counters using the original multi-action job without repeating the business question
+   ↓ conversational Action authoring tools > repairs an incomplete tool submission internally instead of asking the operator to submit draft components
+   ↓ conversational Action authoring tools > bounds repeated incomplete tool submissions without a human clarification loop
+   ↓ conversational Action authoring tools > continues saved drafting progress without asking for another operator turn: The reviewed relationship paths are prepared in the disabled draft; no authority is active.
+   ↓ conversational Action authoring tools > continues saved drafting progress without asking for another operator turn: The seat draft is partially prepared. The remaining business rules are not yet prepared.
+   ↓ conversational Action authoring tools > continues saved drafting progress without asking for another operator turn: The restoration draft is partially prepared; the prerequisite, 30-day rule and approval still need preparation.
+   ↓ conversational Action authoring tools > R2 B64 narration cannot select operator business authority: The disabled draft is partially prepared. Remaining components are pending.
+   ↓ conversational Action authoring tools > R2 B64 narration cannot select operator business authority: The disabled draft is partially prepared. Remaining components are pending?
+   ↓ conversational Action authoring tools > R2 B64 narration cannot select operator business authority: Done?
+   ✓ conversational Action authoring tools > B64 ordinary typed clarification reaches the saved whole-Action question without another request: How many reviewers should approve an otherwise valid pause? 216ms
+   × conversational Action authoring tools > B64 ordinary typed clarification reaches the saved whole-Action question without another request: The draft needs your choice: which components are needed for approval? 89ms
+     → expected [Function] to throw error including 'CANCELLED' but got 'The generation failed without suffici…'
+   ✓ conversational Action authoring tools > B64 ordinary typed clarification reaches the saved whole-Action question without another request: How many reviewers should approve an otherwise valid pause 139ms
+   ↓ conversational Action authoring tools > B64 clarification rejects stale_context before handing off the exact next question
+   ↓ conversational Action authoring tools > B64 clarification rejects foreign_phase before handing off the exact next question
+   ↓ conversational Action authoring tools > B64 clarification rejects authority before handing off the exact next question
+   ↓ conversational Action authoring tools > B64 consumed clarification batch cannot mutate its already bound Action components
+   ↓ conversational Action authoring tools > B64 rejects forged operator authority in an actual submitted tool payload
+   ↓ conversational Action authoring tools > still asks a genuine business question after saving a component (structured: false)
+   ↓ conversational Action authoring tools > still asks a genuine business question after saving a component (structured: true)
+   ↓ conversational Action authoring tools > continues relationship-only progress without treating inspection or unchanged saves as new progress
+   ↓ conversational Action authoring tools > bounds progress-only continuation and retains the partial draft for resume
+   ↓ conversational Action authoring tools > offers honest compatible-provider recovery without extending retries (http://127.0.0.1:11434/v1)
+   ↓ conversational Action authoring tools > offers honest compatible-provider recovery without extending retries (https://provider.example/v1)
+   ↓ conversational Action authoring tools > keeps a joint-limit repair from changing the reviewer or other saved components
+   ↓ conversational Action authoring tools > holds unvalidated business text until the question handler and returns a local review message (false)
+   ↓ conversational Action authoring tools > holds unvalidated business text until the question handler and returns a local review message (true)
+   ↓ conversational Action authoring tools > allows an explicit read-only pivot but rejects an invented cancellation message
+   ↓ conversational Action authoring tools > repairs approval-only execution without another business question (resumed: false)
+   ↓ conversational Action authoring tools > repairs approval-only execution without another business question (resumed: true)
+   ↓ conversational Action authoring tools > discovers and prepares an exact composite link in chat, retaining it across pause/resume
+   ↓ conversational Action authoring tools > reports ambiguous, missing and unsupported relationships without guessing or granting access
+   ↓ conversational Action authoring tools > lets the model choose component order and repair compiler feedback without a user interruption
+   ↓ conversational Action authoring tools > retains draft state across more than two business questions and treats blank input as no decision
+   ↓ conversational Action authoring tools > finishes clarification of an already-correct baseline without requiring a fake edit or another answer
+   ↓ conversational Action authoring tools > edits only the selected component of an existing rule, without recreating its effect
+   ↓ conversational Action authoring tools > applies an explicitly revised input bound without losing other rule or approval settings
+   ↓ conversational Action authoring tools > repairs a caller-version mistake internally without asking the customer for a hidden value
+   ↓ conversational Action authoring tools > reopens a same-job draft after mistaken second-action creation (resume: false)
+   ↓ conversational Action authoring tools > reopens a same-job draft after mistaken second-action creation (resume: true)
+   ↓ conversational Action authoring tools > keeps genuine outcome collisions closed and gives a guided revision recovery
+   ↓ conversational Action authoring tools > keeps validity separate from automatic eligibility when revising one policy
+   ↓ conversational Action authoring tools > rejects stale or out-of-agenda reopen requests and can reuse an already-correct draft
+   ↓ conversational Action authoring tools > resumes disabled components after an interruption and rejects a changed structural binding
+   ↓ model-guided Action Rule authoring > labels retained operator statements separately in focused repair prompts
+   ↓ model-guided Action Rule authoring > uses four focused required tools and compiles one disabled semantic authority
+   ↓ model-guided Action Rule authoring > uses the same operation-aware Effect contract for Anthropic authoring
+   ↓ model-guided Action Rule authoring > infers one unambiguous UPDATE subject when a provider omits target_binding
+   ↓ model-guided Action Rule authoring > internally corrects an explicit UPDATE binding that points at another subject
+   ↓ model-guided Action Rule authoring > asks one business clarification rather than guessing between UPDATE subjects
+   ↓ model-guided Action Rule authoring > fails before Rule or approval drafting when UPDATE has no reviewed subject target
+   ↓ model-guided Action Rule authoring > keeps INSERT free of target_binding and retains Runner-derived deduplication
+   ↓ model-guided Action Rule authoring > normalizes an omitted empty approval-limit list before authority validation
+   ↓ model-guided Action Rule authoring > repairs a per-person counter that weakens an explicit customer-account limit
+   ↓ model-guided Action Rule authoring > repairs omitted automatic-policy limits from the stated intent without repeating them to the operator
+   ↓ model-guided Action Rule authoring > redirects a redundant tenant-wide limit question when tenant plus principal is already exact
+   ↓ model-guided Action Rule authoring > repairs a compiled policy that weakened an explicit tenant plus principal scope
+   ↓ model-guided Action Rule authoring > repairs crossed maxima and windows instead of accepting all requested values somewhere
+   ↓ model-guided Action Rule authoring > preserves slash-delimited tenant/principal accounting without inventing a tenant-only limit
+   ↓ model-guided Action Rule authoring > recognizes a trusted tenant plus principal pair as one combined accounting scope
+   ↓ model-guided Action Rule authoring > uses the local business question when payload correction already consumed the phase allowance
+   ↓ model-guided Action Rule authoring > edits one exact reviewed baseline without letting the model rename its authority or target
+   ↓ model-guided Action Rule authoring > retains an automatic policy when a revision changes only its fallback quorum
+   ↓ model-guided Action Rule authoring > keeps all four model phases for an ambiguous multi-phase revision
+   ↓ model-guided Action Rule authoring > reconciles a newly reviewed trusted scope field before compiling the Action target
+   ↓ model-guided Action Rule authoring > asks a genuine business clarification and resumes the same focused phase
+   ↓ model-guided Action Rule authoring > permits one compiler-directed mechanical repair without broadening the effect
+   ↓ model-guided Action Rule authoring > routes an invalid effect-field bound back to the effect phase
+   ↓ model-guided Action Rule authoring > routes a rule expression binding error back to the rule phase
+   ↓ model-guided Action Rule authoring > turns an omitted required circuit breaker into one bounded business clarification
+   ↓ model-guided Action Rule authoring > binds model-supplied approval limit targets to the validated semantic outcome
+   ↓ model-guided Action Rule authoring > explains that lifetime approval counts are unsupported and accepts one exact rolling replacement
+   ↓ model-guided Action Rule authoring > keeps a second missing approval breaker in the same bounded model conversation
+   ↓ model-guided Action Rule authoring > redirects database-mechanics questions to the model instead of burdening the operator
+   ↓ model-guided Action Rule authoring > keeps reviewer and rolling-count relationship questions behind Runner
+   ↓ model-guided Action Rule authoring > keeps the proposal ledger out of private source verification bindings
+   ↓ model-guided Action Rule authoring > keeps authenticated ownership in trusted scope instead of asking for another rule field
+   ↓ model-guided Action Rule authoring > answers approval-policy separation mechanics without interrupting the operator
+   ↓ model-guided Action Rule authoring > does not ask the operator for an unshown accepted binding name
+   ↓ model-guided Action Rule authoring > adds source identity needed for deterministic derivation without asking the operator
+   ↓ model-guided Action Rule authoring > keeps reviewer role mechanics in Runner's control plane: What validated Verification binding and exact field represent the required billing reviewer?
+   ↓ model-guided Action Rule authoring > keeps reviewer role mechanics in Runner's control plane: What is the fixed reviewer-role label for a warehouse manager (for example, warehouse_manager)?
+   ↓ model-guided Action Rule authoring > keeps reviewer role mechanics in Runner's control plane: What fixed reviewed reviewer-role label should represent a human warehouse manager?
+   ↓ model-guided Action Rule authoring > keeps reviewer role mechanics in Runner's control plane: Runner requires a fixed control-store reviewer-role label; please provide the established label.
+   ↓ model-guided Action Rule authoring > redirects derived-expression mechanics while preserving two genuine business clarifications
+   ↓ model-guided Action Rule authoring > names the final unresolved business question when the bounded dialogue is exhausted
+   ↓ model-guided Action Rule authoring > lets the model repair one refused required-tool payload before completing the phase
+   ↓ model-guided Action Rule authoring > derives internal outcome names without asking the operator
+   ↓ model-guided Action Rule authoring > uses a flat status envelope for OpenAI-compatible authoring while retaining Runner validation
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/action-rule-model.test.ts > conversational Action authoring tools > B64 ordinary typed clarification reaches the saved whole-Action question without another request: The draft needs your choice: which components are needed for approval?
+AssertionError: expected [Function] to throw error including 'CANCELLED' but got 'The generation failed without suffici…'
+
+Expected: "CANCELLED"
+Received: "The generation failed without sufficient transport-phase evidence. Saved progress is retained; inspect its recorded attempt and local state before continuing. No automatic generation or callback replay is permitted."
+
+ ❯ apps/runner/src/action-rule-model.test.ts:1673:5
+    1671|     });
+    1672|     const askClarification = vi.fn(async received => { expect(received…
+    1673|     await expect(converseActionRuleDraft({ ...requestInput(requestJson…
+       |     ^
+    1674|       authoringProtocol: { version: "synapsor.structured-authoring.v2"…
+    1675|       onCheckpoint: async value => { checkpoint = structuredClone(valu…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed | 202 skipped (205)
+   Start at  08:14:57
+   Duration  2.60s (transform 1.15s, setup 0ms, collect 2.01s, tests 445ms, environment 0ms, prepare 34ms)
+
