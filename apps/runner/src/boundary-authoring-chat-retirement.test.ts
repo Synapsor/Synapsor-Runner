@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
+import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
+import { presentReadScopeInteraction } from "./authoring-question-presenter.js";
 import type { AnalyticsShellIo } from "./analytics-shell.js";
 
 function fixture() {
@@ -97,5 +103,70 @@ describe("B64 Action consent uses the caller's typed context and exact default",
     expect(f.choose).not.toHaveBeenCalled();
     expect(f.guide).not.toHaveBeenCalled();
     f.chat.close();
+  });
+});
+
+describe("B64 CP08 current exact record before direct decision", () => {
+  it("associates all 26 literal Read scope facts with /diff after direct default-No decline", async () => {
+    const literal = Array.from({ length: 26 }, (_, n) => `exact current scope fact ${n}: 漢字 😀 e\u0301`);
+    const reads = ["/diff", "stop"];
+    const writes: string[] = [];
+    const choose = vi.fn<NonNullable<AnalyticsShellIo["choose"]>>(async () => "no");
+    const io: AnalyticsShellIo = { read: async () => reads.shift(), choose,
+      write: value => { writes.push(value); }, columns: () => 100, onInterrupt: () => () => {}, close: () => {} };
+    const chat = createBoundaryAuthoringChat({ io, color: false });
+    const digest = canonicalJsonDigest("current owner binding");
+    const binding = { question_id: randomUUID(), question_revision: 1, question_digest: digest,
+      context_digest: digest, scope_digest: digest, snapshot_digest: digest };
+    const view = { kind: "readback" as const, binding, lines: literal, defaultValue: false };
+    const before = structuredClone(view);
+    try {
+      expect(await presentReadScopeInteraction({ view, session: chat.session }))
+        .toEqual({ kind: "decision", binding, accepted: false });
+      expect(view).toEqual(before);
+      expect(choose).toHaveBeenCalledOnce();
+      expect(choose.mock.calls[0]![0].initialValue).toBe("no");
+      const displayed = writes.join("\n");
+      for (const line of literal) expect(displayed).toContain(line);
+      const diffStart = writes.length;
+      await chat.readOperator!();
+      await writeFile(join(tmpdir(), "cp08-owned-transcript.json"), JSON.stringify({ writes, binding, literal }, null, 2));
+      const diff = writes.slice(diffStart).join("\n");
+      for (const line of literal) expect(diff).toContain(line);
+      expect(writes.join("\n")).toMatch(/latest reviewed record/i);
+    } finally { chat.close(); }
+  });
+
+  it.each([
+    { ending: "no", lines: ["Current complete literal fact: e\u0301", "Current unresolved caveat: 漢字"] },
+    { ending: undefined, lines: ["Current complete literal fact: e\u0301", "Current unresolved caveat: 漢字"] },
+    { ending: "no", lines: [] },
+    { ending: undefined, lines: [] },
+  ])("binds supplied exact choice details over prior or compact context before decline/cancel ($ending, $lines)", async ({ ending, lines }) => {
+    const writes: string[] = [];
+    const reads = ["/diff", "stop"];
+    const choose = vi.fn<NonNullable<AnalyticsShellIo["choose"]>>(async () => ending);
+    const io: AnalyticsShellIo = { read: async () => reads.shift(), choose,
+      write: value => { writes.push(value); }, columns: () => 100, onInterrupt: () => () => {}, close: () => {} };
+    const chat = createBoundaryAuthoringChat({ io, color: false });
+    const exactDetails = { title: "記録 😀", lines };
+    const before = structuredClone(exactDetails);
+    chat.rememberDetails("Previous unrelated page", ["Unrelated retained destination"]);
+    try {
+      expect(await chat.session.chooseOption!("Continue?", [{ value: "no", label: "No" }], {
+        decisionKind: "business_review", initialValue: "no", context: ["Compact choice context"], exactDetails,
+      })).toBe(ending);
+      expect(exactDetails).toEqual(before);
+      expect(choose).toHaveBeenCalledOnce();
+      expect(choose.mock.calls[0]![0].initialValue).toBe("no");
+      const diffStart = writes.length;
+      await chat.readOperator!();
+      const diff = writes.slice(diffStart).join("\n");
+      expect(diff).toMatch(/latest reviewed record/i);
+      expect(diff).toContain(exactDetails.title);
+      for (const line of exactDetails.lines) expect(diff).toContain(line);
+      expect(diff).not.toContain("Compact choice context");
+      expect(diff).not.toContain("Unrelated retained destination");
+    } finally { chat.close(); }
   });
 });
