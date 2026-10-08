@@ -22,6 +22,7 @@ import { newPolicySourceSession, policyTextSnapshot, savePolicySources, loadPoli
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "../project-authority-mutation.js";
 import { VERSION_PROCESS_FACTS as facts, versionProcessInspection } from "./source-version-process-contract.js";
 import { modelVisibleJsonLine, modelVisibleUserText } from "./model-visible-frame.js";
+import { STRUCTURED_AUTHORING_PROTOCOL_VERSION } from "../authoring-protocol.js";
 
 type Stop = "root" | "unanswered" | "raw" | "proposal" | "confirmed" | "mapped" | "returned" | "none";
 type Controls = { raw?: string | null; accepted?: boolean | null; pendingChoice?: "keep" | "answer" };
@@ -48,7 +49,7 @@ const interrupted = () => Object.assign(new Error(`CONTROLLED_VERSION_PROCESS_IN
 const selected = () => resume.operator_questions?.find(q => q.id === cp?.pending_version?.question_id);
 const context = () => canonicalJsonDigest({ fixtureDigest, source: sources, scope });
 const base = { binding, stage: "action_drafting" as const, jobIntent: facts.intent, provider: "openai" as const,
-  model: "controlled-version-process" };
+  model: "controlled-version-process", authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION } };
 async function persist(permit?: ProjectAuthorityMutationPermit) {
   const next = buildBoundaryAuthoringResumeState({ ...base, previous: committed, policySourceSession: sources.id,
     action: { intent: facts.intent, strategy: "rule_derived", intents: [facts.intent], intended_outcomes: [...facts.outcomes], ...(cp ? { checkpoint: cp } : {}) },
@@ -139,7 +140,14 @@ const requestJson: NonNullable<NonNullable<ModelActionRuleDraftInput["session"][
     const catalog = modelVisibleJsonLine<{ resources: Array<{ name: string; selected_version_field?: string; version_field_options?: string[] }> }>(body, "Current normalized structural catalog");
     const resource = catalog.resources.find(row => row.name === "public.service_visits"); assert(resource); assert(resource.version_field_options?.includes("c09"));
     if (resource.selected_version_field === "c09") {
-      name = "runner__submit_action_rule_draft"; args = { status: "clarification", question: facts.nextQuestion };
+      name = "runner__submit_action_rule_draft";
+      const snapshot = modelVisibleJsonLine<{ clarification_context: { context_digest: string; targets: Array<{ kind: string; phase: string }> } }>(body, "Current disabled draft");
+      const tool = body.tools.find(item => item.name === name)!;
+      const branch = tool.parameters.oneOf.find((item: any) => item.properties?.status?.const === "clarification");
+      const phase = branch?.properties.target.properties.phase.const;
+      const target = snapshot.clarification_context.targets.find(item => item.phase === phase); assert(target);
+      args = { status: "clarification", question: facts.nextQuestion,
+        context_digest: snapshot.clarification_context.context_digest, target };
     } else {
       name = "runner__review_version_field"; args = { resource: "public.service_visits", field: "c09" };
     }
@@ -212,7 +220,7 @@ async function run() {
         resume.generation_recovery = recovery;
         try { await persist(); } catch (error) { await event("native-journal-save-failed", { error: String(error) }); throw error; }
       }, progress: () => undefined });
-    return generateModelActionRuleDraft({ session, intent: facts.intent, operatorStatements: [facts.intent, facts.source],
+    return generateModelActionRuleDraft({ authoringProtocol: base.authoringProtocol, session, intent: facts.intent, operatorStatements: [facts.intent, facts.source],
       builtCatalog, readBoundary, readBoundaryDigest: canonicalJsonDigest(readBoundary), egressAcknowledged: true, env: {},
       checkpoint: cp, onCheckpoint, stageVersionQuestion, reviewVersionQuestion,
       reviewVersionField: async request => { await assertFresh(); const prepared = prepareActionVersionField({ ...request, inspection, generationLock: build.lock });
