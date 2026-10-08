@@ -1,4 +1,7 @@
 import { resolveRequestedReadScope, type ExactReadRequestBinding } from "./read-requested-scope.js";
+import { READ_SCOPE_PROTOCOL, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
+  type ReadScopeBinding, type ReadScopeReference, type ReadScopeCatalog, type ReadScopeRecord } from "./read-structured-scope.js";
+import type { ReadWorkloadAnalysis } from "./read-workload-assist.js";
 import { isAuthoringGenerationStop, beginAuthoringProducerInvocation, authoringInterruptedProducerCorrections,
   reserveAuthoringProducerCorrection, withAuthoringProducerCorrection, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -82,6 +85,7 @@ export type BoundaryJobPlan = {
   intended_client?: AuthoringClientPlan;
   read_mode: "create" | "resume" | "reuse" | "revise" | "none";
   read_intent?: string;
+  read_scope?: ReadScopeRecord;
   action_mode: "create" | "reuse" | "revise" | "remove" | "none";
   action_intent?: string;
   action_intents?: string[];
@@ -122,6 +126,7 @@ type BoundaryJobPlanCore = {
   intended_client?: AuthoringClientPlan;
   read_mode: "create" | "resume" | "reuse" | "revise" | "none";
   read_intent?: string;
+  read_scope?: ReadScopeRecord;
   action_mode: "create" | "reuse" | "revise" | "remove" | "none";
   action_intent?: string;
   action_intents?: string[];
@@ -139,6 +144,13 @@ type BoundaryJobPlanCore = {
   source_database_changed: false;
 };
 
+export type StructuredReadPlanningContext = {
+  binding: ReadScopeBinding; references: readonly ReadScopeReference[]; catalog: ReadScopeCatalog;
+  /** Exact native current analyses only; no synthetic coverage from names. */
+  reusable?: { scope: ReadScopeRecord; analysis: ReadWorkloadAnalysis };
+  resumable?: { scope: ReadScopeRecord; analysis: ReadWorkloadAnalysis };
+};
+
 /**
  * Splits one operator job into Read and Action work before Runner mutates any
  * disabled candidate. The model chooses only a semantic route from a closed
@@ -151,6 +163,7 @@ export async function planModelBoundaryJob(input: {
   /** Previously reviewed inventory; cannot be silently replanned. */
   expectedActionOutcomes?: readonly string[];
   currentState: BoundaryJobCurrentState;
+  structuredScope?: { protocol: typeof READ_SCOPE_PROTOCOL; current: () => StructuredReadPlanningContext };
   availableResourceIds?: string[];
   clarificationAnswer?: string;
   env?: NodeJS.ProcessEnv;
@@ -168,12 +181,14 @@ export async function planModelBoundaryJob(input: {
     : boundedText(input.clarificationAnswer, "Boundary job clarification", 3_000);
   const state = normalizeCurrentState(input.currentState);
   const availableResourceIds = normalizeAvailableResourceIds(input.availableResourceIds ?? []);
-  const exactRevisionRoute = input.workflow ? undefined : exactSoleSemanticActionRevisionRoute(jobIntent, state);
+  const structured = input.structuredScope ? structuredClone(input.structuredScope.current()) : undefined;
+  if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL) throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED");
+  const exactRevisionRoute = input.workflow || input.structuredScope ? undefined : exactSoleSemanticActionRevisionRoute(jobIntent, state);
   if (exactRevisionRoute) {
     rememberModelAuthoringTurn(input.session.conversation, jobIntent, exactRevisionRoute.summary);
     return exactRevisionRoute;
   }
-  const tools: AskToolDefinition[] = [jobPlanToolDefinition(state, input.workflow)];
+  const tools: AskToolDefinition[] = [jobPlanToolDefinition(state, input.workflow, !!structured)];
   const authorityDigest = askToolSurfaceDigest(tools);
   const configuration = planningConfiguration(
     input.session,
@@ -201,7 +216,7 @@ export async function planModelBoundaryJob(input: {
         return refusal("Runner accepts one job split and one bounded correction only.");
       }
       try {
-        resolution = parseJobPlan(args, state, availableResourceIds, jobIntent, input.workflow, input.expectedActionOutcomes);
+        resolution = parseJobPlan(args, state, availableResourceIds, jobIntent, input.workflow, input.expectedActionOutcomes, structured);
         return {
           ok: true,
           value: {
@@ -220,6 +235,12 @@ export async function planModelBoundaryJob(input: {
   const question = [
     "Split one operator job into Read Boundary work and Action Boundary work before any draft changes.",
     `Operator job: ${JSON.stringify(jobIntent)}`,
+    ...(structured ? [
+      `Pinned Read protocol: ${READ_SCOPE_PROTOCOL}; every planned result needs an explicit read_scope interpretation.`,
+      "Use applicability=no_read_requested with empty requirements only when proposing no Read work. That proposal still needs operator review against the original request. Never infer completion or consent.",
+      "For read_requested preserve include/exclude/unresolved requirements and exact targets. References prove provenance only; catalog labels cannot confirm meaning. Read routing summaries are not scope.",
+      `Host Read context: ${JSON.stringify(structured)}`,
+    ] : []),
     ...(input.workflow === "program" ? ["Operator selected the complete multi-Action program workflow. action_mode=create must include complete action_intents and aligned action_outcomes, never a broad single intent or first subset. Preserve exact requested identities from the source. Missing or ambiguous identities remain a clarification, not invented names.", ...(input.expectedActionOutcomes ? [`Previously reviewed exact inventory: ${JSON.stringify(input.expectedActionOutcomes)}`] : [])] : []),
     ...(clarificationAnswer
       ? [`Operator clarification: ${JSON.stringify(clarificationAnswer)}`]
@@ -284,6 +305,7 @@ export async function planModelBoundaryJob(input: {
     requiredInitialToolName: PLAN_BOUNDARY_JOB_TOOL,
     completeAfterRequiredTool: true,
     authorityGuard: () => canonicalJsonDigest(state) === canonicalJsonDigest(normalizeCurrentState(input.currentState))
+      && (!input.structuredScope || canonicalJsonDigest(input.structuredScope.current()) === canonicalJsonDigest(structured))
       ? authorityDigest
       : canonicalJsonDigest({ stale: true }),
   });
@@ -380,7 +402,7 @@ function exactSoleSemanticActionRevisionRoute(
   };
 }
 
-function jobPlanToolDefinition(state: BoundaryJobCurrentState, workflow?: "program"): AskToolDefinition {
+function jobPlanToolDefinition(state: BoundaryJobCurrentState, workflow?: "program", structuredScope = false): AskToolDefinition {
   const readModes = [
     "create",
     ...((state.read.resumable_draft_count ?? 0) > 0 ? ["resume"] : []),
@@ -401,8 +423,9 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState, workflow?: "progr
       oneOf: [
         {
           type: "object", additionalProperties: false,
-          required: REVIEW_PLAN_FIELDS.filter(field => field !== "intended_client"),
+          required: [...REVIEW_PLAN_FIELDS.filter(field => field !== "intended_client"), ...(structuredScope ? ["read_scope"] : [])],
           properties: {
+            ...(structuredScope ? { read_scope: readScopeProposalSchema } : {}),
             status: { type: "string", enum: ["planned"] },
             operation: { type: "string", enum: ["review_rules"] },
             read_mode: { type: "string", enum: ["none", ...(state.read.exact_reusable_revision_count > 0 ? ["reuse"] : [])] },
@@ -415,8 +438,9 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState, workflow?: "progr
         ...readModes.map((readMode) => ({
           type: "object",
           additionalProperties: false,
-          required: ["status", "read_mode", "action_mode", "summary", ...(workflow === "program" ? ["action_intent", "action_intents", "action_outcomes", "action_strategy"] : []), ...(["create", "revise"].includes(readMode) ? ["read_intent"] : [])],
+          required: ["status", "read_mode", "action_mode", "summary", ...(structuredScope ? ["read_scope"] : []), ...(workflow === "program" ? ["action_intent", "action_intents", "action_outcomes", "action_strategy"] : []), ...(["create", "revise"].includes(readMode) ? ["read_intent"] : [])],
           properties: {
+            ...(structuredScope ? { read_scope: readScopeProposalSchema } : {}),
             status: { type: "string", enum: ["planned"] },
             intended_client: { type: "string", enum: authoringClientChoices.map((entry) => entry.value),
               description: "Optional existing operator choice for client setup; omit when not chosen or ambiguous. Does not install, connect or grant authority." },
@@ -500,12 +524,15 @@ function parseJobPlan(
   jobIntent: string,
   workflow?: "program",
   expectedActionOutcomes?: readonly string[],
+  structured?: StructuredReadPlanningContext,
 ): BoundaryJobPlanCore {
   const keys = value.status === "clarification" ? ["status", "question"]
     : ["status", "operation", "read_mode", "read_intent", "action_mode", "action_intent", "action_intents", "action_outcomes", "action_outcome", "action_strategy", "summary", "intended_client"];
+  if (structured && value.status !== "clarification") keys.push("read_scope");
   const extraKeys = Object.keys(value).filter(key => !keys.includes(key));
   if (extraKeys.length) throw new Error(`Planning arguments contain an unexpected property: ${extraKeys.slice(0, 8).map(key => planningFieldShape(key, value[key])).join("; ")}. Return only the fields in the selected tool contract, not schema keywords.`);
-  assertReviewOperationShape(value);
+  const { read_scope: _scope, ...ordinaryFields } = value;
+  assertReviewOperationShape(structured ? ordinaryFields : value);
   if (value.intended_client !== undefined && !isAuthoringClientPlan(value.intended_client)) {
     throw new Error("intended_client must be a supported client choice or omitted. Custom client configuration remains a later review.");
   }
@@ -515,7 +542,7 @@ function parseJobPlan(
       "Boundary job clarification question",
       MAX_BOUNDARY_READ_QUESTION_CHARACTERS,
     );
-    if (asksForActionPolicyDetail(question)) {
+    if (!structured && asksForActionPolicyDetail(question)) {
       throw new Error(
         "Boundary job planning must preserve unresolved Action policy details in action_intent; threshold, limit, reviewer, and field decisions belong to focused Action authoring.",
       );
@@ -577,7 +604,25 @@ function parseJobPlan(
   const effectiveReadIntent = readMode === "create" || readMode === "revise"
     ? readIntent
     : undefined;
-  const requestedReadScope = resolveRequestedReadScope({ original: jobIntent,
+  let typedScope: ReadScopeRecord | undefined;
+  if (structured) {
+    typedScope = resolveReadScopeProposal(value.read_scope, { expectedBinding: structured.binding, references: structured.references, catalog: structured.catalog });
+    if (readMode === "none" && typedScope.proposal.applicability !== "no_read_requested")
+      throw new Error("READ_SCOPE_ROUTE_INVALID: Explicit Read requirements cannot be routed to none.");
+    if ((readMode === "create" || readMode === "revise") && typedScope.proposal.applicability !== "read_requested")
+      throw new Error("READ_SCOPE_ROUTE_INVALID: No-Read interpretation cannot create or revise Read access.");
+    if (readMode === "reuse" || readMode === "resume") {
+      const native = readMode === "reuse" ? structured.reusable : structured.resumable;
+      if (!native) throw new Error("READ_SCOPE_NATIVE_COVERAGE_REQUIRED: This route needs the exact native scope and analyzed workload.");
+      const delta = readScopeDelta(native.scope, typedScope);
+      if (delta.added.length || delta.removed.length || native.scope.proposal.applicability !== typedScope.proposal.applicability)
+        throw new Error("READ_SCOPE_REVIEWED_DELTA_REQUIRED: Reuse cannot replace the native scope interpretation.");
+      if (assessReadScopeDraft(typedScope, native.analysis).status !== "compatible")
+        throw new Error("READ_SCOPE_NATIVE_COVERAGE_REQUIRED: The exact native analysis does not cover the proposed scope.");
+    }
+  }
+  const requestedReadScope = structured ? { required: [], excluded: [], candidates: [], conflicts: [], unresolved: false }
+    : resolveRequestedReadScope({ original: jobIntent,
     resources: availableResourceIds.map(id => ({ id })), definitions: [], statements: [],
     exactRequests: readMode === "reuse" ? state.read.reviewed_requests : readMode === "resume" ? state.read.resumable_requests : undefined });
   const explicitlyRequestedReadResources = requestedReadScope.required;
@@ -653,7 +698,7 @@ function parseJobPlan(
   }
 
   const submittedActionStrategy = value.action_strategy === undefined
-    ? effectiveActionIntent === undefined ? undefined : inferActionStrategy(effectiveActionIntent)
+    ? effectiveActionIntent === undefined || structured ? undefined : inferActionStrategy(effectiveActionIntent)
     : boundedMode(value.action_strategy, "action_strategy", ["discretionary", "rule_derived"]);
   const existingActionKinds = new Set<"discretionary" | "rule_derived">(
     state.actions.map((action) => action.kind ?? "discretionary"),
@@ -666,7 +711,7 @@ function parseJobPlan(
   }
   if ((actionMode === "create" || actionMode === "revise")
     && actionStrategy === "discretionary"
-    && requiresRuleDerivedAction(jobIntent)) {
+    && !structured && requiresRuleDerivedAction(jobIntent)) {
     throw new Error(
       "action_strategy must be rule_derived because the operator requires Runner to verify authoritative facts and derive the exact effect. Do not replace that request with a caller-selected value or a different operation.",
     );
@@ -718,6 +763,7 @@ function parseJobPlan(
     ...(value.operation === "review_rules" ? { operation: "review_rules" as const } : {}),
     ...(isAuthoringClientPlan(value.intended_client) ? { intended_client: value.intended_client } : {}),
     read_mode: readMode,
+    ...(typedScope ? { read_scope: typedScope } : {}),
     ...(effectiveReadIntent ? { read_intent: effectiveReadIntent } : {}),
     action_mode: actionMode,
     ...(effectiveActionIntent ? { action_intent: effectiveActionIntent } : {}),

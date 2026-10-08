@@ -20,7 +20,7 @@ const references: ReadScopeReference[] = [
 const catalog = { resources: [{ id: "work.items", fields: [{ id: "title" }, { id: "private_note" }] },
   { id: "other.items", fields: [{ id: "title" }] }], relationships: [] };
 function proposal(): ReadScopeProposal {
-  return { protocol: READ_SCOPE_PROTOCOL, original_request: "job", requirements: [
+  return { protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [
     { id: "titles", intended_use: "Show item titles", references: ["job", "policy:1"], disposition: "include", targets: [root, title] },
     { id: "privacy", intended_use: "Keep private notes hidden", references: ["job", "policy:1"], disposition: "exclude", targets: [secret] },
   ] };
@@ -41,6 +41,12 @@ describe("B64 typed Read scope", () => {
     expect(record.references).toEqual(references);
     expect(currentReadScope({ record, expectedBinding: binding })).toMatchObject({ status: "proposed", authority_granted: false });
     expect(assessReadScopeDraft(record, analysis())).toMatchObject({ status: "compatible", authority_granted: false });
+  });
+  it("requires an explicit no-Read proposal rather than inferring it from an empty extraction", () => {
+    expect(() => resolve({ ...proposal(), requirements: [] })).toThrow(/READ_SCOPE_INVALID/u);
+    const noRead = resolve({ ...proposal(), applicability: "no_read_requested", requirements: [] });
+    expect(assessReadScopeDraft(noRead, analysis())).toMatchObject({ status: "delta_required", added: [root, title] });
+    expect(currentReadScope({ record: noRead, expectedBinding: binding }).status).toBe("proposed");
   });
   it("binds semantic content and original references independently of provider correlation IDs", () => {
     const first = resolve();

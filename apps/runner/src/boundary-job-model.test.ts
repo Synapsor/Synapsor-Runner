@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { BoundaryJobPlanningError, planningDiagnosticLines, type BoundaryJobPlanningDiagnostic } from "./boundary-job-diagnostics.js";
 import { AskError } from "./model-ask.js";
 import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { READ_SCOPE_PROTOCOL, type ReadScopeProposal } from "./read-structured-scope.js";
 import {
   planModelBoundaryJob,
   type BoundaryJobCurrentState,
@@ -24,6 +26,61 @@ const reusableState: BoundaryJobCurrentState = {
     model_may_supply_approval_history: false,
   },
 };
+
+describe("B64 structured planning scope", () => {
+  const original = "Show the customer's selected account information.";
+  const hash = canonicalJsonDigest;
+  const context = () => ({ binding: { request_digest: hash(original), source_digest: hash(null), catalog_digest: hash("catalog"),
+    meaning_digest: hash("meaning"), applicability_digest: hash("use"), operation_digest: hash("baseline") },
+    references: [{ id: "job", kind: "request" as const, digest: hash(original), text: original }],
+    catalog: { resources: [{ id: "telecom.accounts", fields: [{ id: "name" }] }], relationships: [] } });
+  const scope = (): ReadScopeProposal => ({ protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested",
+    requirements: [{ id: "account", references: ["job"], intended_use: "Selected account information", disposition: "include",
+      targets: [{ root_resource: "telecom.accounts", resource: "telecom.accounts", operation: "resource" },
+        { root_resource: "telecom.accounts", resource: "telecom.accounts", operation: "return", field: "name" }] }] });
+  const planned = () => ({ status: "planned", read_mode: "create", read_intent: "Show selected account information", action_mode: "none",
+    summary: "Prepare the requested disabled Read mapping", read_scope: scope() });
+  const response = (args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "typed_plan",
+    name: "runner__plan_boundary_job", arguments: JSON.stringify(args) }] } });
+  function run(reply: () => unknown, current = context()) {
+    const send = vi.fn(async () => response(reply()));
+    return { send, result: planModelBoundaryJob({ session: { provider: "openai", model: "scripted", apiKey: "test-key", dependencies: { requestJson: send } },
+      jobIntent: original, currentState: reusableState, egressAcknowledged: true,
+      structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => current } }) };
+  }
+  it("proposes an exact scope without inferring meaning from narration or marking it confirmed", async () => {
+    const tested = run(planned); const result = await tested.result;
+    expect(result).toMatchObject({ state: "planned", read_mode: "create", read_scope: { proposal: scope() }, authority_granted: false });
+    expect(result).not.toHaveProperty("read_scope.confirmation");
+    expect(tested.send).toHaveBeenCalledOnce();
+  });
+  it("does not use legacy inference when the typed field is missing", async () => {
+    const tested = run(() => { const { read_scope: _scope, ...legacy } = planned(); return legacy; });
+    await expect(tested.result).rejects.toThrow(/READ_SCOPE_INVALID/u);
+    expect(tested.send).toHaveBeenCalledTimes(2);
+  });
+  it("cannot call explicitly requested Reads none", async () => {
+    const tested = run(() => ({ ...planned(), read_mode: "none" }));
+    await expect(tested.result).rejects.toThrow(/READ_SCOPE_ROUTE_INVALID/u);
+    expect(tested.send).toHaveBeenCalledTimes(2);
+  });
+  it("represents an explicit no-Read interpretation without pretending its semantics are verified", async () => {
+    const tested = run(() => ({ ...planned(), read_mode: "none", read_scope: { ...scope(), applicability: "no_read_requested", requirements: [] } }));
+    const result = await tested.result;
+    expect(result).toMatchObject({ state: "planned", read_mode: "none", read_scope: { proposal: { applicability: "no_read_requested" } } });
+    expect(result).not.toHaveProperty("read_scope.confirmation");
+  });
+  it("does not infer reusable native scope from familiar names or counts", async () => {
+    const tested = run(() => ({ ...planned(), read_mode: "reuse" }));
+    await expect(tested.result).rejects.toThrow(/READ_SCOPE_NATIVE_COVERAGE_REQUIRED/u);
+  });
+  it("stops when reference identity changes during the actual planning turn", async () => {
+    const current = context();
+    const tested = run(() => { current.binding.request_digest = hash("different request"); return planned(); }, current);
+    await expect(tested.result).rejects.toThrow();
+    expect(tested.send).toHaveBeenCalledOnce();
+  });
+});
 
 describe("model Boundary job planning", () => {
   it.each(["ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION","ASK_GENERATION_OUTCOME_UNKNOWN","ASK_GENERATION_NOT_SENT"])("preserves %s after planning diagnostics without a semantic retry",async code=>{

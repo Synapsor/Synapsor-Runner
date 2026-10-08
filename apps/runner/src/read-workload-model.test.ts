@@ -27,7 +27,7 @@ describe("B64 structured Read producer adapter", () => {
   const original = "Show order status. Use public.orders.status for the order status; no other fields.";
   const response = (args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "structured_read",
     name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } });
-  const scope = (): ReadScopeProposal => ({ protocol: READ_SCOPE_PROTOCOL, original_request: "job", requirements: [{
+  const scope = (): ReadScopeProposal => ({ protocol: READ_SCOPE_PROTOCOL, original_request: "job", applicability: "read_requested", requirements: [{
     id: "order-status", intended_use: "Show order status", references: ["job"], disposition: "include", targets: [
       { root_resource: "public.orders", resource: "public.orders", operation: "resource" },
       { root_resource: "public.orders", resource: "public.orders", operation: "return", field: "status" },

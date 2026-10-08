@@ -16,7 +16,11 @@ const requirementSchema = z.object({ id: name, intended_use: prose, references: 
   disposition: z.enum(["include", "exclude", "unresolved"]), targets: z.array(targetSchema).max(256),
   unresolved: prose.optional() }).strict();
 export const readScopeProposalCodec = z.object({ protocol: z.literal(READ_SCOPE_PROTOCOL),
-  original_request: name, requirements: z.array(requirementSchema).min(1).max(128) }).strict();
+  original_request: name, applicability: z.enum(["read_requested", "no_read_requested"]),
+  requirements: z.array(requirementSchema).max(128) }).strict().superRefine((value, ctx) => {
+    if ((value.applicability === "read_requested") !== (value.requirements.length > 0))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Only an explicit no-Read proposal has no requirements." });
+  });
 export type ReadScopeProposal = z.infer<typeof readScopeProposalCodec>;
 export type ReadScopeTarget = z.infer<typeof targetSchema>;
 
@@ -24,9 +28,14 @@ export type ReadScopeTarget = z.infer<typeof targetSchema>;
 const stringSchema = { type: "string", minLength: 1, maxLength: 256 };
 const proseSchema = { type: "string", minLength: 1, maxLength: 4000, pattern: "\\S" };
 export const readScopeProposalSchema = {
-  type: "object", additionalProperties: false, required: ["protocol", "original_request", "requirements"],
+  type: "object", additionalProperties: false, required: ["protocol", "original_request", "applicability", "requirements"],
+  oneOf: [
+    { properties: { applicability: { const: "read_requested" }, requirements: { minItems: 1 } } },
+    { properties: { applicability: { const: "no_read_requested" }, requirements: { maxItems: 0 } } },
+  ],
   properties: { protocol: { const: READ_SCOPE_PROTOCOL }, original_request: stringSchema,
-    requirements: { type: "array", minItems: 1, maxItems: 128, items: {
+    applicability: { enum: ["read_requested", "no_read_requested"] },
+    requirements: { type: "array", maxItems: 128, items: {
       type: "object", additionalProperties: false,
       required: ["id", "intended_use", "references", "disposition", "targets"],
       properties: { id: stringSchema, intended_use: proseSchema,
@@ -57,7 +66,7 @@ export type ReadScopeBinding = z.infer<typeof bindingSchema>;
 const recordBodySchema = z.object({ protocol: z.literal(READ_SCOPE_PROTOCOL), proposal: readScopeProposalCodec,
   binding: bindingSchema, references: z.array(referenceSchema).min(1).max(1024),
   analysis_digest: digest.optional(),
-  requirement_bindings: z.array(z.object({ id: name, digest }).strict()).min(1).max(128) }).strict();
+  requirement_bindings: z.array(z.object({ id: name, digest }).strict()).max(128) }).strict();
 const recordSchema = recordBodySchema.extend({ digest }).strict();
 /** Stored inside the native question, never a separate accepted-meaning store.
  * This record is still only a proposal. Native trusted confirmation is separate. */
