@@ -183,8 +183,8 @@ describe("typed Read revision result retention", () => {
       applicability_digest: canonicalJsonDigest("this-job"), operation_digest: canonicalJsonDigest("edit") },
       references: [{ id: "job", kind: "request" as const, digest: canonicalJsonDigest(instruction), text: instruction }],
       catalog: { resources: [{ id: "public.orders", fields: [{ id: "status" }] }], relationships: [] } };
-    const proposal = { protocol: "synapsor.read-scope.v1", applicability: "read_requested", original_request: "job", requirements: [{
-      id: "order-status", references: ["job"], intended_use: "Show order status", disposition: "unresolved", targets: [],
+    const proposal = { protocol: "synapsor.read-scope.v2", applicability: "read_requested", original_request: "job", requirements: [{
+      id: "order-status", references: ["job"], intended_use: "Show order status", disposition: "unresolved", subjects: [], targets: [],
       unresolved: "Which status should be shown?" }] };
     h.access.scopePreview = async () => ({ scope: mode === "preview_changed" ? { ...scope,
       binding: { ...scope.binding, operation_digest: canonicalJsonDigest("different current edit") } } : scope });
@@ -195,7 +195,7 @@ describe("typed Read revision result retention", () => {
         current: async () => h.context(), write: async value => h.setRecovery(value), progress: () => {} });
       return h.run(async request => { calls++; expect(JSON.stringify(request.body)).toContain("job");
         return response({ read_scope: proposal }); },
-        { structuredScope: { protocol: "synapsor.read-scope.v1", current: () => scope } });
+        { structuredScope: { protocol: "synapsor.read-scope.v2", current: () => scope } });
     });
     if (mode !== "pending") {
       await expect(run()).rejects.toThrow(mode === "save_fault" ? "OWNED_NATIVE_ACK_LOST" : "CHECKPOINT_STALE");

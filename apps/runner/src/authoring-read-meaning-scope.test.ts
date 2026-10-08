@@ -1,3 +1,5 @@
+import { prepareReviewedReadScope } from "./test-fixtures/reviewed-read-scope.js";
+import { projectReadSubjectContext } from "./authoring-read-subject-context.js";
 import { projectReadScopeHostContext } from "./read-current-evidence.js";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -22,9 +24,10 @@ import type { ReadMeaningInteraction } from "./authoring-read-meaning-interactio
 const question = { resource: "public.orders", field: "status", reason: "Meaning missing from this view", question: "Which fulfillment stages should this view describe?" };
 const response = (args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "read_host_control", name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } });
 const mapping = { allowed: [{ id: "my_orders", description: "List my orders", plan: { kind: "rows", resource: "public.orders", select: ["status"] } }], forbidden: [] };
-async function harness(relativeTime = false) {
+async function harness(relativeTime = false, nativeStructure = false) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "read-checkpoint-host-"));
-  const boundary = generatedBoundary();
+  const prepared = nativeStructure ? await prepareReviewedReadScope(root, { resources: ["public.orders"], field: "status" }) : undefined;
+  const boundary = prepared?.context.candidate ?? generatedBoundary();
   if (relativeTime) {
     boundary.pack.resources[0]!.field_types.created_at = "timestamptz";
     boundary.pack.resources[0]!.selectable_fields.push("created_at");
@@ -54,7 +57,7 @@ async function harness(relativeTime = false) {
     apiKey: "inert-test-key", egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, onCheckpoint: host.persist,
     clarificationHandler: async () => undefined, ...extra,
   });
-  return { root, boundary, host, access, run, saves, saveFault, append, readContext: () => context, state: () => state,
+  return { root, boundary, prepared, host, access, run, saves, saveFault, append, readContext: () => context, state: () => state,
     driftContext: () => { context = canonicalJsonDigest("different Source binding"); },
     driftCandidate: () => { candidate = canonicalJsonDigest("different Read candidate"); },
     setRecovery: (value: AuthoringTransportState) => { state.recovery = structuredClone(value); },
@@ -118,7 +121,7 @@ function generatedBoundary(): ExplorationBoundaryDraft {
 }
 
 async function pendingScope(responses: Array<string | null>) {
-  const h = await harness();
+  const h = await harness(false, true);
   const binding = { request_digest: canonicalJsonDigest("List my orders"), source_digest: canonicalJsonDigest("policy"),
     catalog_digest: canonicalJsonDigest("catalog"), meaning_digest: canonicalJsonDigest("meaning"),
     applicability_digest: canonicalJsonDigest("purpose"), operation_digest: canonicalJsonDigest("read") };
@@ -127,12 +130,13 @@ async function pendingScope(responses: Array<string | null>) {
       write: async value => h.setRecovery(value), progress: () => {} });
     return generateModelReadWorkload({ name: "typed_scope", allowedQuestions: ["List my orders"], provider: "openai", model: "controlled",
       generatedBoundary: h.boundary, apiKey: "inert-test-key", egressAcknowledged: true, deferNarration: true, onCheckpoint: h.host.persist,
-      structuredScope: { protocol: "synapsor.read-scope.v1", current: () => ({ binding,
+      structuredScope: { protocol: "synapsor.read-scope.v2", current: () => ({ binding,
         references: [{ id: "job", kind: "request", digest: binding.request_digest, text: "List my orders" }],
-        catalog: { resources: [{ id: "public.orders", fields: [{ id: "status" }] }], relationships: [] } }) },
+        catalog: { resources: [{ id: "public.orders", fields: [{ id: "status" }] }], relationships: [],
+          subject_scopes: projectReadSubjectContext({ context: h.prepared!.context, sourceDigest: binding.source_digest }).subject_scopes } }) },
       dependencies: { requestJson: async () => response({ allowed: [], forbidden: [], read_scope: {
-        protocol: "synapsor.read-scope.v1", applicability: "read_requested", original_request: "job", requirements: [{
-          id: "order-meaning", intended_use: "List my orders", references: ["job"], disposition: "unresolved", targets: [],
+        protocol: "synapsor.read-scope.v2", applicability: "read_requested", original_request: "job", requirements: [{
+          id: "order-meaning", intended_use: "List my orders", references: ["job"], disposition: "unresolved", subjects: [], targets: [],
           unresolved: "Which orders should appear?" }],
       } }) } });
   })).rejects.toThrow("AUTHORING_PAUSED");
@@ -240,14 +244,15 @@ describe("B64 actual missing-scope raw-answer host", () => {
       if (!reference || cp.pending_question?.kind !== "scope") throw new Error("Missing captured native answer");
       const request = cp.pending_question.request, answer = h.resolve(reference)!;
       const inventory = { binding: request.scope.binding, references: request.scope.references,
-        catalog: { resources: [{ id: "public.orders", fields: [{ id: "status" }] }], relationships: [] } };
+        catalog: { resources: [{ id: "public.orders", fields: [{ id: "status" }] }], relationships: [],
+          subject_scopes: projectReadSubjectContext({ context: h.prepared!.context, sourceDigest: request.scope.binding.source_digest }).subject_scopes } };
       h.access.scopeInventory = async () => ({ ...inventory, references: [...inventory.references, answer] });
       const answerAgain = vi.fn(async () => { throw new Error("Must resume mapping without another prompt"); });
       const send = vi.fn(async wire => {
         expect(JSON.stringify(wire.body)).toContain(answer.id);
         expect(JSON.stringify(wire.body)).toContain(answer.text);
         return response({ ...mapping, read_scope: { ...request.scope.proposal, requirements: [{
-          id: "order-meaning", intended_use: "List my orders", references: ["job", answer.id], disposition: "include", targets: [
+          id: "order-meaning", intended_use: "List my orders", references: ["job", answer.id], disposition: "include", subjects: [{ root_resource: "public.orders", mode: "trusted_principal" }], targets: [
             { root_resource: "public.orders", resource: "public.orders", operation: "resource" },
             { root_resource: "public.orders", resource: "public.orders", operation: "return", field: "status" },
           ],
@@ -259,7 +264,7 @@ describe("B64 actual missing-scope raw-answer host", () => {
         return generateModelReadWorkload({ name: "typed_scope", allowedQuestions: ["List my orders"], provider: "openai", model: "controlled",
           generatedBoundary: h.boundary, apiKey: "inert-test-key", egressAcknowledged: true, deferNarration: true,
           resumeCheckpoint: cp, onCheckpoint: h.host.persist, dependencies: { requestJson: send },
-          structuredScope: { protocol: "synapsor.read-scope.v1", current: () => inventory,
+          structuredScope: { protocol: "synapsor.read-scope.v2", current: () => inventory,
             answer: answerAgain, resolveAnswer: ref => h.resolve(ref) } });
       });
       expect(result.analysis.status).toBe("ready"); expect(send).toHaveBeenCalledOnce(); expect(answerAgain).not.toHaveBeenCalled();
