@@ -194,5 +194,26 @@
     "paid": "CLOSED",
     "handoff": "MAIN-PAUSE-HANDOFF-FOUNDATION.md",
     "resume_only": "Finish shared evidence bindings/Review, currentness and admission-before-consent controls, consent decision/compatibility, independent acceptance before settled gates"
+  },
+  "b64": {
+    "t0": "2026-10-08T06:32:23Z",
+    "integration_reserve_start": "2026-10-12T06:32:23Z",
+    "deadline": "2026-10-13T06:32:23Z",
+    "branch": "codex/b64-authoring-protocol-20261008",
+    "base": "7e0ab607",
+    "initial_contract": "540edca1",
+    "status": "IMPLEMENTATION_INITIAL_INTERFACE_ACCEPTED_NO_RELEASE_CLAIM",
+    "existing_paid_admission": "CLOSED",
+    "owner_instructions": [
+      "278bb60b-def9-47f2-b425-0e481dc78ad2",
+      "8ab92840-7930-4b4d-b847-96d548c22c77"
+    ],
+    "remaining": [
+      "Read typed scope/evidence",
+      "Action typed edits/clarification/completion",
+      "typed fields + protected persistence + public routes",
+      "consent ownership + compatibility",
+      "composed and settled gates + independent installed"
+    ]
   }
 }
