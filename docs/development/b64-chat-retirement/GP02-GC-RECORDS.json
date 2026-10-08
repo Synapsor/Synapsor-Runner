@@ -1,0 +1,32 @@
+{
+  "inventory": [
+    "GP02",
+    "GC02",
+    "GC05 presentation"
+  ],
+  "before_pin": "39e13443",
+  "before": {
+    "failed": 8,
+    "cases": "Raw prefix collisions, non-English labels, literal technical quotations; forged model context/message provenance and title-based suppressed unknown-effect record."
+  },
+  "after": {
+    "passed": 123,
+    "files": 4
+  },
+  "changes": [
+    "Untyped readback arrays preserve every original line; metadata-label question presentation remains separate.",
+    "Runner/model role is supplied by explicit chat methods, never inferred from a line prefix.",
+    "Removed English-title compact checkpoint suppression and generated authority/source-effect claims.",
+    "Local diff view presents the complete supplied reviewed record; no English field/word filters.",
+    "Exact details use generic syntactic styling, not prose validation labels."
+  ],
+  "retained": [
+    "Existing privacy disclosure/redaction outside this label formatter",
+    "safeTerminalText/ANSI sanitization, safe Markdown/table formatting",
+    "Slash-command grammar",
+    "Raw answer capture/currentness/defaults/budgets"
+  ],
+  "caller_note": "Callers needing durable latest-details must use existing rememberDetails explicitly. A matching English title no longer silently retains/compacts a record. No full public caller or UX acceptance claimed.",
+  "isolation": "slot1, bwrap --unshare-net, owned0700 HOME/TMP, one worker",
+  "independent_review": "Pending"
+}

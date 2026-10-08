@@ -57,11 +57,11 @@ describe("shared operator business presentation", () => {
     expect(JSON.stringify(result)).not.toContain("execute_sql");
     expect(result.references.find(ref => ref.field === "private_note")?.label).toBeUndefined();
   });
-  it("business readback retains numbers and constraints, with exact originals separately available", () => {
+  it("untyped business readback retains every exact original, including numbers and constraints", () => {
     const exact = ["billing.cases.private_note: 0 to 200 units; null is not a string. No approval or execution."];
     const displayed = operatorBusinessReadback(exact, context);
     expect(displayed.join(" ")).toContain("0 to 200 units; null is not a string. No approval or execution.");
-    expect(displayed.join(" ")).toContain("registrar note");
+    expect(displayed).toEqual(exact);
     expect(exact[0]).toContain("billing.cases.private_note");
   });
   it("fallback preserves the exact missing choice and declared constraint", () => {
@@ -72,8 +72,7 @@ describe("shared operator business presentation", () => {
   it("literal answers remain exact even when they intentionally contain identifiers", () => {
     const raw = "  billing.cases.private_note is our term\nNever change it.\t ";
     expect(operatorBusinessReadback(["Your exact words:", raw, "Binding: billing.cases.private_note"], context)).toEqual([
-      "Business labels are shown here. The exact bindings and original statements are available in details.",
-      "Your exact words:", raw, "Binding: registrar note"]);
+      "Your exact words:", raw, "Binding: billing.cases.private_note"]);
   });
   it("does not accept a meaning-changing numerical or requiredness rephrase", () => {
     const gate = operatorClarificationGate({ stage: "input", context });

@@ -188,20 +188,11 @@ export function operatorClarificationGate(options: Parameters<typeof presentOper
   return Object.assign(gate, { snapshot: (): OperatorClarificationGateState | undefined => saved && structuredClone(saved) });
 }
 
-/** Preserve exact technical/raw evidence in the caller's optional details pane.
- * The main readback remains business wording; this is not a quote rewrite. */
-export function operatorBusinessReadback(lines: readonly string[], context?: OperatorBusinessContext): string[] {
-  let literalAnswer = false;
-  const displayed = lines.map(line => {
-    if (literalAnswer) { literalAnswer = false; return line; }
-    if (line === "Your exact words:" || line === "Your saved words:") { literalAnswer = true; return line; }
-    if (line.startsWith("Record your exact words") || line.startsWith("Basis: your captured answer")) {
-      literalAnswer = true; return businessText(line, context);
-    }
-    // Literal operator evidence is intentional vocabulary, not Runner wording.
-    if (/^(?:Earlier answer:|Proposed answer:|Previous answer \(retained\):)/u.test(line)) return line;
-    return businessText(line, context);
-  });
-  return displayed.some((line, index) => line !== lines[index])
-    ? ["Business labels are shown here. The exact bindings and original statements are available in details.", ...displayed] : displayed;
+/** Mixed readbacks may contain literal operator evidence in any language. The
+ * existing string-array port supplies no typed line provenance, so preserve it
+ * exactly. Mechanical metadata-label presentation remains available separately
+ * for host-owned questions; display labels cannot authorize rewriting evidence.
+ * Privacy redaction is owned by the caller's existing disclosure/render path. */
+export function operatorBusinessReadback(lines: readonly string[], _context?: OperatorBusinessContext): string[] {
+  return [...lines];
 }

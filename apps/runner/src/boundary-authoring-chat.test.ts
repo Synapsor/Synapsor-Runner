@@ -606,10 +606,8 @@ describe("Boundary authoring chat", () => {
       const allowlist = plain.find((line) => line.startsWith("Reviewed value allowlist:") && line.includes('"routine"'))!;
       for (const value of boundary.pack.resources[0]!.field_enums.category!) expect(allowlist).toContain(JSON.stringify(value));
       const theme = terminalTheme(true, { brand: true });
-      for (const [access, style] of [["MODEL RAW", theme.visible], ["RUNNER ONLY", theme.runnerOnly],
-        ["KEPT OUT", theme.keptOut], ["NO RAW RETURN", theme.dim]] as const) {
-        expect(styled).toContain(`${theme.dim("Raw access:")} ${style(access)}`);
-        expect(style(access)).toMatch(/\u001b\[/u);
+      for (const access of ["MODEL RAW", "RUNNER ONLY", "KEPT OUT", "NO RAW RETURN"]) {
+        expect(styled).toContain(`${theme.dim("Raw access:")} ${theme.value(access)}`);
       }
       expect(memory.choices).toHaveLength(6);
       expect(memory.choices.at(-1)).toEqual(memory.choices[0]);
@@ -1101,7 +1099,7 @@ describe("Boundary authoring chat", () => {
     expect(transcript).not.toContain("Model explanation unavailable");
   });
 
-  it("shows a compact Read dependency handoff after the Action draft is rehearsed", async () => {
+  it("preserves the exact supplied Read dependency handoff", async () => {
     const memory = memoryIo();
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
 
@@ -1114,9 +1112,9 @@ describe("Boundary authoring chat", () => {
 
     const transcript = memory.writes.join("");
     const compact = transcript.replace(/\s+/gu, " ");
-    expect(compact).toContain("Ready to review access");
-    expect(compact).toContain("Each needs your approval; execution has a separate review");
-    expect(compact).not.toContain("The job draft is complete");
+    expect(compact).toContain("NEXT AUTHORITY REVIEW - READ BOUNDARY");
+    expect(compact).toContain("its own separate confirmation");
+    expect(compact).toContain("The job draft is complete");
   });
 
   it("does not invent an Action dependency when a read-only job explicitly has none", async () => {
@@ -1127,7 +1125,7 @@ describe("Boundary authoring chat", () => {
       "This read-only job has no Action Boundary draft. Declining keeps the reviewed Read draft disabled.",
     ]);
     const output = memory.writes.join("").replace(/\s+/gu, " ");
-    expect(output).toContain("Review what the assistant can read before enabling access");
+    expect(output).toContain("This read-only job has no Action Boundary draft");
     expect(output).not.toMatch(/Action draft saved|rehearsed Action draft|Read dependency needs review/u);
     chat.close();
   });
@@ -1219,10 +1217,11 @@ describe("Boundary authoring chat", () => {
     expect(memory.prompts).toEqual(["you> [yes] "]);
   });
 
-  it("keeps routine Read handoffs quiet and makes their exact record available through /details", async () => {
+  it("preserves visible Read handoffs and explicitly retained details", async () => {
     const memory = memoryIo({ reads: ["/details", "continue"] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
 
+    chat.rememberDetails("READ REVIEW COMPLETE - NOT ACTIVE", ["Read Boundary: reviewed_staging", "Source database changed: no"]);
     chat.session.present?.("READ REVIEW COMPLETE - NOT ACTIVE", [
       "Read Boundary: reviewed_staging",
       "Next: continue this same job into Action Boundary decisions.",
@@ -1236,13 +1235,13 @@ describe("Boundary authoring chat", () => {
 
     const transcript = memory.writes.join("");
     expect(transcript).not.toContain("✓ Read draft saved");
-    expect(transcript).not.toContain("runner> READ REVIEW COMPLETE");
+    expect(transcript).toContain("runner> READ REVIEW COMPLETE");
     expect(transcript).toContain("RUNNER DETAILS");
     expect(transcript).toContain("READ REVIEW COMPLETE - NOT ACTIVE");
     expect(transcript).toContain("reviewed_staging");
   });
 
-  it("lets mixed model context finish before a quiet Runner checkpoint", async () => {
+  it("keeps untyped context in exact local details without attributing model provenance", async () => {
     const memory = memoryIo({ choices: ["yes"] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
 
@@ -1262,11 +1261,9 @@ describe("Boundary authoring chat", () => {
     );
 
     const transcript = memory.writes.join("");
-    const modelIndex = transcript.indexOf("model> The requested label maps uniquely to support_tickets.");
-    const checkpointIndex = transcript.indexOf("\u2713 Validated interpretation");
-    expect(modelIndex).toBeGreaterThanOrEqual(0);
-    expect(checkpointIndex).toBeGreaterThan(modelIndex);
-    expect(transcript).not.toContain("runner> Validated interpretation");
+    expect(transcript).not.toContain("model>");
+    chat.showDetails();
+    expect(memory.writes.join("")).toContain("Model rationale: The requested label maps uniquely to support_tickets.");
   });
 
   it("keeps model-assisted policy review in the conversation and hides the manual policy table", async () => {
@@ -1412,7 +1409,7 @@ describe("Boundary authoring chat", () => {
     })).resolves.toBe("continue");
 
     const transcript = memory.writes.join("");
-    expect(transcript).toContain("LATEST REVIEWED CHANGE");
+    expect(transcript).toContain("LATEST REVIEWED RECORD");
     expect(transcript).toContain("RUNNER DETAILS");
     expect(transcript).toContain("Agent supplies: amount, reason, method");
     expect(transcript).toContain("Exact fingerprint: sha256:operator-only");
@@ -1420,7 +1417,7 @@ describe("Boundary authoring chat", () => {
     expect(memory.prompts).toHaveLength(3);
   });
 
-  it("strips inherited terminal formatting and emphasizes the validated value", () => {
+  it("strips inherited terminal formatting without inferring validation from a label", () => {
     const memory = memoryIo();
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: true });
 
@@ -1433,7 +1430,7 @@ describe("Boundary authoring chat", () => {
     expect(transcript).not.toContain("\\u001b");
     expect(transcript.replace(/\u001b\[[0-?]*[ -/]*[@-~]/gu, ""))
       .toContain("Runner-validated interpretation: estimated_minutes: 5 through 120");
-    expect(transcript).toContain("\u001b[1;32m5 through 120\u001b[0m");
+    expect(transcript).not.toContain("\u001b[1;32m5 through 120\u001b[0m");
   });
 
   it("renders a safe Markdown subset in model turns without exposing delimiters", () => {

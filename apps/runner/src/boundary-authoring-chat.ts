@@ -95,7 +95,7 @@ const AUTHORING_SLASH_SUGGESTIONS: SlashCommandSuggestion[] = [
   {
     label: "/diff",
     completion: "/diff",
-    description: "Show the latest concise reviewed change; no model request",
+    description: "Show the latest complete reviewed record; no model request",
   },
   {
     label: "/exact",
@@ -235,78 +235,6 @@ function permissionQuestion(value: string): string {
     .find(Boolean) ?? "Review this exact permission.";
 }
 
-function contextValue(context: string[] | undefined, prefix: string): string | undefined {
-  const line = context?.find((candidate) => candidate.trimStart().startsWith(prefix));
-  return line?.trimStart().slice(prefix.length).trim() || undefined;
-}
-
-function compactRoutineCheckpoint(
-  title: string,
-  lines: string[],
-): { title: string; lines: string[] } | undefined {
-  if (title === "READ REVIEW COMPLETE - NOT ACTIVE") {
-    const boundary = contextValue(lines, "Read Boundary:") ?? contextValue(lines, "Boundary:");
-    return {
-      title: "Read draft saved",
-      lines: [
-        [boundary, "not active", "source unchanged"].filter(Boolean).join(" · "),
-        "Next: Action Boundary",
-      ],
-    };
-  }
-  if (title === "READ CANDIDATE READY") {
-    return {
-      title: "Read draft ready",
-      lines: [
-        lines[0] ?? "The requested Read plans passed exact review.",
-        "Agent access off · source unchanged · /details shows the exact candidate",
-      ],
-    };
-  }
-  if (title === "MAPPING CATALOG READY") {
-    const exclusions = lines.filter((line) => /(?:outside mapping|manual scope review|shared-reference)/iu.test(line));
-    return {
-      title: "Mapping catalog ready",
-      lines: [
-        lines[0] ?? "Reviewed structure is available for this job.",
-        ...exclusions.slice(0, 2),
-        "Agent authority off · source unchanged",
-      ],
-    };
-  }
-  if (title === "PROPOSAL ACTION DRAFT SAVED") {
-    const action = contextValue(lines, "Action:");
-    const rehearsal = contextValue(lines, "Rehearsal:");
-    const approval = contextValue(lines, "Approval:");
-    return {
-      title: "Action draft saved",
-      lines: [
-        [action, rehearsal].filter(Boolean).join(" · "),
-        `${approval ? `Approval ${approval.toLowerCase()} · ` : ""}proposal off · apply off · source unchanged`,
-      ],
-    };
-  }
-  if (title === "NEXT AUTHORITY REVIEW - READ BOUNDARY") {
-    const actionDependency = Number(contextValue(lines, "Dependent Action drafts:")) > 0;
-    return {
-      title: "Ready to review access",
-      lines: [actionDependency
-        ? "First review what the assistant can read, then its change requests. Each needs your approval; execution has a separate review."
-        : "Review what the assistant can read before enabling access."],
-    };
-  }
-  if (title === "NEXT AUTHORITY REVIEW - ACTION BOUNDARY") {
-    return {
-      title: "Action draft ready for activation review",
-      lines: [contextValue(lines, "Action:") ?? "The exact proposal action is ready."],
-    };
-  }
-  if (title === "Model choice unchanged") {
-    return { title, lines: lines.slice(0, 1) };
-  }
-  return undefined;
-}
-
 function choiceSummary(choice: BoundaryPromptChoice | undefined): string {
   return choice?.label.replace(/\s+\[(?:recommended|ready[^\]]*|configure|detected|available)[^\]]*\]/giu, "").trim()
     ?? "Back";
@@ -380,36 +308,6 @@ export function createBoundaryAuthoringChat(input: {
       }
     }
     if (index === 0 && firstStyle) content = firstStyle(content);
-    if (speaker === "model") {
-      const interpreted = safe.match(/^I interpreted that as\s+([^:]+):\s*(.+)\.$/iu);
-      if (interpreted) {
-        content = `I interpreted that as ${theme.scope(interpreted[1]!.trim())}: `
-          + `${theme.success(interpreted[2]!.trim())}.`;
-      }
-    }
-    if (speaker === "runner" && index > 0) {
-      const interpreted = safe.match(/^Runner-validated interpretation:\s*([^:]+):\s*(.+)$/iu);
-      if (interpreted) {
-        content = `${theme.dim("Runner-validated interpretation:")} `
-          + `${theme.scope(interpreted[1]!.trim())}: ${theme.success(interpreted[2]!.trim())}`;
-      } else {
-        const emphasized = [
-          "Boundary:",
-          "Action:",
-          "Target:",
-          "Reviewed proposal field:",
-          "Where used:",
-          "You said:",
-          "Operator answer:",
-          "Validated decision:",
-        ].find((prefix) => safe.trimStart().startsWith(prefix));
-        if (emphasized) {
-          const offset = safe.indexOf(emphasized);
-          const value = safe.slice(offset + emphasized.length).trimStart();
-          content = `${theme.dim(emphasized)} ${theme.value(value)}`;
-        }
-      }
-    }
     return content;
   };
   const roleLines = (
@@ -561,11 +459,6 @@ export function createBoundaryAuthoringChat(input: {
     lines: string[] = [],
     tone: BoundaryAuthoringTone = "normal",
   ) => {
-    const routine = compactRoutineCheckpoint(title, lines);
-    if (routine) {
-      rememberDetails(title, lines);
-      return;
-    }
     const titleStyle = tone === "success"
       ? theme.success
       : tone === "warning"
@@ -596,18 +489,12 @@ export function createBoundaryAuthoringChat(input: {
     const detailLines = record.lines.map((line) => {
       const safe = transcriptText(line);
       if (!safe.trim()) return "";
-      if (/^\s*\|/u.test(safe)) return safe
-        .replace(/\bModel \+ Runner\b/gu, (value) => theme.visible(value))
-        .replace(/\bRunner only\b/gu, (value) => theme.runnerOnly(value))
-        .replace(/\bKept out\b/gu, (value) => theme.keptOut(value));
-      if (/^REVIEW BEFORE ACTIVATION:/u.test(safe)) return theme.warning(safe);
+      if (/^\s*\|/u.test(safe)) return safe;
       if (/^[A-Z][A-Z0-9 /+_-]{2,}:?$/u.test(safe.trim())) return theme.title(safe.trim().replace(/:$/u, ""));
       const fact = safe.match(/^([^:]{1,40}):\s+(.+)$/u);
       if (fact && !/^\s*["{\[|]/u.test(safe)) {
         const value = fact[2]!.trim();
-        const style = fact[1] === "Raw access" ? value === "RUNNER ONLY" ? theme.runnerOnly
-          : value === "KEPT OUT" ? theme.keptOut : value === "MODEL RAW" ? theme.visible : theme.dim : theme.value;
-        return `${theme.dim(`${fact[1]!.trim()}:`)} ${style(value)}`;
+        return `${theme.dim(`${fact[1]!.trim()}:`)} ${theme.value(value)}`;
       }
       return safe;
     });
@@ -671,13 +558,10 @@ export function createBoundaryAuthoringChat(input: {
       ], "warning");
       return;
     }
-    const selected = latestDetails.lines.filter((line) =>
-      /^(?:Boundary|Action|Target|Read plans?|Action suggestions?|Runner-validated interpretation|Validated decision|Agent supplies|Runner supplies|Approval|Authority|Writeback|Rehearsal|Source database changed|Agent access|Model-facing fields|Privacy|Usage limits):/iu.test(line.trim())
-      || /\b(?:added|removed|changed|kept out|remains disabled|remains off|source unchanged)\b/iu.test(line));
-    const facts = (selected.length ? selected : latestDetails.lines).slice(0, 18);
+    const facts = latestDetails.lines;
     const rendered = [
       "",
-      theme.title("LATEST REVIEWED CHANGE"),
+      theme.title("LATEST REVIEWED RECORD"),
       theme.scope(latestDetails.title),
       ...facts.map((line) => `  ${transcriptText(line)}`),
       "",
@@ -750,14 +634,6 @@ export function createBoundaryAuthoringChat(input: {
   ) => {
     finishLiveResponse();
     await livePending;
-    const routine = compactRoutineCheckpoint(title, lines);
-    if (routine) {
-      rememberDetails(title, lines);
-      if (/^NEXT AUTHORITY REVIEW - /u.test(title)) {
-        checkpoint(routine.title, routine.lines, "normal");
-      }
-      return;
-    }
     const titleStyle = tone === "success"
       ? theme.success
       : tone === "warning"
@@ -795,17 +671,7 @@ export function createBoundaryAuthoringChat(input: {
       await streamModel(lines);
       return;
     }
-    const modelLines = lines
-      .filter((line) => /^(?:Model rationale|Model question|Model suggestion):/iu.test(line))
-      .map((line) => line.replace(/^Model (?:rationale|question|suggestion):\s*/iu, ""));
-    const runnerLines = lines.filter((line) =>
-      !/^(?:Model rationale|Model question|Model suggestion):/iu.test(line));
-    if (modelLines.length) await streamModel(modelLines);
-    if (modelLines.length && runnerLines.length) {
-      checkpoint(runnerLines[0]!, runnerLines.slice(1));
-    } else if (runnerLines.length) {
-      await streamRunner(runnerLines[0]!, runnerLines.slice(1));
-    }
+    await streamRunner(lines[0]!, lines.slice(1));
   };
   const read = async (prompt: string, speaker: BoundaryAuthoringSpeaker = "runner", defaultValue?: string, recordPolicyAnswer = true, preserveWhitespace = false, localOnly = false) => {
     writeRole(speaker, [prompt]);
@@ -1202,10 +1068,7 @@ export function createBoundaryAuthoringChat(input: {
         if (options?.exactDetails) rememberDetails(options.exactDetails.title, options.exactDetails.lines);
         else rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options?.context), title]);
       } else if (options?.context?.length) {
-        const hasModelContext = options.context.some((line) =>
-          /^(?:Model rationale|Model question|Model suggestion):/iu.test(line.trim()));
-        if (hasModelContext) await writeContext(options.context);
-        else rememberDetails(title, options.context);
+        rememberDetails(title, options.context);
       }
       const choice = {
         title: permission && !options?.reviewOnly ? "PERMISSION REQUIRED" : title,
@@ -1296,11 +1159,7 @@ export function createBoundaryAuthoringChat(input: {
     confirm: (label, defaultValue, context) => confirm(label, { defaultValue, context }),
     message: async (title, lines) => {
       rememberDetails(title, lines);
-      const modelRationale = lines.find((line) => /^Model rationale:/iu.test(line));
-      const runnerLines = modelRationale ? lines.filter((line) => line !== modelRationale) : lines;
-      if (modelRationale) await streamModel([modelRationale.replace(/^Model rationale:\s*/iu, "")]);
-      if (modelRationale) checkpoint(title, runnerLines);
-      else await streamRunner(title, runnerLines);
+      await streamRunner(title, lines);
     },
     syntax: async (title, source, language, metadata = []) => {
       rememberDetails(title, [...metadata, "", ...source.trimEnd().split("\n")]);
