@@ -324,6 +324,28 @@ describe("guided execution recovery", () => {
     expect(vi.mocked(input.session.chooseOption!).mock.calls.slice(1).every(([title]) => title === "Execution needs a deployment fix")).toBe(true);
   });
 
+  it("shows engine-correct MySQL administrator instructions with the exact narrow lock grant", async () => {
+    const input = fixture();
+    const plan: WriterProvisioningPlan = { version: 1, engine: "mysql", outcome: input.outcome,
+      action_digest: input.active.authority.action_boundary.digest, writer_env: "MYSQL_WRITER",
+      suggested_role: "runner_writer_aaaaaaaaaaaa", relations: [{ relation: "inventory.budgets", schema: "inventory", table: "budgets",
+        privileges: ["select"], update_columns: [], lock_column: "budget_id", rls_required: false, policies: [], triggers: [] }] };
+    vi.mocked(previewSemanticSupervisedExecution).mockRejectedValue(new SemanticWriterPostureError({ ok: false,
+      fingerprint: `sha256:${"a".repeat(64)}`, expected_fingerprint: null, allowed_relations: [], writable_relations: [],
+      reasons: ["writer_row_lock_privilege_missing"] }, plan.writer_env, plan));
+    vi.mocked(input.session.chooseOption!).mockResolvedValueOnce("choose").mockResolvedValueOnce("export").mockResolvedValueOnce("pause");
+    await reviewSemanticSupervisedExecution(input);
+    const lines = vi.mocked(input.session.showReviewDetails!).mock.calls.find(([title]) => title === "Dedicated writer handoff saved")![1];
+    expect(lines.join("\n")).not.toMatch(/NOLOGIN|RLS/);
+    expect(lines.join("\n")).toContain("locked MySQL account");
+    expect(lines.join("\n")).toContain("GRANT UPDATE (`budget_id`) ON `inventory`.`budgets`");
+    const parent = path.join(input.projectRoot, ".synapsor", "writer-handoffs");
+    const sql = fs.readFileSync(path.join(parent, fs.readdirSync(parent)[0]!, "grants.sql"), "utf8");
+    expect(sql).toContain("GRANT UPDATE (`budget_id`) ON `inventory`.`budgets`");
+    expect(sql).not.toContain("GRANT UPDATE ON");
+    expect(enableSemanticSupervisedExecution).not.toHaveBeenCalled();
+  });
+
   it.each(["new", "saved_missing"])("exports complete administrator instructions before a writer exists, then resumes the same decision (%s)", async (mode) => {
     const input = fixture();
     if (mode === "saved_missing") vi.mocked(readSemanticExecutionReviewDefaults).mockResolvedValue({ write_url_env: "SAVED_WRITE_URL" });

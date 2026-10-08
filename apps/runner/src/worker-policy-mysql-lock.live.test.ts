@@ -7,6 +7,8 @@ import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
 import { writerProvisioningPlan, writerProvisioningSql } from "./writer-provisioning.js";
 import mysql from "mysql2/promise";
 import crypto from "node:crypto";
+import { Pool } from "pg";
+import { inspectDatabaseWithConnection } from "@synapsor-runner/schema-inspector";
 import { inspectDatabase } from "@synapsor-runner/schema-inspector";
 
 function insertWriter(engine: "postgres" | "mysql" = "postgres") {
@@ -81,9 +83,31 @@ describe.skipIf(!adminUrl)("B66 native MySQL exact lock-column writer authority"
       const narrow = await assess();
       expect(narrow.result.reasons).toEqual([]);
       expect(narrow.inspection.tables.find(t => t.name === "customers")?.role_posture).toMatchObject({ privileges: { update: false }, column_privileges: { update: ["customer_id"] } });
-      const plan = writerProvisioningPlan({ assessment: narrow.result, inspection: narrow.inspection, outcome: f.policy.outcome, actionDigest: f.policy.action_boundary_digest, writerEnv: f.policy.write_url_env });
+      const plan = writerProvisioningPlan({ assessment: narrow.result, inspection: narrow.inspection, outcome: f.policy.outcome, actionDigest: f.policy.action_boundary_digest + user, writerEnv: f.policy.write_url_env });
       expect(plan).toBeDefined();
       expect(writerProvisioningSql(plan!)).toContain("GRANT UPDATE (`customer_id`) ON `collections`.`customers`");
+      expect(narrow.inspection.role_posture?.read_only).toBe(false);
+      const selected = await inspectDatabase({ engine: "mysql", databaseUrlEnv: "B66_WRITER", env: { B66_WRITER: writerUrl.href }, resources: [{ schema: "collections", table: "holds" }] });
+      expect(selected.role_posture?.read_only).toBe(false);
+      // Apply the real generated SQL to a fresh account. Only deployment host and
+      // authentication are supplied by this administrator fixture, never grants.
+      const [who] = await admin.query<mysql.RowDataPacket[]>("SELECT USER() AS identity");
+      const host = String(who[0]!.identity).split("@")[1]!;
+      expect(host).toMatch(/^[A-Za-z0-9.:-]+$/);
+      for (const statement of writerProvisioningSql(plan!).replaceAll("'localhost'", `'${host}'`).split("\n").filter(line => line && !line.startsWith("--"))) await admin.query(statement);
+      const generatedAccount = `'${plan!.suggested_role}'@'${host}'`;
+      await admin.query(`ALTER USER ${generatedAccount} IDENTIFIED BY '${password}' ACCOUNT UNLOCK`);
+      const generatedUrl = new URL(writerUrl); generatedUrl.username = plan!.suggested_role;
+      const generatedInspection = await inspectDatabase({ engine: "mysql", databaseUrlEnv: "B66_GENERATED", env: { B66_GENERATED: generatedUrl.href } });
+      f.policy.writer_posture_fingerprint = rolePostureFingerprint(generatedInspection);
+      expect(assessSemanticSupervisedWriterPosture(f.config, f.policy, f.registry, generatedInspection).reasons).toEqual([]);
+      const generatedConnection = await mysql.createConnection(generatedUrl.href);
+      try {
+        await generatedConnection.beginTransaction();
+        expect((await generatedConnection.query<mysql.RowDataPacket[]>("SELECT customer_id FROM customers WHERE customer_id='c1' FOR UPDATE"))[0]).toHaveLength(1);
+        await generatedConnection.rollback();
+      } finally { await generatedConnection.end(); }
+
       await admin.query(`GRANT UPDATE ON collections.customers TO '${user}'@'%'`);
       expect((await assess()).result.reasons).toContain("writer_excess_relation_privilege");
       await admin.query(`REVOKE UPDATE ON collections.customers FROM '${user}'@'%'`);
@@ -94,5 +118,51 @@ describe.skipIf(!adminUrl)("B66 native MySQL exact lock-column writer authority"
       expect((await assess()).result.reasons).toContain("writer_unreviewed_relation_privilege");
       expect((await admin.query<mysql.RowDataPacket[]>("SELECT * FROM collections.customers"))[0]).toEqual([{ customer_id: "c1", tenant_id: "t1", principal_id: "p1", state: "active", version: 1 }]);
     } finally { await writer?.end(); await admin.end(); }
+  });
+});
+
+const pgUrl = process.env.B66_POSTGRES_ADMIN_URL;
+describe.skipIf(!pgUrl)("B66 native PostgreSQL comparison (separate engine proof)", () => {
+  it("retains exact key-column grants, native row locking and excess-authority refusals", async () => {
+    const pool = new Pool({ connectionString: pgUrl, max: 1 });
+    const user = `b66_${crypto.randomBytes(6).toString("hex")}`;
+    const client = await pool.connect();
+    try {
+      await client.query(`CREATE SCHEMA IF NOT EXISTS collections;
+        CREATE TABLE IF NOT EXISTS collections.customers (customer_id text PRIMARY KEY, tenant_id text NOT NULL, principal_id text NOT NULL, state text NOT NULL, version int NOT NULL);
+        CREATE TABLE IF NOT EXISTS collections.holds (hold_id text PRIMARY KEY, customer_id text NOT NULL, tenant_id text NOT NULL, principal_id text NOT NULL, state text NOT NULL);
+        CREATE TABLE IF NOT EXISTS collections.unreviewed (id int PRIMARY KEY);
+        INSERT INTO collections.customers VALUES ('c1','t1','p1','active',1) ON CONFLICT DO NOTHING;
+        CREATE ROLE "${user}" NOLOGIN;
+        GRANT USAGE ON SCHEMA collections TO "${user}";
+        GRANT SELECT ON collections.customers TO "${user}";
+        GRANT SELECT, INSERT, UPDATE (hold_id) ON collections.holds TO "${user}";`);
+      const f = insertWriter("postgres");
+      const inspect = async () => {
+        await client.query(`SET ROLE "${user}"`);
+        try {
+          const inspection = await inspectDatabaseWithConnection({ engine: "postgres", databaseUrlEnv: "PG", schema: "collections", env: { PG: pgUrl! } }, { engine: "postgres", connection: client });
+          f.policy.writer_posture_fingerprint = rolePostureFingerprint(inspection);
+          return { inspection, result: assessSemanticSupervisedWriterPosture(f.config, f.policy, f.registry, inspection) };
+        } finally { await client.query("RESET ROLE"); }
+      };
+      expect((await inspect()).result.reasons).toContain("writer_row_lock_privilege_missing");
+      await client.query(`SET ROLE "${user}"`);
+      await expect(client.query("SELECT customer_id FROM collections.customers FOR UPDATE")).rejects.toMatchObject({ code: "42501" });
+      await client.query("RESET ROLE");
+      await client.query(`GRANT UPDATE (customer_id) ON collections.customers TO "${user}"`);
+      const narrow = await inspect();
+      expect(narrow.result.reasons).toEqual([]);
+      expect(narrow.inspection.tables.find(t => t.name === "customers")?.role_posture).toMatchObject({ privileges: { update: false }, column_privileges: { update: ["customer_id"] } });
+      await client.query(`SET ROLE "${user}"`);
+      expect((await client.query("SELECT customer_id FROM collections.customers FOR UPDATE")).rows).toEqual([{ customer_id: "c1" }]);
+      await client.query("RESET ROLE");
+      await client.query(`GRANT UPDATE ON collections.customers TO "${user}"`);
+      expect((await inspect()).result.reasons).toContain("writer_excess_relation_privilege");
+      await client.query(`REVOKE UPDATE ON collections.customers FROM "${user}"; GRANT UPDATE (customer_id, state) ON collections.customers TO "${user}"`);
+      expect((await inspect()).result.reasons).toContain("writer_excess_column_privilege");
+      await client.query(`REVOKE UPDATE (state) ON collections.customers FROM "${user}"; GRANT UPDATE (id) ON collections.unreviewed TO "${user}"`);
+      expect((await inspect()).result.reasons).toContain("writer_unreviewed_relation_privilege");
+    } finally { client.release(); await pool.end(); }
   });
 });

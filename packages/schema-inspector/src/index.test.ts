@@ -316,7 +316,7 @@ describe("schema inspector helpers", () => {
         "fitflow.memberships": {
           select: true,
           insert: false,
-          update: true,
+          update: false,
           delete: false,
         },
         "fitflow.private_notes": {

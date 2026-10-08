@@ -703,8 +703,13 @@ export async function reviewSemanticSupervisedExecution(input: {
           const lines = [`Administrator handoff: ${directory}`, "Review README.md, requirements.json and grants.sql with your database administrator.",
             ...writerPolicyRepairSummary(plan),
             `Keep ${plan.read_env ?? "the saved read connection"} unchanged; configure the dedicated writer in ${plan.writer_env}. Never replace the reader with the restricted writer.`,
-            "The new role starts NOLOGIN. Scoped policies and helper access still need review; do not reuse or revoke the shared writer.",
-            "If RLS changes, resume the same start command through the reader with --rescan and revalidate the saved Read/Action job. Otherwise recheck the separate writer here. This export changes no authority or database."];
+            ...(plan.engine === "mysql" ? [
+              "The new locked MySQL account needs separate authentication setup and administrator review before unlocking; do not reuse the shared writer.",
+              "MySQL grants auto-commit. Stop on the first error; then recheck the separate writer here. This export changes no authority or database.",
+            ] : [
+              "The new role starts NOLOGIN. Scoped policies and helper access still need review; do not reuse or revoke the shared writer.",
+              "If RLS changes, resume the same start command through the reader with --rescan and revalidate the saved Read/Action job. Otherwise recheck the separate writer here. This export changes no authority or database.",
+            ])];
           problem.details.push("", ...lines);
           input.session.rememberDetails?.(detailsTitle, problem.details);
           await input.session.showReviewDetails?.("Dedicated writer handoff saved", lines);

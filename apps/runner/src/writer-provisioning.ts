@@ -1,5 +1,5 @@
 import fs from "node:fs/promises";
-import { formatPostgresReceiptMigration } from "./onboarding.js";
+import { formatMysqlReceiptMigration, formatPostgresReceiptMigration } from "./onboarding.js";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
@@ -14,7 +14,8 @@ export function writerProvisioningPlan(input: {
   outcome: string; outcomes?: string[]; actionDigest: string; writerEnv: string; readEnv?: string;
   receiptSetup?: WriterProvisioningPlan["receipt_setup"];
 }): WriterProvisioningPlan | undefined {
-  if (input.inspection.engine !== "postgres" || !input.assessment.required_relations?.length) return undefined;
+  if (!["postgres", "mysql"].includes(input.inspection.engine) || !input.assessment.required_relations?.length) return undefined;
+  if (input.inspection.engine === "mysql" && input.assessment.required_relations.some(relation => relation.rls_required)) return undefined;
   const relations: WriterProvisioningPlan["relations"] = [];
   for (const required of input.assessment.required_relations) {
     const table = input.inspection.tables.find((entry) => `${entry.schema}.${entry.name}` === required.relation);
@@ -48,10 +49,11 @@ export function writerProvisioningPlan(input: {
 const identifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
 
 export function writerProvisioningSql(plan: WriterProvisioningPlan): string {
-  if (plan.engine !== "postgres" || !/^runner_writer_[a-f0-9]{12}$/u.test(plan.suggested_role)) throw new Error("Invalid dedicated writer plan.");
+  if (!["postgres", "mysql"].includes(plan.engine) || !/^runner_writer_[a-f0-9]{12}$/u.test(plan.suggested_role)) throw new Error("Invalid dedicated writer plan.");
   if (plan.relations.some((relation) => !relation.privileges.every((value) => ["select", "insert", "update"].includes(value)))) {
     throw new Error("Unsupported writer privilege; export the exact reviewed requirements again.");
   }
+  if (plan.engine === "mysql") return mysqlWriterProvisioningSql(plan);
   const role = identifier(plan.suggested_role);
   return [
     "-- ADMINISTRATOR REVIEW REQUIRED. Runner never executes this file.",
@@ -86,7 +88,49 @@ export function writerProvisioningSql(plan: WriterProvisioningPlan): string {
   ].join("\n");
 }
 
+function mysqlWriterProvisioningSql(plan: WriterProvisioningPlan): string {
+  if (plan.relations.some(relation => relation.rls_required)) throw new Error("MySQL cannot provision PostgreSQL RLS requirements.");
+  // The precreated source-receipt contract explicitly requires SELECT/INSERT/
+  // UPDATE on its exact selected relation. Never infer this from missing effect
+  // columns, a relation name, or a private lock identity.
+  const receiptRelation = (relation: WriterProvisioningPlan["relations"][number]) => Boolean(plan.receipt_setup
+    && relation.schema === plan.receipt_setup.schema && relation.table === plan.receipt_setup.table
+    && relation.relation === `${plan.receipt_setup.schema}.${plan.receipt_setup.table}`
+    && !relation.lock_column && !relation.row_scope?.length && !relation.update_columns.length
+    && relation.privileges.length === 3 && ["select", "insert", "update"].every(p => relation.privileges.includes(p)));
+  if (plan.relations.some(relation => relation.privileges.includes("update") && !relation.update_columns.length && !receiptRelation(relation))) {
+    throw new Error("Missing exact reviewed UPDATE columns; refresh the writer requirements instead of broadening grants.");
+  }
+  const quote = (value: string) => `\`${value.replaceAll("`", "``")}\``;
+  const account = `'${plan.suggested_role}'@'localhost'`;
+  return [
+    "-- ADMINISTRATOR REVIEW REQUIRED. Runner never executes this file.",
+    "-- Creates a NEW locked account. Configure authentication separately before unlocking.",
+    "-- Replace localhost consistently with the exact approved application host if needed; do not use a wildcard host.",
+    "-- MySQL account/grant DDL auto-commits. Stop on the first error; do not use mysql --force or reuse an existing account.",
+    `CREATE USER ${account} ACCOUNT LOCK;`,
+    ...(plan.receipt_setup ? [formatMysqlReceiptMigration(plan.receipt_setup.schema, plan.receipt_setup.table)] : []),
+    ...plan.relations.flatMap(relation => {
+      const table = `${quote(relation.schema)}.${quote(relation.table)}`;
+      // Any reviewed effect-column UPDATE already satisfies row locking. Add
+      // the reviewed identity only when there are no effect UPDATE columns.
+      const updates = relation.update_columns.length ? relation.update_columns : relation.lock_column ? [relation.lock_column] : [];
+      return [
+        ...relation.privileges.filter(privilege => privilege !== "update").map(privilege => `GRANT ${privilege.toUpperCase()} ON ${table} TO ${account};`),
+        ...(updates.length ? [`GRANT UPDATE (${updates.map(quote).join(", ")}) ON ${table} TO ${account};`]
+          : relation.privileges.includes("update") ? [`GRANT UPDATE ON ${table} TO ${account};`] : []),
+      ];
+    }),
+    "-- A lock-column UPDATE grant is real database mutation authority on that column, not a lock-only permission.",
+    "-- Review triggers, defaults and account custody. Recheck the configured writer in Runner before execution review.", "",
+  ].join("\n");
+}
+
 export function writerPolicyRepairSummary(plan: WriterProvisioningPlan): string[] {
+  if (plan.engine === "mysql") return [
+    "Review grants.sql for the exact dedicated MySQL account and column grants. Live writer verification is still required.",
+    ...writerProvisioningSql(plan).split("\n").filter(line => line.startsWith("GRANT ")),
+  ];
   const repair = writerPolicyRepair(plan);
   return repair.sql ? [
     "Scoped filter repair: review scoped-policies.sql after grants.sql. It adds only missing policies for the dedicated writer, using the exact reviewed identity filters.",
@@ -104,8 +148,24 @@ export async function exportWriterProvisioning(projectRoot: string, plan: Writer
   const write = (name: string, value: string) => fs.writeFile(path.join(directory, name), value, { mode: 0o600, flag: "wx" });
   await write("requirements.json", JSON.stringify(plan, null, 2) + "\n");
   await write("grants.sql", writerProvisioningSql(plan));
-  const policyRepair = writerPolicyRepair(plan);
+  const policyRepair = plan.engine === "mysql" ? { blockers: [], changes: [], sql: undefined } : writerPolicyRepair(plan);
   if (policyRepair.sql) await write("scoped-policies.sql", policyRepair.sql);
+  if (plan.engine === "mysql") {
+    await write("README.md", [
+      "# Dedicated MySQL Writer Review", "", `Outcomes: ${(plan.outcomes ?? [plan.outcome]).join(", ")}`,
+      `Action revision: ${plan.action_digest}`, "",
+      "This export is a deployment plan, not execution permission. No database command has run.",
+      "1. Review requirements.json: exact effect columns, private row-lock columns and inspected triggers.",
+      "2. Review grants.sql. It creates a NEW locked account at localhost. Replace localhost consistently with the exact approved application host if needed. Do not use a wildcard host, shared writer or role membership.",
+      "3. Run only after administrator review, stopping at the first error. MySQL account and grant DDL auto-commits; there is no rollback of earlier grants. Never continue after CREATE USER fails or reuse an existing account.",
+      ...(plan.receipt_setup ? [`Selected source receipt: ${plan.receipt_setup.schema}.${plan.receipt_setup.table}. The script includes the existing receipt migration. Re-inspection and a rollback receipt probe remain required; no public Read access to receipt content is granted.`] : []),
+      "4. Review defaults and trigger effects. Configure authentication securely and unlock the account separately. Never save credentials in this export.",
+      `5. Keep ${plan.read_env ?? "the saved read connection"} unchanged. Configure the dedicated connection ONLY in ${plan.writer_env}. Resume the saved Action execution setup and recheck the writer.`,
+      "6. Execution consent and worker startup remain separate. Only a successful execution receipt proves a completed change.", "",
+      "A key-column UPDATE grant for row locking is real database mutation authority on that column for the credential holder. It adds no model-facing update operation; Runner still enforces its reviewed effects and conflict guards.", "",
+    ].join("\n"));
+    return directory;
+  }
   await write("README.md", [
     "# Dedicated Writer Review", "", `Outcomes: ${(plan.outcomes ?? [plan.outcome]).join(", ")}`, `Action revision: ${plan.action_digest}`, "",
     "This export is a deployment plan, not execution permission. No database command has run.",

@@ -181,3 +181,54 @@ describe("dedicated writer provisioning handoff", () => {
     }
   });
 });
+
+describe("MySQL administrator handoff", () => {
+  const mysqlPlan = () => {
+    const data = inspection(); data.engine = "mysql";
+    const required = assessment(); required.required_relations!.forEach(r => { r.rls_required = false; });
+    return writerProvisioningPlan({ assessment: required, inspection: data, outcome: "telecom.switch", actionDigest, writerEnv: "MYSQL_WRITER" })!;
+  };
+  it("exports exact effect UPDATE columns and the parent identity lock grant", async () => {
+    const p = mysqlPlan(), sql = writerProvisioningSql(p);
+    expect(sql).toContain("GRANT UPDATE (`plan_offer_id`) ON `telecom`.`plan_change_offers`");
+    expect(sql).toContain("GRANT UPDATE (`base_monthly_cents`, `plan_code`, `version`) ON `telecom`.`subscriptions`");
+    expect(sql).not.toContain("GRANT UPDATE ON");
+    expect(sql).not.toContain("subscription_id");
+    expect(sql).not.toContain("unrelated_secrets");
+    expect(sql).toContain(`CREATE USER '${p.suggested_role}'@'localhost' ACCOUNT LOCK;`);
+    expect(sql).not.toMatch(/GRANT ALL|@'%'|IDENTIFIED BY|START TRANSACTION/);
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-mysql-provisioning-")); roots.push(root);
+    const directory = await exportWriterProvisioning(root, p);
+    const readme = await fs.readFile(path.join(directory, "README.md"), "utf8");
+    expect(readme).toContain("MySQL account and grant DDL auto-commits");
+    expect(readme).toContain("ONLY in MYSQL_WRITER");
+    expect(readme).toContain("real database mutation authority");
+    expect(readme).not.toMatch(/NOLOGIN|PostgreSQL|psql/);
+    expect(JSON.parse(await fs.readFile(path.join(directory, "requirements.json"), "utf8"))).toMatchObject({ engine: "mysql", relations: [{ update_columns: ["base_monthly_cents", "plan_code", "version"] }, { lock_column: "plan_offer_id" }] });
+  });
+  it("refuses unbound MySQL effect UPDATE columns instead of emitting a broader grant", () => {
+    const p = mysqlPlan(); p.relations[0]!.update_columns = [];
+    expect(() => writerProvisioningSql(p)).toThrow("exact reviewed UPDATE columns");
+    p.relations[0]!.lock_column = undefined;
+    expect(() => writerProvisioningSql(p)).toThrow("exact reviewed UPDATE columns");
+    p.receipt_setup = { schema: "telecom", table: "different_receipts" };
+    expect(() => writerProvisioningSql(p)).toThrow("exact reviewed UPDATE columns");
+  });
+  it("retains only the exact selected precreated receipt relation's existing UPDATE contract", () => {
+    const p = mysqlPlan();
+    p.receipt_setup = { schema: "audit", table: "receipts" };
+    p.relations.push({ relation: "audit.receipts", schema: "audit", table: "receipts", privileges: ["select", "insert", "update"],
+      update_columns: [], rls_required: false, policies: [], triggers: [] });
+    expect(writerProvisioningSql(p)).toContain("GRANT UPDATE ON `audit`.`receipts`");
+    p.relations[2]!.lock_column = "receipt_id";
+    expect(() => writerProvisioningSql(p)).toThrow("exact reviewed UPDATE columns");
+  });
+  it("quotes exact MySQL identifiers and refuses incompatible RLS requirements", () => {
+    const p = mysqlPlan(); p.relations[1]!.lock_column = "id`,secret";
+    expect(writerProvisioningSql(p)).toContain("UPDATE (`id``,secret`)");
+    p.relations[0]!.rls_required = true;
+    expect(() => writerProvisioningSql(p)).toThrow("RLS");
+    const data = inspection(); data.engine = "mysql";
+    expect(writerProvisioningPlan({ inspection: data, assessment: assessment(), outcome: "test", actionDigest, writerEnv: "WRITER" })).toBeUndefined();
+  });
+});

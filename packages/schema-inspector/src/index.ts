@@ -1866,6 +1866,7 @@ async function inspectMysql(
       can_truncate: mysqlGrants.relations[`${String(row.schema)}.${String(row.name)}`]?.truncate ?? false,
       can_references: mysqlGrants.relations[`${String(row.schema)}.${String(row.name)}`]?.references ?? false,
       can_trigger: mysqlGrants.relations[`${String(row.schema)}.${String(row.name)}`]?.trigger ?? false,
+      column_privileges: mysqlGrants.column_privileges[`${String(row.schema)}.${String(row.name)}`],
       row_security_forced: false,
     }));
     const globalRolePosture = selectedResources
@@ -2361,11 +2362,13 @@ export function mysqlGrantPosture(
   verified: boolean;
   elevated: boolean;
   relations: Record<string, RelationPrivilegeInfo>;
+  column_privileges: Record<string, NonNullable<RelationRolePosture["column_privileges"]>>;
 } {
   const parsed: Array<{
     schema: string | "*";
     table: string | "*";
     privileges: RelationPrivilegeInfo;
+    columns: NonNullable<RelationRolePosture["column_privileges"]>;
   }> = [];
   let verified = true;
   let elevated = false;
@@ -2387,18 +2390,21 @@ export function mysqlGrantPosture(
     elevated ||= privileges.elevated
       || /\bWITH\s+GRANT\s+OPTION\b/i.test(grant)
       || (!privileges.verified && target.schema === "*" && target.table === "*");
-    if (!privileges.verified) {
+    if (!privileges.verified || (Object.keys(privileges.columns).length > 0 && (target.schema === "*" || target.table === "*"))) {
       verified = false;
       continue;
     }
     parsed.push({
       ...target,
       privileges: privileges.relation,
+      columns: privileges.columns,
     });
   }
 
   const relationMap: Record<string, RelationPrivilegeInfo> = {};
+  const columnMap: Record<string, NonNullable<RelationRolePosture["column_privileges"]>> = {};
   for (const relation of relations) {
+    const columns: NonNullable<RelationRolePosture["column_privileges"]> = {};
     const posture: RelationPrivilegeInfo = {
       select: false,
       insert: false,
@@ -2416,11 +2422,15 @@ export function mysqlGrantPosture(
         for (const privilege of Object.keys(posture) as Array<keyof RelationPrivilegeInfo>) {
           posture[privilege] ||= grant.privileges[privilege];
         }
+        for (const privilege of Object.keys(grant.columns) as Array<keyof typeof columns>) {
+          columns[privilege] = [...new Set([...(columns[privilege] ?? []), ...grant.columns[privilege]!])].sort();
+        }
       }
     }
     relationMap[`${relation.schema}.${relation.table}`] = posture;
+    columnMap[`${relation.schema}.${relation.table}`] = columns;
   }
-  return { verified, elevated, relations: relationMap };
+  return { verified, elevated, relations: relationMap, column_privileges: columnMap };
 }
 
 function mysqlGrantsIncludeWriteAuthority(grants: string[]): boolean {
@@ -2432,7 +2442,8 @@ function mysqlGrantsIncludeWriteAuthority(grants: string[]): boolean {
       || privileges.relation.update
       || privileges.relation.delete
       || privileges.relation.truncate
-      || privileges.relation.trigger) {
+      || privileges.relation.trigger
+      || privileges.columns.insert?.length || privileges.columns.update?.length) {
       return true;
     }
   }
@@ -2458,10 +2469,31 @@ function unquoteMysqlGrantIdentifier(value: string): string {
     : value;
 }
 
+// Split only formal SQL list separators; quoted identifiers can contain commas,
+// parentheses and escaped backticks. Malformed/unknown grant syntax fails closed.
+function splitMysqlGrantList(value: string): string[] | undefined {
+  const entries: string[] = [];
+  let start = 0, depth = 0, quoted = false;
+  for (let i = 0; i < value.length; i++) {
+    const c = value[i];
+    if (c === "`") {
+      if (quoted && value[i + 1] === "`") { i++; continue; }
+      quoted = !quoted;
+    } else if (!quoted) {
+      if (c === "(" && ++depth > 1) return undefined;
+      if (c === ")" && --depth < 0) return undefined;
+      if (c === "," && depth === 0) { entries.push(value.slice(start, i).trim()); start = i + 1; }
+    }
+  }
+  entries.push(value.slice(start).trim());
+  return quoted || depth !== 0 || entries.some(entry => !entry) ? undefined : entries;
+}
+
 function parseMysqlGrantPrivileges(value: string): {
   verified: boolean;
   elevated: boolean;
   relation: RelationPrivilegeInfo;
+  columns: NonNullable<RelationRolePosture["column_privileges"]>;
 } {
   const relation: RelationPrivilegeInfo = {
     select: false,
@@ -2472,11 +2504,8 @@ function parseMysqlGrantPrivileges(value: string): {
     references: false,
     trigger: false,
   };
-  const normalized = value
-    .replace(/\([^)]*\)/g, "")
-    .split(",")
-    .map((entry) => entry.trim().replace(/\s+/g, " ").toUpperCase())
-    .filter(Boolean);
+  const columns: NonNullable<RelationRolePosture["column_privileges"]> = {};
+  const entries = splitMysqlGrantList(value);
   const allowed = new Set([
     "USAGE",
     "SELECT",
@@ -2515,9 +2544,22 @@ function parseMysqlGrantPrivileges(value: string): {
     "SUPER",
     "SYSTEM_USER",
   ]);
-  let verified = true;
+  let verified = entries !== undefined;
   let elevated = false;
-  for (const privilege of normalized) {
+  for (const entry of entries ?? []) {
+    const match = entry.match(/^([A-Za-z_]+(?:\s+[A-Za-z_]+)*)(?:\s*\(([\s\S]*)\))?$/);
+    if (!match) { verified = false; continue; }
+    const privilege = match[1]!.replace(/\s+/g, " ").toUpperCase();
+    if (match[2] !== undefined) {
+      const names = splitMysqlGrantList(match[2]);
+      if (!["SELECT", "INSERT", "UPDATE", "REFERENCES"].includes(privilege) || !names?.length
+        || names.some(name => !/^(?:`(?:``|[^`])+`|[A-Za-z0-9_$-]+)$/.test(name))) {
+        verified = false; continue;
+      }
+      const key = privilege.toLowerCase() as keyof typeof columns;
+      columns[key] = [...new Set([...(columns[key] ?? []), ...names.map(unquoteMysqlGrantIdentifier)])].sort();
+      continue;
+    }
     const all = privilege === "ALL" || privilege === "ALL PRIVILEGES";
     if (all) {
       relation.select = true;
@@ -2540,7 +2582,7 @@ function parseMysqlGrantPrivileges(value: string): {
     if (elevatedPrivileges.has(privilege)) elevated = true;
     else if (!allowed.has(privilege)) verified = false;
   }
-  return { verified, elevated, relation };
+  return { verified, elevated, relation, columns };
 }
 
 function constraintColumns(rows: RawKeyColumn[], kind: string): UniqueConstraintInfo[] {
