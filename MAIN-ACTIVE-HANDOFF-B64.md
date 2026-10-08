@@ -6,7 +6,7 @@ Ask original49+new3 integrated; independent24PASS and Main13PASS/types0; no Engl
 Chat new9 accepted d91140PASS/types0, integrated80PASS/types0; Main CLI original-error hook2eb after5PASS awaits B66 independent check; old CP05/06/08 preserved.
 CI guard wired permanently; core/formal/stale controls accepted, Main26PASS;363exact allowances. Repository practical coverage remains OPEN (36441unmatched syntax candidates, not decision counts).
 Read accepted a174 last6 +932 persistence +47native assess await coherent Main integration; successor16f native ACK6PASS source-scoped R2accepted; [ordered plan](../b57-fixture-prep/docs/development/b64-read-integration-plan.json).
-NEXT Main: integrate selective Privacy typed protocol + Read packets, then actual public confirmations/activation/active serializers; no whole dependency snapshots, no fabricated scope/origins.
+NEXT Main: coherent selective Privacy/Read composition + mapped SC04 file/export/native fences; helper owns new pure wrappercodec, Main existingports. No whole dependency snapshots/fabricatedscope/origins.
 Privacy23/2:374nativev2 refusal source/artifact R2accepted; fullinventory binding SC01–07 pending. R1file/active SC04 map: strict outerwrap + registryversion, no native-first/mixed fallback; Mainimplementation next.
 Action43/5: successor5e lifetime before/fix, Main label8cb supplied/types pending; independent lifetime + Main compiled renderer/Source hooks pending.
 B65 [pack/matrix](docs/development/b65-cross-resource/PLAN.json):28scenarios/41purePASS/R1accepted;873 fixedfe885:54unsupported/2PRE01notreached/0enforced. SevenPGadmissions noDML; no race/progress proof. PRE01→newINSERTcandidate next.

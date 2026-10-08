@@ -92,8 +92,11 @@
   "runtime_review_checkpoint": {
     "receipt_repair_source": "e44dca59",
     "R2_source_accept_report": "bc1f58c0c319dd6c576e187b330c9962b4decf0412d2d1145b20e9bb19a9e6a8",
-    "native_after_evidence": "Runtime reports all five replay variants; R2 awaiting exact after packet/raw artifact. Do not claim independent native-after acceptance yet.",
+    "native_after_evidence": "R2 scoped SOURCE+OWNER NATIVE ARTIFACT ACCEPT e44/c6a4bc4b; 1PASS covers five variants; no reviewer rerun.",
     "single_insert_preseal": "IN01\u201310 dd2c9373d16e11d3fe58f3f8f65919cadbe2762a7216517cd30dca4d07620f0a",
-    "boundary": "Existing single INSERT upper SUM only; no group INSERT/defaults/new privilege or public-positive transfer."
+    "boundary": "Existing single INSERT upper SUM only; no group INSERT/defaults/new privilege or public-positive transfer.",
+    "native_after_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b65-e44-c6a4-historical-replay-native-after-independent-v1.json",
+    "native_after_report_sha256": "bee25851f518b186f7ee76f517ea4ef1f74721072ffa5bbdb2872b3b38077490",
+    "limits": "Completed SourceDb receipt replay only; fresh narrow role refuses before DML. No new public, hard-limit positive, unknown-COMMIT or general B61 closure."
   }
 }

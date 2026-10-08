@@ -1,0 +1,120 @@
+{
+  "status": "SOURCE_DESIGN_ADJUDICATED_RUNTIME_PENDING",
+  "main_pin": "61eb7119",
+  "privacy_pin": "374b615e842b63e159cb60665b22984f26c9c3f2",
+  "old_reader_pin": "16f44f67",
+  "old_checkout": "/var/tmp/b64-privacy-old-readers/16f44f67",
+  "scope": "SC04 saved draft/active file compatibility; native Privacy374 independently handled by R2. No product writes or test runs in this review.",
+  "finding": "Inner ExplorationBoundary v2 alone does not force old-reader refusal. Old draft checks candidate/draft equality, not supported version; old active flat validator checks activation/name/scope/digest without exact supported version. A matching self-consistent new payload can therefore reach old interpretation.",
+  "routes": [
+    {
+      "owner": "boundary-review-context.ts",
+      "main_lines": [
+        35,
+        50,
+        52,
+        64
+      ],
+      "route": "loadBoundaryReviewContext prefers readProjectReadAuthoring; otherwise reads generated draft, lock, progress and recommended candidate.",
+      "old_refusal_hook": "boundary-candidate.ts recommendedBoundaryReviewCandidate accesses draft.pack.resources at23. A file envelope without top-level pack cannot be treated as a flat draft."
+    },
+    {
+      "owner": "boundary-review-persistence.ts",
+      "route": "readBoundaryReviewProgress independently loads native then saved progress; current old16f uses strict parseStoredReadReviewProgress.",
+      "constraint": "Retain native/progress version fences and exact draft identity; no synthesized confirmations, defaults or migration."
+    },
+    {
+      "owner": "auto-boundary.ts",
+      "main_lines": [
+        2493,
+        2538,
+        2884,
+        2917,
+        3021,
+        3070
+      ],
+      "route": "readOptionalExplorationDraft and activation fallback draft; loadActivatedExplorationBoundary/Boundaries prefer native, then registry; ENOENT-only fallback to legacy flat active.",
+      "old_refusal_hook": "old16f validateActivatedExplorationBoundary3214 rejects missing top-level activation.state; registry3261 checks exact outer ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION."
+    },
+    {
+      "owner": "auto-boundary.ts writers",
+      "main_lines": [
+        1722,
+        3009,
+        3158,
+        3220
+      ],
+      "route": "Generated draft write, legacy selected-active mirror and full active registry write.",
+      "constraint": "All new serialized outputs must carry coherent incompatible format. Do not leave a downgraded flat active mirror old code can adopt."
+    },
+    {
+      "owner": "ask-authority.ts",
+      "main_lines": [
+        208,
+        329,
+        343
+      ],
+      "route": "Ask profile/authority raw draft and registry/legacy readers.",
+      "constraint": "Strict registry version hardcoded v1 and direct flat activation lookup need shared decoder; cannot treat unsupported new authority as missing/unknown and continue with stale prior authority."
+    },
+    {
+      "owner": "additional direct JSON consumers",
+      "route": "boundary-rescan, boundary-review-mutation/policy, config-inspect, control-policy-project-migration, guided-action, local-ui and protect-query read generated draft or active artifacts.",
+      "constraint": "Audit direct readers/serializers into one owned file-format codec. Snapshot/hash/existence-only readers need not unwrap; any authority/meaning consumer does. No broad mechanical rewrite or default payload."
+    }
+  ],
+  "proposed_minimum": {
+    "draft_flat": "Existing file path, strict versioned outer envelope with unchanged payload under boundary. Do not duplicate legacy top-level pack/activation. New decoder supports only intended exact version/keys.",
+    "active_flat": "Same principle: versioned outer envelope without legacy top-level activation; preserve inner actual activation digest/receipt, do not manufacture it.",
+    "active_registry": "Bump existing registry discriminator that old code already validates, validate every member coherently before returning any selected authority; no skip/partial acceptance.",
+    "native": "Keep Privacy374 native discriminator; native-first paths otherwise can mask new flat artifacts. Mixed-state contract must be tested explicitly against actual new writer custody.",
+    "authority": "Existing B64 necessary typed-format refusal permission is sufficient for a prospective file serialization envelope in existing locations; no new evidence store or semantic meaning accepted. No reading/resaving old records to upgrade."
+  },
+  "presealed_controls": [
+    {
+      "id": "SC04-F01",
+      "target": "New ordinary generated unconfirmed v2 draft, no native/progress masking",
+      "oracle": "Cold old supported loadBoundaryReviewContext refuses; original file bytes and absence of progress/native writes preserved. New reader loads disabled/unconfirmed only."
+    },
+    {
+      "id": "SC04-F02",
+      "target": "New ordinary saved native v2 + generated file",
+      "oracle": "Old native-first load refuses rather than ignoring new protocol or recovering flat compatibility projection; new load retains exact native identity/history."
+    },
+    {
+      "id": "SC04-F03",
+      "target": "Actual reviewed/activated new file output from supported path",
+      "oracle": "Cold old active legacy loader refuses wrapper; new reader validates actual payload digest/receipt/currentness. Positive fixture must use genuine activation evidence, never fabricated actor/digest."
+    },
+    {
+      "id": "SC04-F04",
+      "target": "New registry + valid older legacy active file",
+      "oracle": "Old registry version failure is not ENOENT and cannot fall back to old selected active. Both files unchanged; no runtime authority selected."
+    },
+    {
+      "id": "SC04-F05",
+      "target": "Mixed member versions/new registry, selected valid member plus unknown/old member",
+      "oracle": "New loader refuses entire registry, even if incompatible member is unselected; no implicit normalization, pruning or selected-only acceptance."
+    },
+    {
+      "id": "SC04-F06",
+      "target": "Malformed/unknown wrapper, duplicate top-level legacy projection, wrong inner version",
+      "oracle": "New strict codec refuses prior to authority use; no inner-only fallback or silent overwrite. Legacy positive loading remains only if explicitly authorized, not inferred."
+    },
+    {
+      "id": "SC04-F07",
+      "target": "Native-first coexistence old record plus new file or old registry",
+      "oracle": "Record exact authoritative custody; new writer emits consistent v2 native/file state. No claim universal old-reader refusal if it legitimately never reads the new file; classify uncovered mixed provenance instead of manufacturing PASS."
+    },
+    {
+      "id": "SC04-F08",
+      "target": "Cold process public review/runtime entry with rejected artifacts",
+      "oracle": "Capture original bytes/hashes, repository epoch/pointers and operations before/after; zero resave/activation/source/model calls. Low-level JSON.parse returning an object is not supported-loader acceptance."
+    }
+  ],
+  "limits": [
+    "Source predicts wrapper refusal; actual old-process test remains required before SC04 closes.",
+    "Main owns codec/loaders; Privacy auto-boundary source-production edits require coordinated custody.",
+    "No boundary payload digest migration, authority union or missing-review default authorized."
+  ]
+}

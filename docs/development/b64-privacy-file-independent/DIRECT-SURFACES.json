@@ -1,0 +1,540 @@
+{
+  "source_pin": "61eb7119",
+  "verdict": "READ_ONLY_SERIALIZATION_SURFACE_MAP",
+  "anchor_count": 52,
+  "counts": {
+    "payload_consumer": 23,
+    "constant": 1,
+    "output_file_manifest": 1,
+    "serializer_or_mirror_writer": 3,
+    "existing_file_capture": 2,
+    "public_import_version_guard": 1,
+    "byte_snapshot": 3,
+    "public_export_format": 2,
+    "existing_authority_presence_fence": 2,
+    "constant_for_payload_consumer": 1,
+    "provenance_capture": 2,
+    "existence_routing": 8,
+    "ENOENT_filename_match": 1,
+    "rollback_byte_snapshot": 2
+  },
+  "anchors": [
+    {
+      "file": "apps/runner/src/ask-access-summary.ts",
+      "line": 544,
+      "kind": "payload_consumer",
+      "source": "const filePath = path.join(boundaryRoot, \"exploration-boundary.draft.json\");",
+      "context": "    throw new Error(\"Managed boundary root escapes the selected project.\");\n  }\n  const filePath = path.join(boundaryRoot, \"exploration-boundary.draft.json\");\n  const stat = await fs.lstat(filePath);\n  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 10 * 1024 * 1024) {\n    throw new Error(\"Generated boundary draft must be a bounded regular project file.\");\n  }\n  const value = JSON.parse(await fs.readFile(filePath, \"utf8\")) as unknown;\n  if (!isRecord(value) || !isRecord(value.pack) || !Array.isArray(value.pack.resources)) {",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/ask-authority.ts",
+      "line": 208,
+      "kind": "payload_consumer",
+      "source": "path.join(projectRoot, \"synapsor/generated/exploration-boundary.draft.json\"),",
+      "context": "  const active = (await optionalActiveBoundaries(projectRoot))[0];\n  const draft = await readOptionalJson(\n    path.join(projectRoot, \"synapsor/generated/exploration-boundary.draft.json\"),\n  );\n  const profile = active\n    ? active.deployment_profile\n    : isRecord(draft)\n      ? draft.deployment_profile\n      : undefined;",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/ask-authority.ts",
+      "line": 329,
+      "kind": "payload_consumer",
+      "source": "path.join(projectRoot, \".synapsor/exploration-boundaries.active.json\"),",
+      "context": "  }\n  const registry = await readOptionalJson(\n    path.join(projectRoot, \".synapsor/exploration-boundaries.active.json\"),\n  );\n  if (registry !== null) {\n    if (!isRecord(registry)\n      || registry.schema_version !== \"synapsor.active-exploration-boundaries.v1\"\n      || !Array.isArray(registry.boundaries)\n      || registry.boundaries.length < 1",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/ask-authority.ts",
+      "line": 343,
+      "kind": "payload_consumer",
+      "source": "path.join(projectRoot, \".synapsor/exploration-boundary.active.json\"),",
+      "context": "  }\n  const legacy = await readOptionalJson(\n    path.join(projectRoot, \".synapsor/exploration-boundary.active.json\"),\n  );\n  return legacy === null ? [] : [activeBoundaryIdentity(legacy, \"legacy active boundary\")];\n}\n\nfunction activeBoundaryIdentity(\n  value: unknown,",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 70,
+      "kind": "constant",
+      "source": "const ACTIVE_EXPLORATION_BOUNDARY_SET_FILE = \"exploration-boundaries.active.json\";",
+      "context": "export const MAX_ACTIVE_EXPLORATION_BOUNDARIES = 8;\nconst EXPLORATION_LOCK_SNAPSHOT_DIR = \"exploration-locks\";\nconst ACTIVE_EXPLORATION_BOUNDARY_SET_FILE = \"exploration-boundaries.active.json\";\nconst AUTO_BOUNDARY_POLICY_BASELINE_FILE = \"auto-boundary-policy-baseline.json\";\nconst AUTO_BOUNDARY_POLICY_BASELINE_VERSION = \"synapsor.auto-boundary-policy-baseline.v1\";\n\nexport const EXPLORATION_TIME_BUCKETS = [\n  \"hour\",\n  \"day\",",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 1710,
+      "kind": "output_file_manifest",
+      "source": "\"exploration-boundary.draft.json\",",
+      "context": "    \"read-capabilities.synapsor.sql\",\n    \"synapsor.candidate.contract.json\",\n    \"exploration-boundary.draft.json\",\n    \"generation-review.json\",\n    \"review-overrides.json\",\n    \"contract-tests.json\",\n    \"REVIEW.md\",\n    \".synapsor-auto-boundary.json\",\n  ];",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 1722,
+      "kind": "serializer_or_mirror_writer",
+      "source": "await fs.writeFile(path.join(temporary, \"exploration-boundary.draft.json\"), json(input.build.exploration_boundary), \"utf8\");",
+      "context": "    await fs.writeFile(path.join(temporary, \"read-capabilities.synapsor.sql\"), capabilityDsl(input.build.dsl), \"utf8\");\n    await fs.writeFile(path.join(temporary, \"synapsor.candidate.contract.json\"), json(input.build.contract), \"utf8\");\n    await fs.writeFile(path.join(temporary, \"exploration-boundary.draft.json\"), json(input.build.exploration_boundary), \"utf8\");\n    await fs.writeFile(path.join(temporary, \"generation-review.json\"), json(input.build.review), \"utf8\");\n    await fs.writeFile(path.join(temporary, \"review-overrides.json\"), json(input.build.overrides), \"utf8\");\n    await fs.writeFile(path.join(temporary, \"contract-tests.json\"), json(input.build.tests), \"utf8\");\n    await fs.writeFile(path.join(temporary, \"REVIEW.md\"), reviewMarkdown(input.build), \"utf8\");\n    await fs.writeFile(path.join(temporary, \".synapsor-auto-boundary.json\"), json({\n      schema_version: AUTO_BOUNDARY_VERSION,",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 1754,
+      "kind": "existing_file_capture",
+      "source": "\"exploration-boundary.active.json\",",
+      "context": "      \"review-overrides.json\",\n      \"boundary-review-progress.json\",\n      \"exploration-boundary.active.json\",\n      ACTIVE_EXPLORATION_BOUNDARY_SET_FILE,\n    ]);\n    const additionalStateFiles = Object.keys(input.additionalPrivateStateFiles ?? {}).sort();\n    for (const file of additionalStateFiles) {\n      if (file !== path.basename(file) || reservedStateFiles.has(file)) {\n        throw new Error(`Additional managed state file ${file} is not allowed.`);",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 1792,
+      "kind": "existing_file_capture",
+      "source": "? [\"exploration-boundary.active.json\", ACTIVE_EXPLORATION_BOUNDARY_SET_FILE]",
+      "context": "        ? [\n            ...(!input.preserveActiveBoundary\n              ? [\"exploration-boundary.active.json\", ACTIVE_EXPLORATION_BOUNDARY_SET_FILE]\n              : []),\n            ...(!input.preserveReviewProgress && !input.reviewProgress\n              ? [\"boundary-review-progress.json\"]\n              : []),\n          ]\n        : [],",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 2495,
+      "kind": "payload_consumer",
+      "source": "return JSON.parse(await fs.readFile(path.join(projectRoot, DEFAULT_GENERATED_DIR, \"exploration-boundary.draft.json\"), \"utf8\")) as ExplorationBoundaryDraft;",
+      "context": "export async function readOptionalExplorationDraft(projectRoot: string): Promise<ExplorationBoundaryDraft | undefined> {\n  try {\n    return JSON.parse(await fs.readFile(path.join(projectRoot, DEFAULT_GENERATED_DIR, \"exploration-boundary.draft.json\"), \"utf8\")) as ExplorationBoundaryDraft;\n  } catch (error) {\n    if ((error as NodeJS.ErrnoException).code === \"ENOENT\") return undefined;\n    throw error;\n  }\n}\n",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 2535,
+      "kind": "payload_consumer",
+      "source": "const draftPath = path.join(projectRoot, DEFAULT_GENERATED_DIR, \"exploration-boundary.draft.json\");",
+      "context": "  input = structuredClone(input);\n  const projectRoot = path.resolve(input.projectRoot);\n  const draftPath = path.join(projectRoot, DEFAULT_GENERATED_DIR, \"exploration-boundary.draft.json\");\n  const lockPath = path.join(projectRoot, \".synapsor/generation-lock.json\");\n  const draft = input.reviewDraft\n    ?? JSON.parse(await fs.readFile(draftPath, \"utf8\")) as ExplorationBoundaryDraft;\n  const lock = input.generationLock\n    ?? JSON.parse(await fs.readFile(lockPath, \"utf8\")) as GenerationLock;\n  const reviewed = reviewExplorationBoundaryCandidate(draft, input.candidate);",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 2989,
+      "kind": "serializer_or_mirror_writer",
+      "source": "const legacyPath = path.join(projectRoot, \".synapsor/exploration-boundary.active.json\");",
+      "context": "    ? active.filter((boundary) => boundary.pack.name !== name)\n    : [];\n  const legacyPath = path.join(projectRoot, \".synapsor/exploration-boundary.active.json\");\n  const legacySnapshot = await captureOptionalPrivateFile(legacyPath);\n  if (remaining.length === 0) {\n    await fs.rm(legacyPath, { force: true });\n    try {\n      await fs.rm(\n        path.join(projectRoot, \".synapsor\", ACTIVE_EXPLORATION_BOUNDARY_SET_FILE),",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 3024,
+      "kind": "payload_consumer",
+      "source": "const resolved = path.join(projectRoot, \".synapsor/exploration-boundary.active.json\");",
+      "context": "  projectRoot: string,\n): Promise<ActivatedExplorationBoundary> {\n  const resolved = path.join(projectRoot, \".synapsor/exploration-boundary.active.json\");\n  const active = JSON.parse(await fs.readFile(resolved, \"utf8\")) as ActivatedExplorationBoundary;\n  return validateActivatedExplorationBoundary(active);\n}\n\nfunction validateActivatedExplorationBoundary(\n  active: ActivatedExplorationBoundary,",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 3156,
+      "kind": "serializer_or_mirror_writer",
+      "source": "const legacyPath = path.join(projectRoot, \".synapsor/exploration-boundary.active.json\");",
+      "context": "  };\n  activatedExplorationBoundarySetDigest(boundaries);\n  const legacyPath = path.join(projectRoot, \".synapsor/exploration-boundary.active.json\");\n  const legacySnapshot = await captureOptionalPrivateFile(legacyPath);\n  await writePrivateJsonAtomic(legacyPath, active);\n  try {\n    await persistActivatedExplorationBoundarySet(projectRoot, set);\n  } catch (error) {\n    await restoreOptionalPrivateFile(legacyPath, legacySnapshot);",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/boundary-commands.ts",
+      "line": 18196,
+      "kind": "public_import_version_guard",
+      "source": "if (supplied.schema_version !== \"synapsor.boundary-review-bundle.v1\") {",
+      "context": "  current: BoundaryReviewBundle,\n): void {\n  if (supplied.schema_version !== \"synapsor.boundary-review-bundle.v1\") {\n    throw new Error(\"Unsupported boundary review bundle version.\");\n  }\n  const {\n    bundle_digest: suppliedDigest,\n    mutation_bindings: _suppliedMutationBindings,\n    ...suppliedCore",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/boundary-rescan.ts",
+      "line": 201,
+      "kind": "payload_consumer",
+      "source": "path.join(boundaryRoot, \"exploration-boundary.draft.json\"),",
+      "context": "  const [oldDraft, oldLock, hadSavedReviewState] = await Promise.all([\n    stored?.selected?.draft ?? readJson<ExplorationBoundaryDraft>(\n      path.join(boundaryRoot, \"exploration-boundary.draft.json\"),\n      \"exploration boundary draft\",\n    ),\n    stored?.selected?.draft_lock ?? readJson<GenerationLock>(\n      path.join(projectRoot, \".synapsor/generation-lock.json\"),\n      \"generation lock\",\n    ),",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/boundary-rescan.ts",
+      "line": 1449,
+      "kind": "byte_snapshot",
+      "source": "path.join(boundaryRoot, \"exploration-boundary.draft.json\"),",
+      "context": "  if (stored) return canonicalJsonDigest({ schema_version: \"synapsor.boundary-rescan-base-state.v1\", authoring: stored.bindings });\n  const files = [\n    path.join(boundaryRoot, \"exploration-boundary.draft.json\"),\n    path.join(boundaryRoot, \"review-overrides.json\"),\n    path.join(projectRoot, \".synapsor/generation-lock.json\"),\n    path.join(projectRoot, \".synapsor/auto-boundary-policy-baseline.json\"),\n    path.join(projectRoot, \".synapsor/review-overrides.json\"),\n    path.join(projectRoot, \".synapsor/boundary-review-progress.json\"),\n    path.join(projectRoot, \".synapsor/boundary-library.json\"),",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/boundary-rescan.ts",
+      "line": 1456,
+      "kind": "byte_snapshot",
+      "source": "path.join(projectRoot, \".synapsor/exploration-boundary.active.json\"),",
+      "context": "    path.join(projectRoot, \".synapsor/boundary-review-progress.json\"),\n    path.join(projectRoot, \".synapsor/boundary-library.json\"),\n    path.join(projectRoot, \".synapsor/exploration-boundary.active.json\"),\n    path.join(projectRoot, \".synapsor/exploration-boundaries.active.json\"),\n  ];\n  const snapshots = await Promise.all(files.map(async (filePath) => {\n    try {\n      const contents = await fs.readFile(filePath, \"utf8\");\n      return {",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/boundary-rescan.ts",
+      "line": 1457,
+      "kind": "byte_snapshot",
+      "source": "path.join(projectRoot, \".synapsor/exploration-boundaries.active.json\"),",
+      "context": "    path.join(projectRoot, \".synapsor/boundary-library.json\"),\n    path.join(projectRoot, \".synapsor/exploration-boundary.active.json\"),\n    path.join(projectRoot, \".synapsor/exploration-boundaries.active.json\"),\n  ];\n  const snapshots = await Promise.all(files.map(async (filePath) => {\n    try {\n      const contents = await fs.readFile(filePath, \"utf8\");\n      return {\n        path: path.relative(projectRoot, filePath),",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/boundary-review-context.ts",
+      "line": 13,
+      "kind": "public_export_format",
+      "source": "schema_version: \"synapsor.boundary-review-bundle.v1\";",
+      "context": "\nexport type BoundaryReviewBundle = {\n  schema_version: \"synapsor.boundary-review-bundle.v1\";\n  candidate_digest: `sha256:${string}`;\n  bundle_digest: `sha256:${string}`;\n  activation: \"disabled_unreviewed\";\n  mutation_bindings: BoundaryReviewMutationBindings;\n  authority: {\n    source: string;",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/boundary-review-context.ts",
+      "line": 53,
+      "kind": "payload_consumer",
+      "source": "path.join(boundaryRoot, \"exploration-boundary.draft.json\"),",
+      "context": "  }\n  const draft = stored?.selected?.draft ?? await readJsonFileWithLocation<ExplorationBoundaryDraft>(\n    path.join(boundaryRoot, \"exploration-boundary.draft.json\"),\n    \"exploration boundary draft\",\n  );\n  const lock = stored?.selected?.draft_lock ?? await readJsonFileWithLocation<GenerationLock>(\n    path.join(projectRoot, \".synapsor/generation-lock.json\"),\n    \"generation lock\",\n  );",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/boundary-review-context.ts",
+      "line": 68,
+      "kind": "public_export_format",
+      "source": "schema_version: \"synapsor.boundary-review-bundle.v1\" as const,",
+      "context": "  const candidateDigest = explorationBoundaryCandidateDigest(candidate);\n  const core = {\n    schema_version: \"synapsor.boundary-review-bundle.v1\" as const,\n    candidate_digest: candidateDigest,\n    activation: \"disabled_unreviewed\" as const,\n    authority: {\n      source: candidate.source,\n      deployment_profile: candidate.deployment_profile,\n      compiler_version: candidate.compiler_version,",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/boundary-review-mutation.ts",
+      "line": 2592,
+      "kind": "payload_consumer",
+      "source": "path.join(boundaryRoot, \"exploration-boundary.draft.json\"),",
+      "context": "  const [draft, lock, review] = await Promise.all([\n    stored?.selected?.draft ?? readJson<ExplorationBoundaryDraft>(\n      path.join(boundaryRoot, \"exploration-boundary.draft.json\"),\n      \"exploration boundary draft\",\n    ),\n    stored?.selected?.draft_lock ?? readJson<GenerationLock>(\n      path.join(resolvedRoot, \".synapsor/generation-lock.json\"),\n      \"generation lock\",\n    ),",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/boundary-review-policy.ts",
+      "line": 321,
+      "kind": "payload_consumer",
+      "source": "const activeSet = await readOptionalJson(path.join(stateRoot, \"exploration-boundaries.active.json\"));",
+      "context": "    Object.keys(library.boundaries).forEach((name) => names.add(name));\n  }\n  const activeSet = await readOptionalJson(path.join(stateRoot, \"exploration-boundaries.active.json\"));\n  if (isRecord(activeSet) && Array.isArray(activeSet.boundaries)) {\n    activeSet.boundaries.forEach((boundary) => collectStoredBoundaryName(boundary, names));\n  } else {\n    collectStoredBoundaryName(\n      await readOptionalJson(path.join(stateRoot, \"exploration-boundary.active.json\")),\n      names,",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/boundary-review-policy.ts",
+      "line": 326,
+      "kind": "payload_consumer",
+      "source": "await readOptionalJson(path.join(stateRoot, \"exploration-boundary.active.json\")),",
+      "context": "  } else {\n    collectStoredBoundaryName(\n      await readOptionalJson(path.join(stateRoot, \"exploration-boundary.active.json\")),\n      names,\n    );\n  }\n  if (names.size > 1 || (names.size === 1 && !names.has(expectedName))) return undefined;\n  const legacy = await readOptionalJson(path.join(stateRoot, \"review-overrides.json\"));\n  return legacy === undefined ? undefined : normalizeAutoBoundaryReviewOverrides(legacy);",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/config-inspect.ts",
+      "line": 439,
+      "kind": "payload_consumer",
+      "source": "const boundaryPath = path.join(projectRoot, DEFAULT_GENERATED_DIR, \"exploration-boundary.draft.json\");",
+      "context": "\nasync function readProductionExploreDraft(projectRoot: string): Promise<ProductionExploreDraftContext | undefined> {\n  const boundaryPath = path.join(projectRoot, DEFAULT_GENERATED_DIR, \"exploration-boundary.draft.json\");\n  const lockPath = path.join(projectRoot, \".synapsor\", \"generation-lock.json\");\n  try {\n    const [boundary, lock] = await Promise.all([\n      fs.readFile(boundaryPath, \"utf8\"),\n      fs.readFile(lockPath, \"utf8\"),\n    ]);",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/control-policy-fresh-authoring.ts",
+      "line": 21,
+      "kind": "existing_authority_presence_fence",
+      "source": "\".synapsor/exploration-boundary.active.json\",",
+      "context": "const LEGACY_AUTHORITY_ARTIFACTS = [\n  \"synapsor/generated\",\n  \".synapsor/exploration-boundary.active.json\",\n  \".synapsor/exploration-boundaries.active.json\",\n  \".synapsor/boundary-review-progress.json\",\n  \".synapsor/boundary-library.json\",\n  \".synapsor/action-rules\",\n] as const;\n",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/control-policy-fresh-authoring.ts",
+      "line": 22,
+      "kind": "existing_authority_presence_fence",
+      "source": "\".synapsor/exploration-boundaries.active.json\",",
+      "context": "  \"synapsor/generated\",\n  \".synapsor/exploration-boundary.active.json\",\n  \".synapsor/exploration-boundaries.active.json\",\n  \".synapsor/boundary-review-progress.json\",\n  \".synapsor/boundary-library.json\",\n  \".synapsor/action-rules\",\n] as const;\n\nexport type FreshGovernedAuthoringResult = {",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/control-policy-project-migration.ts",
+      "line": 20,
+      "kind": "constant_for_payload_consumer",
+      "source": "const GENERATED_DRAFT = \"synapsor/generated/exploration-boundary.draft.json\";",
+      "context": "const MAX_LEGACY_ARTIFACT_BYTES = 16 * 1024 * 1024;\nconst MAX_SNAPSHOT_BYTES = 128 * 1024 * 1024;\nconst GENERATED_DRAFT = \"synapsor/generated/exploration-boundary.draft.json\";\nconst REVIEW_PROGRESS = \".synapsor/boundary-review-progress.json\";\n\nexport type ProjectControlPolicyMigrationPreview = {\n  status: \"ready\";\n  epoch: 0;\n  migration_digest: `sha256:${string}`;",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/control-policy-project-migration.ts",
+      "line": 68,
+      "kind": "provenance_capture",
+      "source": "activeSet = await addProvenance(\".synapsor/exploration-boundaries.active.json\");",
+      "context": "    let activeSet: unknown;\n    if (activeReads.length) {\n      activeSet = await addProvenance(\".synapsor/exploration-boundaries.active.json\");\n      await addProvenance(\".synapsor/exploration-boundary.active.json\");\n    }\n    const authorities: Array<{ state: \"active\" | \"draft\"; policy: StoredOperatorAuthority }> = [];\n    for (const boundary of activeReads) {\n      const lockPath = `.synapsor/exploration-locks/${boundary.generation_lock_fingerprint.slice(7)}.json`;\n      // The general active-boundary loader may recreate a missing snapshot",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/control-policy-project-migration.ts",
+      "line": 69,
+      "kind": "provenance_capture",
+      "source": "await addProvenance(\".synapsor/exploration-boundary.active.json\");",
+      "context": "    if (activeReads.length) {\n      activeSet = await addProvenance(\".synapsor/exploration-boundaries.active.json\");\n      await addProvenance(\".synapsor/exploration-boundary.active.json\");\n    }\n    const authorities: Array<{ state: \"active\" | \"draft\"; policy: StoredOperatorAuthority }> = [];\n    for (const boundary of activeReads) {\n      const lockPath = `.synapsor/exploration-locks/${boundary.generation_lock_fingerprint.slice(7)}.json`;\n      // The general active-boundary loader may recreate a missing snapshot\n      // from mutable current state. Migration is strictly observational.",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/guided-action.ts",
+      "line": 2839,
+      "kind": "payload_consumer",
+      "source": "path.join(boundaryRoot, \"exploration-boundary.draft.json\"),",
+      "context": "  }\n  const draft = await fs.readFile(\n    path.join(boundaryRoot, \"exploration-boundary.draft.json\"),\n    \"utf8\",\n  ).then(\n    (value) => JSON.parse(value) as ExplorationBoundaryDraft,\n    (error: NodeJS.ErrnoException) => {\n      if (error.code === \"ENOENT\") return undefined;\n      throw error;",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/guided-start.ts",
+      "line": 431,
+      "kind": "existence_routing",
+      "source": "&& !await fileExists(path.join(project.root, \"synapsor/generated/exploration-boundary.draft.json\"));",
+      "context": "  const needsInitialReview = initialAuthoring && !initialAuthoring.selected;\n  const unfinishedFreshSetup = savedJourney && !initialAuthoring\n    && !await fileExists(path.join(project.root, \"synapsor/generated/exploration-boundary.draft.json\"));\n  const existingJourney = needsInitialReview || unfinishedFreshSetup ? undefined : savedJourney;\n  const managedBoundaryContext = existingJourney || needsInitialReview\n    ? undefined\n    : await loadManagedBoundaryProjectContext(project.root);\n  const shouldRescan = args.includes(\"--rescan\") || args.includes(\"--force\");\n  if ((existingJourney || managedBoundaryContext) && shouldRescan && !singleOrganization) {",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/guided-start.ts",
+      "line": 859,
+      "kind": "existence_routing",
+      "source": "return await fileExists(path.join(projectRoot, \".synapsor/exploration-boundaries.active.json\"))",
+      "context": "    } finally { await binding.close(); }\n  }\n  return await fileExists(path.join(projectRoot, \".synapsor/exploration-boundaries.active.json\"))\n    || await fileExists(path.join(projectRoot, \".synapsor/exploration-boundary.active.json\"));\n}\n\nasync function guidedWorkbenchStorePath(projectRoot: string, configPath: string, legacyStorePath: string): Promise<string> {\n  const binding = await openBoundProjectControlPolicies(projectRoot);\n  if (!binding) return legacyStorePath;",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/guided-start.ts",
+      "line": 860,
+      "kind": "existence_routing",
+      "source": "|| await fileExists(path.join(projectRoot, \".synapsor/exploration-boundary.active.json\"));",
+      "context": "  }\n  return await fileExists(path.join(projectRoot, \".synapsor/exploration-boundaries.active.json\"))\n    || await fileExists(path.join(projectRoot, \".synapsor/exploration-boundary.active.json\"));\n}\n\nasync function guidedWorkbenchStorePath(projectRoot: string, configPath: string, legacyStorePath: string): Promise<string> {\n  const binding = await openBoundProjectControlPolicies(projectRoot);\n  if (!binding) return legacyStorePath;\n  try {",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/guided-start.ts",
+      "line": 888,
+      "kind": "existence_routing",
+      "source": "\"synapsor/generated/exploration-boundary.draft.json\",",
+      "context": "  const draftPath = path.join(\n    projectRoot,\n    \"synapsor/generated/exploration-boundary.draft.json\",\n  );\n  const lockPath = path.join(projectRoot, \".synapsor/generation-lock.json\");\n  const [draftExists, lockExists] = await Promise.all([\n    fileExists(draftPath),\n    fileExists(lockPath),\n  ]);",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/guided-start.ts",
+      "line": 1168,
+      "kind": "existence_routing",
+      "source": "&& await fileExists(path.join(existingBoundaryRoot, \"exploration-boundary.draft.json\")))) {",
+      "context": "    );\n    if (initialAuthoring?.selected || (!initialAuthoring\n      && await fileExists(path.join(existingBoundaryRoot, \"exploration-boundary.draft.json\")))) {\n      const authorityChangingFlags = [\n        \"--engine\",\n        \"--schema\",\n        \"--tenant-claim\",\n        \"--principal-claim\",\n        \"--single-tenant\",",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/guided-start.ts",
+      "line": 1309,
+      "kind": "existence_routing",
+      "source": "&& !await fileExists(path.join(existingBoundaryRoot, \"exploration-boundary.draft.json\"))));",
+      "context": "      && ((!existingJourney && !existingProject?.config_path)\n        || (existingJourney && !initialAuthoring\n          && !await fileExists(path.join(existingBoundaryRoot, \"exploration-boundary.draft.json\"))));\n    if (shouldInitializeProject) {\n      await preflightGuidedProjectInitialization(projectRoot);\n      const guided = await initializeGuidedProject({ projectRoot, build,\n        runnerVersion: runnerPackage.version, instantOnboarding: true,\n        suppressGraduationTip: rest.includes(\"--no-graduation-tip\") });\n      const saved = await initializeFreshGovernedAuthoring({ projectRoot, build, actor: \"local_operator\",",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "line": 1503,
+      "kind": "payload_consumer",
+      "source": ": JSON.parse(await fs.readFile(path.join(boundaryRoot, \"exploration-boundary.draft.json\"), \"utf8\")) as ExplorationBoundaryDraft);",
+      "context": "    const stored = await readProjectReadAuthoring(projectRoot);\n    const draft = stored?.selected?.draft ?? (stored ? undefined\n      : JSON.parse(await fs.readFile(path.join(boundaryRoot, \"exploration-boundary.draft.json\"), \"utf8\")) as ExplorationBoundaryDraft);\n    if (stored || (draft && await readBoundaryReviewProgress(projectRoot, draft))) {\n      sendJson(response, 409, {\n        ok: false,\n        error: \"Quick Start is unavailable after the full boundary review has begun. Resume the saved review instead.\",\n        source_database_changed: false,\n      });",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "line": 1755,
+      "kind": "payload_consumer",
+      "source": "path.join(boundaryRoot, \"exploration-boundary.draft.json\"),",
+      "context": "    }\n    const draft = JSON.parse(await fs.readFile(\n      path.join(boundaryRoot, \"exploration-boundary.draft.json\"),\n      \"utf8\",\n    )) as ExplorationBoundaryDraft;\n    const progress = await readBoundaryReviewProgress(projectRoot, draft);\n    const candidate = progress?.candidate ?? recommendedBoundaryReviewCandidate(draft);\n    const library = await synchronizeBoundaryLibrary({\n      projectRoot,",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "line": 3758,
+      "kind": "payload_consumer",
+      "source": "path.join(boundaryRoot, \"exploration-boundary.draft.json\"),",
+      "context": "      const boundaries = await loadActivatedExplorationBoundaries(projectRoot);\n      const draft = await fs.readFile(\n        path.join(boundaryRoot, \"exploration-boundary.draft.json\"),\n        \"utf8\",\n      ).then((value) => JSON.parse(value) as ExplorationBoundaryDraft).catch(() => undefined);\n      gateway = await askGatewayFactory({\n        configPath,\n        storePath,\n        projectRoot,",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "line": 4429,
+      "kind": "payload_consumer",
+      "source": "path.join(boundaryRoot, \"exploration-boundary.draft.json\"),",
+      "context": "      ? guidedActionOptionsFromCandidate({\n          candidate: JSON.parse(await fs.readFile(\n            path.join(boundaryRoot, \"exploration-boundary.draft.json\"),\n            \"utf8\",\n          )) as ExplorationBoundaryDraft,\n          inspection,\n        })\n      : await guidedActionOptions({\n          projectRoot,",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "line": 4489,
+      "kind": "payload_consumer",
+      "source": "path.join(boundaryRoot, \"exploration-boundary.draft.json\"),",
+      "context": "      ? guidedActionOptionsFromCandidate({\n          candidate: JSON.parse(await fs.readFile(\n            path.join(boundaryRoot, \"exploration-boundary.draft.json\"),\n            \"utf8\",\n          )) as ExplorationBoundaryDraft,\n          inspection,\n        })\n      : await guidedActionOptions({\n          projectRoot,",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "line": 4581,
+      "kind": "payload_consumer",
+      "source": "path.join(boundaryRoot, \"exploration-boundary.draft.json\"),",
+      "context": "      ? guidedActionOptionsFromCandidate({\n          candidate: JSON.parse(await fs.readFile(\n            path.join(boundaryRoot, \"exploration-boundary.draft.json\"),\n            \"utf8\",\n          )) as ExplorationBoundaryDraft,\n          inspection,\n        })\n      : await guidedActionOptions({ projectRoot, inspection, allowReviewedPending: true });\n    const generated = await guidedActionSuggestionSet({",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "line": 7214,
+      "kind": "payload_consumer",
+      "source": "const draft = await readOptionalJson(path.join(projectRoot, \"synapsor/generated/exploration-boundary.draft.json\"));",
+      "context": "    throw error;\n  });\n  const draft = await readOptionalJson(path.join(projectRoot, \"synapsor/generated/exploration-boundary.draft.json\"));\n  const profile = isRecord(active)\n    ? active.deployment_profile\n    : isRecord(draft)\n      ? draft.deployment_profile\n      : undefined;\n  return profile === \"development\" || profile === \"staging\" || profile === \"production\"",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "line": 7554,
+      "kind": "payload_consumer",
+      "source": "const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, \"exploration-boundary.draft.json\"), \"utf8\")) as ExplorationBoundaryDraft;",
+      "context": "      review: stored.selected.catalog.review, authoring: stored.bindings };\n  }\n  const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, \"exploration-boundary.draft.json\"), \"utf8\")) as ExplorationBoundaryDraft;\n  return { draft,\n    lock: JSON.parse(await fs.readFile(path.join(projectRoot, \".synapsor/generation-lock.json\"), \"utf8\")) as GenerationLock,\n    review: JSON.parse(await fs.readFile(path.join(boundaryRoot, \"generation-review.json\"), \"utf8\")) as AutoBoundaryBuild[\"review\"],\n    progress: await readSharedBoundaryReviewProgress(projectRoot, draft) };\n}\n",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "line": 9778,
+      "kind": "ENOENT_filename_match",
+      "source": "&& [\"exploration-boundary.active.json\", \"exploration-boundaries.active.json\"]",
+      "context": "    || (fsError.code === \"ENOENT\"\n      && typeof fsError.path === \"string\"\n      && [\"exploration-boundary.active.json\", \"exploration-boundaries.active.json\"]\n        .includes(path.basename(fsError.path)));\n}\n\nasync function prepareAutoBoundaryRescan(input: {\n  projectRoot: string;\n  boundaryRoot: string;",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "line": 9793,
+      "kind": "payload_consumer",
+      "source": "const oldDraft = JSON.parse(await fs.readFile(path.join(input.boundaryRoot, \"exploration-boundary.draft.json\"), \"utf8\")) as ExplorationBoundaryDraft;",
+      "context": "}> {\n  const lock = JSON.parse(await fs.readFile(path.join(input.projectRoot, \".synapsor/generation-lock.json\"), \"utf8\")) as GenerationLock;\n  const oldDraft = JSON.parse(await fs.readFile(path.join(input.boundaryRoot, \"exploration-boundary.draft.json\"), \"utf8\")) as ExplorationBoundaryDraft;\n  const inspection = await input.schemaInspector({\n    engine: lock.engine,\n    databaseUrlEnv: lock.source_env,\n    schema: lock.inspected_schema,\n    env: process.env,\n  });",
+      "required_action": "Bind same owned strict serializer/decoder or public version discriminator; reject unsupported before authority/meaning use."
+    },
+    {
+      "file": "apps/runner/src/protect-query.ts",
+      "line": 526,
+      "kind": "rollback_byte_snapshot",
+      "source": "path.join(projectRoot, \".synapsor/exploration-boundary.active.json\"),",
+      "context": "    activationPath,\n    configPath,\n    path.join(projectRoot, \".synapsor/exploration-boundary.active.json\"),\n    path.join(projectRoot, \".synapsor/exploration-boundaries.active.json\"),\n  ];\n  const snapshots = new Map(await Promise.all(trackedFiles.map(async (filePath) => [\n    filePath,\n    await captureOptionalFile(filePath),\n  ] as const)));",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/protect-query.ts",
+      "line": 527,
+      "kind": "rollback_byte_snapshot",
+      "source": "path.join(projectRoot, \".synapsor/exploration-boundaries.active.json\"),",
+      "context": "    configPath,\n    path.join(projectRoot, \".synapsor/exploration-boundary.active.json\"),\n    path.join(projectRoot, \".synapsor/exploration-boundaries.active.json\"),\n  ];\n  const snapshots = new Map(await Promise.all(trackedFiles.map(async (filePath) => [\n    filePath,\n    await captureOptionalFile(filePath),\n  ] as const)));\n  try {",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/try-ask.ts",
+      "line": 798,
+      "kind": "existence_routing",
+      "source": "\".synapsor/exploration-boundaries.active.json\",",
+      "context": "      const activeAuthorityExists = await fileExists(path.join(\n        projectRoot,\n        \".synapsor/exploration-boundaries.active.json\",\n      )) || await fileExists(path.join(\n        projectRoot,\n        \".synapsor/exploration-boundary.active.json\",\n      ));\n      if (!activeAuthorityExists) {\n        writeInteractiveStdout([",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    },
+    {
+      "file": "apps/runner/src/try-ask.ts",
+      "line": 801,
+      "kind": "existence_routing",
+      "source": "\".synapsor/exploration-boundary.active.json\",",
+      "context": "      )) || await fileExists(path.join(\n        projectRoot,\n        \".synapsor/exploration-boundary.active.json\",\n      ));\n      if (!activeAuthorityExists) {\n        writeInteractiveStdout([\n          \"No active boundary. Ask remains disabled.\",\n          \"The access editor was closed explicitly; restart Ask after activating a reviewed boundary.\",\n          \"\",",
+      "required_action": "Preserve byte/existence semantics; do not unwrap or silently resave."
+    }
+  ],
+  "constant_path_followups": [
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 3070,
+      "kind": "active_registry_reader",
+      "binding": "readActivatedExplorationBoundarySet consumes constant path and strictly checks outer registry schema."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 3220,
+      "kind": "active_registry_writer",
+      "binding": "persistActivatedExplorationBoundarySet writes set to constant path; serialize supported new registry consistently."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 3009,
+      "kind": "legacy_active_mirror_writer",
+      "binding": "disable branch rewrites selected remaining active; must use same incompatible file envelope as normal activation writer."
+    }
+  ],
+  "coverage": "Exact filename/discriminator search across apps/runner/src and packages/*/src production TS excluding tests/test-fixtures. Constant-based actual registry calls separately listed. This is bounded file/public bundle surface map, not generic arbitrary JSON serializer proof. Main must reconcile exact new diff against this map.",
+  "public_bundle_requirement": "New typed inner Read candidate must not be exported in an old-accepted outer review bundle version. Bump/check existing bundle discriminator prospectively; exact inner candidate/authority digest remains unchanged. Export/core digest changes with outer format naturally, not authority migration.",
+  "extra_negative": "SC04-F09: actual newly exported review bundle reaches old public input parser and refuses unsupported version without source/store/file mutation; current public reader validates exact candidate/current mutation bindings and default-No. No fabricated activation fixture.",
+  "native_active_and_history": [
+    {
+      "file": "apps/runner/src/control-policy-record.ts",
+      "line": 5,
+      "owner": "OPERATOR_POLICY_RECORD_VERSION",
+      "binding": "Existing shared stored-operator-authority/v1 discriminator. Scope any prospective change to actual Read family consumers; no unreviewed Action/execution migration."
+    },
+    {
+      "file": "apps/runner/src/control-policy-authority-codec.ts",
+      "line": 19,
+      "owner": "readSelection/readDocument/document",
+      "binding": "Strict outer schema/type; current encodeOperatorAuthority36/decode42/parseDocument127 validate and preserve canonical authority. New Read family version must serialize/parse consistently, unknown records refused before inner use."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 2807,
+      "owner": "withStoredReadPolicies",
+      "binding": "Native active snapshot shortcircuits files. Outer schema checked2821 before type/read payload; read_selection2846 writer must match exact new Read family version. Entire snapshot/selected membership validates before return."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 3124,
+      "owner": "writeActivatedExplorationBoundarySetUnlocked native branch",
+      "binding": "Actual active read writer storedOperatorPolicyRecord; cannot continue emitting v1 wrapper with new inner authority. Ordinary protected activation required for positive fixture."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 3193,
+      "owner": "stored draft review record",
+      "binding": "Native disabled read payload writer; same codec/version and exact immutable content identity."
+    },
+    {
+      "file": "apps/runner/src/auto-boundary.ts",
+      "line": 3361,
+      "owner": "generationLockInAuthoringRecord",
+      "binding": "Loads current/history read_authoring record for generation lock; old checks outer schema/type/entries but ignores newer review_protocol. New exact outer Read authoring discriminator must fail old reader before nonempty boundary interpretation."
+    },
+    {
+      "file": "apps/runner/src/control-policy-fresh-authoring.ts",
+      "line": 118,
+      "owner": "activePolicies/draftRevisions encodeOperatorAuthority",
+      "binding": "Fresh native initialization emits both selection and disabled Read; real source of old-reader controls, no synthetic active actor."
+    },
+    {
+      "file": "apps/runner/src/control-policy-project-migration.ts",
+      "line": 122,
+      "owner": "authority encode/import",
+      "binding": "Existing explicit import validates codecs and source provenance; no automatic old migration authorized by this fence."
+    },
+    {
+      "file": "apps/runner/src/control-policy-operator-repository.ts",
+      "line": 89,
+      "owner": "operator Read projection",
+      "binding": "Retains actual typed read/candidate through shared authority codec; current/history decoder consistency required."
+    }
+  ],
+  "extra_native_controls": [
+    {
+      "id": "SC04-N01",
+      "target": "Ordinary new native ACTIVE read + selection plus new file outputs",
+      "oracle": "Old loadActivatedExplorationBoundary/Boundaries refuses native outer discriminator before returning embedded boundary; new loader validates real activation identity/receipt. No file-only acceptance substitutes for native-first proof."
+    },
+    {
+      "id": "SC04-N02",
+      "target": "Actual saved generation lock resolved from current Read authoring record",
+      "oracle": "Old loadSavedGenerationLock path through withStoredReadPolicies/generationLockInAuthoringRecord refuses outer format; no old review_protocol omission bypass. No resave, record epoch/history unchanged."
+    },
+    {
+      "id": "SC04-N03",
+      "target": "Actual historical Read authoring record supplies retained lock",
+      "oracle": "Same old-version refusal for history lookup, not only current selected revision. New reader maintains exact historical completion/lock reference and never upgrades old history."
+    },
+    {
+      "id": "SC04-N04",
+      "target": "Non-organization, opaque-name structurally admissible fixture",
+      "oracle": "Demonstrate old rejection derives from format discriminator, not incidental new organization shape or vocabulary invalidity. Inner payload/digest held exact; use genuine prepared non-active records unless activation is actually observed."
+    }
+  ]
+}
