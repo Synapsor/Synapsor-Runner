@@ -236,6 +236,18 @@ it('refuses a reused receipt interpretation when Source changes during evidence 
   expect(await loadPolicySources(f.root,f.sources.id)).toEqual(winner);
   expect(f.inspect()).toEqual(before);expect(f.requests).toHaveLength(calls);
 });
+it('retains applicable receipt meaning across an unrelated change made before a new entry',async()=>{
+  let context='prior checked review context';
+  const f=await fixture({nominateTarget:true,currentContext:()=>context});
+  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed'});
+  const before=f.inspect(),calls=f.requests.length;
+  // The exact receipt dependencies and evidence guard remain current. Only the
+  // enclosing context changed before this invocation, not during its waits.
+  context='new presentation or unrelated review context';
+  expect(await f.productionInvoke(async()=>{throw new Error('Applicable meaning must not be asked again');}))
+    .toEqual({kind:'saved',disposition:'reused'});
+  expect(f.inspect()).toEqual(before);expect(f.requests).toHaveLength(calls);
+});
 it('refuses receipt reuse when the checked reader or Action context changes during refresh',async()=>{
   let context='declared current reader and Action role',onRefresh=async()=>{};
   const f=await fixture({nominateTarget:true,onRefresh:()=>onRefresh(),currentContext:()=>context});
