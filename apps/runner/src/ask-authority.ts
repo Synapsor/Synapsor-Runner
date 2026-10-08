@@ -8,9 +8,11 @@ import {
 } from "./model-ask.js";
 import {
   explorationBoundaryCandidateDigest,
+  loadActivatedExplorationBoundaries,
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
+import { openBoundProjectControlPolicies } from "./control-policy-store.js";
 import { resolveBoundaryRevisionState } from "./boundary-revision-state.js";
 import {
   formatBoundaryRescanRelationshipChange,
@@ -298,6 +300,20 @@ function ownerSettingsOnlySurface(tools: AskToolDefinition[]): boolean {
 async function optionalActiveBoundaries(
   projectRoot: string,
 ): Promise<ActiveBoundaryAuthorityIdentity[]> {
+  const policyStore = await openBoundProjectControlPolicies(projectRoot);
+  if (policyStore) {
+    try {
+      // Governed authority is authoritative even when empty. Legacy exports
+      // cannot restore a revoked Read or replace an unavailable repository.
+      const active = await loadActivatedExplorationBoundaries(projectRoot, policyStore);
+      return active.map((boundary, index) => activeBoundaryIdentity(boundary, `governed active boundary ${index + 1}`));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    } finally {
+      await policyStore.close();
+    }
+  }
   const registry = await readOptionalJson(
     path.join(projectRoot, ".synapsor/exploration-boundaries.active.json"),
   );
