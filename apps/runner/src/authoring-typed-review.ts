@@ -56,6 +56,8 @@ export type TypedReviewView = Readonly<{
   /** Complete host-rendered proposal and diff, including noneditable duties. */
   normalized_lines: readonly string[];
   change_lines: readonly string[];
+  /** Host-normalized exact details; bound in view_digest, disclosed only locally. */
+  technical_lines?: readonly string[];
   unresolved: readonly string[];
 }>;
 export type TypedReviewResponse =
