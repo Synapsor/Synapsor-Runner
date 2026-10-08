@@ -1,3 +1,4 @@
+import { reloadReadReviewAfterCommit, saveBoundaryReviewSignoff, saveReviewedDisabledBoundary, saveReadReviewSignoff, type ReadReviewSignoff } from "./authoring-read-review-save.js";
 import { readMeaningPromptHandoff } from "./authoring-read-prompt-binding.js";
 import { selectUnplannedActionIntents } from "./authoring-action-entry.js";
 import { reviewRequiredPrincipalScopes } from "./authoring-principal-scope-host.js";
@@ -136,9 +137,8 @@ import {
 } from "./boundary-review-domain.js";
 import {
   readBoundaryReviewProgress,
-  saveBoundaryReviewProgress,
 } from "./boundary-review-persistence.js";
-import { assertReadAuthoringBindings, readProjectReadAuthoring, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
+import { assertReadAuthoringBindings, readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { openProjectControlPolicies } from "./control-policy-store.js";
 import { assertGovernedReadActivationDecision, readActivationAlreadyConsumed, readActivationEventId,
   type GovernedReadActivationDecision } from "./control-policy-activation.js";
@@ -3869,7 +3869,7 @@ type ReadBoundaryReviewOptions = {
   reviewChanges?: () => ReviewSection | undefined;
   privateDependencies?: () => string[];
   onDisposition?: (disposition: ReadBoundaryReviewDisposition) => void;
-  onReviewSignoff?: (context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>) => Promise<void>;
+  onReviewSignoff?: ReadReviewSignoff;
   reviewRules?: () => Promise<boolean>;
   rulesSummary?: () => Promise<string[]>;
   beforeActivation?: () => Promise<boolean>;
@@ -12281,21 +12281,6 @@ export async function applyModelReadBoundaryExposureRevision(input: ModelReadBou
   };
 }
 
-async function reloadReadReviewAfterCommit(projectRoot: string, mutation: {
-  candidate_digest: `sha256:${string}`;
-  review_revision: number;
-  authoring_binding?: BoundaryReviewMutationBindings["authoring"];
-}): Promise<Awaited<ReturnType<typeof loadBoundaryReviewContext>>> {
-  const context = await loadBoundaryReviewContext(projectRoot);
-  if (context.bundle.candidate_digest !== mutation.candidate_digest
-    || context.bundle.mutation_bindings.review_revision !== mutation.review_revision
-    || canonicalJsonDigest(context.bundle.mutation_bindings.authoring ?? null)
-      !== canonicalJsonDigest(mutation.authoring_binding ?? null)) {
-    throw new Error("READ_BOUNDARY_REVISION_CHANGED_AFTER_SAVE: The disabled Read revision was saved, but another update changed the selected review before continuation. Resume this job to review the current revision and revalidate its Action dependencies. No authority was activated.");
-  }
-  return context;
-}
-
 function formatReadBoundaryExposure(value: ReadBoundaryFieldExposure): string {
   if (value === "model_and_runner") return "Model + Runner";
   if (value === "runner_only") return "Runner only";
@@ -14717,6 +14702,7 @@ async function confirmAndActivateFocusedBoundary(input: {
     }
     if (accepted) {
       await saveReviewedDisabledBoundary({
+        onReviewSignoff: input.reviewOptions?.onReviewSignoff,
         projectRoot: input.projectRoot,
         context,
         actor,
@@ -14928,6 +14914,7 @@ async function confirmAndActivateFocusedBoundary(input: {
     if (conversation) {
       if (saveReviewedDisabled) {
         await saveReviewedDisabledBoundary({
+          onReviewSignoff: input.reviewOptions?.onReviewSignoff,
           projectRoot: input.projectRoot,
           context,
           actor,
@@ -14974,6 +14961,7 @@ async function confirmAndActivateFocusedBoundary(input: {
       : false;
     if (keepReviewedDisabled) {
       await saveReviewedDisabledBoundary({
+        onReviewSignoff: input.reviewOptions?.onReviewSignoff,
         projectRoot: input.projectRoot,
         context,
         actor,
@@ -15010,12 +14998,8 @@ async function confirmAndActivateFocusedBoundary(input: {
     reason: "Confirmed the complete exact boundary shown by the focused access editor.",
     revision: (context.progress?.revision ?? 0) + 1,
   });
-  const signed = await saveBoundaryReviewSignoff(input.projectRoot, context, progress);
-  if (input.reviewOptions?.onReviewSignoff) {
-    await input.reviewOptions.onReviewSignoff(await reloadReadReviewAfterCommit(input.projectRoot, {
-      candidate_digest: progress.candidate_digest, review_revision: progress.revision, authoring_binding: signed,
-    }));
-  }
+  await saveReadReviewSignoff({ projectRoot: input.projectRoot, context, progress,
+    onReviewSignoff: input.reviewOptions?.onReviewSignoff });
   const activationResult = await boundaryActivateCommand(
     [
       "--project-root", input.projectRoot,
@@ -15093,24 +15077,6 @@ function readBoundaryResourceGrantTokens(resource: ReadBoundaryResource): Map<st
 function summarizeAuthorityItems(items: string[], maximum = 8): string {
   const shown = items.slice(0, maximum);
   return shown.join(", ") + (items.length > shown.length ? `, +${items.length - shown.length} more` : "");
-}
-
-async function saveReviewedDisabledBoundary(input: {
-  projectRoot: string;
-  context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>;
-  actor: string;
-  reason: string;
-}): Promise<void> {
-  const progress = createBoundaryReviewProgress({
-    draft: input.context.draft,
-    candidate: input.context.candidate,
-    confirmedDecisions: input.context.candidate.unresolved_decisions,
-    ...(input.context.progress ? { previous: input.context.progress } : {}),
-    actor: input.actor,
-    reason: input.reason,
-    revision: (input.context.progress?.revision ?? 0) + 1,
-  });
-  await saveBoundaryReviewSignoff(input.projectRoot, input.context, progress);
 }
 
 function readBoundaryFieldOperationFlags(
@@ -18137,23 +18103,6 @@ function formatProductionActivationNextSteps(input: {
     "",
   ].join("\n");
 }
-
-
-async function saveBoundaryReviewSignoff(projectRoot: string,
-  context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>, progress: BoundaryReviewProgress,
-): Promise<ReadAuthoringBindings | undefined> {
-  const shown = structuredClone({ bindings: context.bundle.mutation_bindings, previous: context.progress ?? null, progress });
-  return withProjectAuthorityMutation(projectRoot, async (held) => {
-    const current = await loadBoundaryReviewContext(held.projectRoot);
-    if (canonicalJsonDigest(shown.bindings) !== canonicalJsonDigest(current.bundle.mutation_bindings)
-      || canonicalJsonDigest(shown.previous) !== canonicalJsonDigest(current.progress ?? null)) {
-      throw Object.assign(new Error("This Boundary changed while you were reviewing it. Reopen the current revision before signing off; your earlier review was not saved."),
-        { code: "POLICY_AUTHORING_REVIEW_CHANGED" });
-    }
-    return saveBoundaryReviewProgress(held.projectRoot, shown.progress, shown.bindings.authoring, held);
-  });
-}
-
 
 
 async function formatBoundaryReviewSummary(
