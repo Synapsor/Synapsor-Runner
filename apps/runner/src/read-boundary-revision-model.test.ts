@@ -18,6 +18,91 @@ import {
   generateModelReadBoundaryRevision,
   readBoundaryRevisionCatalog,
 } from "./read-boundary-revision-model.js";
+import { READ_SCOPE_PROTOCOL } from "./read-structured-scope.js";
+import { analyzeReadWorkloadSet, READ_WORKLOAD_SET_VERSION } from "./read-workload-assist.js";
+
+describe("B64 structured Read revision", () => {
+  function setup(withWorkload = false) {
+    const draft = boundary(), preview = structuredClone(draft);
+    preview.pack.resources[0]!.label = "Orders";
+    const request = "Show order status; label the existing order register Orders. Preserve all access.";
+    const context = (candidate: ExplorationBoundaryDraft) => ({
+      binding: { request_digest: canonicalJsonDigest(request), source_digest: canonicalJsonDigest(null),
+        catalog_digest: readBoundaryRevisionCatalog(candidate).digest, meaning_digest: canonicalJsonDigest(request),
+        applicability_digest: canonicalJsonDigest("this-job"), operation_digest: explorationBoundaryCandidateDigest(candidate) },
+      references: [{ id: "job", kind: "request" as const, digest: canonicalJsonDigest(request), text: request }],
+      catalog: { resources: readBoundaryRevisionCatalog(candidate).resources, relationships: [] },
+    });
+    const proposal = { protocol: READ_SCOPE_PROTOCOL, applicability: "read_requested", original_request: "job", requirements: [{
+      id: "status", references: ["job"], intended_use: "Show order status", disposition: "include", targets: [
+        { root_resource: "public.orders", resource: "public.orders", operation: "resource" },
+        { root_resource: "public.orders", resource: "public.orders", operation: "return", field: "status" },
+      ],
+    }] };
+    const payload = { resource_changes: [{ resource: "public.orders", settings: { metadata: { label: "Orders" } } }], read_scope: proposal };
+    const workload = { schema_version: READ_WORKLOAD_SET_VERSION, name: "status", source: { kind: "model", provider: "openai", model: "local-scripted" }, allowed: [{ id: "status", description: "Show order status",
+      plan: { kind: "rows" as const, resource: "public.orders", select: ["status"] } }], forbidden: [] };
+    const analysis = analyzeReadWorkloadSet({ workload, generatedBoundary: preview });
+    const send = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "typed_revision",
+      name: "runner__submit_read_boundary_revision", arguments: JSON.stringify(payload) }] } }));
+    const host = vi.fn(async () => ({ scope: context(preview), ...(withWorkload ? { analysis } : {}) }));
+    return { payload, proposal, draft, analysis, send, host, input: { instruction: request, provider: "openai" as const,
+      model: "local-scripted", apiKey: "test-key", boundary: draft, egressAcknowledged: true,
+      structuredScope: { protocol: READ_SCOPE_PROTOCOL, current: () => context(draft) }, validateRevision: host,
+      dependencies: { requestJson: send } } };
+  }
+  it.each([false, true])("keeps a real preview separate from workload analysis (existing workload: %s)", async withWorkload => {
+    const f = setup(withWorkload), before = structuredClone(f.draft);
+    const result = await generateModelReadBoundaryRevision(f.input);
+    expect(result.read_scope?.proposal).toEqual(f.proposal);
+    expect(result.read_scope_state).toBe(withWorkload ? "analyzed_proposal" : "pending_mapping");
+    expect(result.read_scope?.analysis_digest).toBe(withWorkload ? canonicalJsonDigest(f.analysis) : undefined);
+    expect(result.authority_granted).toBe(false); expect(f.draft).toEqual(before);
+    expect(f.send).toHaveBeenCalledOnce(); expect(f.host).toHaveBeenCalledOnce();
+  });
+  it("retains a typed missing mapping without a lexical clarification or invented preview", async () => {
+    const f = setup(), missing = { ...f.proposal, requirements: [{ ...f.proposal.requirements[0]!,
+      disposition: "unresolved", targets: [], unresolved: "Which status should be shown?" }] };
+    const handler = vi.fn(), send = vi.fn(async request => {
+      const schema = (request.body as { tools: Array<{ parameters: object }> }).tools[0]!.parameters;
+      const accepts = new Ajv2020({ strict: false }).compile(schema);
+      expect(accepts({ read_scope: missing })).toBe(true);
+      expect(accepts({ clarification_request: { question: "Which status?", reason: "Unknown" } })).toBe(false);
+      return { status: 200, body: { output: [{ type: "function_call", call_id: "missing_scope",
+        name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({ read_scope: missing }) }] } };
+    });
+    const result = await generateModelReadBoundaryRevision({ ...f.input, clarificationHandler: handler, dependencies: { requestJson: send } });
+    expect(result.read_scope_state).toBe("pending_mapping"); expect(result.read_scope?.proposal).toEqual(missing);
+    expect(result.read_scope?.analysis_digest).toBeUndefined(); expect(result.changes).toEqual([]);
+    expect(handler).not.toHaveBeenCalled(); expect(f.host).not.toHaveBeenCalled(); expect(send).toHaveBeenCalledOnce();
+  });
+  it.each(["missing", "legacy", "wrong_analysis", "missing_preview", "resolved_without_revision"])(
+    "refuses %s without falling back or buying another correction", async failure => {
+      const f = setup(true), handler = vi.fn();
+      let payload: unknown = f.payload;
+      if (failure === "missing") payload = { resource_changes: f.payload.resource_changes };
+      if (failure === "legacy") payload = { clarification_request: { question: "What does status mean?", reason: "Missing meaning" } };
+      if (failure === "resolved_without_revision") payload = { read_scope: f.proposal };
+      if (failure === "wrong_analysis") f.payload.read_scope.requirements[0]!.targets.pop();
+      const send = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "invalid_scope",
+        name: "runner__submit_read_boundary_revision", arguments: JSON.stringify(payload) }] } }));
+      await expect(generateModelReadBoundaryRevision({ ...f.input, clarificationHandler: handler,
+        ...(failure === "missing_preview" ? { validateRevision: async () => undefined } : {}),
+        dependencies: { requestJson: send } })).rejects.toThrow("READ_BOUNDARY_REVISION_NOT_SUBMITTED");
+      expect(send).toHaveBeenCalledTimes(2); expect(handler).not.toHaveBeenCalled();
+    });
+  it("rejects a concurrent host scope change during the actual provider turn", async () => {
+    const f = setup(), current = f.input.structuredScope.current();
+    const send = vi.fn(async () => {
+      current.binding.meaning_digest = canonicalJsonDigest("changed");
+      return { status: 200, body: { output: [{ type: "function_call", call_id: "stale_scope",
+        name: "runner__submit_read_boundary_revision", arguments: JSON.stringify(f.payload) }] } };
+    });
+    await expect(generateModelReadBoundaryRevision({ ...f.input, structuredScope: { protocol: READ_SCOPE_PROTOCOL,
+      current: () => current }, dependencies: { requestJson: send } })).rejects.toThrow("authority");
+    expect(f.host).not.toHaveBeenCalled(); expect(send).toHaveBeenCalledOnce();
+  });
+});
 
 function privatePrerequisite(): ReviewedReadCurrentStatePrerequisite {
   const source = { schema: "school", table: "private_admissions" };

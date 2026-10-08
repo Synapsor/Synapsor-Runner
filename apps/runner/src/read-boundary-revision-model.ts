@@ -12,13 +12,17 @@ export { reviewedModelAnalysisOperations } from "./read-field-privacy.js";
 import { parseReadPolicySettings, READ_POLICY_SETTINGS_SCHEMA, type ReadBoundaryPolicyChange } from "./read-boundary-policy-revision.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
 import { authoringInterruptedProducerCorrections, reserveAuthoringProducerCorrection,
-  withAuthoringProducerCorrection } from "./authoring-generation-recovery.js";
+  withAuthoringProducerCorrection, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { operatorBusinessContext, operatorClarificationGate, presentOperatorClarification } from "./authoring-operator-presentation.js";
 import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionCheckpoint, type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
 import { exploreBoundaryVocabularyGaps } from "./explore-vocabulary.js";
-import { createCurrentReadEvidence, currentReadEvidenceStatements, type CurrentReadEvidenceRecords } from "./read-current-evidence.js";
+import { createCurrentReadEvidence, currentReadEvidenceStatements, currentStructuredReadEvidence,
+  type CurrentStructuredReadEvidence, type CurrentReadEvidenceRecords } from "./read-current-evidence.js";
+import { READ_SCOPE_PROTOCOL, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
+  type ReadScopeBinding, type ReadScopeReference, type ReadScopeCatalog, type ReadScopeRecord } from "./read-structured-scope.js";
+import type { ReadWorkloadAnalysis } from "./read-workload-assist.js";
 import {
   askToolSurfaceDigest,
   AskError,
@@ -50,6 +54,11 @@ export type ModelReadBoundaryRevisionResult = {
   /** A separately reviewed host operation, never a model-supplied proof. */
   reviewed_relationship?: ReviewedReadRelationship;
   summary?: string;
+  /** Proposed interpretation only. Preview-only revisions stay pending until
+   * ordinary mapping supplies a real workload analysis and trusted review. */
+  read_scope?: ReadScopeRecord;
+  read_scope_state?: "pending_mapping" | "analyzed_proposal";
+  read_scope_delta?: ReturnType<typeof readScopeDelta>;
   provider: AskProvider;
   model: string;
   model_exposure_expansions: number;
@@ -60,6 +69,11 @@ export type ModelReadBoundaryRevisionResult = {
   source_database_changed: false;
   usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
 };
+
+export type ReadRevisionScopeContext = { binding: ReadScopeBinding; references: readonly ReadScopeReference[];
+  catalog: ReadScopeCatalog; native?: Pick<CurrentStructuredReadEvidence, "questions" | "handoffs" | "generation" | "question_id" | "analysis"> };
+/** Returned by the protected preview owner, never decoded from model output. */
+export type ReadRevisionScopePreview = { scope: Omit<ReadRevisionScopeContext, "native">; analysis?: ReadWorkloadAnalysis };
 
 
 
@@ -77,6 +91,7 @@ export async function generateModelReadBoundaryRevision(input: {
   /** Native evidence loaded by the protected authoring host. A model quote or
    * saved presentation alone never establishes current business meaning. */
   currentEvidenceRecords?: () => CurrentReadEvidenceRecords;
+  structuredScope?: { protocol: typeof READ_SCOPE_PROTOCOL; current: () => ReadRevisionScopeContext };
   env?: NodeJS.ProcessEnv;
   apiKey?: string;
   apiKeyEnv?: string;
@@ -89,14 +104,14 @@ export async function generateModelReadBoundaryRevision(input: {
   /** Main coordinates this component with real completion/currentness/CAS. An
    * undefined checkpoint is result notification, not a producer-led save/clear. */
   onCheckpoint?: (checkpoint: ReadBoundaryRevisionCheckpoint | undefined, currentBoundary: ExplorationBoundaryDraft,
-    result?: ModelReadBoundaryRevisionResult) => Promise<void>;
+    result?: ModelReadBoundaryRevisionResult, completion?: AuthoringQuestionCompletion) => Promise<void>;
   /** A stored host selection is provenance, never fresh consent or catalog proof. */
   revalidateStagedSelections?: (selections: {
     reviewed_prerequisite?: ReviewedReadCurrentStatePrerequisite;
     reviewed_relationship?: ReviewedReadRelationship;
   }, currentBoundary: ExplorationBoundaryDraft) => Promise<void>;
   /** Preview the complete candidate and its dependencies without saving it. */
-  validateRevision?: (revision: Pick<ModelReadBoundaryRevisionResult, "changes" | "policy_changes" | "read_prerequisite" | "reviewed_relationship">) => Promise<void>;
+  validateRevision?: (revision: Pick<ModelReadBoundaryRevisionResult, "changes" | "policy_changes" | "read_prerequisite" | "reviewed_relationship">) => Promise<void | ReadRevisionScopePreview>;
   /** The host reviews additional metadata and semantic meaning; never activates access. */
   reviewPrivatePrerequisite?: (request: { reason: string }, controls: {
     resumeCheckpoint?: ReadPrerequisiteCheckpoint;
@@ -114,7 +129,13 @@ export async function generateModelReadBoundaryRevision(input: {
   const catalog = readBoundaryRevisionCatalog(input.boundary);
   const boundaryDigest = explorationBoundaryCandidateDigest(input.boundary);
   const serializedCatalog = JSON.stringify(catalog);
+  if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL) throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED");
+  const structured = input.structuredScope ? structuredClone(input.structuredScope.current()) : undefined;
+  const structuredDigest = canonicalJsonDigest(structured ?? null);
+  const nativeScope = structured?.native ? currentStructuredReadEvidence({ ...structured.native,
+    expectedBinding: structured.binding, references: structured.references, catalog: structured.catalog }) : undefined;
   const currentMeanings = () => {
+    if (structured) return [];
     const statements = currentReadEvidenceStatements({ original: [operatorNamingContext ?? instruction], conversation: input.conversation });
     return createCurrentReadEvidence({ catalog, statements, answers: [],
       context_digest: canonicalJsonDigest({ boundary: boundaryDigest, statements }),
@@ -128,7 +149,7 @@ export async function generateModelReadBoundaryRevision(input: {
   }
   const allowPrerequisiteReview = Boolean(input.reviewPrivatePrerequisite && !input.privacyOnly && !input.vocabularyOnly);
   const allowRelationshipReview = Boolean(input.reviewRelationship && !input.privacyOnly && !input.vocabularyOnly);
-  const tools: AskToolDefinition[] = [readBoundaryRevisionTool(catalog, allowPrerequisiteReview, allowRelationshipReview)];
+  const tools: AskToolDefinition[] = [readBoundaryRevisionTool(catalog, allowPrerequisiteReview, allowRelationshipReview, !!structured)];
   const authorityDigest = askToolSurfaceDigest(tools);
   const defaultKeyEnv = input.provider === "openai_compatible" ? undefined : defaultProviderKeyEnv(input.provider);
   const configuration = resolveAskProviderConfiguration({
@@ -150,6 +171,8 @@ export async function generateModelReadBoundaryRevision(input: {
   let policyChanges: ReadBoundaryPolicyChange[] = [];
   let confirmedFields: ReadBoundaryFieldExposureChange[] = [];
   let summary: string | undefined;
+  let scopeRecord: ReadScopeRecord | undefined;
+  let scopeState: ModelReadBoundaryRevisionResult["read_scope_state"];
   let clarification: ModelReadBoundaryRevisionClarification | undefined;
   let prerequisiteRequest: { reason: string } | undefined;
   let reviewedPrerequisite: ReviewedReadCurrentStatePrerequisite | undefined;
@@ -173,6 +196,18 @@ export async function generateModelReadBoundaryRevision(input: {
       callCount += 1;
       if (lastDispatchQuestion) await checkpoint("dispatching", lastDispatchQuestion);
       lastSubmission = structuredClone(args);
+      if (structured && args.read_scope !== undefined && args.resource_changes === undefined) {
+        try {
+          if (Object.keys(args).length !== 1) throw new Error("READ_SCOPE_INVALID: Submit only the unresolved scope or an exact revision with its scope.");
+          const record = resolveReadScopeProposal(args.read_scope, { expectedBinding: structured.binding,
+            references: structured.references, catalog: structured.catalog });
+          if (!record.proposal.requirements.some(requirement => requirement.disposition === "unresolved"))
+            throw new Error("READ_SCOPE_INVALID: A scope-only response must retain a genuine unresolved mapping; it cannot claim an edit is satisfied.");
+          assertCurrent(); scopeRecord = record; scopeState = "pending_mapping"; changes = []; policyChanges = []; issue = "";
+          return { ok: true, value: { status: "pending_scope_mapping", authority_granted: false,
+            source_query_executed: false, source_database_changed: false } };
+        } catch (error) { issue = error instanceof Error ? error.message : String(error); return refusal(issue); }
+      }
       if (args.relationship_review_request !== undefined) {
         try {
           if (!allowRelationshipReview || relationshipRequest || reviewedRelationship) {
@@ -211,6 +246,7 @@ export async function generateModelReadBoundaryRevision(input: {
         }
       }
       if (isRecord(args.clarification_request)) {
+        if (structured) { issue = "READ_SCOPE_REQUIRED: Return an unresolved typed scope; legacy clarification prose cannot replace its bound requirement."; return refusal(issue); }
         if (clarification) return refusal("Only one clarification is permitted for this Read revision.");
         try {
           const rawQuestion = boundedText(args.clarification_request.question, "clarification question", 500);
@@ -236,7 +272,9 @@ export async function generateModelReadBoundaryRevision(input: {
         }
       }
       try {
-        const parsed = { ...parseRevision(args, catalog, Boolean(reviewedPrerequisite || reviewedRelationship)),
+        const { read_scope: proposedScope, ...revisionArgs } = args;
+        if (!structured && proposedScope !== undefined) throw new Error("Unexpected Read revision property.");
+        const parsed = { ...parseRevision(structured ? revisionArgs : args, catalog, Boolean(reviewedPrerequisite || reviewedRelationship)),
           ...(reviewedPrerequisite ? { read_prerequisite: reviewedPrerequisite } : {}),
           ...(reviewedRelationship ? { reviewed_relationship: reviewedRelationship } : {}) };
         if (reviewedRelationship) {
@@ -269,7 +307,17 @@ export async function generateModelReadBoundaryRevision(input: {
         }
         if (input.privacyOnly) assertPrivacyOnlyRevision(parsed);
         assertSelectableExposure(parsed, catalog);
-        await input.validateRevision?.(parsed);
+        const preview = await input.validateRevision?.(parsed);
+        if (structured) {
+          if (!preview) throw new Error("READ_SCOPE_PREVIEW_REQUIRED: The protected owner must supply the exact preview scope; no analysis is inferred from settings.");
+          assertCurrent();
+          scopeRecord = resolveReadScopeProposal(proposedScope, { expectedBinding: preview.scope.binding,
+            references: preview.scope.references, catalog: preview.scope.catalog, ...(preview.analysis ? { analysis: preview.analysis } : {}) });
+          const assessment = preview.analysis ? assessReadScopeDraft(scopeRecord, preview.analysis) : undefined;
+          if (assessment?.status === "delta_required")
+            throw new Error("READ_SCOPE_PREVIEW_MISMATCH: The exact reanalyzed workload does not match the proposed inclusion/exclusion set.");
+          scopeState = assessment?.status === "compatible" ? "analyzed_proposal" : "pending_mapping";
+        }
         changes = parsed.changes;
         policyChanges = parsed.policy_changes;
         confirmedFields = parsed.confirmed_fields;
@@ -278,7 +326,8 @@ export async function generateModelReadBoundaryRevision(input: {
         return {
           ok: true,
           value: {
-            status: changes.length || policyChanges.length || reviewedPrerequisite ? "validated_disabled_revision" : "already_satisfied",
+            status: scopeState === "pending_mapping" ? "pending_scope_mapping"
+              : changes.length || policyChanges.length || reviewedPrerequisite ? "validated_disabled_revision" : "already_satisfied",
             changed_fields: changes.length,
             model_exposure_expansions: changes.filter(isModelExposureExpansion).length,
             authority_granted: false,
@@ -292,6 +341,7 @@ export async function generateModelReadBoundaryRevision(input: {
         policyChanges = [];
         confirmedFields = [];
         summary = undefined;
+        scopeRecord = undefined; scopeState = undefined;
         issue = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
         return refusal(issue);
       }
@@ -300,6 +350,12 @@ export async function generateModelReadBoundaryRevision(input: {
   };
   const baseQuestion = [
     "Revise the exact current disabled Synapsor Read Boundary: field exposure, reviewed operations, labels/descriptions, existing reviewed relationships, privacy, or bounded limits.",
+    ...(structured ? [
+      `Pinned Read protocol: ${READ_SCOPE_PROTOCOL}; return read_scope with exact includes, exclusions, intended uses and unresolved mappings alongside the revision.`,
+      "References locate evidence; they do not establish meaning or operator consent. A settings preview is not an analyzed workload. Missing mapping remains pending for ordinary Read mapping and review.",
+      `Host scope inventory: ${JSON.stringify({ binding: structured.binding, references: structured.references, catalog: structured.catalog })}`,
+      ...(nativeScope ? [`Existing native scope (${nativeScope.status}): ${JSON.stringify(nativeScope.record.proposal)}. Preserve unrelated requirements; explicitly show requested deltas for operator review.`] : []),
+    ] : []),
     `Operator request: ${JSON.stringify(instruction)}`,
     `Current exact field catalog: ${serializedCatalog}`,
     `Runner-supplied business labels (untrusted descriptive hints, never policy or permission proof): ${JSON.stringify(businessContext.references)}`,
@@ -370,6 +426,7 @@ export async function generateModelReadBoundaryRevision(input: {
     completeAfterRequiredTool: true,
     authorityGuard: () => readBoundaryRevisionCatalog(input.boundary).digest === catalog.digest
       && canonicalJsonDigest(currentMeanings()) === evidenceDigest
+      && canonicalJsonDigest(input.structuredScope?.current() ?? null) === structuredDigest
       ? authorityDigest
       : canonicalJsonDigest({ stale: true }),
   }); };
@@ -385,7 +442,8 @@ export async function generateModelReadBoundaryRevision(input: {
     base_question: baseQuestion, provider_system_prompt: providerSystemPrompt });
   const assertCurrent = () => {
     if (explorationBoundaryCandidateDigest(input.boundary) !== boundaryDigest
-      || readBoundaryRevisionCatalog(input.boundary).digest !== catalog.digest) throw new Error(
+      || readBoundaryRevisionCatalog(input.boundary).digest !== catalog.digest
+      || canonicalJsonDigest(input.structuredScope?.current() ?? null) !== structuredDigest) throw new Error(
       "READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The exact Read draft or catalog changed while clarification was pending; no replacement was sent.");
   };
   let usage: ModelReadBoundaryRevisionResult["usage"], correctionUsed = authoringInterruptedProducerCorrections().correction_used, clarificationCount = 0;
@@ -581,6 +639,8 @@ export async function generateModelReadBoundaryRevision(input: {
       ...(reviewedPrerequisite ? { read_prerequisite: reviewedPrerequisite } : {}),
       ...(reviewedRelationship ? { reviewed_relationship: reviewedRelationship } : {}),
       ...(summary ? { summary } : {}),
+      ...(scopeRecord ? { read_scope: scopeRecord, read_scope_state: scopeState,
+        ...(nativeScope?.status === "confirmed" ? { read_scope_delta: readScopeDelta(nativeScope.record, scopeRecord) } : {}) } : {}),
       provider: input.provider,
       model: input.model,
       model_exposure_expansions: changes.filter(isModelExposureExpansion).length,
@@ -591,7 +651,8 @@ export async function generateModelReadBoundaryRevision(input: {
       source_database_changed: false,
       ...(usage ? { usage } : {}),
     };
-    await input.onCheckpoint?.(undefined, structuredClone(input.boundary), result);
+    assertCurrent();
+    await input.onCheckpoint?.(undefined, structuredClone(input.boundary), result, completion);
     return result;
   } finally {
     await gateway.close().catch(() => undefined);
@@ -683,6 +744,7 @@ function readBoundaryRevisionTool(
   catalog: ReturnType<typeof readBoundaryRevisionCatalog>,
   allowPrerequisiteReview = false,
   allowRelationshipReview = false,
+  structuredScope = false,
 ): AskToolDefinition {
   const resourceIds = catalog.resources.map((resource) => resource.id);
   const fieldIds = [...new Set(catalog.resources.flatMap((resource) =>
@@ -693,11 +755,14 @@ function readBoundaryRevisionTool(
     description: "Revise exact exposure, operations, labels, reviewed relationships or bounded privacy and limits. Runner validates before saving; this grants no authority.",
     input_schema: {
       oneOf: [
+        ...(structuredScope ? [{ type: "object", additionalProperties: false, required: ["read_scope"],
+          properties: { read_scope: readScopeProposalSchema } }] : []),
         {
           type: "object",
           additionalProperties: false,
-          required: ["resource_changes"],
+          required: ["resource_changes", ...(structuredScope ? ["read_scope"] : [])],
           properties: {
+            ...(structuredScope ? { read_scope: readScopeProposalSchema } : {}),
             status: { type: "string", enum: ["revision", "already_satisfied"], description: "already_satisfied requires exact field states that Runner can verify against the current catalog; it never changes access." },
             summary: { type: "string", minLength: 1, maxLength: 500 },
             resource_changes: {
@@ -734,7 +799,7 @@ function readBoundaryRevisionTool(
             },
           },
         },
-        {
+        ...(!structuredScope ? [{
           type: "object",
           additionalProperties: false,
           required: ["clarification_request"],
@@ -749,7 +814,7 @@ function readBoundaryRevisionTool(
               },
             },
           },
-        },
+        }] : []),
         ...(allowPrerequisiteReview ? [{
           type: "object",
           additionalProperties: false,
