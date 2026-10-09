@@ -40,6 +40,7 @@ import {
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
   boundaryReviewDecisionRefs,
+  type ExplorationBoundaryDraft,
   loadActivatedExplorationBoundaries,
   reviewExplorationBoundaryCandidate,
   writeAutoBoundaryArtifacts,
@@ -380,7 +381,7 @@ describe("boundary operator-plane CLI", () => {
       await boundaryReviewMutations.commitBoundaryReviewMutationBatch(root, privacy);
       const before = await loadBoundaryReviewContext(root);
       await activateExplorationBoundary({ projectRoot: root, candidate: before.candidate, expectedDigest: before.bundle.candidate_digest,
-        actor: "test-reviewer", confirmation: `ACTIVATE ${before.bundle.candidate_digest}`, confirmedDecisions: before.candidate.unresolved_decisions, currentInspection: inspection });
+        actor: "test-reviewer", confirmation: `ACTIVATE ${before.bundle.candidate_digest}`, reviewSubmission: explicitFixtureReviewSubmission(before.candidate), currentInspection: inspection });
       const active = await loadActivatedExplorationBoundaries(root);
       const session: BoundaryReviewInteractiveSession = { chooseResource: async () => undefined, editFieldTiers: async () => undefined,
         promptText: async () => undefined, confirmActivation: async () => false,
@@ -427,7 +428,7 @@ describe("boundary operator-plane CLI", () => {
       const action = (await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"))!;
       await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate, expectedDigest: context.bundle.candidate_digest,
         actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
-        confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
+        reviewSubmission: explicitFixtureReviewSubmission(context.candidate), currentInspection: inspection });
       await activateActionRuleAuthority({ projectRoot: root, name: action.authority.name, expected_digest: action.digest,
         actor: "test-reviewer", confirmation: `ACTIVATE ${action.digest}` });
       const activeRead = await loadActivatedExplorationBoundaries(root), activeAction = await readActionRuleAuthorityActivation(root);
@@ -997,10 +998,10 @@ describe("boundary operator-plane CLI", () => {
       const guided = choice === "headless" || choice === "workbench" ? await initializeGuidedProject({ projectRoot: root, build: fixture.build, runnerVersion: "1.8.0" }) : undefined;
       const initial = await loadBoundaryReviewContext(root);
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: initial.draft, candidate: initial.candidate,
-        confirmedDecisions: initial.candidate.unresolved_decisions, actor: "test-reviewer", revision: 1 }));
+        submission: explicitFixtureReviewSubmission(initial.candidate), actor: "test-reviewer", revision: 1 }));
       await activateExplorationBoundary({ projectRoot: root, candidate: initial.candidate, expectedDigest: initial.bundle.candidate_digest,
         actor: "test-reviewer", confirmation: `ACTIVATE ${initial.bundle.candidate_digest}`,
-        confirmedDecisions: initial.candidate.unresolved_decisions, currentInspection: inspection });
+        reviewSubmission: explicitFixtureReviewSubmission(initial.candidate), currentInspection: inspection });
       const action = (await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"))!;
       await activateActionRuleAuthority({ projectRoot: root, name: action.authority.name, expected_digest: action.digest,
         actor: "test-reviewer", confirmation: `ACTIVATE ${action.digest}` });
@@ -1018,7 +1019,7 @@ describe("boundary operator-plane CLI", () => {
       await commitBoundaryResourceReviewMutation(root, mutation);
       const pending = await loadBoundaryReviewContext(root);
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: pending.draft, candidate: pending.candidate,
-        confirmedDecisions: pending.candidate.unresolved_decisions, actor: "test-reviewer", revision: (pending.progress?.revision ?? 0) + 1 }));
+        submission: explicitFixtureReviewSubmission(pending.candidate), actor: "test-reviewer", revision: (pending.progress?.revision ?? 0) + 1 }));
       expect(pending.bundle.candidate_digest).not.toBe(initial.bundle.candidate_digest);
       const confirm = vi.fn(async (_prompt, options) => {
         const text = options.context.join(" ").replace(/\s+/g, " ");
@@ -1144,7 +1145,7 @@ describe("boundary operator-plane CLI", () => {
       const progress = createBoundaryReviewProgress({
         draft: build.exploration_boundary,
         candidate: build.exploration_boundary,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(build.exploration_boundary),
         actor: "alice",
         revision: 1,
         now: "2026-07-25T12:00:00.000Z",
@@ -2570,7 +2571,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: digest,
         actor: "initial-reviewer",
         confirmation: `ACTIVATE ${digest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(build.exploration_boundary),
         currentInspection: inspection,
       });
 
@@ -5018,11 +5019,11 @@ describe("boundary operator-plane CLI", () => {
     try {
       const context = await loadBoundaryReviewContext(root);
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: context.draft, candidate: context.candidate,
-        confirmedDecisions: context.candidate.unresolved_decisions, actor: "test-reviewer", reason: "Review fixture Read before host counter recovery.",
+        submission: explicitFixtureReviewSubmission(context.candidate), actor: "test-reviewer", reason: "Review fixture Read before host counter recovery.",
         revision: (context.progress?.revision ?? 0) + 1 }));
       await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate, expectedDigest: context.bundle.candidate_digest,
         actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
-        confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
+        reviewSubmission: explicitFixtureReviewSubmission(context.candidate), currentInspection: inspection });
       const authority = (await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"))!;
       await activateActionRuleAuthority({ projectRoot: root, name: authority.authority.name, expected_digest: authority.digest,
         confirmation: `ACTIVATE ${authority.digest}`, actor: "test-reviewer" });
@@ -5203,7 +5204,7 @@ describe("boundary operator-plane CLI", () => {
       const context = await loadBoundaryReviewContext(fixture.root);
       await saveBoundaryReviewProgress(fixture.root, createBoundaryReviewProgress({
         draft: context.draft, candidate: context.candidate,
-        confirmedDecisions: context.candidate.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(context.candidate),
         actor: "test-reviewer", reason: "Retain the exact disabled Read decisions before a metadata refresh.",
         revision: (context.progress?.revision ?? 0) + 1,
       }));
@@ -5229,13 +5230,13 @@ describe("boundary operator-plane CLI", () => {
       const activateRead = async () => {
         const context = await loadBoundaryReviewContext(fixture.root);
         await saveBoundaryReviewProgress(fixture.root, createBoundaryReviewProgress({
-          draft: context.draft, candidate: context.candidate, confirmedDecisions: context.candidate.unresolved_decisions,
+          draft: context.draft, candidate: context.candidate, submission: explicitFixtureReviewSubmission(context.candidate),
           actor: "test-reviewer", reason: "Exact fixture access review before separate activation.",
           revision: (context.progress?.revision ?? 0) + 1,
         }));
         await activateExplorationBoundary({ projectRoot: fixture.root, candidate: context.candidate,
           expectedDigest: context.bundle.candidate_digest, actor: "test-reviewer",
-          confirmation: `ACTIVATE ${context.bundle.candidate_digest}`, confirmedDecisions: context.candidate.unresolved_decisions,
+          confirmation: `ACTIVATE ${context.bundle.candidate_digest}`, reviewSubmission: explicitFixtureReviewSubmission(context.candidate),
           currentInspection: fixture.inspection });
       };
       let savedActivation: Awaited<ReturnType<typeof readActionRuleAuthorityActivation>>;
@@ -5354,11 +5355,11 @@ describe("boundary operator-plane CLI", () => {
       let activeBefore: Awaited<ReturnType<typeof readActionRuleAuthorityActivation>>;
       if (shape === "pending_removal_draft" || shape === "current_removal_draft") {
         await saveBoundaryReviewProgress(fixture.root, createBoundaryReviewProgress({ draft: prior.draft, candidate: prior.candidate,
-          confirmedDecisions: prior.candidate.unresolved_decisions, actor: "test-reviewer", reason: "Review fixture Read before Action activation.",
+          submission: explicitFixtureReviewSubmission(prior.candidate), actor: "test-reviewer", reason: "Review fixture Read before Action activation.",
           revision: (prior.progress?.revision ?? 0) + 1 }));
         await activateExplorationBoundary({ projectRoot: fixture.root, candidate: prior.candidate,
           expectedDigest: prior.bundle.candidate_digest, actor: "test-reviewer", confirmation: `ACTIVATE ${prior.bundle.candidate_digest}`,
-          confirmedDecisions: prior.candidate.unresolved_decisions, currentInspection: fixture.inspection });
+          reviewSubmission: explicitFixtureReviewSubmission(prior.candidate), currentInspection: fixture.inspection });
         activeBefore = await activateActionRuleAuthority({ projectRoot: fixture.root, name: before!.authority.name,
           expected_digest: before!.digest, confirmation: `ACTIVATE ${before!.digest}`, actor: "test-reviewer" });
         const retained = before!.authority.rules[0]!;
@@ -5372,7 +5373,7 @@ describe("boundary operator-plane CLI", () => {
         const candidate = structuredClone(prior.candidate);
         candidate.budgets.max_rows = 2;
         await saveBoundaryReviewProgress(fixture.root, createBoundaryReviewProgress({ draft: prior.draft, candidate,
-          confirmedDecisions: candidate.unresolved_decisions, actor: "test-reviewer", reason: "Narrow saved Read without changing source metadata.",
+          submission: explicitFixtureReviewSubmission(candidate), actor: "test-reviewer", reason: "Narrow saved Read without changing source metadata.",
           revision: (prior.progress?.revision ?? 0) + 1 }));
       } else if (!shape.startsWith("current_")) fixture.inspection.tables[0]!.row_level_security_policies!.push({ name: "new_writer_policy", command: "UPDATE", permissive: true,
         roles: ["separate_writer"], using_expression: "tenant_id = current_setting('app.tenant_id')", check_expression: "tenant_id = current_setting('app.tenant_id')" });
@@ -5486,7 +5487,7 @@ describe("boundary operator-plane CLI", () => {
         source: workload.source, analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: context.candidate }) });
       await recordReadWorkloadReview({ projectRoot: root, workload: stored, candidateDigest: context.bundle.candidate_digest, reviewRevision: 1 });
       await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate, expectedDigest: context.bundle.candidate_digest,
-        actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`, confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
+        actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`, reviewSubmission: explicitFixtureReviewSubmission(context.candidate), currentInspection: inspection });
       const active = await activateActionRuleAuthority({ projectRoot: root, name: baseline.authority.name, expected_digest: baseline.digest,
         actor: "test-reviewer", confirmation: `ACTIVATE ${baseline.digest}` });
       const request = `Change ${outcome} automatic approval from at most 30 days to at most 10 days. Preserve every other rule and active authority; save a disabled revision.`;
@@ -5505,7 +5506,7 @@ describe("boundary operator-plane CLI", () => {
             const candidate = structuredClone(fresh.candidate);
             candidate.pack.resources[0]!.description = "Concurrent reviewed metadata during exact edit consent";
             await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: fresh.draft, candidate,
-              confirmedDecisions: candidate.unresolved_decisions, actor: "test-reviewer", reason: "Concurrent Read edit during consent",
+              submission: explicitFixtureReviewSubmission(candidate), actor: "test-reviewer", reason: "Concurrent Read edit during consent",
               revision: (fresh.progress?.revision ?? 0) + 1 }));
           }
           return control !== "extra_change_declined";
@@ -5542,7 +5543,7 @@ describe("boundary operator-plane CLI", () => {
           const fresh = await loadBoundaryReviewContext(root);
           const candidate = structuredClone(fresh.candidate);candidate.pack.resources[0]!.description = "Concurrent reviewed metadata change";
           await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: fresh.draft, candidate,
-            confirmedDecisions: candidate.unresolved_decisions, actor: "test-reviewer", reason: "Concurrent Read edit", revision: (fresh.progress?.revision ?? 0) + 1 }));
+            submission: explicitFixtureReviewSubmission(candidate), actor: "test-reviewer", reason: "Concurrent Read edit", revision: (fresh.progress?.revision ?? 0) + 1 }));
         }
         if (control === "competing_edit") {
           const other = structuredClone(baseline);other.reviews[0]!.then = "Concurrent review changed";
@@ -5686,7 +5687,7 @@ describe("boundary operator-plane CLI", () => {
       await writeActionRuleAuthorityDraft(root, baseline);
       await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate, expectedDigest: context.bundle.candidate_digest,
         actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
-        confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
+        reviewSubmission: explicitFixtureReviewSubmission(context.candidate), currentInspection: inspection });
       await activateActionRuleAuthority({ projectRoot: root, name: baseline.authority.name, expected_digest: baseline.digest,
         actor: "test-reviewer", confirmation: `ACTIVATE ${baseline.digest}` });
       const activeRead = await loadActivatedExplorationBoundaries(root), activeAction = await readActionRuleAuthorityActivation(root);
@@ -6602,7 +6603,7 @@ describe("boundary operator-plane CLI", () => {
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
         draft: reviewedContext.draft,
         candidate: reviewedContext.candidate,
-        confirmedDecisions: reviewedContext.candidate.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(reviewedContext.candidate),
         previous: reviewedContext.progress,
         revision: (reviewedContext.progress?.revision ?? 0) + 1,
         actor: "test-reviewer",
@@ -6614,7 +6615,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: digestBefore,
         actor: "test-reviewer",
         confirmation: `ACTIVATE ${digestBefore}`,
-        confirmedDecisions: (await loadBoundaryReviewContext(root)).candidate.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission((await loadBoundaryReviewContext(root)).candidate),
         currentInspection: inspection,
       });
       await fs.rm(path.join(root, ".synapsor/read-workloads"), { recursive: true, force: true });
@@ -7184,12 +7185,12 @@ describe("boundary operator-plane CLI", () => {
           approval_classes: compiled.flatMap(entry => entry.loaded.authority.approval_classes), reviews: original.reviews }));
         await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate,
           expectedDigest: context.bundle.candidate_digest, actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
-          confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
+          reviewSubmission: explicitFixtureReviewSubmission(context.candidate), currentInspection: inspection });
       }
       if (posture === "active_changes" || posture === "partial_separate_older_read") {
         if (posture === "active_changes") await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate,
           expectedDigest: context.bundle.candidate_digest, actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
-          confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
+          reviewSubmission: explicitFixtureReviewSubmission(context.candidate), currentInspection: inspection });
         const candidate = structuredClone(context.candidate);
         candidate.budgets.max_rows = 2;
         await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: context.draft, candidate,
@@ -7249,7 +7250,7 @@ describe("boundary operator-plane CLI", () => {
       }));
       if (posture === "active" || posture === "active_planning_failure") await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate,
         expectedDigest: digest, actor: "test-reviewer", confirmation: `ACTIVATE ${digest}`,
-        confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
+        reviewSubmission: explicitFixtureReviewSubmission(context.candidate), currentInspection: inspection });
       const activeBefore = posture.startsWith("active") || privatePartial ? await loadActivatedExplorationBoundaries(root) : undefined;
       let competingAction: typeof beforeActions | undefined;
       const planner = vi.fn(async (input: Parameters<typeof planModelBoundaryJob>[0]) => {
@@ -7759,7 +7760,7 @@ describe("boundary operator-plane CLI", () => {
       await expect(readActionRuleAuthorityActivation(root)).resolves.toBeUndefined();
       await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate,
         expectedDigest: context.bundle.candidate_digest, actor: "test-reviewer",
-        confirmation: `ACTIVATE ${context.bundle.candidate_digest}`, confirmedDecisions: context.candidate.unresolved_decisions,
+        confirmation: `ACTIVATE ${context.bundle.candidate_digest}`, reviewSubmission: explicitFixtureReviewSubmission(context.candidate),
         currentInspection: inspection });
       const activation = await activateActionRuleAuthority({ projectRoot: root, name: before.authority.name,
         expected_digest: afterFirstReview.digest, confirmation: `ACTIVATE ${afterFirstReview.digest}`, actor: "test-reviewer" });
@@ -9293,7 +9294,7 @@ describe("boundary operator-plane CLI", () => {
         if (!semantic || deferredResume.status !== "ready") throw new Error("Expected saved semantic job");
         await activateExplorationBoundary({ projectRoot: root, candidate: reviewed.candidate, expectedDigest: exactReadDigest,
           actor: "test-reviewer", confirmation: `ACTIVATE ${exactReadDigest}`,
-          confirmedDecisions: reviewed.candidate.unresolved_decisions, currentInspection: inspection });
+          reviewSubmission: explicitFixtureReviewSubmission(reviewed.candidate), currentInspection: inspection });
         const activeReadBefore = await loadActivatedExplorationBoundaries(root);
         const catalog = buildActionRuleAuthoringCatalog({ boundary: reviewed.candidate, inspection, retainedCatalog: semantic.authority.catalog });
         const { outcome: reviewedOutcome, ...reviewMaterial } = semantic.reviews[0]!;
@@ -11885,7 +11886,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: firstDigest,
         actor: "first-reviewer",
         confirmation: `ACTIVATE ${firstDigest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(build.exploration_boundary),
         currentInspection: inspection,
       });
       const second = await createSavedBoundary({
@@ -11899,7 +11900,7 @@ describe("boundary operator-plane CLI", () => {
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
         draft: build.exploration_boundary,
         candidate: second.candidate,
-        confirmedDecisions: second.candidate.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(second.candidate),
         previous: second,
         actor: "second-reviewer",
         revision: second.revision + 1,
@@ -12004,13 +12005,13 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: initialDigest,
         actor: "initial-reviewer",
         confirmation: `ACTIVATE ${initialDigest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(build.exploration_boundary),
         currentInspection: inspection,
       });
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
         draft: build.exploration_boundary,
         candidate,
-        confirmedDecisions: candidate.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(candidate),
         actor: "replacement-reviewer",
         revision: 1,
       }));
@@ -12134,7 +12135,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: initialDigest,
         actor: "initial-reviewer",
         confirmation: `ACTIVATE ${initialDigest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(build.exploration_boundary),
         currentInspection: inspection,
       });
       previousActive = await fs.readFile(
@@ -12308,7 +12309,7 @@ describe("boundary operator-plane CLI", () => {
       const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
       await activateExplorationBoundary({ projectRoot: root, candidate: build.exploration_boundary,
         expectedDigest: digest, actor: "initial-reviewer", confirmation: `ACTIVATE ${digest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions, currentInspection: inspection });
+        reviewSubmission: explicitFixtureReviewSubmission(build.exploration_boundary), currentInspection: inspection });
       const previousActive = await loadActivatedExplorationBoundaries(root);
       const activePath = path.join(root, ".synapsor/exploration-boundary.active.json");
       const activeBytes = await fs.readFile(activePath);
@@ -12341,7 +12342,7 @@ describe("boundary operator-plane CLI", () => {
       const revisedDigest = explorationBoundaryCandidateDigest(candidate);
       await activateExplorationBoundary({ projectRoot: root, candidate, expectedDigest: revisedDigest,
         actor: "privacy-reviewer", confirmation: `ACTIVATE ${revisedDigest}`,
-        confirmedDecisions: candidate.unresolved_decisions, currentInspection: inspection });
+        reviewSubmission: explicitFixtureReviewSubmission(candidate), currentInspection: inspection });
       const [active] = await loadActivatedExplorationBoundaries(root);
       expect.soft(() => validateExplorePlan(filterPlan, active!)).toThrow("security_hold is not reviewed for filter operator eq");
       expect.soft(reviewedModelAnalysisOperations(privateResource, "security_hold")).toEqual([]);
@@ -12791,14 +12792,7 @@ describe("boundary operator-plane CLI", () => {
       return true;
     });
     try {
-      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
-      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
-        draft: build.exploration_boundary,
-        candidate: build.exploration_boundary,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
-        actor: "alice",
-        revision: 1,
-      }));
+      await saveExplicitFixtureReview(root, build, build.exploration_boundary, "alice");
 
       await expect(boundaryActivateCommandInternal(
         ["--project-root", root, "--actor", "alice"],
@@ -12851,7 +12845,7 @@ describe("boundary operator-plane CLI", () => {
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
         draft: build.exploration_boundary,
         candidate: build.exploration_boundary,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(build.exploration_boundary),
         actor: "alice",
         revision: 1,
       }));
@@ -13249,7 +13243,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: firstDigest,
         actor: "first-reviewer",
         confirmation: `ACTIVATE ${firstDigest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(build.exploration_boundary),
         currentInspection: inspection,
       });
       await createSavedBoundary({
@@ -14071,6 +14065,15 @@ describe("boundary operator-plane CLI", () => {
       },
       sourceEnv: "DATABASE_URL",
       inspectedSchema: "public",
+      // Explicit fixture review of both tenant-scoped endpoints and exact join
+      // keys; source names/suggestions no longer nominate scope or visibility.
+      overrides: { schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: Object.fromEntries(
+        ["public.service_visits", "public.service_routes"].map(resource => [resource, {
+          tenant_key: { value: "tenant_id", actor: "alice", reason: "Review this fixture tenant boundary.", decided_at: "2026-08-12T12:00:00.000Z" },
+          principal_key: { value: null, actor: "alice", reason: "This fixture reviews all rows in the authenticated tenant.", decided_at: "2026-08-12T12:00:00.000Z" },
+          fields: Object.fromEntries(["id", "route_id"].map(field => [field, { exposure: "allow_reviewed_use" as const,
+            actor: "alice", reason: "Review these exact fixture relationship keys.", decided_at: "2026-08-12T12:00:00.000Z" }])),
+        }])) },
     });
     const candidate = structuredClone(build.exploration_boundary);
     expect(candidate.pack.resources.map((resource) => resource.id)).toEqual(expect.arrayContaining([
@@ -14079,13 +14082,6 @@ describe("boundary operator-plane CLI", () => {
     ]));
     candidate.pack.resources.find((resource) =>
       resource.id === "public.service_visits")!.relationships = [];
-    const progress = createBoundaryReviewProgress({
-      draft: build.exploration_boundary,
-      candidate,
-      confirmedDecisions: candidate.unresolved_decisions,
-      actor: "alice",
-      revision: 1,
-    });
     let pickerCalls = 0;
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async () => {
@@ -14115,19 +14111,15 @@ describe("boundary operator-plane CLI", () => {
     };
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
-      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
-      await saveBoundaryReviewProgress(root, progress);
+      await saveExplicitFixtureReview(root, build, candidate, "alice");
       await expect(boundaryReviewCommandInternal([
         "--project-root", root,
         "--access",
       ], async () => inspection, session)).resolves.toBe(0);
-      const rawProgress = JSON.parse(await fs.readFile(
-        path.join(root, ".synapsor", "boundary-review-progress.json"),
-        "utf8",
-      ));
+      const rawProgress = (await loadBoundaryReviewContext(root)).progress!;
       expect(rawProgress.candidate.pack.resources.find((resource: { id: string }) =>
-        resource.id === "public.service_visits").relationships.find((relationship: { id: string }) =>
-        relationship.id === "service_visits_route_id_fkey").unmatched_rows).toBe("keep_null");
+        resource.id === "public.service_visits")?.relationships.find((relationship: { id: string }) =>
+        relationship.id === "service_visits_route_id_fkey")?.unmatched_rows).toBe("keep_null");
       const saved = (await loadBoundaryReviewContext(root)).progress;
       expect(saved?.candidate.pack.resources.find((resource) =>
         resource.id === "public.service_visits")?.relationships.map((relationship) =>
@@ -14576,7 +14568,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: activeDigest,
         actor: "original-reviewer",
         confirmation: `ACTIVATE ${activeDigest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(build.exploration_boundary),
         currentInspection: inspection,
       });
       let context = await loadBoundaryReviewContext(root);
@@ -14703,7 +14695,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: activeDigest,
         actor: "original-reviewer",
         confirmation: `ACTIVATE ${activeDigest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(build.exploration_boundary),
         currentInspection: inspection,
       });
       let context = await loadBoundaryReviewContext(root);
@@ -14885,13 +14877,13 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: digest,
         actor: "legacy-reviewer",
         confirmation: `ACTIVATE ${digest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(build.exploration_boundary),
         currentInspection: inspection,
       });
       const current = createBoundaryReviewProgress({
         draft: build.exploration_boundary,
         candidate: build.exploration_boundary,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(build.exploration_boundary),
         actor: "legacy-reviewer",
         revision: 1,
         now: "2026-08-07T12:00:00.000Z",
@@ -15262,7 +15254,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: keptOutDigest,
         actor: "owner@example.test",
         confirmation: `ACTIVATE ${keptOutDigest}`,
-        confirmedDecisions: context.candidate.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(context.candidate),
         currentInspection: inspection,
       });
 
@@ -15299,7 +15291,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: restoredDigest,
         actor: "owner@example.test",
         confirmation: `ACTIVATE ${restoredDigest}`,
-        confirmedDecisions: context.candidate.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(context.candidate),
         currentInspection: inspection,
       });
       expect(fieldOperations(activated.pack.resources[0]!, "status"))
@@ -15343,7 +15335,7 @@ describe("boundary operator-plane CLI", () => {
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
         draft: build.exploration_boundary,
         candidate: narrowedCandidate,
-        confirmedDecisions: narrowedCandidate.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(narrowedCandidate),
         actor: "narrowing-owner@example.test",
         revision: 1,
         now: "2026-08-15T11:00:00.000Z",
@@ -15365,7 +15357,7 @@ describe("boundary operator-plane CLI", () => {
       const legacyProgress = createBoundaryReviewProgress({
         draft: build.exploration_boundary,
         candidate: legacyCandidate,
-        confirmedDecisions: legacyCandidate.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(legacyCandidate),
         actor: "legacy-owner@example.test",
         revision: 2,
         now: "2026-08-15T12:00:00.000Z",
@@ -15379,7 +15371,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: legacyDigest,
         actor: "legacy-owner@example.test",
         confirmation: `ACTIVATE ${legacyDigest}`,
-        confirmedDecisions: legacyCandidate.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(legacyCandidate),
         currentInspection: inspection,
       });
 
@@ -15642,7 +15634,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: initialDigest,
         actor: "analytics-owner",
         confirmation: `ACTIVATE ${initialDigest}`,
-        confirmedDecisions: initial.candidate.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(initial.candidate),
         currentInspection: inspection,
       });
 
@@ -15701,7 +15693,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: stagedDigest,
         actor: "analytics-owner",
         confirmation: `ACTIVATE ${stagedDigest}`,
-        confirmedDecisions: stagedContext.candidate.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(stagedContext.candidate),
         currentInspection: inspection,
       });
       expect(activated.pack.resources[0]!.groupable_fields).toContain("started_year");
@@ -15932,7 +15924,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: digest,
         actor: "reviewer",
         confirmation: `ACTIVATE ${digest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(build.exploration_boundary),
         currentInspection: inspection,
       });
 
@@ -16026,7 +16018,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: activeDigest,
         actor: "first-reviewer",
         confirmation: `ACTIVATE ${activeDigest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(build.exploration_boundary),
         currentInspection: inspection,
       });
       const disabled = await createSavedBoundary({
@@ -16124,7 +16116,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: firstDigest,
         actor: "first-reviewer",
         confirmation: `ACTIVATE ${firstDigest}`,
-        confirmedDecisions: development.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(development),
         currentInspection: inspection,
       });
 
@@ -16142,7 +16134,7 @@ describe("boundary operator-plane CLI", () => {
       const completed = createBoundaryReviewProgress({
         draft: build.exploration_boundary,
         candidate: progress.candidate,
-        confirmedDecisions: progress.candidate.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(progress.candidate),
         previous: progress,
         actor: "second-reviewer",
         revision: progress.revision + 1,
@@ -16254,7 +16246,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: firstDigest,
         actor: "first-reviewer",
         confirmation: `ACTIVATE ${firstDigest}`,
-        confirmedDecisions: firstContext.candidate.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(firstContext.candidate),
         currentInspection: inspection,
       });
       const second = await createSavedBoundary({
@@ -16277,7 +16269,7 @@ describe("boundary operator-plane CLI", () => {
       const completed = createBoundaryReviewProgress({
         draft: firstContext.draft,
         candidate: second.candidate,
-        confirmedDecisions: second.candidate.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(second.candidate),
         previous: second,
         actor: "second-reviewer",
         revision: second.revision + 1,
@@ -16447,7 +16439,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: candidateDigest,
         actor: "production-reviewer@example.test",
         confirmation: `ACTIVATE ${candidateDigest}`,
-        confirmedDecisions: context.candidate.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(context.candidate),
         currentInspection: inspection,
       });
       const active = await loadActivatedExplorationBoundaries(root);
@@ -16564,7 +16556,7 @@ describe("boundary operator-plane CLI", () => {
         expectedDigest: activeDigest,
         actor: "first-reviewer",
         confirmation: `ACTIVATE ${activeDigest}`,
-        confirmedDecisions: development.unresolved_decisions,
+        reviewSubmission: explicitFixtureReviewSubmission(development),
         currentInspection: inspection,
       });
 
@@ -16581,7 +16573,7 @@ describe("boundary operator-plane CLI", () => {
       const staleProgress = createBoundaryReviewProgress({
         draft: build.exploration_boundary,
         candidate: reviewedStale,
-        confirmedDecisions: reviewedStale.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(reviewedStale),
         actor: "stale-reviewer",
         revision: 1,
       });
@@ -16891,7 +16883,7 @@ describe("boundary operator-plane CLI", () => {
       const completedProgress = createBoundaryReviewProgress({
         draft: reviewedContext.draft,
         candidate: reviewedContext.candidate,
-        confirmedDecisions: reviewedContext.candidate.unresolved_decisions,
+        submission: explicitFixtureReviewSubmission(reviewedContext.candidate),
         previous: reviewedContext.progress,
         actor: "alice",
         reason: "Confirmed the exact post-review authority for both resources.",
@@ -17122,6 +17114,31 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 });
+
+// Used only where the existing fixture explicitly accepts every displayed
+// structural decision. This creates no native meaning, save or activation.
+function explicitFixtureReviewSubmission(candidate: ExplorationBoundaryDraft) {
+  return boundaryReviewSubmissionForDecisions(candidate, boundaryReviewDecisionRefs(candidate).map(ref => ref.id));
+}
+
+// Genuine native disabled baseline and explicit fixture consent. The saved
+// writer supplies immutable origins; this helper never creates Read meaning.
+async function saveExplicitFixtureReview(root: string, build: ReturnType<typeof buildAutoBoundary>,
+  candidate: ExplorationBoundaryDraft, actor: string) {
+  const guided = await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.8.0" });
+  await initializeFreshGovernedAuthoring({ projectRoot: root, build,
+    config: loadRuntimeConfigFromFile(guided.config_path), storePath: guided.store_path, actor });
+  const initial = await loadBoundaryReviewContext(root);
+  const staged = createBoundaryReviewProgress({ draft: initial.draft, candidate, previous: initial.progress,
+    actor, revision: 1 });
+  await saveBoundaryReviewProgress(root, staged, initial.bundle.mutation_bindings.authoring);
+  const saved = await loadBoundaryReviewContext(root);
+  const submission = explicitFixtureReviewSubmission(saved.candidate);
+  const confirmed = createBoundaryReviewProgress({ draft: saved.draft, candidate: saved.candidate,
+    previous: saved.progress, submission, actor, revision: 1 });
+  await saveBoundaryReviewProgress(root, confirmed, saved.bundle.mutation_bindings.authoring, undefined, submission);
+  return loadBoundaryReviewContext(root);
+}
 
 function boundaryInspection(): SchemaInspection {
   const column = (name: string, dataType: string, tenant = false) => ({
@@ -17380,7 +17397,7 @@ async function staleSemanticRevalidationFixture(options: { readerRls?: boolean; 
     const candidate = structuredClone(context.candidate);
     candidate.pack.resources = candidate.pack.resources.filter(resource => resource.id !== "public.visit_facts" && resource.id !== "public.current_access");
     await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: context.draft, candidate,
-      confirmedDecisions: candidate.unresolved_decisions, actor: "test-reviewer", reason: "Keep verification facts private.",
+      submission: explicitFixtureReviewSubmission(candidate), actor: "test-reviewer", reason: "Keep verification facts private.",
       revision: (context.progress?.revision ?? 0) + 1 }));
   }
   const session: BoundaryReviewInteractiveSession = {
@@ -17789,7 +17806,7 @@ describe("saved review operation dispatch and persistence", () => {
     try {
       const initial=await loadBoundaryReviewContext(root);
       await saveBoundaryReviewProgress(root,createBoundaryReviewProgress({draft:initial.draft,candidate:initial.candidate,
-        confirmedDecisions:initial.candidate.unresolved_decisions,actor:'test-reviewer',reason:'Existing disabled Read review',revision:1}));
+        submission: explicitFixtureReviewSubmission(initial.candidate),actor:'test-reviewer',reason:'Existing disabled Read review',revision:1}));
       const context=await loadBoundaryReviewContext(root);
       const binding={boundary_name:context.candidate.pack.name,
         generation_lock_fingerprint:context.bundle.authority.generation_lock_fingerprint,
@@ -17838,7 +17855,7 @@ describe("saved review operation dispatch and persistence", () => {
     try {
       const initial = await loadBoundaryReviewContext(root);
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: initial.draft, candidate: initial.candidate,
-        confirmedDecisions: initial.candidate.unresolved_decisions, actor: "test-reviewer", reason: "Fixture's existing disabled Read review.", revision: 1 }));
+        submission: explicitFixtureReviewSubmission(initial.candidate), actor: "test-reviewer", reason: "Fixture's existing disabled Read review.", revision: 1 }));
       let context = await loadBoundaryReviewContext(root);
       const binding = { boundary_name: context.candidate.pack.name,
         generation_lock_fingerprint: context.bundle.authority.generation_lock_fingerprint,
@@ -18308,7 +18325,7 @@ describe("saved Action identity after a separately reviewed disabled Read edit",
       const before = (await readActionRuleAuthorityDraft(fixture.root, "reviewed_staging_rules"))!;
       const candidate = structuredClone(prior.candidate); candidate.budgets.max_rows = 2;
       await saveBoundaryReviewProgress(fixture.root, createBoundaryReviewProgress({ draft: prior.draft, candidate,
-        confirmedDecisions: candidate.unresolved_decisions, actor: "test-reviewer", revision: (prior.progress?.revision ?? 0) + 1 }));
+        submission: explicitFixtureReviewSubmission(candidate), actor: "test-reviewer", revision: (prior.progress?.revision ?? 0) + 1 }));
       const current = await loadBoundaryReviewContext(fixture.root);
       const source = newPolicySourceSession(); source.snapshots = [policyTextSnapshot(Buffer.from("Keep the saved business rule; review its exact requested limit edit."), "saved-policy.txt")]; source.active = 1;
       source.approvals = [{ digest: source.snapshots[0]!.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
@@ -18351,7 +18368,7 @@ describe("prepared edit dependency recovery stays disabled", () => {
       const before = (await readActionRuleAuthorityDraft(fixture.root, "reviewed_staging_rules"))!;
       const candidate = structuredClone(prior.candidate); candidate.budgets.max_rows = 2;
       await saveBoundaryReviewProgress(fixture.root, createBoundaryReviewProgress({ draft: prior.draft, candidate,
-        confirmedDecisions: candidate.unresolved_decisions, actor: "test-reviewer", revision: (prior.progress?.revision ?? 0) + 1 }));
+        submission: explicitFixtureReviewSubmission(candidate), actor: "test-reviewer", revision: (prior.progress?.revision ?? 0) + 1 }));
       const current = await loadBoundaryReviewContext(fixture.root);
       const modelDraft = actionRuleModelDraftFromAuthority({ authority: before.authority, outcome, review: before.reviews[0]!, preserveVerificationFields: true });
       const source = newPolicySourceSession(); source.snapshots = [policyTextSnapshot(Buffer.from("Keep the saved rule and its private verification; review the requested limit edit separately."), "saved-policy.txt")]; source.active = 1;
@@ -18412,7 +18429,7 @@ describe("saved post-edit review uses reader evidence after writer setup", () =>
     try {
       const initial = await loadBoundaryReviewContext(root);
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: initial.draft, candidate: initial.candidate,
-        confirmedDecisions: initial.candidate.unresolved_decisions, actor: "test-reviewer", reason: "Saved Read review", revision: 1 }));
+        submission: explicitFixtureReviewSubmission(initial.candidate), actor: "test-reviewer", reason: "Saved Read review", revision: 1 }));
       const context = await loadBoundaryReviewContext(root);
       const cards = buildReadWorkloadPlanCards(context.candidate);
       const workload = readWorkloadFromPlanCards({ cards, selectedIds: cards.map(card => card.id) });
@@ -18424,7 +18441,7 @@ describe("saved post-edit review uses reader evidence after writer setup", () =>
         schema_fingerprint: context.lock.schema_fingerprint, role_posture_fingerprint: context.lock.role_posture_fingerprint };
       await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate, expectedDigest: context.bundle.candidate_digest,
         actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
-        confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
+        reviewSubmission: explicitFixtureReviewSubmission(context.candidate), currentInspection: inspection });
       const activeRead = await loadActivatedExplorationBoundaries(root);
       const source = newPolicySourceSession();
       source.snapshots = [policyTextSnapshot(Buffer.from("Keep the exact saved atomic visit job with its human approval and guarded updates."), "saved-policy.txt")]; source.active = 1;
