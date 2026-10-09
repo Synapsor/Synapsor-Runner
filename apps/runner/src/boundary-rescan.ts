@@ -1,7 +1,7 @@
 import { parseExplorationBoundaryDraftArtifact } from "./auto-boundary.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import {
   inspectDatabase,
   type SchemaInspection,
@@ -61,7 +61,7 @@ import {
 } from "./derived-scope-display.js";
 import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
 import { cliCommandName } from "./cli-command-meta.js";
-import { readProjectReadAuthoring, saveProjectReadAuthoring, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
+import { readProjectReadAuthoring, readProjectReadAuthoringHeld, saveProjectReadAuthoring, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 import { preparedReadAuthoringDraft, readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
 
 export { resolveConfiguredTrustedContextAuthority } from "./configured-trusted-context.js";
@@ -487,13 +487,13 @@ export async function commitBoundaryRescan(prepared: PreparedBoundaryRescan): Pr
 }
 
 async function commitBoundaryRescanUnlocked(prepared: PreparedBoundaryRescan, permit: ProjectAuthorityMutationPermit): Promise<void> {
-  if (await boundaryRescanBaseStateDigest(prepared.projectRoot, prepared.boundaryRoot)
+  if (await boundaryRescanBaseStateDigestHeld(prepared.projectRoot, prepared.boundaryRoot, permit)
     !== prepared.baseStateDigest) {
     throw new Error(
       "Boundary review changed after this rescan preview was prepared. Nothing was written; retry --rescan.",
     );
   }
-  if (!prepared.stored && await readProjectReadAuthoring(prepared.projectRoot)) {
+  if (!prepared.stored && await readProjectReadAuthoringHeld(prepared.projectRoot, permit)) {
     throw new Error("The governed rescan is missing its original saved-review binding. No files or authority changed; prepare a new preview.");
   }
   if (prepared.stored) {
@@ -1379,11 +1379,16 @@ async function readJson<T>(filePath: string, label: string): Promise<T> {
   }
 }
 
-async function boundaryRescanBaseStateDigest(
-  projectRoot: string,
-  boundaryRoot: string,
-): Promise<`sha256:${string}`> {
-  const stored = await readProjectReadAuthoring(projectRoot);
+async function boundaryRescanBaseStateDigest(projectRoot: string, boundaryRoot: string): Promise<`sha256:${string}`> {
+  return withProjectAuthorityMutation(projectRoot, held => boundaryRescanBaseStateDigestUnlocked(held.projectRoot, boundaryRoot, held));
+}
+async function boundaryRescanBaseStateDigestHeld(projectRoot: string, boundaryRoot: string,
+  permit: ProjectAuthorityMutationPermit): Promise<`sha256:${string}`> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => boundaryRescanBaseStateDigestUnlocked(held.projectRoot, boundaryRoot, held));
+}
+async function boundaryRescanBaseStateDigestUnlocked(projectRoot: string, boundaryRoot: string,
+  permit: ProjectAuthorityMutationPermit): Promise<`sha256:${string}`> {
+  const stored = await readProjectReadAuthoringHeld(projectRoot, permit);
   if (stored) return canonicalJsonDigest({ schema_version: "synapsor.boundary-rescan-base-state.v1", authoring: stored.bindings });
   const files = [
     path.join(boundaryRoot, "exploration-boundary.draft.json"),

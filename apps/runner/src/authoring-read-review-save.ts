@@ -1,10 +1,10 @@
 import { types as nodeTypes } from "node:util";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { loadBoundaryReviewContext } from "./boundary-review-context.js";
+import { loadBoundaryReviewContext, loadBoundaryReviewContextHeld } from "./boundary-review-context.js";
 import { createBoundaryReviewProgress, type BoundaryReviewProgress } from "./boundary-review-domain.js";
 import { saveBoundaryReviewProgress } from "./boundary-review-persistence.js";
 import type { BoundaryReviewMutationBindings } from "./read-authoring-contract-types.js";
-import { readProjectReadAuthoring, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
+import { readProjectReadAuthoringHeld, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 import type { BoundaryReviewSubmission } from "./auto-boundary.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
@@ -44,7 +44,7 @@ async function commitBoundaryReviewSignoff(projectRoot: string,
 ): Promise<{ before: ReviewContext; progress: BoundaryReviewProgress; authoring_binding: ReadAuthoringBindings | undefined }> {
   const shown = structuredClone({ bindings: context.bundle.mutation_bindings, previous: context.progress ?? null, progress, submission });
   return withProjectAuthorityMutation(projectRoot, async (held) => {
-    const current = await loadBoundaryReviewContext(held.projectRoot, held);
+    const current = await loadBoundaryReviewContextHeld(held.projectRoot, held);
     if (canonicalJsonDigest(shown.bindings) !== canonicalJsonDigest(current.bundle.mutation_bindings)
       || canonicalJsonDigest(shown.previous) !== canonicalJsonDigest(current.progress ?? null)) {
       throw Object.assign(new Error("This Boundary changed while you were reviewing it. Reopen the current revision before signing off; your earlier review was not saved."),
@@ -65,7 +65,7 @@ async function commitBoundaryReviewSignoff(projectRoot: string,
     const authoring_binding = await saveBoundaryReviewProgress(held.projectRoot, structuredClone(shown.progress),
       structuredClone(shown.bindings.authoring), held, structuredClone(shown.submission));
     if (!authoring_binding) return { before, authoring_binding, progress: structuredClone(shown.progress) };
-    const stored = await readProjectReadAuthoring(held.projectRoot, undefined, held);
+    const stored = await readProjectReadAuthoringHeld(held.projectRoot, held);
     const actual = stored?.selected?.progress;
     const refuseAck = (): never => { throw Object.assign(new Error(
       "The Read review save was not acknowledged as the exact submitted revision. Preserve the saved state and reopen it; no continuation was adopted."),

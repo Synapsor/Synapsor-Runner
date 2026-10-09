@@ -6,7 +6,7 @@ import { compareGenerationLock, explorationBoundaryCandidateDigest, loadActivate
 import { buildActionRuleAuthorityDraft, readActionRuleAuthorityRevisionBaseline, writeActionRuleAuthorityDraftIfCurrent,
   type ActionRuleAuthorityActivationV1, type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 import { prepareActionRuleReadRevision } from "./action-rule-read-revision.js";
-import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { readProjectReadAuthoring, readProjectReadAuthoringHeld } from "./control-policy-read-authoring-project.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
 export async function savedActionReadReviewState(projectRoot: string, boundaryName: string,
@@ -37,7 +37,7 @@ export async function revalidateSavedActionReadDependencies(input: {
     if ("activated_at" in input.current && baseline.drafts[input.current.authority.name]) {
       fail("A disabled replacement already exists. Reopen that draft so its edits are preserved.");
     }
-    const before = await readProjectReadAuthoring(held.projectRoot);
+    const before = await readProjectReadAuthoringHeld(held.projectRoot, held);
     const selected = before?.selected;
     if (!selected || selected.progress.candidate.pack.name !== input.boundaryName) fail("Select and review the linked Read revision first.");
     const nextBoundary = selected!.progress.candidate;
@@ -64,7 +64,7 @@ export async function revalidateSavedActionReadDependencies(input: {
     const replacement = prepareActionRuleReadRevision({ existing,
       previousLock: await loadGenerationLockSnapshot(held.projectRoot, existing.authority.catalog.generation_lock_fingerprint),
       nextLock: lock, nextBoundary, inspection, revalidateMetadata: true });
-    if (!isDeepStrictEqual(await readProjectReadAuthoring(held.projectRoot), before)) {
+    if (!isDeepStrictEqual(await readProjectReadAuthoringHeld(held.projectRoot, held), before)) {
       fail("The reviewed Read draft changed while checking metadata. Reopen this review.");
     }
     await requireActiveRead();
