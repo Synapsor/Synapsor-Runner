@@ -76,7 +76,7 @@
       "existing_verified_action_review": 1
     }
   },
-  "one_line_result": "Source/Input access: before0P2F\u2192Input72P, privacy/coverage125P+3loopback failures\u2192same3P, final Source/current-subject35P; types43/0allocated; Main hooks and whole-class review pending.",
+  "one_line_result": "Fixture/display cleanup: before5P1F\u219224P; scoped types43\u219241, all remaining in Main BC; no authority or display behavior changes.",
   "source_input_successor": {
     "before": {
       "passed": 0,
@@ -107,5 +107,23 @@
       "evidence": "shared-access-source-final.json"
     },
     "qualification": "Separate scoped groups, not summed; full native/public composition and independent security batch verdict remain open."
+  },
+  "fixture_display_cleanup": {
+    "before": {
+      "passed": 5,
+      "failed": 1,
+      "evidence": "shared-access-display-before.json",
+      "meaning": "Old fixture v1 fails exact current-v2 assertion; display cases characterize unchanged runtime behavior; prior type log preserves unsafe union error."
+    },
+    "after": {
+      "passed": 24,
+      "failed": 0,
+      "evidence": "shared-access-display-after.json"
+    },
+    "types": {
+      "diagnostics": 41,
+      "allocated_files": 0,
+      "remaining": "All41 in Main-owned boundary-commands; previous2 external diagnostics removed."
+    }
   }
 }

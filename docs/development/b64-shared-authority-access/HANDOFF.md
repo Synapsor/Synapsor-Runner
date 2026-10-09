@@ -2,7 +2,7 @@ Shared access ACTIVE; paid CLOSED; codex/b64-shared-authority-access-20261009; b
 Core/callers through015; phase2b4f; review0b227/81c; writer e024; Source/Input successor in this checkpoint.
 Before core2P3F/native NOTREACHED, phase2 0P3F, review0P2F, writer0P1F, Source/Input0P2F preserved.
 After scoped Input72P; privacy/coverage125P+3loopback failures→same3P; final Source/current-subject35P.
-Latest scoped types43 diagnostics/0allocated: Main BC41 +2existing other-owner; not project PASS.
+Fixture/display successor: before5P1F→24P; latest scoped types41/0allocated, all Main BC; not project PASS.
 Required Held Source/Input/assertion ports and Action lineage added; Main owns BC adapter migration.
 Runtime none after final types; fixed worktree/no snapshots; raw results and SHA256 source manifest in owned evidence.
 Whole-class independent security/concurrency review and Main native/public composition OPEN.

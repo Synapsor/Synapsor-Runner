@@ -1240,7 +1240,7 @@ export function semanticExecutionVerificationLines(preview: Awaited<ReturnType<t
     ...(!writer.ok ? [`Blockers: ${writer.reasons.join(", ")}`] : ["Remaining verification blockers: none in this check."]),
     preview.verification.receipt_probe === "passed_rolled_back" ? "Receipt probe: PASSED, rolled back; no business execution or persisted receipt."
       : "Receipt probe: NOT RUN (Runner-ledger mode); no source-atomic receipt guarantee.",
-    receipt.recommendation ?? receipt.meaning,
+    ("recommendation" in receipt ? receipt.recommendation : undefined) ?? receipt.meaning,
     `Current candidate: ${preview.outcome}.`,
     "Exact Action/config/writer bindings checked again on confirmation.",
     "Read posture rechecked. Worker liveness, business execution and independent readback: NOT RUN.",

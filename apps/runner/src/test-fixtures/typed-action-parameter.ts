@@ -96,7 +96,7 @@ export function catalog(): BuiltActionRuleAuthoringCatalogV1 {
 
 export function boundary(): ExplorationBoundaryDraft {
   return {
-    schema_version: "synapsor.exploration-boundary.v1", activation: "disabled_unreviewed", deployment_profile: "production",
+    schema_version: "synapsor.exploration-boundary.v2", activation: "disabled_unreviewed", deployment_profile: "production",
     source: "local_postgres", compiler_version: "test", spec_version: "test",
     trusted_context: { provider: "environment", tenant_env: "TENANT", principal_env: "PRINCIPAL" },
     generation_lock_fingerprint: lock, role_posture_fingerprint: `sha256:${"d".repeat(64)}`,
