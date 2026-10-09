@@ -2,6 +2,7 @@ import { z } from "zod";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { BoundaryJobPlan } from "./boundary-job-model.js";
 import { parseReadScopeRecord } from "./read-structured-scope.js";
+import { assertReviewOperationShape } from "./boundary-job-operation-contract.js";
 import { isAuthoringClientPlan } from "./authoring-client-plan.js";
 import { AUTHORING_PROGRAM_CAPACITY } from "./authoring-program-capacity.js";
 import { assertAuthoringPlanningCheckpoint, type AuthoringQuestionCompletion, type AuthoringTransportState } from "./authoring-generation-recovery.js";
@@ -39,6 +40,11 @@ export function parseBoundaryPlanningInvocation(value: unknown): BoundaryPlannin
 export function parseBoundaryPlannedMaterial(value: unknown): BoundaryPlannedMaterial {
   const parsed = planSchema.safeParse(value); if (!parsed.success) return invalid();
   const p = parsed.data, scope = parseReadScopeRecord(p.read_scope);
+  if (p.operation) {
+    const { state: _state, read_scope: _scope, correction_used: _correction, authority_granted: _authority,
+      source_database_changed: _changed, ...routing } = p;
+    assertReviewOperationShape({ status: "planned", ...routing });
+  }
   if (scope.analysis_digest || (p.read_mode === "none" && scope.proposal.applicability !== "no_read_requested")
     || (["create", "revise"].includes(p.read_mode) && (!p.read_intent || scope.proposal.applicability !== "read_requested"))
     || (! ["create", "revise"].includes(p.read_mode) && p.read_intent !== undefined)
@@ -94,4 +100,20 @@ export function restoreBoundaryPlanningResult(value: BoundaryPlanningResult, gen
   if (canonicalJsonDigest(parseBoundaryPlanningInvocation(current)) !== canonicalJsonDigest(result.invocation))
     throw new Error("AUTHORING_PLANNING_RESULT_STALE: The original planning invocation changed; no completed request was replayed.");
   return structuredClone({ ...result.plan, completion: result.completion, planning_invocation: result.invocation });
+}
+
+/** Bounded audit history in the same Resume record. Selection is not permission. */
+export function appendBoundaryPlanningResult(history: readonly BoundaryPlanningResult[], next?: BoundaryPlanningResult): BoundaryPlanningResult[] {
+  const parsed = history.map(parseBoundaryPlanningResult);
+  const keys = parsed.map(item => item.completion.operation_id);
+  if (parsed.length > 64 || new Set(keys).size !== keys.length) return invalid();
+  if (!next) return parsed;
+  const record = parseBoundaryPlanningResult(next), existing = parsed.find(item => item.completion.operation_id === record.completion.operation_id);
+  if (existing) { if (canonicalJsonDigest(existing) !== canonicalJsonDigest(record)) return invalid(); return parsed; }
+  if (parsed.length === 64) return invalid();
+  return [...parsed, record];
+}
+export function assertBoundaryPlanningHistoryAdvance(previous: readonly BoundaryPlanningResult[], next: readonly BoundaryPlanningResult[]): void {
+  const before = appendBoundaryPlanningResult(previous), after = appendBoundaryPlanningResult(next);
+  if (after.length < before.length || before.some((item, index) => canonicalJsonDigest(item) !== canonicalJsonDigest(after[index]))) return invalid();
 }

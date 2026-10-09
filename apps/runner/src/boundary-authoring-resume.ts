@@ -1,4 +1,4 @@
-import { parseBoundaryPlanningResult, assertBoundaryPlanningResultNative, type BoundaryPlanningResult } from "./authoring-planning-result.js";
+import { appendBoundaryPlanningResult, assertBoundaryPlanningHistoryAdvance, parseBoundaryPlanningResult, assertBoundaryPlanningResultNative, type BoundaryPlanningResult } from "./authoring-planning-result.js";
 import { readStoredReadWorkloadAnalysis } from "./read-workloads.js";
 import { OLDER_AUTHORING_SETUP_MESSAGE, assertCurrentAuthoringEnvelope, STRUCTURED_AUTHORING_PROTOCOL_VERSION, STRUCTURED_AUTHORING_RESUME_VERSION, parseStructuredAuthoringProtocol, assertAuthoringProtocolUnchanged, type StructuredAuthoringProtocol } from "./authoring-protocol.js";
 import { assertAuthoringReadDecision, assertAuthoringReadCheckpoint, assertAuthoringTransportAdvance, assertAuthoringQuestionHandoff, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
@@ -227,6 +227,7 @@ export type BoundaryAuthoringResumeState = {
   generation_recovery?: AuthoringTransportState;
   /** Exact consumed plan; retained as audit after its separately reviewed work proceeds. */
   planning_result?: BoundaryPlanningResult;
+  planning_results?: BoundaryPlanningResult[];
   owner_handoffs?: AuthoringOwnerHandoff[];
   /** Typed mediation staging, beside immutable B33/B35 handoff evidence. */
   operator_questions?: OperatorQuestion[];
@@ -395,7 +396,10 @@ export function buildBoundaryAuthoringResumeState(input: {
       structural_metadata_egress_acknowledged: true as const,
     },
     conversation,
-    ...((input.planningResult ?? input.previous?.planning_result) ? { planning_result: parseBoundaryPlanningResult(input.planningResult ?? input.previous!.planning_result) } : {}),
+    ...((input.planningResult ?? input.previous?.planning_result) ? {
+      planning_result: parseBoundaryPlanningResult(input.planningResult ?? input.previous!.planning_result),
+      planning_results: appendBoundaryPlanningResult(input.previous?.planning_results ?? [], input.planningResult),
+    } : {}),
     ...((input.generationRecovery ?? input.previous?.generation_recovery) ? { generation_recovery: structuredClone(input.generationRecovery ?? input.previous!.generation_recovery!) } : {}),
     ...((input.ownerHandoffs ?? input.previous?.owner_handoffs) ? { owner_handoffs: parseOwnerHandoffs(input.ownerHandoffs ?? input.previous!.owner_handoffs!) } : {}),
     ...((input.operatorQuestions ?? input.previous?.operator_questions) ? { operator_questions: parseOperatorQuestions(
@@ -498,6 +502,7 @@ export async function writeBoundaryAuthoringResumeState(
         throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Interrupted generation history cannot be removed from the same saved job.");
       if (frozen.generation_recovery) assertAuthoringTransportAdvance(previous.generation_recovery, frozen.generation_recovery);
     }
+    if (previous) assertBoundaryPlanningHistoryAdvance(previous.planning_results ?? [], frozen.planning_results ?? []);
     if (previous) assertBoundaryActionEditDispositionsAdvance(previous.action_edit_dispositions ?? [], frozen.action_edit_dispositions ?? []);
     await assertReadScopeAnalysisRecord(held.projectRoot, frozen);
     const filePath = resumePath(held.projectRoot);
@@ -784,9 +789,15 @@ export function assertBoundaryAuthoringResumeState(
     value.generation_recovery as AuthoringTransportState | undefined);
   if (value.planning_result !== undefined) {
     const planned = parseBoundaryPlanningResult(value.planning_result);
-    assertBoundaryPlanningResultNative(planned, value.generation_recovery as AuthoringTransportState | undefined,
+    if (!Array.isArray(value.planning_results)) throw new Error("AUTHORING_PLANNING_RESULT_INVALID: The complete planning history is missing.");
+    const history = appendBoundaryPlanningResult(value.planning_results as BoundaryPlanningResult[]);
+    if (canonicalJsonDigest(history.at(-1)) !== canonicalJsonDigest(planned))
+      throw new Error("AUTHORING_PLANNING_RESULT_INVALID: The selected plan is not the exact current history entry.");
+    for (const result of history) assertBoundaryPlanningResultNative(result, value.generation_recovery as AuthoringTransportState | undefined,
       (value.operator_questions ?? []) as OperatorQuestion[]);
   }
+  if (value.planning_results !== undefined && value.planning_result === undefined)
+    throw new Error("AUTHORING_PLANNING_RESULT_INVALID: Planning history has no exact selected result.");
   const scopedRead = value.read as BoundaryAuthoringResumeRead | undefined;
   if (scopedRead?.scope_question_id) {
     const q = (value.operator_questions as OperatorQuestion[] | undefined)?.find(q => q.id === scopedRead.scope_question_id);

@@ -1,4 +1,4 @@
-import { createBoundaryPlanningResult, assertBoundaryPlanningResultNative, restoreBoundaryPlanningResult, type BoundaryPlanningInvocation, type BoundaryPlanningResult } from "./authoring-planning-result.js";
+import { appendBoundaryPlanningResult, createBoundaryPlanningResult, assertBoundaryPlanningResultNative, restoreBoundaryPlanningResult, type BoundaryPlanningInvocation, type BoundaryPlanningResult } from "./authoring-planning-result.js";
 import type { BoundaryJobPlan } from "./boundary-job-model.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { randomUUID } from "node:crypto";
@@ -247,7 +247,7 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     const generation = authoringPlanningCheckpoint(authoringReadCheckpoint(state.generation, plan.completion,
       readScopeConsumption(question.read_scope!)), plan.completion, planningResult.material_digest);
     const questions = [...state.questions, question];
-    const expected = canonicalJsonDigest({ questions, generation, planningResult, read: state.read ?? null,
+    const expected = canonicalJsonDigest({ questions, generation, planningResult, planningResults: appendBoundaryPlanningResult(state.resume.planning_results ?? [], planningResult), read: state.read ?? null,
       pendingRevision: state.resume.pending_read_revision_state ?? null });
     await input.ports.assertCurrent(permit);
     if (snapshot().revision !== state.revision) return unavailable("The original planning checkpoint revision");
@@ -255,7 +255,7 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
       acknowledgeCompletedTurn: false, subject: "The exact completed planning result" }), permit);
     const acknowledged = snapshot();
     if (canonicalJsonDigest({ questions: acknowledged.questions, generation: acknowledged.generation,
-      planningResult: acknowledged.resume.planning_result, read: acknowledged.read ?? null,
+      planningResult: acknowledged.resume.planning_result, planningResults: acknowledged.resume.planning_results, read: acknowledged.read ?? null,
       pendingRevision: acknowledged.resume.pending_read_revision_state ?? null }) !== expected)
       return unavailable("The exact acknowledged planning checkpoint");
     return structuredClone(planningResult);
