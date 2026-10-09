@@ -33,23 +33,23 @@ import {
   type BoundaryResourceReviewRequest,
   type BoundaryReviewMutationBindings,
 } from "./boundary-review-mutation.js";
-import { loadBoundaryReviewContext } from "./boundary-commands.js";
+import { loadBoundaryReviewContext, loadBoundaryReviewContextHeld } from "./boundary-review-context.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
 import { assertKnownOptions, optionalArg } from "./cli-options.js";
 import { shellQuote } from "./cli-format.js";
 import { planAuthoringRefusal } from "./authoring-review-resolution.js";
-import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { readProjectReadAuthoring, readProjectReadAuthoringHeld } from "./control-policy-read-authoring-project.js";
 import { assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
 import { preparedReadAuthoringDraft, readAuthoringCatalog } from "./control-policy-read-authoring.js";
 import { rebindActionCatalogForReadPolicyRevision } from "./action-rule-read-revision.js";
-import { loadActionRuleIntentSkeletons } from "./action-rule-intent-skeleton.js";
+import { loadActionRuleIntentSkeletonsHeld } from "./action-rule-intent-skeleton.js";
 import { openBoundProjectControlPolicies } from "./control-policy-store.js";
 import { OperatorAuthorityRepository } from "./control-policy-operator-repository.js";
-import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import { readBoundaryDraftExchange, writeBoundaryDraftExchange } from "./boundary-draft-bundle.js";
-import { loadPolicySources, policyTextSnapshot } from "./authoring-policy-source.js";
+import { loadPolicySourcesHeld, policyTextSnapshot } from "./authoring-policy-source.js";
 import { assertStructuredDraftSuccessorDestination, readStructuredDraftSuccessorInventory,
   stageStructuredDraftSuccessorPage, structuredDraftSuccessorPage, structuredDraftSuccessorProposal,
   type StructuredDraftSuccessorProposal, type StructuredDraftSuccessorInventory } from "./boundary-draft-successor.js";
@@ -178,7 +178,7 @@ async function structuredBoundaryAuthoringCommandInner(
           if (config) await new OperatorAuthorityRepository(binding, config).current();
         } finally { await binding.close(); }
       }
-      const payload = await exportStructuredDraft(held.projectRoot, schemaInspector);
+      const payload = await exportStructuredDraftHeld(held.projectRoot, schemaInspector, held);
       return writeBoundaryDraftExchange({ projectRoot: held.projectRoot, supplied: exportPath, payload });
     }));
     write(args, { ok: true, state: "exported", ...result, source_database_changed: false,
@@ -229,8 +229,9 @@ async function structuredBoundaryAuthoringCommandInner(
   return 0;
 }
 
-async function exportStructuredDraft(projectRoot: string, schemaInspector: typeof inspectDatabase) {
-  const context = await loadBoundaryReviewContext(projectRoot);
+async function exportStructuredDraftHeld(projectRoot: string, schemaInspector: typeof inspectDatabase,
+  permit: ProjectAuthorityMutationPermit) {
+  const context = await loadBoundaryReviewContextHeld(projectRoot, permit);
   const inspection = await schemaInspector({
     engine: context.lock.engine,
     databaseUrlEnv: context.lock.source_env,
@@ -241,7 +242,7 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
     || rolePostureFingerprint(inspection) !== context.lock.role_posture_fingerprint) {
     throw new Error("STRUCTURED_DRAFT_STALE: the schema or database-role posture changed during validation. Run boundary rescan, export a new draft, and submit against that exact review bundle.");
   }
-  const authoring = await readProjectReadAuthoring(projectRoot);
+  const authoring = await readProjectReadAuthoringHeld(projectRoot, permit);
   const selected = authoring?.selected;
   const exportReadCatalog = selected?.catalog?.review ?? await readFreshReadCatalog(projectRoot);
   const existing = await readActionRuleAuthorityDraft(projectRoot, `${context.candidate.pack.name}_rules`)
@@ -269,7 +270,7 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
       preserveVerificationFields: true,
     });
   }) ?? [];
-  const actionSkeletons = await loadActionRuleIntentSkeletons({
+  const actionSkeletons = await loadActionRuleIntentSkeletonsHeld({
     projectRoot,
     binding: {
       boundary_name: context.candidate.pack.name,
@@ -284,7 +285,7 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
       digest: canonicalJsonDigest(draft),
       draft,
     })),
-  });
+  }, permit);
   const bootstrapResource = context.candidate.pack.resources.length === 0
     ? exportReadCatalog?.resources[0]?.id
     : undefined;
@@ -312,7 +313,7 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
         : continuation };
   }) : actionSkeletons.skeletons;
   const sources = actionSkeletons.resume?.policy_source_session
-    ? await loadPolicySources(projectRoot, actionSkeletons.resume.policy_source_session) : undefined;
+    ? await loadPolicySourcesHeld(projectRoot, actionSkeletons.resume.policy_source_session, permit) : undefined;
   const attachedSources = sources?.snapshots.map(({ name, text, digest, version }) => ({ name, text, digest, version }));
   const payload = {
     schema_version: programEnvelope,

@@ -1,8 +1,9 @@
 import {
-  readBoundaryAuthoringResumeState,
+  readBoundaryAuthoringResumeStateHeld,
   type BoundaryAuthoringResumeBinding,
   type BoundaryAuthoringResumeState,
 } from "./boundary-authoring-resume.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { BuiltActionRuleAuthoringCatalogV1 } from "./action-rule-authoring.js";
 import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
@@ -47,15 +48,22 @@ export type ActionRuleIntentSkeletonLoad = {
  * Reads only a saved job whose binding still exactly matches the reviewed Read
  * snapshot. Skeletons are incomplete authoring aids, never ActionRule drafts.
  */
-export async function loadActionRuleIntentSkeletons(input: {
+type ActionRuleIntentSkeletonInput = {
   projectRoot: string;
   binding: BoundaryAuthoringResumeBinding;
   builtCatalog: BuiltActionRuleAuthoringCatalogV1;
   readBoundaryDigest: `sha256:${string}`;
   /** Current reviewed/draft authority drafts, supplied by the caller. */
   preparedDrafts: ReadonlyArray<{ outcome: string; digest: `sha256:${string}`; draft: ActionRuleModelDraftV1 }>;
-}): Promise<ActionRuleIntentSkeletonLoad> {
-  const saved = await readBoundaryAuthoringResumeState(input.projectRoot, input.binding);
+};
+export async function loadActionRuleIntentSkeletons(input: ActionRuleIntentSkeletonInput): Promise<ActionRuleIntentSkeletonLoad> {
+  return withProjectAuthorityMutation(input.projectRoot, permit => loadActionRuleIntentSkeletonsHeld(input, permit));
+}
+/** Required access to the same coherent export/review snapshot; never reacquires. */
+export async function loadActionRuleIntentSkeletonsHeld(input: ActionRuleIntentSkeletonInput,
+  permit: ProjectAuthorityMutationPermit): Promise<ActionRuleIntentSkeletonLoad> {
+  return withHeldProjectAuthorityAccess(input.projectRoot, permit, async access => {
+  const saved = await readBoundaryAuthoringResumeStateHeld(input.projectRoot, input.binding, access);
   if (saved.status === "none") return { resume: undefined, skeletons: [] };
   if (saved.status === "stale") {
     throw new Error(`ACTION_RULE_INTENT_SKELETON_STALE: saved action intents belong to a changed Read snapshot (${saved.reason}). Revalidate the saved job and export again; Runner did not reuse stale components.`);
@@ -72,6 +80,7 @@ export async function loadActionRuleIntentSkeletons(input: {
       preparedDrafts: input.preparedDrafts,
     }),
   };
+  });
 }
 
 export function actionRuleIntentSkeletonsFromResume(input: {

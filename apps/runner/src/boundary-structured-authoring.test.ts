@@ -15,7 +15,13 @@ const mocked = vi.hoisted(() => ({
   catalog: vi.fn(),
 }));
 
-vi.mock("./boundary-commands.js", () => ({ loadBoundaryReviewContext: mocked.context }));
+vi.mock("./boundary-review-context.js", async () => {
+  const { withHeldProjectAuthorityAccess } = await import("./project-authority-mutation.js");
+  return { loadBoundaryReviewContext: mocked.context,
+    loadBoundaryReviewContextHeld: (root: string, permit: import("./project-authority-mutation.js").ProjectAuthorityMutationPermit) =>
+      withHeldProjectAuthorityAccess(root, permit, () => mocked.context(root)),
+  };
+});
 vi.mock("./auto-boundary.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("./auto-boundary.js")>(),
   schemaFingerprintForInspection: () => digest("4"),
@@ -48,7 +54,7 @@ vi.mock("./boundary-review-domain.js", () => ({
   createBoundaryReviewProgress: (value: Record<string, unknown>) => ({ boundary_id: "bnd_12345678901234567890123456789012", candidate: value.candidate, revision: value.revision }),
 }));
 vi.mock("./control-policy-read-authoring-project.js", () => ({
-  readProjectReadAuthoring: vi.fn(async () => ({ bindings: bindings(), selected: { progress: { boundary_id: "bnd_12345678901234567890123456789012" }, catalog: {} }, authoring: { type: "read_authoring", selected_boundary_id: "bnd_12345678901234567890123456789012", entries: [{ progress: { boundary_id: "bnd_12345678901234567890123456789012" } }] } })),
+  readProjectReadAuthoring: vi.fn(async () => ({ bindings: bindings().authoring, selected: { progress: { boundary_id: "bnd_12345678901234567890123456789012" }, catalog: {} }, authoring: { type: "read_authoring", selected_boundary_id: "bnd_12345678901234567890123456789012", entries: [{ progress: { boundary_id: "bnd_12345678901234567890123456789012" } }] } })),
 }));
 vi.mock("./control-policy-read-authoring.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("./control-policy-read-authoring.js")>(),

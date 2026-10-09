@@ -384,5 +384,38 @@
       "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     "independent_disposition": "R2: COMPLETE MIGRATION SOURCE + OWNER COMPONENT ARTIFACT ACCEPT; full native/public class qualification OPEN, coldVersion17 NOT_REACHED; no demonstrated remaining product blocker in inspected scope."
+  },
+  "structured_export_successor": {
+    "base": "df557cbe",
+    "result": "Real D01 export POLICY_MUTATION_PERMIT_REQUIRED; same native governed before0P1F\u2192export/control3PASS plus unchanged affected13+10=26PASS3files0skip. Required Held context/Read/Resume-skeleton/Source propagation, BC unchanged; actual public after pending independent review.",
+    "fixture_port": "Moved fake context mock to owned boundary-review-context; four existing Read positive fixtures returned whole mutation bindings instead of ProjectReadAuthoring.bindings. Corrected to bindings().authoring, all assertions unchanged. Initial12P13F and next21P4F retained.",
+    "types": {
+      "exit": 0,
+      "config": "/var/tmp/synapsor-b64-main-access-owned/tsconfig-export.json",
+      "log": "/var/tmp/synapsor-b64-main-access-owned/evidence/structured-export-types.log"
+    },
+    "raw": {
+      "structured-export-before": {
+        "json_sha256": "abe5cd2ba345373cbc2f66fcd2713d8f99c7c3ae21ff04392d8a71c8d48a8069",
+        "log_sha256": "69ecb84eb962484ac6fb3e7fc1b81b369aeda74a080aa3335fa448ca16e1d2d0"
+      },
+      "structured-export-after": {
+        "json_sha256": "90ab35f088826424637ca36a47c4f9b0806bf816f49fbbe9e90636c64e1ea89d",
+        "log_sha256": "91ba66ef719c03794d255c38f51a167b4a6d45c74ad00957486cfaa10b53c59b"
+      },
+      "structured-export-affected": {
+        "json_sha256": "bb04912eaaaedf1c17ac094427334c422faf2b63932dc8d8e709641bcb44e637",
+        "log_sha256": "e746e3790d55325756536d912b3e06adb15b9491640ecf74741069f9442c6eba"
+      },
+      "structured-export-affected-after": {
+        "json_sha256": "87848b8337b2e9e213cfc3f667676792de8f6741f74c45e111f4f4ccfcf55d84",
+        "log_sha256": "f73e8bc650eba03bbe924ee65368cc0a33a229a4f3d56d16f8a18e5842b469e4"
+      },
+      "structured-export-final": {
+        "json_sha256": "18282c3b886366f138acd81dc88a14fdeead10fc16223d6e914d5f975aa04d9a",
+        "log_sha256": "d17582f7499fc731563481ddae219c3f70f551d05e70fa15fdf4f2f05cf92bab"
+      }
+    },
+    "review": "R2 independent successor pending; no native/public after/activation/arithmetic claim."
   }
 }
