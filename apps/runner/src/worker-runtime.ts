@@ -1216,6 +1216,12 @@ export function workerFailureRecovery(code: string | null | undefined, state?: W
   }
   // Exact public codes only. Never include the exception message, proof or identity in recovery/log fields.
   switch (code) {
+    case "SOURCE_DEADLOCK":
+      return "Execution encountered a database deadlock. Existing retry limits and current authority, receipt and execution checks still apply.";
+    case "SOURCE_LOCK_UNAVAILABLE":
+      return "Execution could not obtain a database lock under its wait policy. Existing retry limits and current authority, receipt and execution checks still apply.";
+    case "SOURCE_LOCK_TIMEOUT":
+      return "Execution encountered a database lock-wait timeout. Existing retry limits and current authority, receipt and execution checks still apply.";
     case "DELEGATION_JOB_CHANGED":
     case "DELEGATION_CHANGED":
     case "DELEGATION_PARENT_CHANGED":
@@ -1248,9 +1254,9 @@ export function workerFailureRecovery(code: string | null | undefined, state?: W
 
 export function isRetryableWritebackCode(code: string, mode: WorkerQueueItem["execution_mode"] = "legacy"): boolean {
   if (mode === "supervised_worker") {
-    return /^(DATABASE_UNAVAILABLE|TEMPORARILY_UNAVAILABLE|TRANSACTION_FAILED|IDEMPOTENCY_RECEIPT_IN_PROGRESS)$/.test(code);
+    return /^(DATABASE_UNAVAILABLE|TEMPORARILY_UNAVAILABLE|TRANSACTION_FAILED|SOURCE_DEADLOCK|SOURCE_LOCK_UNAVAILABLE|SOURCE_LOCK_TIMEOUT|IDEMPOTENCY_RECEIPT_IN_PROGRESS)$/.test(code);
   }
-  return /^(DATABASE_UNAVAILABLE|TRANSACTION_FAILED|HANDLER_TIMEOUT|HANDLER_REQUEST_FAILED|HANDLER_HTTP_(429|5\d\d)|IDEMPOTENCY_RECEIPT_IN_PROGRESS|WORKER_EXECUTION_ERROR)$/.test(code);
+  return /^(DATABASE_UNAVAILABLE|TRANSACTION_FAILED|SOURCE_DEADLOCK|SOURCE_LOCK_UNAVAILABLE|SOURCE_LOCK_TIMEOUT|HANDLER_TIMEOUT|HANDLER_REQUEST_FAILED|HANDLER_HTTP_(429|5\d\d)|IDEMPOTENCY_RECEIPT_IN_PROGRESS|WORKER_EXECUTION_ERROR)$/.test(code);
 }
 
 

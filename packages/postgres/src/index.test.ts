@@ -1696,3 +1696,73 @@ class ConcurrentPostgresClient implements PostgresApplyClient {
     throw new Error(`unexpected query: ${sql}`);
   }
 }
+
+// Owner #15 contract: typed driver failures keep transaction/receipt uncertainty fences.
+class SourceContentionPostgresClient extends FakePostgresClient {
+  businessAttempts = 0;
+  constructor(readonly facts: Record<string, unknown>, readonly unknown?: "rollback" | "commit") {
+    super({ businessRow: { __synapsor_conflict_value: "v1" }, businessUpdateRowCount: 1 });
+  }
+  override async query(sql: string, values?: unknown[]) {
+    if (sql === "ROLLBACK" && this.unknown === "rollback" || sql === "COMMIT" && this.unknown === "commit") {
+      this.sqlLog.push(sql); throw Object.assign(new Error("private database detail"), this.facts);
+    }
+    if (sql.startsWith('UPDATE "public"."tickets"')) this.businessAttempts += 1;
+    if (sql.startsWith("UPDATE synapsor_writeback_receipts") && this.unknown !== "commit") {
+      this.sqlLog.push(sql); throw Object.assign(new Error("private database detail"), this.facts);
+    }
+    return super.query(sql, values);
+  }
+}
+async function applySourceContentionPostgresJob(client: SourceContentionPostgresClient) {
+  const connected = Object.assign(client, { release: vi.fn() });
+  const connect = vi.spyOn(Pool.prototype, "connect").mockResolvedValue(connected as never);
+  const end = vi.spyOn(Pool.prototype, "end").mockResolvedValue(undefined);
+  try { return await applyPostgresJob(job, config); }
+  finally { connect.mockRestore(); end.mockRestore(); }
+}
+describe("typed source contention outcomes", () => {
+  it("does not coerce an object code into a typed contention identifier", async () => {
+    const result = await applySourceContentionPostgresJob(new SourceContentionPostgresClient({ code: { toString: () => "40P01" } }));
+    expect(result).toMatchObject({ status: "failed", error_code: "TRANSACTION_FAILED", affected_rows: 0 });
+  });
+  const cases = [
+    [{ code: "40P01" }, "SOURCE_DEADLOCK"],
+    [{ code: "55P03" }, "SOURCE_LOCK_UNAVAILABLE"],
+  ] as const;
+  it.each(cases)("preserves exact PostgreSQL facts %j after whole rollback", async (facts, code) => {
+    const client = new SourceContentionPostgresClient(facts);
+    const result = await applySourceContentionPostgresJob(client);
+    expect(result).toMatchObject({ status: "failed", error_code: code, affected_rows: 0 });
+    expect(client.businessAttempts).toBe(1);
+    expect(client.sqlLog.filter(sql => sql === "ROLLBACK")).toHaveLength(1);
+    expect(client.sqlLog).not.toContain("COMMIT");
+    expect(() => parseWritebackResult(result)).not.toThrow();
+    expect(JSON.stringify(result)).not.toContain("private database detail");
+  });
+  it.each([{ message: "deadlock detected, lock timeout" }, { code: "40P01_private" }, { code: "57014" }, { errno: 1213 }])(
+    "does not guess PostgreSQL contention from prose or unrelated facts %j", async facts => {
+      const result = await applySourceContentionPostgresJob(new SourceContentionPostgresClient(facts));
+      expect(result).toMatchObject({ status: "failed", error_code: "TRANSACTION_FAILED" });
+    });
+  it.each(cases)("does not turn unknown rollback into contention %j", async (facts) => {
+    const result = await applySourceContentionPostgresJob(new SourceContentionPostgresClient(facts, "rollback"));
+    expect(result).toMatchObject({ status: "reconciliation_required", error_code: "OUTCOME_UNKNOWN", affected_rows: 0 });
+  });
+  it.each(cases)("does not turn unknown COMMIT into contention %j", async (facts) => {
+    const client = new SourceContentionPostgresClient(facts, "commit");
+    const result = await applySourceContentionPostgresJob(client);
+    expect(result).toMatchObject({ status: "reconciliation_required", error_code: "OUTCOME_UNKNOWN", affected_rows: 0 });
+    expect(client.sqlLog).not.toContain("ROLLBACK");
+  });
+  it.each(cases)("preserves runner-ledger intent custody with typed contention %j", async (facts, code) => {
+    const store = new FakeIntentStore();
+    const client = new V2PostgresClient();
+    const result = await applyPostgresJobWithClient(v2UpdateJob, { ...config, receipts: { authority: "runner_ledger" }, writebackIntentStore: store,
+      testFailpoint: point => { if (point === "before_source_commit") throw Object.assign(new Error("private database detail"), facts); } }, client);
+    expect(result).toMatchObject({ status: "failed", error_code: code, receipt_authority: "runner_ledger", affected_rows: 0 });
+    expect(store.calls).toEqual(["claim", "applying", "complete"]);
+    expect(client.sqlLog).toContain("ROLLBACK");
+    expect(client.sqlLog).not.toContain("COMMIT");
+  });
+});

@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
+import mysql from "mysql2/promise";
 import { describe, expect, it, vi } from "vitest";
 import {
+  applyMysqlJob,
   applyMysqlJobWithConnection,
   buildMysqlActionRuleFactQuery,
   buildMysqlDelete,
@@ -1429,3 +1431,77 @@ class ConcurrentMysqlConnection implements MysqlApplyConnection {
     throw new Error(`unexpected query: ${sql}`);
   }
 }
+
+// Owner #15 contract: typed driver failures keep transaction/receipt uncertainty fences.
+class SourceContentionMysqlConnection extends FakeMysqlConnection {
+  businessAttempts = 0;
+  constructor(readonly facts: Record<string, unknown>, readonly unknown?: "rollback" | "commit") {
+    super({ businessRow: { updated_at: "v1" }, businessUpdateAffectedRows: 1 });
+  }
+  override async rollback() {
+    if (this.unknown === "rollback") { this.sqlLog.push("ROLLBACK"); throw Object.assign(new Error("private database detail"), this.facts); }
+    return super.rollback();
+  }
+  override async commit() {
+    if (this.unknown === "commit") { this.sqlLog.push("COMMIT"); throw Object.assign(new Error("private database detail"), this.facts); }
+    return super.commit();
+  }
+  override async query<T = unknown>(sql: string, values?: unknown[]): Promise<[T, unknown]> {
+    if (sql.startsWith("UPDATE `appdb`.`orders`")) this.businessAttempts += 1;
+    if (sql.startsWith("UPDATE synapsor_writeback_receipts") && this.unknown !== "commit") {
+      this.sqlLog.push(sql); throw Object.assign(new Error("private database detail"), this.facts);
+    }
+    return super.query<T>(sql, values);
+  }
+}
+async function applySourceContentionMysqlJob(connection: SourceContentionMysqlConnection) {
+  const connected = Object.assign(connection, { end: vi.fn().mockResolvedValue(undefined) });
+  const create = vi.spyOn(mysql, "createConnection").mockResolvedValue(connected as never);
+  try { return await applyMysqlJob(job, config); }
+  finally { create.mockRestore(); }
+}
+describe("typed source contention outcomes", () => {
+  it("does not coerce an object code into a typed contention identifier", async () => {
+    const result = await applySourceContentionMysqlJob(new SourceContentionMysqlConnection({ code: { toString: () => "ER_LOCK_DEADLOCK" } }));
+    expect(result).toMatchObject({ status: "failed", error_code: "TRANSACTION_FAILED", affected_rows: 0 });
+  });
+  const cases = [
+    [{ code: "ER_LOCK_DEADLOCK" }, "SOURCE_DEADLOCK"], [{ errno: 1213 }, "SOURCE_DEADLOCK"], [{ code: "1213" }, "SOURCE_DEADLOCK"],
+    [{ code: "ER_LOCK_WAIT_TIMEOUT" }, "SOURCE_LOCK_TIMEOUT"], [{ errno: 1205 }, "SOURCE_LOCK_TIMEOUT"], [{ code: "1205" }, "SOURCE_LOCK_TIMEOUT"],
+  ] as const;
+  it.each(cases)("preserves exact MySQL facts %j after whole rollback", async (facts, code) => {
+    const connection = new SourceContentionMysqlConnection(facts);
+    const result = await applySourceContentionMysqlJob(connection);
+    expect(result).toMatchObject({ status: "failed", error_code: code, affected_rows: 0 });
+    expect(connection.businessAttempts).toBe(1);
+    expect(connection.sqlLog.filter(sql => sql === "ROLLBACK")).toHaveLength(1);
+    expect(connection.sqlLog).not.toContain("COMMIT");
+    expect(() => parseWritebackResult(result)).not.toThrow();
+    expect(JSON.stringify(result)).not.toContain("private database detail");
+  });
+  it.each([{ message: "deadlock detected, lock timeout" }, { code: "ER_LOCK_DEADLOCK_PRIVATE" }, { sqlState: "40001" }, { errno: 3024 }])(
+    "does not guess MySQL contention from prose or unrelated facts %j", async facts => {
+      const result = await applySourceContentionMysqlJob(new SourceContentionMysqlConnection(facts));
+      expect(result).toMatchObject({ status: "failed", error_code: "TRANSACTION_FAILED" });
+    });
+  it.each(cases)("does not turn unknown rollback into contention %j", async facts => {
+    const result = await applySourceContentionMysqlJob(new SourceContentionMysqlConnection(facts, "rollback"));
+    expect(result).toMatchObject({ status: "reconciliation_required", error_code: "OUTCOME_UNKNOWN", affected_rows: 0 });
+  });
+  it.each(cases)("does not turn unknown COMMIT into contention %j", async facts => {
+    const connection = new SourceContentionMysqlConnection(facts, "commit");
+    const result = await applySourceContentionMysqlJob(connection);
+    expect(result).toMatchObject({ status: "reconciliation_required", error_code: "OUTCOME_UNKNOWN", affected_rows: 0 });
+    expect(connection.sqlLog).not.toContain("ROLLBACK");
+  });
+  it.each(cases.slice(0, 1).concat(cases.slice(3, 4)))("preserves runner-ledger intent custody with typed contention %j", async (facts, code) => {
+    const store = new FakeIntentStore();
+    const connection = new V2MysqlConnection();
+    const result = await applyMysqlJobWithConnection(v2UpdateJob, { ...config, receipts: { authority: "runner_ledger" }, writebackIntentStore: store,
+      testFailpoint: point => { if (point === "before_source_commit") throw Object.assign(new Error("private database detail"), facts); } }, connection);
+    expect(result).toMatchObject({ status: "failed", error_code: code, receipt_authority: "runner_ledger", affected_rows: 0 });
+    expect(store.calls).toEqual(["claim", "applying", "complete"]);
+    expect(connection.sqlLog).toContain("ROLLBACK");
+    expect(connection.sqlLog).not.toContain("COMMIT");
+  });
+});

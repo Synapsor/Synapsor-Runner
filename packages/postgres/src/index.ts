@@ -2254,7 +2254,13 @@ function safeErrorCode(error: unknown, operation?: Operation, job?: WritebackJob
   if (error instanceof PostgresVerifierHardLimitRefusal) {
     return matchesActionRuleHardLimitRefusal(error.refusal, job) ? "ACTION_RULE_HARD_LIMIT_EXCEEDED" : "SEMANTIC_AUTHORITY_STALE";
   }
-  const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
+  const rawCode = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
+  const code = String(rawCode ?? "");
+  // SourceOutcomeUnknownError above takes precedence even if its cause carries
+  // a contention SQLSTATE. Preserve exact driver facts, never exception prose.
+  if (rawCode === "40P01") return "SOURCE_DEADLOCK";
+  // 55P03 also covers NOWAIT: the SQLSTATE alone does not prove a timeout.
+  if (rawCode === "55P03") return "SOURCE_LOCK_UNAVAILABLE";
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("POSTGRES_RLS_PREREQUISITE_FAILED")) return "POSTGRES_RLS_PREREQUISITE_FAILED";
   if (message.includes("ROW_HASH_CONFLICT_GUARD_UNSUPPORTED")) return "ROW_HASH_CONFLICT_GUARD_UNSUPPORTED";

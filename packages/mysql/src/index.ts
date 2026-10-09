@@ -1593,7 +1593,13 @@ function resultHashFromResult(job: WritebackJob, result: WritebackResult): `sha2
 function safeErrorCode(error: unknown, operation?: Operation): string {
   if (error instanceof SourceOutcomeUnknownError) return "OUTCOME_UNKNOWN";
   if (error instanceof MysqlPrecommitDeadlineError) return "MYSQL_STATEMENT_TIMEOUT";
-  const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
+  const rawCode = error && typeof error === "object" && "code" in error ? (error as { code?: unknown }).code : undefined;
+  const code = String(rawCode ?? "");
+  const errno = error && typeof error === "object" && "errno" in error ? (error as { errno?: unknown }).errno : undefined;
+  // Unknown COMMIT/ROLLBACK acknowledgement above remains reconciliation.
+  // These are exact driver identifiers, not an interpretation of error prose.
+  if (rawCode === "ER_LOCK_DEADLOCK" || rawCode === "1213" || rawCode === 1213 || errno === 1213) return "SOURCE_DEADLOCK";
+  if (rawCode === "ER_LOCK_WAIT_TIMEOUT" || rawCode === "1205" || rawCode === 1205 || errno === 1205) return "SOURCE_LOCK_TIMEOUT";
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("ROW_HASH_CONFLICT_GUARD_UNSUPPORTED")) return "ROW_HASH_CONFLICT_GUARD_UNSUPPORTED";
   if (code === "ER_DUP_ENTRY" || code === "1062") {
