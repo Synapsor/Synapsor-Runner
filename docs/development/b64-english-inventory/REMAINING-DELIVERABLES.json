@@ -109,8 +109,14 @@
       "id": "14",
       "deliverable": "MySQL full B65 race matrix plus post-change hard-limit cases after PG6",
       "owner": "Tester independent MySQL native lane",
-      "status": "SERIAL7 DISPATCHED sole active Tester: exact native MySQL full matrix on accepted source, no PG transfer. Prior19+adapter2 native PASS retained. Public hard-limit cases gated on blocked PG arithmetic; unsupported source_db unknownCOMMIT honest refusal separate18. Old held jobs/evidence untouched.",
-      "active_work": true
+      "status": "SERIAL7 clearly BLOCKED at exact accepted Main00bdc02f: fresh MySQL8.4.11 narrow fixture actualpublic init/export/counter-disabled/Readreview/nativeScopeconfirm reached. Reused responder policycoverage branch missing preserved as harnessfailure;5offline fix checks/no nativeadoption. Ordinary same-job savedResume READ_SCOPE_REVIEW_CHANGED/0newframes;3checkpointed+1partial operations/1attempt each/questions retained; productstage authority_review\u2192planning truthfully recorded. Businessmatrix NOTREACHED/sharedpublicsetup; hardlimitMySQL/source_dbunknown explicitunsupported separate; no PG/prior412 transfer. Full5budgets7credits+Source0/sixRunnerbusiness0 unchanged; newownedcontainer stoppedretained, oldheld jobs untouched. Tester 12111c4b15f1e83b9062da86d1250185b6e83ee4;38 compactcase rows/bounded batch verdict, paidCLOSED/HOLD.",
+      "active_work": false,
+      "evidence": {
+        "tester_commit": "12111c4b15f1e83b9062da86d1250185b6e83ee4",
+        "report": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b65-native-review/docs/development/b65-serial7-mysql/REPORT.txt",
+        "results": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b65-native-review/docs/development/b65-serial7-mysql/RESULTS.json",
+        "results_sha256": "780c6c7241fabc858331cd2102c03146dc0dc430a1ced813c7c89b6217acfe49"
+      }
     },
     {
       "id": "15",
@@ -133,7 +139,8 @@
       "owner": "Main recovery / Read owner regression / R2 / PG independent tester",
       "status": "Scoped migration df557 + export b668 + exact post-Read Held reload bf5 SOURCE/OWNER NATIVE COMPONENT independently ACCEPT;233P/26P/8P scoped; public scope/currentness/revision wiring OPEN. ColdVersion17NOT_REACHED; full class qualification OPEN, no arithmetic proof.",
       "active_work": false,
-      "evidence": "MAIN-D01-CONTROLS-COMPOSITION.json"
+      "evidence": "MAIN-D01-CONTROLS-COMPOSITION.json",
+      "serial7_mysql_saved_scope_continuation": "Same public currentness class also reproduced on real MySQL00bd same savednative4/v3 job: ordinaryResume READ_SCOPE_REVIEW_CHANGED before generation/activation;0newframes. Earlier scope confirmation genuine;3checkpointed+1partial operations/questions/attemptcounts retained, actualstageplanning saved. Not a new Owner decision, not universal allroutesunsupported proof; no force/reset/replay. Tester 12111c4b15f1e83b9062da86d1250185b6e83ee4 docs/development/b65-serial7-mysql/RESULTS.json."
     },
     {
       "id": "18",
