@@ -9,7 +9,7 @@ function client() {
   const script=source.slice(start,end);
   const candidate={pack:{name:"declared",resources:[{id:"equipment.parts"}]}};
   const context=vm.createContext({structuredClone,candidate,typedReviewDecisions:[],reviewCandidateDigest:undefined,
-    reviewCandidateSnapshot:undefined,confirmedDecisions:new Set()});
+    reviewCandidateSnapshot:undefined,confirmedDecisions:new Set(),authoringBinding:undefined});
   const api=vm.runInContext(`${script}; ({adoptTypedReview,typedReviewSubmission,resourceDecisions,globalDecisions,reviewDecisionIds})`,context);
   const refs=[{id:"scope",kind:"principal_scope",resource_id:"equipment.parts",input_digest:"sha256:scope",decision:"A changed presentation string"},
     {id:"deployment",kind:"deployment_profile",input_digest:"sha256:deployment",decision:"equipment.parts: misleading presentation"}];
@@ -46,9 +46,44 @@ it("actual Workbench progress sender submits exact typed selection and adopts on
   vm.runInContext('confirmedDecisions.add("scope")',x.context);
   const save=vm.runInContext(`${x.source.slice(start,end)}; queueReviewProgressSave`,x.context);
   await save();
-  expect(sent).toEqual([{url:"/api/boundary/progress",body:{candidate:x.candidate,review_submission:x.api.typedReviewSubmission(["scope"]),expected_revision:4,actor:"declared human"}}]);
+  expect(sent).toEqual([{url:"/api/boundary/progress",body:{candidate:x.candidate,review_submission:x.api.typedReviewSubmission(["scope"]),expected_revision:4,actor:"declared human",authoring_binding:undefined}}]);
   expect(x.context.reviewRevision).toBe(5);
   expect([...x.context.confirmedDecisions]).toEqual(["scope"]);
   x.context.post=async()=>{throw new Error("stale native revision")};
   await save();expect(x.context.reviewRevision).toBe(5);expect(x.context.reviewProgressHealthy).toBe(false);
+});
+it("a successful earlier transport ACK cannot replace a different currently displayed native binding",async()=>{
+  const x=client(),start=x.source.indexOf("const post=async"),end=x.source.indexOf("const currentResource=",start);
+  const old={repository_id:"r",deployment_id:"d",project_id:"p",epoch:1,revision_id:"old"};
+  const current={...old,epoch:2,revision_id:"new-view"},ack={...old,epoch:3,revision_id:"old-request-ack"};
+  let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve});
+  const sent:unknown[]=[];
+  const context=vm.createContext({structuredClone,initial:old,fetch:async(_url:string,input:{body:string})=>{
+    sent.push(JSON.parse(input.body));await held;return {ok:true,payload:{ok:true,authoring_binding:ack}};}});
+  const api=vm.runInContext(`let authoringBinding=structuredClone(initial);const csrf="csrf";
+    const readPayload=async result=>result.payload;const handleSessionFailure=()=>false;
+    ${x.source.slice(start,end)}
+    ({post,binding:()=>authoringBinding,change:value=>{authoringBinding=value}});`,context);
+  const request={authoring_binding:old,actor:"old operator"};
+  const pending=api.post("/api/boundary/progress",request);api.change(current);release();await pending;
+  expect(sent).toEqual([request]);expect(api.binding()).toEqual(current);
+});
+it("queued ACK preserves a later candidate, revision, operator and native binding instead of mixing views",async()=>{
+  const x=client();x.api.adoptTypedReview(x.payload);
+  const start=x.source.indexOf("function queueReviewProgressSave(){"),end=x.source.indexOf("function renderResourceDetail(){",start);
+  const binding={repository_id:"r",deployment_id:"d",project_id:"p",epoch:2,revision_id:"shown"};
+  const next={...binding,epoch:3,revision_id:"different"};
+  const actor={value:"shown human"},message={textContent:"",className:""},sent:unknown[]=[];
+  let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve});
+  Object.assign(x.context,{authoringBinding:binding,reviewReport:{},reviewRevision:4,reviewInvalidations:["current"],reviewProgressHealthy:true,progressSave:held,
+    byId:(id:string)=>id==="actor"?actor:message,updateActivationState:()=>{},post:async(_url:string,body:unknown)=>{
+      sent.push(structuredClone(body));return {...x.payload,revision:5,authoring_binding:{...binding,epoch:3,revision_id:"saved"},confirmed_review_ids:["scope"],invalidated_decisions:["older"]};}});
+  const save=vm.runInContext(`${x.source.slice(start,end)}; queueReviewProgressSave`,x.context);
+  const capturedCandidate=structuredClone(x.candidate),pending=save();
+  x.candidate.pack.name="later view";actor.value="later human";x.context.reviewRevision=9;x.context.authoringBinding=next;
+  release();await pending;
+  expect(sent).toEqual([{candidate:capturedCandidate,review_submission:{...x.payload,decisions:[]},expected_revision:4,actor:"shown human",authoring_binding:binding}].map(item=>({...item,review_submission:{schema_version:"synapsor.boundary-review-submission.v1",candidate_digest:x.payload.review_candidate_digest,decisions:[]}})));
+  expect(x.context.reviewRevision).toBe(9);expect(x.context.authoringBinding).toEqual(next);
+  expect(x.context.reviewInvalidations).toEqual(["current"]);expect([...x.context.confirmedDecisions]).toEqual([]);
+  expect(x.candidate.pack.name).toBe("later view");expect(actor.value).toBe("later human");
 });

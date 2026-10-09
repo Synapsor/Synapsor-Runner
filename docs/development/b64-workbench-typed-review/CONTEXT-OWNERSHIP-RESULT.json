@@ -1,0 +1,39 @@
+{
+  "base": "943798b9",
+  "product_files": [
+    "apps/runner/src/boundary-workbench.ts"
+  ],
+  "independent_before": {
+    "product": "6bbb501c",
+    "result": "R2 client 5 PASS / 2 FAIL; WBCI01 binding overwritten, WBCI05 live revision/actor substituted",
+    "record": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-6bbb-workbench-client-independent-v2-exec.json",
+    "unchanged_test_sha256": "edc08aa76a935eaa2a9e1695e4138593348f3807613a2f08777b2eef64fac4a8"
+  },
+  "repair": [
+    "Capture candidate, typed submission, native binding, revision and explicit operator together before queuing.",
+    "Transport preserves explicit caller binding; omitted binding defaults only at call capture.",
+    "Successful transport ACK cannot replace a different live binding; failed response never acknowledged.",
+    "Queue disables automatic global binding adoption; adopts returned revision/inventory/binding only if captured candidate/revision/operator/native binding still owns current view.",
+    "Writer returned revision retained as actual ACK, never reconstructed from request."
+  ],
+  "after": {
+    "pass": 36,
+    "fail": 0,
+    "components": "unchanged R2 7 plus previous owner/native/browser29",
+    "evidence": "/var/tmp/synapsor-workbench-typed-review-owned/evidence/context-after1.json"
+  },
+  "supplement": {
+    "pass": 12,
+    "fail": 0,
+    "new_controls": 2,
+    "components": "R2 unchanged7 + owner browser5, including two new delayed ACK different-view controls",
+    "evidence": "/var/tmp/synapsor-workbench-typed-review-owned/evidence/context-supplement.json"
+  },
+  "unique_controls": 38,
+  "limitations": [
+    "Transport injections are browser request ownership controls, not native ACK authority proof. Prior real native9 unchanged PASS.",
+    "Independent after verdict pending.",
+    "No adjacent activation/relationship/capacity product edits; no full type PASS claim."
+  ],
+  "storage": "Fixed worktree. Only unchanged individual R2 test fixture copied and committed with hash; no source snapshot/tree copies. All prior evidence retained."
+}

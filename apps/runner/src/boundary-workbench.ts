@@ -1097,7 +1097,20 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    }
 	    const readPayload=async response=>{try{return await response.json()}catch{return {ok:false,error:"Workbench returned an unreadable response."}}};
 	    const getJson=async url=>{const response=await fetch(url);const payload=await readPayload(response);if(handleSessionFailure(payload)){const error=new Error(payload.error);error.payload=payload;throw error}if(!response.ok||!payload.ok){const error=new Error(payload.error||"Request failed");error.payload=payload;throw error}return payload};
-	    const post=async(url,body)=>{const reviewWrite=["/api/boundary/progress","/api/boundary/preview","/api/boundary/activate","/api/boundary/regenerate","/api/boundary/workloads/analyze","/api/boundary/workloads/apply","/api/boundary/review-relationship","/api/boundary/delegations/catalog"].includes(url)||url.startsWith("/api/boundary/library/");const submitted={...body,...(reviewWrite&&authoringBinding?{authoring_binding:structuredClone(authoringBinding)}:{})};const response=await fetch(url,{method:"POST",headers:{"content-type":"application/json","x-synapsor-csrf":csrf},body:JSON.stringify(submitted)});const payload=await readPayload(response);if(handleSessionFailure(payload)){const error=new Error(payload.error);error.payload=payload;throw error}if(!response.ok||!payload.ok){const error=new Error(payload.error||"Request failed");error.payload=payload;throw error}if(payload.authoring_binding)authoringBinding=payload.authoring_binding;return payload};
+    const post=async(url,body,options={})=>{
+      const reviewWrite=["/api/boundary/progress","/api/boundary/preview","/api/boundary/activate","/api/boundary/regenerate","/api/boundary/workloads/analyze","/api/boundary/workloads/apply","/api/boundary/review-relationship","/api/boundary/delegations/catalog"].includes(url)||url.startsWith("/api/boundary/library/");
+      const submitted=structuredClone({...body,...(reviewWrite&&!Object.hasOwn(body,"authoring_binding")&&authoringBinding?{authoring_binding:authoringBinding}:{})});
+      const sentBinding=structuredClone(submitted.authoring_binding);
+      const displayedBinding=structuredClone(authoringBinding);
+      const response=await fetch(url,{method:"POST",headers:{"content-type":"application/json","x-synapsor-csrf":csrf},body:JSON.stringify(submitted)});
+      const payload=await readPayload(response);
+      if(handleSessionFailure(payload)){const error=new Error(payload.error);error.payload=payload;throw error}
+      if(!response.ok||!payload.ok){const error=new Error(payload.error||"Request failed");error.payload=payload;throw error}
+      if(options.adoptAuthoringBinding!==false&&payload.authoring_binding
+        &&JSON.stringify(authoringBinding)===JSON.stringify(displayedBinding)
+        &&(!Object.hasOwn(submitted,"authoring_binding")||JSON.stringify(sentBinding)===JSON.stringify(displayedBinding)))authoringBinding=structuredClone(payload.authoring_binding);
+      return payload;
+    };
 	    const currentResource=id=>candidate&&candidate.pack.resources.find(resource=>resource.id===id);
 	    const activeBoundaryForCandidate=()=>activeBoundaries.find(boundary=>
 	      boundary?.pack?.name===candidate?.pack?.name);
@@ -3441,34 +3454,43 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 
     function queueReviewProgressSave(){
       if(!candidate||!reviewReport)return Promise.resolve();
-      const savedCandidate=structuredClone(candidate);
-      let savedSubmission;
-      try{savedSubmission=typedReviewSubmission()}catch(error){
+      let saved;
+      try{
+        saved=structuredClone({candidate,review_submission:typedReviewSubmission(),
+          authoring_binding:authoringBinding,expected_revision:reviewRevision,actor:byId("actor").value.trim()});
+      }catch(error){
         reviewProgressHealthy=false;
         byId("message").textContent=error.message;
         updateActivationState();
         return Promise.resolve();
       }
+      const ownsView=()=>JSON.stringify(candidate)===JSON.stringify(saved.candidate)
+        &&reviewRevision===saved.expected_revision
+        &&JSON.stringify(authoringBinding)===JSON.stringify(saved.authoring_binding)
+        &&byId("actor").value.trim()===saved.actor;
       progressSave=progressSave.catch(()=>undefined).then(async()=>{
         try{
-          const payload=await post("/api/boundary/progress",{
-            candidate:savedCandidate,
-            review_submission:savedSubmission,
-            expected_revision:reviewRevision,
-            actor:byId("actor").value.trim()
-          });
+          const payload=await post("/api/boundary/progress",saved,{adoptAuthoringBinding:false});
+          // A completed save belongs to its captured view, never a later review.
+          if(!ownsView())return;
+          if(payload.review_candidate_digest!==saved.review_submission.candidate_digest
+            ||!Number.isSafeInteger(payload.revision)){
+            throw new Error("The saved review acknowledgment changed. Reload before continuing.");
+          }
+          adoptTypedReview(payload);
           reviewRevision=payload.revision;
-          if(JSON.stringify(candidate)===JSON.stringify(savedCandidate))adoptTypedReview(payload);
+          if(payload.authoring_binding)authoringBinding=structuredClone(payload.authoring_binding);
           reviewInvalidations=payload.invalidated_decisions||[];
           reviewProgressHealthy=true;
           updateActivationState();
-	        }catch(error){
-	          reviewProgressHealthy=false;
-	          const message=byId("message");
-	          updateActivationState();
-	          message.className="status-message error";
-	          message.textContent="Review progress was not saved: "+error.message;
-	        }
+        }catch(error){
+          if(!ownsView())return;
+          reviewProgressHealthy=false;
+          const message=byId("message");
+          updateActivationState();
+          message.className="status-message error";
+          message.textContent="Review progress was not saved: "+error.message;
+        }
       });
       return progressSave;
     }
