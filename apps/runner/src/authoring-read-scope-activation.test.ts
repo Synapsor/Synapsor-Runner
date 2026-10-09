@@ -118,7 +118,9 @@ async function review(f: Awaited<ReturnType<typeof activationFixture>>, accepted
         context_digest:f.contextDigest,scope_digest:f.scopeDigest};
     },
     save:async(next,{permit})=>{
-      const prior=f.state();
+      const loaded=await readBoundaryAuthoringResumeState(f.dir,f.nativeBinding);
+      if(loaded.status!=="ready")throw new Error("Saved review is unavailable");
+      const prior=loaded.value;
       const state=buildBoundaryAuthoringResumeState({...f.input,previous:prior,operatorQuestions:prior.operator_questions!.map(q=>q.id===next.id?next:q)});
       await writeBoundaryAuthoringResumeState(f.dir,state,{expectedRevisionDigest:prior.revision_digest,permit});
       // Reload through the actual native owner; f's retained state is not used by assessment.
@@ -137,7 +139,7 @@ describe("standalone activation native Read assessment hydration",()=>{
     const f=await activationFixture();await review(f,accepted);
     const before=await readBoundaryAuthoringResumeState(f.dir,f.nativeBinding);
     const result=await assess(f);
-    expect(result).toMatchObject({kind:"native",status:accepted===true?"confirmed":"proposed",replacement_pending:false});
+    expect(result).toMatchObject({kind:"native",status:accepted===true?"confirmed":"pending",replacement_pending:false});
     expect(await readBoundaryAuthoringResumeState(f.dir,f.nativeBinding)).toEqual(before);
     expect(result.kind==="native"&&result.analysis_assessment?.status).toBe("compatible");
   });
