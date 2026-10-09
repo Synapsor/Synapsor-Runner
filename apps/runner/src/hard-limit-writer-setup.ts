@@ -27,10 +27,12 @@ export class HardLimitWriterSetupError extends Error {
 export function hardLimitWriterSetupLines(readback: HardLimitWriterSetupReadback): string[] {
   if (readback.status === 'not_required') return [];
   const supported = readback.checks.filter(check => check.reason_code !== 'hard_limit_engine_unsupported');
-  const grants = [...new Set(supported.map(check => `Administrator grant for ${check.source}/${check.outcome}: GRANT MAINTAIN ON TABLE pg_catalog.pg_namespace TO ${check.writer_role ? quote(check.writer_role) : '"<selected dedicated writer, not yet inspected>"'}; (no grant option).`))];
+  const grants = [...new Set(supported.map(check => `Current profile requires (administrator review, no grant executed) for ${check.source}/${check.outcome}: GRANT MAINTAIN ON TABLE pg_catalog.pg_namespace TO ${check.writer_role ? quote(check.writer_role) : '"<selected dedicated writer, not yet inspected>"'}; (no grant option).`))];
   return [
     ...(supported.length ? ['Hard-limit setup requires PostgreSQL 17 and an inspected dedicated writer before Action activation.', ...grants,
+      'The Source guard takes a SHARE lock on the entire pg_catalog.pg_namespace catalog table.',
       'MAINTAIN also permits maintenance and all table lock modes on this catalog relation, subject to PostgreSQL restrictions; it grants no catalog row mutation.'] : []),
+    ...(readback.checks.some(check => ['writer_not_selected', 'writer_connection_missing'].includes(check.reason_code ?? '')) ? ['Before activation, review the existing disabled setup: synapsor-runner writeback setup --disabled --project-root . --outcome <outcome> --receipt-mode <mode> --write-url-env <NAME>. Save its exact reviewed selection, provision the dedicated writer, then recheck. This selects setup only; execution needs separate consent.'] : []),
     ...readback.checks.map(check => check.reason_code === 'hard_limit_engine_unsupported'
       ? `${check.source}/${check.outcome}: hard-limit Source verification is unsupported for this engine. No namespace grant applies or enables this capability.`
       : `${check.outcome}: ${check.writer_env ?? 'writer not selected'}${check.writer_role ? ` (role ${check.writer_role})` : ''}: ${check.status}${check.reason_code ? ` (${check.reason_code})` : ''}${check.native_path ? ` [${check.native_path}]` : ''}.`),

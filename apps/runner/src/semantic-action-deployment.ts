@@ -1,3 +1,4 @@
+import { projectHardLimitActivationWriterSelections } from "./hard-limit-writer-selection.js";
 import { inspectHardLimitWriterSetup, assertHardLimitWriterSetup } from "./hard-limit-writer-setup.js";
 import { assessActionWithdrawal } from "./action-rule-withdrawal.js";
 import { SEMANTIC_ACTION_RUNTIME_CONFIG, executionConfigForReview, readSemanticSupervisedExecutionState, type SemanticSupervisedExecutionState } from "./semantic-execution-state.js";
@@ -234,7 +235,7 @@ export async function inspectSemanticActionActivationWriterSetup(input: {
   const binding = await openBoundProjectControlPolicies(projectRoot, input.env);
   try {
     const config = bindSemanticReadScope(semanticActionRuntimeConfig({ projectRoot, sourceConfigPath, outputConfigPath,
-      sourceConfig: review.config, draft: input.draft, preserveActionRuntime: previous !== undefined }), input.draft.authority.rules,
+      sourceConfig: await projectHardLimitActivationWriterSelections({ projectRoot, config: review.config as RuntimeConfig, registry, authorityDigest: input.draft.digest, env: input.env }), draft: input.draft, preserveActionRuntime: previous !== undefined }), input.draft.authority.rules,
       await loadActivatedExplorationBoundaries(projectRoot, binding));
     return inspectHardLimitWriterSetup({ registry, config: resolveRuntimeConfig(config as RuntimeConfig, path.dirname(outputConfigPath)), env: input.env });
   } finally { await binding?.close(); }
@@ -284,8 +285,10 @@ async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof ac
   const previous = await readOptionalText(outputConfigPath);
   const sourceConfigPath = previous === undefined ? baseConfigPath : outputConfigPath;
   const rawSourceConfig = await readJsonObject(sourceConfigPath);
-  const sourceConfig = parseActionRuleAuthority(input.draft.authority, input.draft.digest).registry.rules.some(({ compiled }) => compiled.hard_limit)
-    ? (await executionConfigForReview(projectRoot, sourceConfigPath, rawSourceConfig, undefined, input.env)).config : rawSourceConfig;
+  const parsedDraft = parseActionRuleAuthority(input.draft.authority, input.draft.digest);
+  const sourceConfig = !withdrawal && parsedDraft.registry.rules.some(({ compiled }) => compiled.hard_limit)
+    ? await projectHardLimitActivationWriterSelections({ projectRoot, registry: parsedDraft.registry, authorityDigest: input.draft.digest, env: input.env,
+      config: (await executionConfigForReview(projectRoot, sourceConfigPath, rawSourceConfig, undefined, input.env)).config as RuntimeConfig }) : rawSourceConfig;
   const binding = await openBoundProjectControlPolicies(projectRoot, input.env);
   try {
     const nextConfig = bindSemanticReadScope(semanticActionRuntimeConfig({
@@ -297,7 +300,7 @@ async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof ac
       preserveActionRuntime: previous !== undefined,
     }), input.draft.authority.rules, await loadActivatedExplorationBoundaries(projectRoot, binding));
     await validateRuntimeConfig(nextConfig, outputConfigPath);
-    await assertHardLimitWriterSetup({ registry: parseActionRuleAuthority(input.draft.authority, input.draft.digest).registry,
+    if (!withdrawal) await assertHardLimitWriterSetup({ registry: parseActionRuleAuthority(input.draft.authority, input.draft.digest).registry,
       config: resolveRuntimeConfig(nextConfig as RuntimeConfig, path.dirname(outputConfigPath)), env: input.env });
     const nextText = `${JSON.stringify(nextConfig, null, 2)}\n`;
     const configChanged = nextText !== previous;

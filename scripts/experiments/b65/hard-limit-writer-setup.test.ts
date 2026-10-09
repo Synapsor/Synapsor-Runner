@@ -3,24 +3,26 @@ import { createActionRuleAuthority, ActionRuleError } from '@synapsor-runner/act
 import type { HardLimitDesignationV1 } from '@synapsor-runner/action-rules';
 import type { RuntimeConfig } from '@synapsor-runner/mcp-server';
 import { invariantFixture } from './invariant-fixture.js';
-const native = vi.hoisted(() => ({ maintain: true, global: false, qualifier: vi.fn(), pool: vi.fn(), query: vi.fn(), release: vi.fn(), end: vi.fn(), inspect: vi.fn(), posture: vi.fn() }));
+const native = vi.hoisted(() => ({ maintain: true, global: false, qualifier: vi.fn(), pool: vi.fn(), query: vi.fn(), release: vi.fn(), end: vi.fn(), inspect: vi.fn(), posture: vi.fn(), selection: vi.fn() }));
 vi.mock('@synapsor-runner/postgres', () => ({ createPostgresPool: native.pool, assertPostgresHardLimitSource: native.qualifier }));
 vi.mock('@synapsor-runner/schema-inspector', () => ({ inspectDatabase: native.inspect, rolePostureFingerprint: () => `sha256:${'a'.repeat(64)}` }));
 vi.mock('../../../apps/runner/src/worker-policy.js', () => ({ assessSemanticSupervisedWriterPosture: native.posture }));
+vi.mock('../../../apps/runner/src/semantic-receipt-setup.js', () => ({ inspectSemanticReceiptSetup: native.selection, selectedSemanticReceipts: (setup: any, writer: string) => { if (!setup.selection_current || setup.selection.write_url_env !== writer) throw new Error('stale selection'); return setup.selection.receipts; } }));
+import { projectHardLimitActivationWriterSelections } from '../../../apps/runner/src/hard-limit-writer-selection.js';
 import { assertHardLimitWriterSetup, inspectHardLimitWriterSetup, hardLimitWriterSetupLines } from '../../../apps/runner/src/hard-limit-writer-setup.js';
-function fixture(hard = true) {
+function fixture(hard = true, multiple = false) {
   const f = invariantFixture(25);
   f.effect_envelope.writeback = { mode: 'direct_sql', supervised_worker: 'allowed' };
   if (f.rule.require.kind !== 'compare' || f.rule.require.left.kind !== 'aggregate') throw new Error('fixture');
   const hard_limit: HardLimitDesignationV1 = { kind: 'hard_invariant', scope: { tenant_field: 'tenant_id', principal_field: 'principal_id' }, population: { binding: 'holds', field: 'credits', where: f.rule.require.left.where }, limit: { binding: 'customer', field: 'limit' }, time: 'current_state', external_writers: 'participating_only' };
   const authority = createActionRuleAuthority({ name: 'b65_setup', action_boundary_name: 'b65.setup.actions', catalog: f.catalog,
-    rules: [{ read_boundary_name: 'b65.setup.read', read_boundary_digest: f.catalog.generation_lock_fingerprint, rule: f.rule, verification_boundary: f.verification_boundary, effect_envelope: f.effect_envelope, ...(hard ? { hard_limit } : {}), activated_at: '2026-10-08T00:00:00.000Z' }] });
+    rules: Array.from({ length: multiple ? 2 : 1 }, (_, index) => ({ read_boundary_name: 'b65.setup.read', read_boundary_digest: f.catalog.generation_lock_fingerprint, rule: index ? { ...f.rule, name: f.rule.name + '_two', outcome: f.rule.outcome + '_two' } : f.rule, verification_boundary: f.verification_boundary, effect_envelope: f.effect_envelope, ...(hard ? { hard_limit } : {}), activated_at: '2026-10-08T00:00:00.000Z' })) });
   const source = authority.registry.rules[0]!.compiled.source;
   const config: RuntimeConfig = { version: 1, sources: { [source]: { engine: 'postgres', read_url_env: 'READ', write_url_env: 'WRITE', database_scope: { mode: 'postgres_rls', tenant_setting: 'app.tenant', principal_setting: 'app.principal' }, receipts: { authority: 'source_db', provisioning: 'precreated', schema: 'public', table: 'receipts' } } } };
-  return { registry: authority.registry, config, env: { READ: 'postgres://reader', WRITE: 'postgres://writer' }, source };
+  return { authorityDigest: authority.authority.digest, registry: authority.registry, config, env: { READ: 'postgres://reader', WRITE: 'postgres://writer' }, source };
 }
 beforeEach(() => {
-  vi.clearAllMocks(); native.maintain = true; native.global = false;
+  vi.clearAllMocks(); native.selection.mockReset().mockResolvedValue(undefined); native.maintain = true; native.global = false;
   native.qualifier.mockReset().mockResolvedValue(undefined);
   native.query.mockReset().mockImplementation(async (sql: string) => ({ rows: sql.startsWith("SELECT pg_catalog.current_setting('server_version_num')") ? [{ version: 170000 }] : sql.startsWith('SELECT current_user') ? [{ role: 'dedicated_writer', maintain: native.maintain, global_maintain: native.global, catalog_dml: false }] : [], rowCount: 0 }));
   native.end.mockResolvedValue(undefined); native.release.mockReset();
@@ -98,4 +100,54 @@ it('renders inspected role with SQL identifier quoting and unsupported MySQL wit
   const unsupported = await inspectHardLimitWriterSetup(f);
   expect(unsupported.requirements).toEqual([]);
   expect(hardLimitWriterSetupLines(unsupported).join(' ')).not.toContain('GRANT MAINTAIN');
+});
+
+function disabledSelection(f: ReturnType<typeof fixture>) {
+  const source = f.config.sources![f.source]!;
+  source.read_only = true; delete source.write_url_env;
+  return { phase: 'disabled_authoring', selection_current: true, action_digest: f.authorityDigest,
+    outcome: f.registry.rules[0]!.compiled.outcome, source_name: f.source, source: structuredClone(source),
+    selection: { write_url_env: 'CHOSEN_WRITE', receipts: { authority: 'source_db', provisioning: 'precreated', schema: 'public', table: 'receipts' } } };
+}
+it('projects the exact saved disabled writer selection into the separate Action candidate without execution authority', async () => {
+  const f = fixture(), before = JSON.stringify(f.config); const setup = disabledSelection(f); const readOnly = JSON.stringify(f.config);
+  native.selection.mockResolvedValue(setup);
+  const projected = await projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' });
+  expect(projected.sources![f.source]).toMatchObject({ read_only: false, write_url_env: 'CHOSEN_WRITE', read_url_env: 'READ', receipts: setup.selection.receipts });
+  expect(projected.supervised_worker).toBeUndefined(); expect(JSON.stringify(f.config)).toBe(readOnly);
+  expect(native.selection).toHaveBeenCalledWith(expect.objectContaining({ disabled: true, configPath: '/derived/project/synapsor.runner.json', outcome: setup.outcome }));
+  expect(before).not.toBe(readOnly);
+});
+it.each(['stale', 'wrong_action', 'wrong_source', 'wrong_outcome', 'source_drift', 'missing'])('cannot stage %s disabled setup as a writer', async mode => {
+  const f = fixture(), setup = disabledSelection(f);
+  if (mode === 'stale') setup.selection_current = false;
+  if (mode === 'wrong_action') setup.action_digest = 'sha256:' + 'b'.repeat(64);
+  if (mode === 'wrong_source') setup.source_name = 'other';
+  if (mode === 'wrong_outcome') setup.outcome = 'other';
+  if (mode === 'source_drift') setup.source.read_url_env = 'OTHER_READ';
+  native.selection.mockResolvedValue(mode === 'missing' ? undefined : setup);
+  const projected = await projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' });
+  expect(projected.sources![f.source]!.write_url_env).toBeUndefined();
+});
+it('keeps the current genuine writer rather than silently replacing it with a disabled setup', async () => {
+  const f = fixture(); const result = await projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' });
+  expect(result).toEqual(f.config); expect(native.selection).not.toHaveBeenCalled();
+});
+it('reinspects the disabled setup rather than allowing human-wait drift to reuse selection', async () => {
+  const f = fixture(), setup = disabledSelection(f); native.selection.mockResolvedValue(setup);
+  expect((await projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' })).sources![f.source]!.write_url_env).toBe('CHOSEN_WRITE');
+  setup.selection_current = false;
+  expect((await projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' })).sources![f.source]!.write_url_env).toBeUndefined();
+  expect(native.selection).toHaveBeenCalledTimes(2);
+});
+
+it('does not borrow one outcome selection for an unselected sibling on the same Source', async () => {
+  const f = fixture(true, true), setup = disabledSelection(f);
+  native.selection.mockImplementation(async input => input.outcome === setup.outcome ? setup : undefined);
+  expect((await projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' })).sources![f.source]!.write_url_env).toBeUndefined();
+});
+it('refuses conflicting selected writer references on the same unselected Source', async () => {
+  const f = fixture(true, true), setup = disabledSelection(f);
+  native.selection.mockImplementation(async input => ({ ...setup, outcome: input.outcome, selection: { ...setup.selection, write_url_env: input.outcome === setup.outcome ? 'ONE_WRITE' : 'OTHER_WRITE' } }));
+  await expect(projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' })).rejects.toMatchObject({ code: 'SEMANTIC_ACTION_HARD_LIMIT_WRITER_REQUIRED', readback: { checks: [expect.objectContaining({ reason_code: 'writer_selection_ambiguous' })] } });
 });
