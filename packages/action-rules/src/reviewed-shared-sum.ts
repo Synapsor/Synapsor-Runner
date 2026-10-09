@@ -30,9 +30,15 @@ export function deriveReviewedSharedSumProtection(registry: RuntimeActionRuleReg
   }
   if (registry.schema_version !== 'synapsor.action-rule-registry.v2') refuse('authority_version');
   const record = parseReviewedSharedSum(registry.shared_sum), d = record.designation;
+  // Source aliases could resolve to the same database. This bounded profile
+  // cannot prove that a second Source or an uninspected writer has no effects
+  // on the invariant, so the complete authority must stay within one Source.
+  if (registry.rules.some(({ compiled }) => compiled.source !== d.source)) refuse('source_inventory');
   const state = kernel(() => buildSharedSumDerivedState(registry, { schema_version: 'synapsor.experimental.shared-sum-protection.v1',
     kind: 'experimental_shared_sum', source: d.source, scope: d.scope, limit: d.limit, populations: d.populations,
     time: d.time, external_writers: d.external_writers }));
+  if (registry.rules.some(({ compiled }) => compiled.effect_envelope.writeback.mode !== 'none'
+    && !state.contexts.has(compiled.outcome))) refuse('writer_inventory');
   const participants = registry.rules.filter(r => state.contexts.has(r.compiled.outcome));
   if (new Set(registry.rules.map(r => canonicalJsonDigest([r.action_boundary_name, r.action_boundary_digest]))).size !== 1)
     refuse('boundary_inventory');

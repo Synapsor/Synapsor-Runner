@@ -3,6 +3,8 @@ import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import { createActionRuleAuthority, parseActionRuleAuthority } from './authority.js';
 import { deriveReviewedSharedSumProtection, resolveReviewedSharedSumProtection, reviewedSharedSumGuardIdentity } from './reviewed-shared-sum.js';
 import { reviewedSharedSumFixture } from './testing/reviewed-shared-sum-fixture.js';
+import { experimentalSharedSumFixture } from './testing/experimental-shared-sum-fixture.js';
+import { normalizeActionRuleCatalog } from './normalize.js';
 
 describe('reviewed shared SUM complete authoritative inventory', () => {
   it('survives serialization and derives mandatory plans without an issued-plan cache', () => {
@@ -72,5 +74,23 @@ describe('reviewed shared SUM complete authoritative inventory', () => {
     expect(f.registry.digest).not.toBe(changed.registry.digest);
     expect(reviewedSharedSumGuardIdentity(before, f.registry.rules[0]!.compiled, f.facts))
       .toBe(reviewedSharedSumGuardIdentity(after, changed.registry.rules[0]!.compiled, facts));
+  });
+  it.each(['other_source', 'uninspected_targets'] as const)('refuses %s writers outside the supported finite boundary', mode => {
+    const f = reviewedSharedSumFixture(), other = experimentalSharedSumFixture({ schema: 'other_schema' });
+    const source = mode === 'other_source' ? 'other_database' : f.designation.source;
+    for (const resource of other.catalog.resources) resource.source = source;
+    for (const relationship of other.catalog.relationships) relationship.name = `other_${relationship.name}`;
+    for (const entry of other.entries) {
+      entry.rule.source = entry.verification_boundary.source = entry.effect_envelope.source = source;
+      entry.rule.name = entry.rule.outcome = entry.rule.outcome.replace('shared.', 'other.');
+      for (const binding of entry.verification_boundary.resources)
+        if (binding.source.kind === 'relationship') binding.source.relationship = `other_${binding.source.relationship}`;
+    }
+    const catalog = { ...f.catalog, resources: [...f.catalog.resources, ...other.catalog.resources],
+      relationships: [...f.catalog.relationships, ...other.catalog.relationships] };
+    const shared_sum = structuredClone(f.shared_sum);
+    shared_sum.confirmation.catalog_digest = canonicalJsonDigest(normalizeActionRuleCatalog(catalog));
+    expect(() => createActionRuleAuthority({ name: 'mixed_writers', action_boundary_name: 'mixed.actions', catalog,
+      rules: [...f.entries, ...other.entries], shared_sum })).toThrow(expect.objectContaining({ code: 'ACTION_RULE_SCOPE_UNPROVEN' }));
   });
 });
