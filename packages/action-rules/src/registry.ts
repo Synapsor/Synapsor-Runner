@@ -3,9 +3,12 @@ import { compileActionRuleBooleanPredicate } from "./compile.js";
 import { ActionRuleError } from "./errors.js";
 import { assertActionDiscoveryContractFits } from "./discovery.js";
 import { ACTION_AUTHORITY_LIMITS } from "./limits.js";
+import { parseReviewedSharedSum, type ReviewedSharedSumV1 } from "./shared-sum-designation.js";
+import { assertReviewedSharedSumRegistry } from "./reviewed-shared-sum.js";
 import {
   ACTION_RULE_APPROVAL_CLASS_VERSION,
   ACTION_RULE_REGISTRY_VERSION,
+  REVIEWED_ACTION_RULE_REGISTRY_VERSION,
   type ActionRuleApprovalClassSourceV1,
   type ActivatedActionRuleApprovalClassV1,
   type ActivatedActionRuleV1,
@@ -204,9 +207,11 @@ export function actionRuleRegistryDigest(input: {
   name: string;
   rules: ActivatedActionRuleV1[];
   approval_classes: ActivatedActionRuleApprovalClassV1[];
+  shared_sum?: ReviewedSharedSumV1;
 }): `sha256:${string}` {
   return canonicalJsonDigest({
-    schema_version: ACTION_RULE_REGISTRY_VERSION,
+    ...(input.shared_sum === undefined ? { schema_version: ACTION_RULE_REGISTRY_VERSION }
+      : { schema_version: REVIEWED_ACTION_RULE_REGISTRY_VERSION, shared_sum: parseReviewedSharedSum(input.shared_sum) }),
     name: input.name,
     rules: canonicalRules(input.rules),
     approval_classes: canonicalApprovalClasses(input.approval_classes),
@@ -217,6 +222,7 @@ export function createActionRuleRegistry(input: {
   name: string;
   rules: ActivatedActionRuleInputV1[];
   approval_classes?: ActivatedActionRuleApprovalClassV1[];
+  shared_sum?: ReviewedSharedSumV1;
 }): RuntimeActionRuleRegistryV1 {
   if (input.rules.length > ACTION_AUTHORITY_LIMITS.rules) {
     throw new ActionRuleError("ACTION_RULE_INVALID", `Action Rule registry exceeds ${ACTION_AUTHORITY_LIMITS.rules} reviewed rules.`);
@@ -268,13 +274,18 @@ export function createActionRuleRegistry(input: {
   }
   const canonicalRuleList = canonicalRules(rules);
   const canonicalClassList = canonicalApprovalClasses(approvalClasses);
-  return indexImmutableRegistry({
-    schema_version: ACTION_RULE_REGISTRY_VERSION,
+  const sharedSum = input.shared_sum === undefined ? undefined : parseReviewedSharedSum(input.shared_sum);
+  const registry: RuntimeActionRuleRegistryV1 = {
+    ...(sharedSum === undefined ? { schema_version: ACTION_RULE_REGISTRY_VERSION }
+      : { schema_version: REVIEWED_ACTION_RULE_REGISTRY_VERSION, shared_sum: sharedSum }),
     name: input.name,
-    digest: actionRuleRegistryDigest({ name: input.name, rules: canonicalRuleList, approval_classes: canonicalClassList }),
+    digest: actionRuleRegistryDigest({ name: input.name, rules: canonicalRuleList, approval_classes: canonicalClassList,
+      ...(sharedSum === undefined ? {} : { shared_sum: sharedSum }) }),
     rules: canonicalRuleList,
     approval_classes: canonicalClassList,
-  });
+  };
+  assertReviewedSharedSumRegistry(registry);
+  return indexImmutableRegistry(registry);
 }
 
 function indexImmutableRegistry(value: RuntimeActionRuleRegistryV1): RuntimeActionRuleRegistryV1 {
@@ -298,21 +309,31 @@ function indexImmutableRegistry(value: RuntimeActionRuleRegistryV1): RuntimeActi
 
 function assertRegistryIntegrity(registry: RuntimeActionRuleRegistryV1): void {
   if (registryIndexes.has(registry)) return;
+  const expectedKeys = ["schema_version", "name", "digest", "rules", "approval_classes",
+    ...(registry.schema_version === REVIEWED_ACTION_RULE_REGISTRY_VERSION ? ["shared_sum"] : [])].sort();
+  if (canonicalJsonStringify(Object.keys(registry).sort()) !== canonicalJsonStringify(expectedKeys)
+    || (registry.shared_sum === undefined ? registry.schema_version !== ACTION_RULE_REGISTRY_VERSION
+      : registry.schema_version !== REVIEWED_ACTION_RULE_REGISTRY_VERSION)) {
+    throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The activated Action Rule registry has an unsupported authority version.");
+  }
   const expected = actionRuleRegistryDigest({
     name: registry.name,
     rules: registry.rules,
     approval_classes: registry.approval_classes,
+    ...(registry.shared_sum === undefined ? {} : { shared_sum: registry.shared_sum }),
   });
-  if (registry.schema_version !== ACTION_RULE_REGISTRY_VERSION || registry.digest !== expected) {
+  if (registry.digest !== expected) {
     throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The activated Action Rule registry failed its integrity check.");
   }
   registry.approval_classes.forEach(assertApprovalClassIntegrity);
+  assertReviewedSharedSumRegistry(registry);
 }
 
 export function snapshotActionRuleRegistry(registry: RuntimeActionRuleRegistryV1): RuntimeActionRuleRegistryV1 {
   if (registryIndexes.has(registry)) return registry;
   assertRegistryIntegrity(registry);
-  return createActionRuleRegistry({ name: registry.name, rules: registry.rules, approval_classes: registry.approval_classes });
+  return createActionRuleRegistry({ name: registry.name, rules: registry.rules, approval_classes: registry.approval_classes,
+    ...(registry.shared_sum === undefined ? {} : { shared_sum: registry.shared_sum }) });
 }
 
 export function resolveActivatedActionRule(
