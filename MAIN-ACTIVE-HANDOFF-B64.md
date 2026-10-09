@@ -1,15 +1,15 @@
-B64/B65 PARALLEL COMPLETION ACTIVE — Owner 8b31 supersedes serial-night HOLD; paid CLOSED; frozen candidates/history/jobs/holds preserved.
-Pins: accepted Main00bdc02f untouched; working Main d87e9564 (Action WIP remains unintegrated); batch owner994bb1b3; no freeze/release claim.
+B64/B65 PARALLEL COMPLETION ACTIVE — Owner8b31 supersedes serial-night HOLD; paid CLOSED; frozen candidates/history/jobs/holds preserved.
+Pins: accepted Main00bdc02f untouched; working Mainbcf1cf1b (Action WIP remains unintegrated); no freeze/release claim.
 Windows unchanged: B64 2026-10-08T06:32:23Z→2026-10-13T06:32:23Z; B65 2026-10-08T16:56:15Z→2026-10-12T16:56:15Z.
-WS1 batch /root/b59_regression_fix: complete prospective candidate before final validation; before1P2F→after3P; permutations/restrictions/public entry proof next.
-WS2 Main: native saved Read current/stale-inspectable/unavailable + public Resume/Replace; historical load is not authority; failing-before and protected save bindings next.
-WS3 B66 01a11d25: single FORMAT owner; D2 staged initializer + typed unit/transition + Action cards/raw history; Main owns BC/Resume codec hooks.
-WS4 Runtime01a112d4 + native Tester01a117fd: experimental shared SUM Source protection + native matrix preparation; public arithmetic waits on integrated Bug2/D2.
-R2 01a114f6 sole high-risk queue: Bug2 matrix4070440d DESIGN_NOTRUN; D2 format then shared SUM concurrency; small local fixes need no review gate.
-D1/D3 exact units/transitions APPROVED; D2 prospective initializer APPROVED; D4 scoped host identity context and D5 protected nested /details APPROVED; D6 conditional R2 format acceptance.
-#1 remaining accepted English Main1typed/0delete, Action28typed/5delete; Read/Ask/Chat/Privacy0/0. Action370P15F1skip retained, not integration PASS.
-#2 cards/raw-history+diff/public OPEN; #3 details protected full-history/public OPEN; #4 coherent types/full OPEN (357diagnostics/93paths retained); #5 paid CLOSED.
-#6 PG55refuse/50/40/45/55refuse NOTREACHED; #7 writer readiness scoped ACCEPT; #8 portable identity unproven; #9/#14 matrices partial; #18 MySQL source_db unknownCOMMIT unsupported.
-#10 prompts scoped ACCEPT; #11 D6 extension lowerpriority; #12 native65/128 publicOPEN; #13 receipt readback publicOPEN; #15 contention/#16 vocabulary/#17 permits scoped ACCEPT; #19 demo first batch break preserved.
-NEXT Main: type-only native failure API d87e9564; failing-before stale history/Replace + currentness/invalid-proof controls; integrate reviewed repairs then actual public proof without replay.
-Standing: small fixes tests+one-line samecommit; independent review only format/privacy/permission/concurrency; ≤4heavy/≤8workers/run/≥8GiB; docs-excluded snapshots; private push; cleanup only classified closed resources after review.
+WS1 batch994/412/e0 R2scopedaccepted→working38fc; completecandidate +retainedresource refusal; composedfocused23P, installed/publicauthorityOPEN.
+WS2 Main Bug2a162: historicalinspectability≠authority; root+validatedsuccessor/nativeCAS13P, exactackunknown fence; public/R2acceptanceOPEN.
+WS2 support /root/b59_regression_fix: D4 trustedknownidentity context trace; no Resume/BC edits, Englishexemptions or emptyidentity bypass.
+WS3 B66 01a11d25 soleFORMAT: D2 initializer, typedunit/transition, Actioncards/rawhistory; host-No pre-save repairactive, originalfailure kept.
+Mainbcf1 immutableactualdecoder/wholeliveproducerport: selected38P197filtered/types0; nextB66 adoption/R2bindingreview, noformatacceptance.
+WS4 Runtimec9cd/01a112d4 +nativeTester01a117fd: sharedSUM209componentP; exactownedrecipef750/dd587 UNAPPLIED pendingR2grant/concurrencyverdict.
+R2 01a114f6 solehigh-risk queue; currentmatrixfd164e19; WS1sourceaccepted, Bug2/D2/sharedSUMindependent/nativeverdicts stillpending.
+#1 Englishaccepted Main1typed0delete/Action28typed5delete; #2cards/#3details publicOPEN; #4coherentfullOPEN/historical357diag; #5paidCLOSED.
+#6PG55refuse/50/40/45/55refuseNOTREACHED; #7readinessscopedACCEPT; #8portableunproven; #9/#14matricespartial; #18MySQLSource_dbunknownCOMMITunsupported.
+#10promptsscopedACCEPT; #11D6R2formatpending; #12native65/128publicOPEN; #13receiptpublicOPEN; #15contention/#16vocab/#17permitsscopedACCEPT; #19demoOPEN.
+NEXT: auditBug2a162 actualpubliccurrentness; B66consume immutablebcf1port thenacceptedD2stagedResumeCAS; readyfixture publicarithmetic without replay.
+Standing: smallfixes tests+one-line samecommit; highriskreview perdeliverable; ≤4heavy/≤8workers/run/≥8GiB; docs-excluded snapshots; privatepush; classifiedcleanup only.

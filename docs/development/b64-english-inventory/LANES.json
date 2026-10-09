@@ -15,9 +15,9 @@
     "read": {
       "agent": "/root/b59_regression_fix",
       "workspace": "../b56-owned-dir-remedy",
-      "current_task": "WS1 complete prospective batch; native controls before1P2F after3P; permutation/restriction/public proof next",
+      "current_task": "WS1 R2scopedaccepted andintegrated38fc21d5; samehelper nowWS2 D4 host-only trusted identity context trace/module/tests, MainownsResume/BC hooks",
       "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
-      "execution_state": "ACTIVE WS1"
+      "execution_state": "ACTIVE WS2 SUPPORT"
     },
     "privacy_visibility": {
       "agent": "/root/b64_visibility_retirement",
@@ -47,7 +47,7 @@
     "main": {
       "agent": "Main",
       "workspace": ".",
-      "current_task": "Read public activation d6 accepted R1 7PASS; boundary decision retirement; SC04 CLI integration",
+      "current_task": "Bug2 a162 nativeCAS/host successor reviewedpending; immutable decodedproducerportbcf1 focused38P; native/public continuation + soleFORMAT B66hook integration next",
       "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
       "nonboundary_active_handoff": [
         "Main English non-boundary owner; paid CLOSED; continue exact current window and preserve holds/results.",
@@ -64,7 +64,7 @@
         "Use existing 0700 resources, max 4 heavy jobs/8 workers, at least 8 GiB RAM/disk; status short, handoff <=15 lines; routine authorized work continues.",
         "Use actual visible inputs and declared operator facts; no English decision fallback, fake authority, paid runs, or uncertain-effect replay."
       ],
-      "execution_state": "ACTIVE WS2 saved Read applicability/public Resume/Replace"
+      "execution_state": "ACTIVE WS2"
     }
   },
   "heavy_slots": {
