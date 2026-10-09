@@ -465,6 +465,13 @@
       "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/post-read-commit-bf5e-independent-successor-disposition-v1.json",
       "sha256": "94ebc50b2d9a56a94d9feba54f0499581eaba98a173fb6d54a52db3b64e2ea9c"
     },
-    "head": "bf5ec807"
+    "head": "bf5ec807",
+    "public_same_job_after": {
+      "pin": "bf5ec807",
+      "verdict": "BLOCKED READ_SCOPE_REVIEW_CHANGED;0dispatches; no arithmetic reached",
+      "artifact": "/var/tmp/synapsor-b65-supported-public-df557cbe-owned/D01/evidence/review-bf5/all-prompts-resume-inspection-2026-10-09T09-40-53-786Z/result.json",
+      "tester_private_commit": "affc7da8",
+      "native_state": "Resume saved authority_review\u2192planning before refusal; new SHA a259f363a7ddbf30e213fac633c00cc650ac99a63ed5d4c5348d4c412688b99d. Completed operations/questions/confirmation unchanged; initial overly-strong byte-unchanged oracle failure retained. Source30/50 and six business ledgers unchanged."
+    }
   }
 }
