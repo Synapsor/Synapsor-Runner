@@ -34,7 +34,7 @@ import { fetchStdioMcpToolsCommand, mcpAuditToolNames } from "./mcp-audit.js";
 import { isManagedAuthoringEntry } from "./mcp-project-domain.js";
 import { trustedCliContext } from "./operator-authority.js";
 import { inspectProductionExploreStartup } from "./mcp-runtime.js";
-import { exploreVocabularyCoverage } from "./explore-vocabulary.js";
+import { exploreVocabularyPresentation } from "./explore-vocabulary-presentation.js";
 import { runAllCleanups, withPreservedCleanup } from "./resource-lifecycle.js";
 import { capabilityOperation, formatSourceReceiptMode, receiptTableGuidance, runnerReceiptConfig, sourceNeedsSqlWriteback, writebackTimeoutMs } from "./writeback-domain.js";
 
@@ -396,25 +396,13 @@ export function exploreVocabularyDoctorCheck(
   boundaryName: string,
   resource: ActivatedExplorationBoundary["pack"]["resources"][number],
 ): DoctorCheck {
-  const vocabulary = exploreVocabularyCoverage(resource);
-  const vocabularyGaps = [
-    ...(vocabulary.opaque_resource_without_vocabulary ? ["table name"] : []),
-    ...vocabulary.opaque_fields_without_vocabulary,
-  ];
+  const vocabulary = exploreVocabularyPresentation(resource);
   return {
     name: `explore-vocabulary:${boundaryName}:${resource.id}`,
     ok: true,
-    level: vocabulary.status === "ready" ? "pass" : "warn",
-    message: vocabulary.status === "ready"
-      ? `${boundaryName}.${resource.id} has no opaque or coded model-facing vocabulary gaps; `
-        + `${vocabulary.fields_with_labels} field labels and ${vocabulary.fields_with_descriptions} field descriptions are reviewed.`
-      : vocabulary.status === "review_advised"
-        ? `${boundaryName}.${resource.id} has model-facing fields with coded schema values but no reviewed semantic vocabulary: `
-          + `${vocabulary.coded_fields_without_vocabulary.join(", ")}. Activation remains valid, but clients are told not to infer `
-          + "business meaning from codes such as P1 or W2. Open /access, select each column, press I to add a reviewed label or description, then review and activate the revision."
-      : `${boundaryName}.${resource.id} is legacy active authority with opaque model-facing identifiers lacking reviewed vocabulary: `
-        + `${vocabularyGaps.join(", ")}. Existing authority remains active, but models may not infer their business meaning. `
-        + "Open /access, select the table or column, press I to add a reviewed label or description, then review and activate the revision.",
+    level: "pass",
+    advisory: "note",
+    message: `${boundaryName}.${resource.id}: ${vocabulary.summary}. ${vocabulary.detail}`,
   };
 }
 

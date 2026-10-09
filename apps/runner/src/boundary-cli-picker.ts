@@ -35,7 +35,7 @@ import {
   renderBoundaryMapTable,
   type BoundaryMapFieldRow,
 } from "./boundary-map-presentation.js";
-import { exploreVocabularyCoverage } from "./explore-vocabulary.js";
+import { exploreVocabularyPresentation } from "./explore-vocabulary-presentation.js";
 import { terminalBrandPalette } from "./terminal-brand-theme.js";
 import type { ReadWorkloadPlanCard } from "./read-workload-assist.js";
 import { READ_SELECTION_GUIDANCE } from "./read-workload-selection-guidance.js";
@@ -2305,13 +2305,9 @@ async function editFieldTiers(
       const tableWidth = Math.max(36, terminalContentWidth(output.columns));
       const accessLayout = fieldAccessLayout(tableWidth);
       const reviewCompatibility = databaseCompatibilityLine(view.database_server_compatibility, theme);
-      const vocabularyCoverage = exploreVocabularyCoverage(
+      const vocabulary = exploreVocabularyPresentation(
         (view.candidate ?? view.generated_candidate)!,
       );
-      const vocabularyGaps = [
-        ...(vocabularyCoverage.opaque_resource_without_vocabulary ? ["table name"] : []),
-        ...vocabularyCoverage.opaque_fields_without_vocabulary,
-      ];
       const minimumCohort = (view.candidate ?? view.generated_candidate)!.minimum_cohort_size;
       const principalScope = (view.candidate ?? view.generated_candidate)!.principal_key
         ?? ((view.candidate ?? view.generated_candidate)!.principal_scope
@@ -2345,28 +2341,8 @@ async function editFieldTiers(
       const detailedContext = terminalRows === undefined || terminalRows >= 30;
       const contextLines = [
         ...(reviewCompatibility ? [reviewCompatibility] : []),
-        ...(vocabularyGaps.length > 0
-          ? [
-            theme.warning(`REVIEWED MODEL VOCABULARY REQUIRED: ${vocabularyGaps.join(", ")}`),
-            ...(detailedContext
-              ? [theme.dim(
-                "Add field vocabulary here with I. Use I on the boundary table list for the table label or description. Exact database IDs remain the plan authority.",
-              )]
-              : []),
-          ]
-          : []),
-        ...(vocabularyCoverage.coded_fields_without_vocabulary.length > 0
-          ? [
-            theme.warning(
-              `REVIEWED MODEL VOCABULARY ADVISED: coded value fields ${vocabularyCoverage.coded_fields_without_vocabulary.join(", ")}`,
-            ),
-            ...(detailedContext
-              ? [theme.dim(
-                "Activation remains available, but clients are told not to infer business meaning from codes such as P1 or W2. Press I to add a reviewed label or description.",
-              )]
-              : []),
-          ]
-          : []),
+        theme.dim(vocabulary.summary),
+        ...(detailedContext ? [theme.dim(vocabulary.detail)] : []),
       ];
       const fullHeader = [
         theme.title(`REVIEW COLUMNS - ${safeTerminalText(view.resource_id)}`),

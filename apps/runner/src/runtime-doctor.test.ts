@@ -206,7 +206,31 @@ describe("runtime doctor database probe cleanup", () => {
     ]);
   });
 
-  it("warns on legacy opaque vocabulary without failing active authority", () => {
+  it.each(["legacy.t_0031", "public.orders", "public.sites"])("reports optional vocabulary metadata without readiness claims for %s", (id) => {
+    const resource = {
+      id, selectable_fields: ["val_1"], filterable_fields: {}, sortable_fields: [],
+      groupable_fields: ["val_1"], aggregate_measures: [], count_distinct_fields: [],
+      time_bucket_fields: {}, field_enums: { val_1: ["P1", "P2"] },
+      kept_out_fields: ["private_field"],
+      field_metadata: { private_field: { label: "PRIVATE LABEL" } },
+    };
+    const original = structuredClone(resource);
+    const missing = exploreVocabularyDoctorCheck("review", resource as never);
+    expect(missing).toMatchObject({ ok: true, level: "pass" });
+    expect(missing.message).toContain("0/1 field labels");
+    expect(missing.message).toContain("optional presentation metadata");
+    expect(missing.message).not.toMatch(/legacy active|Activation remains|press I|PRIVATE LABEL|review and activate/);
+    const labelled = exploreVocabularyDoctorCheck("review", {
+      ...resource, label: "Display only", field_metadata: { ...resource.field_metadata,
+        val_1: { label: "Reviewed label", description: "Reviewed description" } },
+    } as never);
+    expect(labelled).toMatchObject({ ok: true, level: "pass" });
+    expect(labelled.message).toContain("1/1 field labels");
+    expect(labelled.message).toContain("do not establish business meaning or permission");
+    expect(resource).toEqual(original);
+  });
+
+  it("reports optional vocabulary uniformly across identifiers and enum values", () => {
     const warning = exploreVocabularyDoctorCheck("legacy_boundary", {
       id: "legacy.t_0031",
       selectable_fields: ["val_1"],
@@ -218,9 +242,9 @@ describe("runtime doctor database probe cleanup", () => {
       time_bucket_fields: {},
       kept_out_fields: [],
     } as never);
-    expect(warning).toMatchObject({ ok: true, level: "warn" });
-    expect(warning.message).toMatch(/table name.*val_1.*existing authority remains active/is);
-    expect(warning.message).toContain("press I");
+    expect(warning).toMatchObject({ ok: true, level: "pass", advisory: "note" });
+    expect(warning.message).toContain("0/1 field labels");
+    expect(warning.message).toContain("optional presentation metadata");
 
     const ready = exploreVocabularyDoctorCheck("sales", {
       id: "public.orders",
@@ -247,8 +271,9 @@ describe("runtime doctor database probe cleanup", () => {
       field_enums: { ph_code: ["P1", "P2", "P3"] },
       kept_out_fields: [],
     } as never);
-    expect(coded).toMatchObject({ ok: true, level: "warn" });
-    expect(coded.message).toMatch(/ph_code.*activation remains valid.*not to infer/is);
+    expect(coded).toMatchObject({ ok: true, level: "pass", advisory: "note" });
+    expect(coded.message).toContain("0/1 field labels");
+    expect(coded.message).toContain("do not establish business meaning or permission");
   });
 
   it("closes a PostgreSQL pool when its initial connection fails", async () => {
