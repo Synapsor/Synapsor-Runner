@@ -9,7 +9,7 @@ it("public grouped structural signoff persists exact typed references with write
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "typed-public-signoff-"));
   await fs.chmod(root, 0o700);
   // Retain failed state for inspection; no Source rows or model calls.
-  const { context, shown } = await prepareReviewedReadScope(root);
+  const { context, shown } = await prepareReviewedReadScope(root, { resources: ["work.items"], field: "label", review: { allow_reviewed_fields: ["label"] } });
   expect(shown.length).toBeGreaterThan(0);
   expect(context.bundle.outstanding_decision_ids).toEqual([]);
   const applicable = applicableBoundaryReviewConfirmations(context.candidate,

@@ -2,12 +2,15 @@
  * No hand-built review confirmation, scope reference, candidate or analysis. */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { buildAutoBoundary, writeAutoBoundaryArtifacts } from "../auto-boundary.js";
+import { buildAutoBoundary } from "../auto-boundary.js";
 import { boundaryReviewCommand, loadBoundaryReviewContext } from "../boundary-commands.js";
 import { analyzeReadWorkloadSet, READ_WORKLOAD_SET_VERSION } from "../read-workload-assist.js";
 import { prepareBoundaryResourceReviewMutation, commitBoundaryResourceReviewMutation } from "../boundary-review-mutation.js";
 import type { BoundaryResourceReviewRequest } from "../read-authoring-contract-types.js";
 import { ownedProgramInspection } from "./owned-authoring-program.js";
+import { initializeGuidedProject } from "../guided-project.js";
+import { initializeFreshGovernedAuthoring } from "../control-policy-fresh-authoring.js";
+import { readRuntimeConfig } from "../cli-project.js";
 
 export async function prepareReviewedReadScope(projectRoot: string, declared: { resources: string[]; field: string; primaryKey?: string; fields?: Record<string, { type: string; enum?: string[] }>; review?: Pick<BoundaryResourceReviewRequest, "selectable_fields" | "filterable_fields" | "sortable_fields" | "groupable_fields" | "aggregate_measures" | "count_distinct_fields" | "time_bucket_fields" | "keep_out_fields" | "allow_reviewed_fields"> } = {resources:["work.items"],field:"label"}) {
   // Reuse the declared structural fixture; only table identity changes to the
@@ -40,7 +43,12 @@ export async function prepareReviewedReadScope(projectRoot: string, declared: { 
   inspection.schemas=[...new Set(inspection.tables.map(table=>table.schema))];
   const build=buildAutoBoundary({inspection,sourceEnv:"DATABASE_URL",inspectedSchema:inspection.schemas[0]!,
     project:{root:projectRoot,package_manager:"npm",frameworks:[],schema_inputs:[],database_env_names:["DATABASE_URL"]}});
-  await writeAutoBoundaryArtifacts({projectRoot,build});
+  // Follow fresh product initialization before any review. File-only confirmations
+  // cannot substitute for the immutable native candidate/origin required by v2.
+  const guided = await initializeGuidedProject({ projectRoot, build, runnerVersion: "1.8.0", instantOnboarding: true });
+  const config = await readRuntimeConfig(guided.config_path);
+  await initializeFreshGovernedAuthoring({ projectRoot, build, config, storePath: guided.store_path,
+    actor: "declared fixture operator" });
   for(const resource_id of declared.resources){
   const preview=await prepareBoundaryResourceReviewMutation(projectRoot,{
     resource_id,include:true,tenant_key:"tenant_id",principal_key:"principal_id",

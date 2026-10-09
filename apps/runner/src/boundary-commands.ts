@@ -137,6 +137,8 @@ import {
   boundaryReviewDecisions,
   createBoundaryReviewProgress,
   type BoundaryReviewProgress,
+  boundaryReviewSubmissionForDecisions,
+  boundaryReviewDecisionResourceId,
 } from "./boundary-review-domain.js";
 import {
   readBoundaryReviewProgress,
@@ -15433,9 +15435,9 @@ async function confirmBoundaryReviewInteractively(input: {
     ].join("\n"));
     return { context: input.context };
   }
-  const confirmed = new Set(input.context.progress?.confirmed_decisions ?? []);
+  const confirmed = new Set<string>();
   let acceptedGroups = 0;
-  const boundaryDecisions = outstanding.filter((decision) => !decision.resource_id);
+  const boundaryDecisions = outstanding.filter((decision) => !boundaryReviewDecisionResourceId(decision));
   if (boundaryDecisions.length) {
     const settingsSignoff = formatBoundarySettingsSignoff(input.context.bundle);
     const settingsContext = settingsSignoff.trimEnd().split("\n");
@@ -15444,33 +15446,33 @@ async function confirmBoundaryReviewInteractively(input: {
       input.context.candidate.deployment_profile === "production"
         ? "Confirm these boundary-wide production HTTP and trusted JWT scope settings?"
         : "Confirm these boundary-wide local-authoring and trusted-scope settings?",
-      { defaultValue: true, context: settingsContext },
+      { defaultValue: false, context: settingsContext },
     );
     if (accepted === undefined) {
       process.stdout.write("Returned to boundary review. No sign-offs were recorded.\n");
       return { context: input.context, actor };
     }
     if (accepted) {
-      boundaryDecisions.forEach((decision) => confirmed.add(decision.decision));
+      boundaryDecisions.forEach((decision) => confirmed.add(decision.id));
       acceptedGroups += 1;
     }
   }
   for (const resource of input.context.candidate.pack.resources) {
-    const decisions = outstanding.filter((decision) => decision.resource_id === resource.id);
+    const decisions = outstanding.filter((decision) => boundaryReviewDecisionResourceId(decision) === resource.id);
     if (!decisions.length) continue;
     const resourceSignoff = formatBoundaryResourceSignoff(resource, decisions.length);
     const resourceContext = resourceSignoff.trimEnd().split("\n");
     if (input.session.presentationMode !== "conversation") process.stdout.write(resourceSignoff);
     const accepted = await input.session.confirm(
       `Sign off ${resource.id} exactly as shown?`,
-      { defaultValue: true, context: resourceContext },
+      { defaultValue: false, context: resourceContext },
     );
     if (accepted === undefined) {
       process.stdout.write("Returned to boundary review. No sign-offs from this review were recorded.\n");
       return { context: input.context, actor };
     }
     if (accepted) {
-      decisions.forEach((decision) => confirmed.add(decision.decision));
+      decisions.forEach((decision) => confirmed.add(decision.id));
       acceptedGroups += 1;
     }
   }
@@ -15483,16 +15485,18 @@ async function confirmBoundaryReviewInteractively(input: {
     ].join("\n"));
     return { context: input.context, actor };
   }
+  const submission = boundaryReviewSubmissionForDecisions(input.context.candidate, [...confirmed]);
   const progress = createBoundaryReviewProgress({
     draft: input.context.draft,
     candidate: input.context.candidate,
-    confirmedDecisions: [...confirmed],
+    submission,
+    resolvedOrigins: input.context.resolvedOrigins,
     previous: input.context.progress,
     actor,
     reason: "Confirmed through the grouped CLI boundary review shown to this operator.",
     revision: (input.context.progress?.revision ?? 0) + 1,
   });
-  await saveBoundaryReviewSignoff(input.projectRoot, input.context, progress);
+  await saveBoundaryReviewSignoff(input.projectRoot, input.context, progress, submission);
   return {
     context: await loadBoundaryReviewContext(input.projectRoot),
     actor,
@@ -15515,7 +15519,7 @@ async function confirmBoundaryResourceInteractively(input: {
     );
   }
   const outstanding = context.bundle.decisions.filter(
-    (decision) => decision.resource_id === input.resourceId && !decision.confirmed,
+    (decision) => boundaryReviewDecisionResourceId(decision) === input.resourceId && !decision.confirmed,
   );
   if (!outstanding.length) {
     process.stdout.write([
@@ -15542,7 +15546,7 @@ async function confirmBoundaryResourceInteractively(input: {
   }
   if (!await input.session.confirm(
     `Sign off ${input.resourceId} exactly as shown?`,
-    { defaultValue: true, context: resourceContext },
+    { defaultValue: false, context: resourceContext },
   )) {
     process.stdout.write([
       "Table sign-off was not recorded.",
@@ -15551,19 +15555,18 @@ async function confirmBoundaryResourceInteractively(input: {
     ].join("\n"));
     return context;
   }
+  const submission = boundaryReviewSubmissionForDecisions(context.candidate, outstanding.map(decision => decision.id));
   const progress = createBoundaryReviewProgress({
     draft: context.draft,
     candidate: context.candidate,
-    confirmedDecisions: [
-      ...(context.progress?.confirmed_decisions ?? []),
-      ...outstanding.map((decision) => decision.decision),
-    ],
+    submission,
+    resolvedOrigins: context.resolvedOrigins,
     previous: context.progress,
     actor,
     reason: `Confirmed the grouped CLI review for ${input.resourceId}.`,
     revision: (context.progress?.revision ?? 0) + 1,
   });
-  await saveBoundaryReviewSignoff(input.projectRoot, context, progress);
+  await saveBoundaryReviewSignoff(input.projectRoot, context, progress, submission);
   const updated = await loadBoundaryReviewContext(input.projectRoot);
   const remaining = boundaryReviewOverview(updated.bundle);
   process.stdout.write([

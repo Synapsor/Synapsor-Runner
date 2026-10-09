@@ -1,0 +1,46 @@
+{
+  "base": "c88339f3",
+  "before_test": "f82e541c",
+  "scope": "Two public grouped/focused structural signoff adapters, owning typed decision selection, loaded-confirmation projection, fresh native initializer; disabled authority only",
+  "failures_preserved": [
+    {
+      "log": "read-public-signoff-before",
+      "cause": "Old fixture requested selectable field without explicit visibility choice; NOT_REACHED target"
+    },
+    {
+      "log": "read-public-signoff-typed-before",
+      "cause": "Explicit declared visibility reaches real public old confirmedDecisions call: BOUNDARY_REVIEW_PROTOCOL_REQUIRED"
+    },
+    {
+      "log": "read-public-signoff-after",
+      "cause": "Typed call reaches native-save fence; file-only fixture cannot supply native origin"
+    },
+    {
+      "log": "read-public-signoff-bootstrap-before",
+      "cause": "Ordinary fresh native initializer itself still supplied old confirmedDecisions"
+    }
+  ],
+  "fixture_correction": "Same declared Source/resources/meaning, now uses actual initializeGuidedProject + initializeFreshGovernedAuthoring before ordinary reviewed mutation/signoff; no imported/fabricated confirmations or origins. Explicit label visibility declared in test.",
+  "product_change": [
+    "Shared exact typed IDs\u2192current reference submission; no parsing/display-string identity",
+    "Grouped/focused interactive decisions pass exact submission to existing protected writer; previous confirmations retained by existing applicability owner",
+    "Bundle confirmed projection uses existing applicability + resolved origins",
+    "Fresh v2 authoring records exact protocol; no historical migration",
+    "Grouped/focused signoffs default No; cancel preserves existing no-save control"
+  ],
+  "after": {
+    "pass": 1,
+    "fail": 0,
+    "skip": 0,
+    "actual_path": "boundaryReviewCommand --confirm --output, native persisted origins and exact current references, disabled candidate"
+  },
+  "evidence_root": "/var/tmp/synapsor-b64-main-owned/evidence",
+  "after_log": "read-public-signoff-native-after",
+  "independent": "R1 GS01\u201308 presealed b7053929; successor review pending",
+  "open": [
+    "No Main full-typecheck/pass (previous330diagnostics)",
+    "Other Read save/activation/file/export ports still unconverted",
+    "Privacy subject projection owned separately c3e55292 pending actual fixture after this hook",
+    "Exact new public test is in-process production CLI handler, not fresh OS process"
+  ]
+}

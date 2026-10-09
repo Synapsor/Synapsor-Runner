@@ -6,7 +6,7 @@ import { readProjectReadAuthoring } from "./control-policy-read-authoring-projec
 import { readJsonFileWithLocation } from "./cli-files.js";
 import { readBoundaryReviewProgress } from "./boundary-review-persistence.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
-import { boundaryReviewDecisions } from "./boundary-review-domain.js";
+import { applicableBoundaryReviewConfirmations, boundaryReviewDecisions } from "./boundary-review-domain.js";
 import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import type { BoundaryReviewMutationBindings } from "./read-authoring-contract-types.js";
 
@@ -61,9 +61,11 @@ export async function loadBoundaryReviewContext(projectRoot: string, permit?: Pr
   );
   const progress = stored?.selected?.progress ?? await readBoundaryReviewProgress(projectRoot, draft, permit);
   const candidate = progress?.candidate ?? recommendedBoundaryReviewCandidate(draft);
+  const applicable = new Set(applicableBoundaryReviewConfirmations(candidate,
+    progress?.confirmations ?? [], stored?.resolvedOrigins).map(item => item.current.id));
   const decisions = boundaryReviewDecisions(candidate).map((decision) => ({
     ...decision,
-    confirmed: progress?.confirmed_decisions.includes(decision.decision) ?? false,
+    confirmed: applicable.has(decision.id),
   }));
   const candidateDigest = explorationBoundaryCandidateDigest(candidate);
   const core = {

@@ -3,6 +3,8 @@ import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  BOUNDARY_REVIEW_SUBMISSION_VERSION,
+  boundaryReviewDecisionRefs,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   emptyReviewOverrides,
   explorationBoundaryCandidateDigest,
@@ -610,6 +612,27 @@ export function legacyPolicyMigration(): BoundaryReviewPolicyMigration {
     source: "legacy_exact_boundary_revision",
     reason: "Legacy project-wide review inputs were not assigned to this boundary; its exact saved revision remains authoritative until policy is reconstructed from a clean inspection.",
   };
+}
+
+/** IDs come only from the exact decisions shown by the existing review view. */
+export function boundaryReviewSubmissionForDecisions(candidate: ExplorationBoundaryDraft,
+  acceptedIds: readonly string[]): BoundaryReviewSubmission {
+  const current = boundaryReviewDecisionRefs(candidate);
+  const selected = new Set(acceptedIds);
+  if (selected.size !== acceptedIds.length || acceptedIds.some(id => !current.some(item => item.id === id))) {
+    throw new Error("BOUNDARY_REVIEW_SUBMISSION_INVALID: The selected review decisions are not current.");
+  }
+  const submission: BoundaryReviewSubmission = {
+    schema_version: BOUNDARY_REVIEW_SUBMISSION_VERSION,
+    candidate_digest: explorationBoundaryCandidateDigest(candidate),
+    decisions: current.filter(item => selected.has(item.id)),
+  };
+  validateBoundaryReviewSubmission(candidate, submission, "partial");
+  return submission;
+}
+
+export function boundaryReviewDecisionResourceId(reference: BoundaryReviewDecisionRef): string | undefined {
+  return "resource_id" in reference ? reference.resource_id : undefined;
 }
 
 function confirmationReference(confirmation: BoundaryReviewConfirmation): BoundaryReviewDecisionRef {

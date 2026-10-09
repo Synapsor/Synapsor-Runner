@@ -8,7 +8,7 @@ import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { createBoundaryReviewProgress, newBoundaryReviewId } from "./boundary-review-domain.js";
 import { decodeOperatorAuthority, encodeOperatorAuthority, validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
 import { readProjectReadAuthoring, type ProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
-import { preparedReadAuthoringDraft, readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
+import { READ_REVIEW_PROTOCOL, preparedReadAuthoringDraft, readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
 import { migrateProjectControlPolicies, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
 import type { ControlPolicyPointer, ControlPolicyRevision } from "@synapsor-runner/proposal-store";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
@@ -94,13 +94,13 @@ function initialSnapshot(build: AutoBoundaryBuild, actor: string): ControlPolicy
     candidate,
     boundaryId: newBoundaryReviewId(),
     reviewOverrides: build.overrides,
-    confirmedDecisions: [],
     actor,
     reason: "Fresh local governed authoring; pending human review.",
     revision: 1,
   });
   const authoring: StoredReadAuthoring = {
     type: "read_authoring",
+    review_protocol: READ_REVIEW_PROTOCOL,
     selected_boundary_id: progress.boundary_id,
     entries: [{
       draft: preparedReadAuthoringDraft(build),
