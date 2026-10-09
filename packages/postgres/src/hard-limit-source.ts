@@ -47,7 +47,11 @@ type SourceDiagnosticStage =
   | 'relation_profile';
 type SourceDiagnosticOrigin = 'source.hard_limit' | 'source.receipt_read';
 type SourceDiagnosticPath = `${SourceDiagnosticOrigin}.${SourceDiagnosticStage}`;
-function unsupported(path: SourceDiagnosticPath): never { throw new ActionRuleError('ACTION_RULE_SCOPE_UNPROVEN', 'Native Source effects cannot be inspected with the supported guarantees.', path); }
+function unsupported(path: SourceDiagnosticPath, cause?: unknown): never {
+  const error = new ActionRuleError('ACTION_RULE_SCOPE_UNPROVEN', 'Native Source effects cannot be inspected with the supported guarantees.', path);
+  if (cause !== undefined) Object.defineProperty(error, 'cause', { value: cause });
+  throw error;
+}
 
 /** Protect namespace catalog identity for the same Source transaction. Existing
  * privilege only; callers cannot attest this lock or request a wider grant. */
@@ -65,7 +69,11 @@ export async function protectPostgresHardLimitNames(client: PostgresApplyClient)
       OR pg_catalog.current_setting('lock_timeout')::pg_catalog.interval > interval '5 seconds'
     THEN '5s' ELSE pg_catalog.current_setting('lock_timeout') END, true)`);
   try { await client.query('LOCK TABLE ONLY pg_catalog.pg_namespace IN SHARE MODE'); }
-  catch { unsupported('source.hard_limit.namespace_lock'); }
+  catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: unknown }).code : undefined;
+    if (code === '40P01' || code === '55P03') throw error;
+    unsupported('source.hard_limit.namespace_lock', error);
+  }
   const protectedName = await client.query(`SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_locks
     WHERE pid=pg_catalog.pg_backend_pid() AND relation='pg_catalog.pg_namespace'::pg_catalog.regclass
       AND granted AND mode='ShareLock') AS held`);
