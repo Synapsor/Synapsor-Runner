@@ -25,12 +25,13 @@ import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, wr
 async function activationFixture(custom = false) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owned-native-scope-"));
   await fs.chmod(dir,0o700);
-  const prepared=await prepareReviewedReadScope(dir), {context}=prepared;
+  const prepared=await prepareReviewedReadScope(dir, {resources:["work.items"],field:"label",review:{allow_reviewed_fields:["label"]}}), {context}=prepared;
   const nativeBinding={boundary_name:context.candidate.pack.name,generation_lock_fingerprint:context.candidate.generation_lock_fingerprint,
     schema_fingerprint:context.lock.schema_fingerprint,role_posture_fingerprint:context.lock.role_posture_fingerprint};
-  const input = { binding: nativeBinding, stage: "read_mapping" as const, jobIntent: "Show the signed-in person their item labels", provider: custom ? "openai_compatible" as const : "openai" as const, model: "controlled" };
-  const destination = { provider: input.provider, model: input.model, ...(custom ? {baseUrl:"http://localhost:9876/v1"} : {}) };
-  let state = buildBoundaryAuthoringResumeState({ ...input, ...(custom ? {metadataDestinationDigest:d(authoringDestination(destination))} : {}), authoringProtocol: { version: "synapsor.structured-authoring.v2" } });
+  const initial = { binding: nativeBinding, stage: "read_mapping" as const, jobIntent: "Show the signed-in person their item labels", provider: custom ? "openai_compatible" as const : "openai" as const, model: "controlled" };
+  const destination = { provider: initial.provider, model: initial.model, ...(custom ? {baseUrl:"http://localhost:9876/v1"} : {}) };
+  const input={...initial,...(custom ? {metadataDestinationDigest:d(authoringDestination(destination))} : {})};
+  let state = buildBoundaryAuthoringResumeState({ ...input, authoringProtocol: { version: "synapsor.structured-authoring.v2" } });
   const projected=projectAuthoringReadScopeContext({resume:state,boundary:context.candidate,structuralReview:context,
     records:{questions:[],handoffs:[]}});
   const request=projected.references.find(ref=>ref.kind==="request")!;
@@ -121,7 +122,7 @@ async function review(f: Awaited<ReturnType<typeof activationFixture>>, accepted
       const loaded=await readBoundaryAuthoringResumeState(f.dir,f.nativeBinding);
       if(loaded.status!=="ready")throw new Error("Saved review is unavailable");
       const prior=loaded.value;
-      const state=buildBoundaryAuthoringResumeState({...f.input,previous:prior,operatorQuestions:prior.operator_questions!.map(q=>q.id===next.id?next:q)});
+      const state=buildBoundaryAuthoringResumeState({...f.input,previous:prior,read:prior.read,operatorQuestions:prior.operator_questions!.map(q=>q.id===next.id?next:q)});
       await writeBoundaryAuthoringResumeState(f.dir,state,{expectedRevisionDigest:prior.revision_digest,permit});
       // Reload through the actual native owner; f's retained state is not used by assessment.
     },
@@ -155,7 +156,7 @@ describe("standalone activation native Read assessment hydration",()=>{
     const f=await activationFixture();let expired: any;
     await withProjectAuthorityMutation(f.dir,async permit=>{expired=permit;});
     await expect(assessReadScopeForActivation({projectRoot:f.dir,candidate:f.prepared.context.candidate,
-      readerInspection:f.prepared.inspection,permit:expired})).rejects.toThrow("POLICY_MUTATION_PERMIT_INVALID");
+      readerInspection:f.prepared.inspection,permit:expired})).rejects.toMatchObject({code:"POLICY_MUTATION_PERMIT_INVALID"});
   });
   it("requires the custom endpoint's exact saved metadata identity",async()=>{
     const f=await activationFixture(true);await review(f,true);
