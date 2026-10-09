@@ -13,12 +13,23 @@ function fixture(count: number, attempts: number, owner: boolean, choice = "paus
     operation_digest: digest("operation"), prior_context_digest: digest("old"), current_context_digest: digest("current"),
     state_digest: digest("recovery"), root_operation_id: "selected-step", remaining_attempts: attempts, unresolved_operation_count: count,
   };
-  const snapshot: AuthoringRecoveryInspection = { resume: preview.checkpoint_digest, digest: digest("inspection"), recovery: undefined,
+  const operations: AuthoringTransportOperation[] = Array.from({ length: count }, (_, index) => ({
+    id: index ? `other-step-${index}` : preview.operation_id,
+    request_digest: digest(`request-${index}`), context_digest: preview.prior_context_digest,
+    deadline: "2026-10-09T00:01:00.000Z", state: index ? "partial" : "handled",
+    attempts: Array.from({ length: 3 - attempts }, (_, attempt) => ({
+      id: attempt === 2 - attempts ? preview.attempt_id : `attempt-${attempt}`,
+      started_at: "2026-10-09T00:00:00.000Z", outcome: "response" as const,
+    })),
+  }));
+  const recovery = { version: 1 as const, operations };
+  preview.state_digest = digest(recovery);
+  preview.operation_digest = digest(operations[0]);
+  const snapshot: AuthoringRecoveryInspection = { resume: preview.checkpoint_digest, digest: digest("inspection"), recovery,
     business: ["Unfinished task: Read mapping"], retained: ["Original retained work"] };
   const access = {
     inspect: vi.fn(async () => structuredClone(snapshot)),
-    unresolved: vi.fn(() => Array.from({ length: count }, (_, index) => ({ id: index ? `other-step-${index}` : preview.operation_id,
-      state: index ? "partial" : "handled" } as AuthoringTransportOperation))),
+    unresolved: vi.fn(() => operations),
     prepareInterrupted: vi.fn(async () => preview),
     prepareManual: vi.fn(async () => { throw new Error("Manual replacement not requested"); }),
     hasRemainingOwner: vi.fn(() => owner), recordInterrupted: vi.fn(async () => {}), recordManual: vi.fn(async () => {}),
