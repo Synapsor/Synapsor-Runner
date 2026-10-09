@@ -1,3 +1,4 @@
+import { createSavedReadActivationAssessment } from "./authoring-read-activation-route.js";
 import { loadBoundaryReviewContext } from "./boundary-review-context.js";
 import { saveReadReviewSignoff, reloadReadReviewAfterCommit } from "./authoring-read-review-save.js";
 import { parseExplorationBoundaryDraftArtifact, readOptionalExplorationDraft, readOptionalExplorationDraftContext } from "./auto-boundary.js";
@@ -47,6 +48,7 @@ import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
   BOUNDARY_REVIEW_SUBMISSION_VERSION,
   type BoundaryReviewSubmission,
+  validateBoundaryReviewSubmission,
   type ResolvedBoundaryReviewOrigin,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
@@ -252,6 +254,7 @@ import {
 import {
   BOUNDARY_REVIEW_PROGRESS_VERSION,
   applicableBoundaryReviewConfirmations,
+  boundaryReviewSubmissionForDecisions,
   boundaryReviewDecisions as sharedBoundaryReviewDecisions,
   createBoundaryReviewProgress as createSharedBoundaryReviewProgress,
   normalizeManagedBoundaryReviewDecision as normalizeSharedManagedBoundaryReviewDecision,
@@ -409,6 +412,7 @@ type WorkbenchSessionState = {
     revision: number;
     actor: string;
     createdAtMs: number;
+    reviewSubmissionDigest: string;
   };
   protectedQueryPreview?: {
     capability: string;
@@ -1022,6 +1026,7 @@ async function handleRequest(input: {
         eligible: instantAvailable && instantTenantScopeSource !== null,
         runtime_ready: instantAvailable && instantMissingBindings.length === 0,
         candidate: instantCandidate,
+        review_decisions: instantCandidate ? boundaryReviewDecisions(instantCandidate) : [],
         candidate_digest: instantCandidate ? explorationBoundaryCandidateDigest(instantCandidate) : null,
         resource: instantResource?.id ?? null,
         requires_principal: Boolean(instantResource && hasReviewedPrincipalScope(instantResource)),
@@ -1573,6 +1578,7 @@ async function handleRequest(input: {
       return;
     }
     const candidate = instantWorkbenchCandidate(draft);
+    const reviewSubmission = workbenchTypedReviewSubmission(candidate, body);
     const resource = candidate.pack.resources[0];
     if (!resource) throw new Error("Runner could not identify a conservative first resource. Continue with the full boundary review.");
     const firstValue = buildInstantFirstValue(candidate);
@@ -1628,7 +1634,8 @@ async function handleRequest(input: {
       expectedDigest: digest,
       actor: activationActor,
       confirmation: `ACTIVATE ${digest}`,
-      confirmedDecisions: candidate.unresolved_decisions,
+      reviewSubmission,
+      assessReadScope: createSavedReadActivationAssessment(projectRoot, schemaInspector),
       currentInspection: inspection,
       activationAudit: {
         mode: "instant_development",
@@ -2156,6 +2163,7 @@ async function handleRequest(input: {
       pack: structuredClone(active.pack),
       budgets: structuredClone(active.budgets),
       unresolved_decisions: [],
+      review_requirements: structuredClone(active.review_requirements),
     };
     // Demand-driven review may widen only the currently active authority.
     // Saved progress can predate activation and therefore must not become an
@@ -2176,33 +2184,15 @@ async function handleRequest(input: {
       candidateSource.relationships.sort((left, right) =>
         (left.path_depth ?? 1) - (right.path_depth ?? 1) || left.id.localeCompare(right.id));
     }
-    const relationshipDecision =
-      `${resourceId}: review relationship ${relationshipId} cardinality and scope on ${reviewedRelationship.target_resource}`;
-    // This endpoint constructs the only permitted widening from the active pack
-    // after proving the catalog relationship and every resource in its path.
-    // Reconstitute that boundary's own review requirements without borrowing a
-    // policy-bound draft from another saved boundary.
-    const reviewDraft = structuredClone(candidate);
-    reviewDraft.unresolved_decisions = [...new Set([
-      ...active.activation.reviewed_decisions
-        .filter((decision) => decision.confirmed)
-        .map((decision) => decision.decision),
-      relationshipDecision,
-    ])].sort();
-    const preview = reviewExplorationBoundaryCandidate(reviewDraft, candidate);
-    const confirmedDecisions = active.activation.reviewed_decisions
-      .filter((decision) => decision.confirmed)
-      .map((decision) => decision.decision)
-      .filter((decision) => preview.candidate.unresolved_decisions.includes(decision));
-    if (reviewedRelationship.unmatched_rows !== "review_required"
-      && preview.candidate.unresolved_decisions.includes(relationshipDecision)
-      && !confirmedDecisions.includes(relationshipDecision)) {
-      confirmedDecisions.push(relationshipDecision);
-    }
+    // Catalog proof permits staging this path, not structural confirmation.
+    // The shared typed projection derives the new exact requirement; preserve
+    // only applicable existing confirmations from their native origins.
+    const preview = reviewExplorationBoundaryCandidate(structuredClone(candidate), candidate);
     const progress = createBoundaryReviewProgress({
       draft,
       candidate: preview.candidate,
-      confirmedDecisions,
+      submission: boundaryReviewSubmissionForDecisions(preview.candidate, []),
+      resolvedOrigins: savedReview.resolvedOrigins,
       ...(existingProgress ? { previous: existingProgress } : {}),
       actor,
       revision: (existingProgress?.revision ?? 0) + 1,
@@ -2360,7 +2350,7 @@ async function handleRequest(input: {
         revision: progress?.revision ?? 0,
         invalidated_decisions: progress?.invalidated_decisions ?? [],
         outstanding_decisions: boundaryReviewDecisions(progress?.candidate ?? build.exploration_boundary)
-          .filter((decision) => !(progress?.confirmed_decisions ?? []).includes(decision.decision)),
+          .filter((decision) => !(progress?.confirmed_decisions ?? []).includes(decision.id)),
       },
       active: activeBeforeReview,
       journey,
@@ -2485,7 +2475,7 @@ async function handleRequest(input: {
         revision: progress.revision,
         invalidated_decisions: progress.invalidated_decisions,
         outstanding_decisions: boundaryReviewDecisions(progress.candidate)
-          .filter((decision) => !progress.confirmed_decisions.includes(decision.decision)),
+          .filter((decision) => !progress.confirmed_decisions.includes(decision.id)),
       },
       active: previousActive ?? null,
       source_database_changed: false,
@@ -2607,9 +2597,8 @@ async function handleRequest(input: {
     if (typeof body.expected_digest !== "string"
       || typeof body.actor !== "string"
       || typeof body.confirmation !== "string"
-      || !Array.isArray(body.confirmed_decisions)
-      || body.confirmed_decisions.some((decision) => typeof decision !== "string")) {
-      throw new Error("Boundary activation requires expected_digest, actor, exact confirmation, and every reviewed decision.");
+      || !isRecord(body.review_submission) || Object.hasOwn(body, "confirmed_decisions")) {
+      throw new Error("BOUNDARY_REVIEW_PROTOCOL_REQUIRED: Activation requires the exact typed review, digest, actor, and confirmation.");
     }
     const preview = bootstrapState.boundaryPreview;
     const savedReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
@@ -2645,6 +2634,10 @@ async function handleRequest(input: {
       return;
     }
     const candidate = body.candidate as unknown as ExplorationBoundaryDraft;
+    const reviewSubmission = workbenchTypedReviewSubmission(candidate, body);
+    if (canonicalJsonDigest(reviewSubmission) !== preview.reviewSubmissionDigest) {
+      throw new Error("BOUNDARY_PREVIEW_STALE: The exact typed review changed after preview.");
+    }
     assertWorkbenchReviewBinding({ authoring_binding: preview.authoring }, savedReview.authoring);
     const reviewAuthority = await resolveSavedBoundaryReviewAuthority({
       projectRoot,
@@ -2667,7 +2660,8 @@ async function handleRequest(input: {
       expectedAuthoring: preview.authoring,
       actor: body.actor,
       confirmation: body.confirmation,
-      confirmedDecisions: body.confirmed_decisions,
+      reviewSubmission,
+      assessReadScope: createSavedReadActivationAssessment(projectRoot, schemaInspector),
       currentInspection: inspection,
       activeSetMode: "add",
     });
@@ -2748,9 +2742,8 @@ async function handleRequest(input: {
     if (!isRecord(body.candidate)
       || !Number.isSafeInteger(body.expected_revision)
       || typeof body.actor !== "string"
-      || !Array.isArray(body.confirmed_decisions)
-      || body.confirmed_decisions.some((decision) => typeof decision !== "string")) {
-      throw new Error("Boundary preview requires the exact candidate, saved review revision, reviewer identity, and confirmed decisions.");
+      || !isRecord(body.review_submission) || Object.hasOwn(body, "confirmed_decisions")) {
+      throw new Error("BOUNDARY_REVIEW_PROTOCOL_REQUIRED: Preview requires the exact candidate, saved revision, reviewer identity, and typed review.");
     }
     const actor = body.actor.trim();
     if (!actor || actor.length > 128 || /[\u0000-\u001f\u007f]/.test(actor)) {
@@ -2791,17 +2784,7 @@ async function handleRequest(input: {
       });
       return;
     }
-    const confirmed = new Set(body.confirmed_decisions as string[]);
-    if (reviewed.candidate.unresolved_decisions.some((decision) => !confirmed.has(decision))
-      || confirmed.size !== reviewed.candidate.unresolved_decisions.length) {
-      sendJson(response, 409, {
-        ok: false,
-        error_code: "BOUNDARY_REVIEW_INCOMPLETE",
-        error: "Every current review decision must be confirmed before creating the final fingerprint.",
-        source_database_changed: false,
-      });
-      return;
-    }
+    const reviewSubmission = workbenchTypedReviewSubmission(reviewed.candidate, body);
     const inspection = await schemaInspector({
       engine: reviewAuthority.generationLock.engine,
       databaseUrlEnv: reviewAuthority.generationLock.source_env,
@@ -2819,6 +2802,7 @@ async function handleRequest(input: {
     bootstrapState.boundaryPreview = {
       ...(savedReview.authoring ? { authoring: savedReview.authoring } : {}),
       digest: reviewed.digest,
+      reviewSubmissionDigest: canonicalJsonDigest(reviewSubmission),
       revision: currentRevision,
       actor,
       createdAtMs: bootstrapState.now(),
@@ -7560,15 +7544,16 @@ export async function readBoundaryReviewProgress(
   return readSharedBoundaryReviewProgress(projectRoot, draft);
 }
 
-export function createBoundaryReviewProgress(input: {
-  draft: ExplorationBoundaryDraft;
-  candidate: ExplorationBoundaryDraft;
-  confirmedDecisions: string[];
-  previous?: BoundaryReviewProgress;
-  actor?: string;
-  revision: number;
-  now?: string;
-}): BoundaryReviewProgress {
+function workbenchTypedReviewSubmission(candidate: ExplorationBoundaryDraft, body: Record<string, unknown>): BoundaryReviewSubmission {
+  if (Object.hasOwn(body, "confirmed_decisions")) {
+    throw new Error("BOUNDARY_REVIEW_PROTOCOL_REQUIRED: Submit exact typed review references, not text confirmations.");
+  }
+  return { schema_version: BOUNDARY_REVIEW_SUBMISSION_VERSION,
+    candidate_digest: explorationBoundaryCandidateDigest(candidate),
+    decisions: validateBoundaryReviewSubmission(candidate, body.review_submission, "complete") };
+}
+
+export function createBoundaryReviewProgress(input: Parameters<typeof createSharedBoundaryReviewProgress>[0]): BoundaryReviewProgress {
   return createSharedBoundaryReviewProgress(input);
 }
 
@@ -8034,7 +8019,7 @@ function renderBoundaryShell(csrfToken: string): string {
   </main>
   <script>
     ${workbenchSyntaxScript()}
-    const csrf="${escapedCsrf}";let original,candidate,digest,reviewReport,reviewDecisions=[],protectQueries=[],selectedProtect=null,protectedDraft=null;
+    const csrf="${escapedCsrf}";let original,candidate,digest,reviewReport,reviewDecisions=[],reviewCandidateDigest,reviewRevision,authoringBinding,protectQueries=[],selectedProtect=null,protectedDraft=null;
     const msg=document.getElementById("message");
     const permissions=[["raw","selectable_fields"],["filter","filterable_fields"],["sort","sortable_fields"],["group","groupable_fields"],["sum/avg","aggregate_measures"],["count distinct","count_distinct_fields"],["time","time_bucket_fields"]];
     const esc=v=>String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -8043,7 +8028,8 @@ function renderBoundaryShell(csrfToken: string): string {
     const currentResource=id=>candidate.pack.resources.find(r=>r.id===id);
     const scopePathLabel=scope=>{const links=scope?.proof?.links||[];const resources=[];if(links[0]?.source_resource)resources.push(links[0].source_resource);links.forEach(link=>{if(resources.at(-1)!==link.source_resource)resources.push(link.source_resource);if(resources.at(-1)!==link.target_resource)resources.push(link.target_resource)});if(resources.at(-1)!==scope.ancestor_resource)resources.push(scope.ancestor_resource);if(!resources.length)resources.push(scope.ancestor_resource);const shown=resources.map(resource=>resource.startsWith("public.")?resource.slice(7):resource);shown[shown.length-1]=shown.at(-1)+"."+scope.ancestor_column;return shown.join(" → ")};
     const scopeLabel=(resource,kind)=>{const direct=resource[kind+"_key"];if(direct)return direct;if(kind==="tenant"&&resource.shared_reference_scope)return "Shared reference; no tenant predicate";const scope=resource[kind+"_scope"];if(scope)return "mandatory relationship path "+scopePathLabel(scope);if(kind==="principal"&&resource.rls_session?.principal_setting)return "PostgreSQL RLS setting "+resource.rls_session.principal_setting;return "not configured"};
-    const reviewDecisionLabel=item=>{const separator=item.indexOf(":");if(separator<1)return item;const resource=currentResource(item.slice(0,separator));if(item.includes(": confirm mandatory derived tenant scope ")&&resource?.tenant_scope)return resource.id+": confirm customer isolation through "+scopePathLabel(resource.tenant_scope);if(item.includes(": confirm mandatory derived principal scope ")&&resource?.principal_scope)return resource.id+": confirm user/owner isolation through "+scopePathLabel(resource.principal_scope);return item};
+    const reviewDecisionLabel=item=>item.decision;
+    const typedReviewSubmission=()=>({schema_version:"synapsor.boundary-review-submission.v1",candidate_digest:reviewCandidateDigest,decisions:[...document.querySelectorAll("[data-review-decision]:checked")].map(input=>{const {decision,...ref}=reviewDecisions[Number(input.dataset.reviewDecision)];return ref})});
     function allDecisionsConfirmed(){return reviewDecisions.length>0&&document.querySelectorAll("[data-review-decision]:checked").length===reviewDecisions.length}
     function updateActivationState(){document.getElementById("activate").disabled=!digest||!allDecisionsConfirmed()}
     function changed(){digest=undefined;updateActivationState()}
@@ -8099,9 +8085,9 @@ function renderBoundaryShell(csrfToken: string): string {
       }catch(e){status.className="error";status.textContent=e.message}
     }
     async function loadProtect(){const status=document.getElementById("protect-message");try{const p=await fetch("/api/protect").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load recent queries");protectQueries=p.queries;selectedProtect=protectQueries.length?0:null;renderProtect();status.className="";status.textContent=protectQueries.length?protectQueries.length+" recent query or analysis result(s) ready for review.":p.message||"No recent query is ready yet."}catch(e){protectQueries=[];selectedProtect=null;renderProtect();status.className="error";status.textContent=e.message}}
-    async function load(){const p=await fetch("/api/boundary").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load review");original=p.draft;candidate=structuredClone(p.draft);reviewReport=p.review;reviewDecisions=[...p.review.unresolved_decisions];const s=p.review.summary;document.getElementById("summary").innerHTML=[[s.objects,"objects"],[s.draft_reads,"draft reads"],[s.blocked_objects,"blocked"],[s.sensitive_fields_kept_out,"kept-out fields"],[s.rls_policies,"RLS policies"],[s.structured_write_candidates,"disabled actions"]].map(([v,l])=>'<div class="metric"><strong>'+v+'</strong><span>'+l+'</span></div>').join("");document.getElementById("decisions").innerHTML=reviewDecisions.map((item,index)=>'<p><label><input type="checkbox" data-review-decision="'+index+'"> '+esc(reviewDecisionLabel(item))+"</label></p>").join("");document.querySelectorAll("[data-review-decision]").forEach(input=>input.addEventListener("change",updateActivationState));document.getElementById("deployment-profile").addEventListener("change",event=>{candidate.deployment_profile=event.currentTarget.value;changed();renderPosture()});document.getElementById("state").textContent=p.active?"Active reviewed boundary":"Disabled · review required";renderDatabaseCompatibility(p.database_server_compatibility);renderPosture();renderBlocked();renderResources();renderBudgets()}
-    document.getElementById("preview").onclick=async()=>{try{msg.className="";msg.textContent="Validating narrowed boundary…";const p=await post("/api/boundary/preview",{candidate});digest=p.digest;msg.textContent="Exact digest: "+digest+"\\n"+(p.activation_warning_lines||[]).join("\\n");updateActivationState()}catch(e){msg.className="error";msg.textContent=e.message}};
-    document.getElementById("activate").onclick=async()=>{try{const actor=document.getElementById("actor").value.trim();if(!actor)throw new Error("Enter the local operator identity.");const confirmedDecisions=[...document.querySelectorAll("[data-review-decision]:checked")].map(input=>reviewDecisions[Number(input.dataset.reviewDecision)]);msg.className="";msg.textContent="Rechecking schema lock and database-role posture…";await post("/api/boundary/activate",{candidate,expected_digest:digest,actor,confirmation:"ACTIVATE "+digest,confirmed_decisions:confirmedDecisions});msg.className="success";msg.textContent="Activated. Reconnect the local authoring MCP session to use Scoped Explore.";document.getElementById("state").textContent="Active reviewed boundary";document.getElementById("activate").disabled=true}catch(e){msg.className="error";msg.textContent=e.message}};
+    async function load(){const p=await fetch("/api/boundary").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load review");original=p.draft;candidate=structuredClone(p.candidate);reviewReport=p.review;reviewDecisions=structuredClone(p.review_decisions);reviewCandidateDigest=p.review_candidate_digest;reviewRevision=p.review_progress.revision;authoringBinding=p.authoring_binding;const s=p.review.summary;document.getElementById("summary").innerHTML=[[s.objects,"objects"],[s.draft_reads,"draft reads"],[s.blocked_objects,"blocked"],[s.sensitive_fields_kept_out,"kept-out fields"],[s.rls_policies,"RLS policies"],[s.structured_write_candidates,"disabled actions"]].map(([v,l])=>'<div class="metric"><strong>'+v+'</strong><span>'+l+'</span></div>').join("");document.getElementById("decisions").innerHTML=reviewDecisions.map((item,index)=>'<p><label><input type="checkbox" data-review-decision="'+index+'"> '+esc(reviewDecisionLabel(item))+"</label></p>").join("");document.querySelectorAll("[data-review-decision]").forEach(input=>input.addEventListener("change",updateActivationState));document.getElementById("deployment-profile").addEventListener("change",event=>{candidate.deployment_profile=event.currentTarget.value;changed();renderPosture()});document.getElementById("state").textContent=p.active?"Active reviewed boundary":"Disabled · review required";renderDatabaseCompatibility(p.database_server_compatibility);renderPosture();renderBlocked();renderResources();renderBudgets()}
+    document.getElementById("preview").onclick=async()=>{try{msg.className="";msg.textContent="Validating narrowed boundary…";const p=await post("/api/boundary/preview",{candidate,expected_revision:reviewRevision,authoring_binding:authoringBinding,actor:document.getElementById("actor").value.trim(),review_submission:typedReviewSubmission()});digest=p.digest;msg.textContent="Exact digest: "+digest+"\\n"+(p.activation_warning_lines||[]).join("\\n");updateActivationState()}catch(e){msg.className="error";msg.textContent=e.message}};
+    document.getElementById("activate").onclick=async()=>{try{const actor=document.getElementById("actor").value.trim();if(!actor)throw new Error("Enter the local operator identity.");msg.className="";msg.textContent="Rechecking schema lock and database-role posture…";await post("/api/boundary/activate",{candidate,expected_digest:digest,actor,confirmation:"ACTIVATE "+digest,authoring_binding:authoringBinding,review_submission:typedReviewSubmission()});msg.className="success";msg.textContent="Activated. Reconnect the local authoring MCP session to use Scoped Explore.";document.getElementById("state").textContent="Active reviewed boundary";document.getElementById("activate").disabled=true}catch(e){msg.className="error";msg.textContent=e.message}};
     document.getElementById("refresh-protect").onclick=loadProtect;
     load().then(loadProtect).catch(e=>{msg.className="error";msg.textContent=e.message});
   </script>

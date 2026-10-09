@@ -1,7 +1,8 @@
+import { boundaryReviewSubmissionForDecisions } from "./boundary-review-domain.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ProposalStore,
   attentionDecisionSubject,
@@ -12,6 +13,7 @@ import { canonicalJsonDigest, protocolVersions } from "@synapsor-runner/protocol
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  boundaryReviewDecisionRefs,
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
@@ -242,7 +244,7 @@ describe("local UI", () => {
       expectedDigest: digest,
       actor: "workbench-reviewer",
       confirmation: `ACTIVATE ${digest}`,
-      confirmedDecisions: candidate.unresolved_decisions,
+      reviewSubmission: boundaryReviewSubmissionForDecisions(candidate, boundaryReviewDecisionRefs(candidate).map(item => item.id)),
       currentInspection: inspection,
     });
 
@@ -366,7 +368,7 @@ describe("local UI", () => {
       expectedDigest: boundaryDigest,
       actor: "reviewer@example.test",
       confirmation: `ACTIVATE ${boundaryDigest}`,
-      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      reviewSubmission: boundaryReviewSubmissionForDecisions(build.exploration_boundary, boundaryReviewDecisionRefs(build.exploration_boundary).map(item => item.id)),
       currentInspection: inspection,
     });
     const capability = "analytics.weekly_members";
@@ -516,7 +518,7 @@ describe("local UI", () => {
       expectedDigest: digest,
       actor: "evidence-reviewer@example.test",
       confirmation: `ACTIVATE ${digest}`,
-      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      reviewSubmission: boundaryReviewSubmissionForDecisions(build.exploration_boundary, boundaryReviewDecisionRefs(build.exploration_boundary).map(item => item.id)),
       currentInspection: inspection,
     });
     const runtime = await createScopedExploreRuntime({
@@ -1350,7 +1352,7 @@ export default defineCapability({
       expectedDigest: boundaryDigest,
       actor: "reviewer@example.test",
       confirmation: `ACTIVATE ${boundaryDigest}`,
-      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      reviewSubmission: boundaryReviewSubmissionForDecisions(build.exploration_boundary, boundaryReviewDecisionRefs(build.exploration_boundary).map(item => item.id)),
       currentInspection: inspection,
     });
     let previewDigest = "";
@@ -1993,7 +1995,7 @@ export default defineCapability({
     const current = createBoundaryReviewProgress({
       draft: build.exploration_boundary,
       candidate: build.exploration_boundary,
-      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      submission: boundaryReviewSubmissionForDecisions(build.exploration_boundary, boundaryReviewDecisionRefs(build.exploration_boundary).map(item => item.id)),
       actor: "legacy-reviewer",
       revision: 1,
     });
@@ -2223,7 +2225,7 @@ export default defineCapability({
         expectedDigest: priorDigest,
         actor: "prior-reviewer",
         confirmation: `ACTIVATE ${priorDigest}`,
-        confirmedDecisions: priorCandidate.unresolved_decisions,
+        reviewSubmission: boundaryReviewSubmissionForDecisions(priorCandidate, boundaryReviewDecisionRefs(priorCandidate).map(item => item.id)),
         currentInspection: inspection,
       });
       const activated = await postJson(
@@ -2506,7 +2508,7 @@ export default defineCapability({
         expectedDigest: priorDigest,
         actor: "prior-reviewer",
         confirmation: `ACTIVATE ${priorDigest}`,
-        confirmedDecisions: priorCandidate.unresolved_decisions,
+        reviewSubmission: boundaryReviewSubmissionForDecisions(priorCandidate, boundaryReviewDecisionRefs(priorCandidate).map(item => item.id)),
         currentInspection: inspection,
       });
       const activated = await postJson(
@@ -2671,7 +2673,7 @@ export default defineCapability({
     await saveBoundaryReviewProgress(tempDir, createBoundaryReviewProgress({
       draft: build.exploration_boundary,
       candidate: build.exploration_boundary,
-      confirmedDecisions: [],
+      submission: boundaryReviewSubmissionForDecisions(build.exploration_boundary, []),
       actor: "reviewer@example.test",
       revision: 1,
     }));
@@ -3547,7 +3549,7 @@ export default defineCapability({
       expectedDigest: activeDigest,
       actor: "initial-reviewer@example.test",
       confirmation: `ACTIVATE ${activeDigest}`,
-      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      reviewSubmission: boundaryReviewSubmissionForDecisions(build.exploration_boundary, boundaryReviewDecisionRefs(build.exploration_boundary).map(item => item.id)),
       currentInspection: inspection,
     });
     const activePath = path.join(tempDir, ".synapsor/exploration-boundary.active.json");
@@ -3713,7 +3715,7 @@ export default defineCapability({
       expectedDigest: activeDigest,
       actor: "initial-reviewer@example.test",
       confirmation: `ACTIVATE ${activeDigest}`,
-      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      reviewSubmission: boundaryReviewSubmissionForDecisions(build.exploration_boundary, boundaryReviewDecisionRefs(build.exploration_boundary).map(item => item.id)),
       currentInspection: inspection,
     });
     await fs.rm(path.join(tempDir, ".synapsor/exploration-locks"), {
@@ -4172,7 +4174,7 @@ export default defineCapability({
         expectedDigest: otherDigest,
         actor: "other-reviewer@example.test",
         confirmation: `ACTIVATE ${otherDigest}`,
-        confirmedDecisions: otherCandidate.unresolved_decisions,
+        reviewSubmission: boundaryReviewSubmissionForDecisions(otherCandidate, boundaryReviewDecisionRefs(otherCandidate).map(item => item.id)),
         currentInspection,
         activeSetMode: "add",
       });
@@ -4274,7 +4276,7 @@ export default defineCapability({
     await saveBoundaryReviewProgress(tempDir, createBoundaryReviewProgress({
       draft: build.exploration_boundary,
       candidate: legacyCandidate,
-      confirmedDecisions: legacyCandidate.unresolved_decisions,
+      submission: boundaryReviewSubmissionForDecisions(legacyCandidate, boundaryReviewDecisionRefs(legacyCandidate).map(item => item.id)),
       actor: "legacy-owner@example.test",
       revision: 1,
     }));
@@ -4732,7 +4734,7 @@ export default defineCapability({
       expectedDigest: firstDigest,
       actor: "first-reviewer@example.test",
       confirmation: `ACTIVATE ${firstDigest}`,
-      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      reviewSubmission: boundaryReviewSubmissionForDecisions(build.exploration_boundary, boundaryReviewDecisionRefs(build.exploration_boundary).map(item => item.id)),
       currentInspection: inspection,
     });
     const server = await startLocalUiServer({
@@ -4849,7 +4851,7 @@ export default defineCapability({
     const staleProgress = createBoundaryReviewProgress({
       draft: build.exploration_boundary,
       candidate: build.exploration_boundary,
-      confirmedDecisions: build.exploration_boundary.unresolved_decisions.slice(0, 1),
+      submission: boundaryReviewSubmissionForDecisions(build.exploration_boundary, boundaryReviewDecisionRefs(build.exploration_boundary).map(item => item.id).slice(0, 1)),
       actor: "pre-activation-reviewer@example.test",
       revision: 1,
     });
@@ -4861,7 +4863,7 @@ export default defineCapability({
       expectedDigest: activeDigest,
       actor: "initial-reviewer@example.test",
       confirmation: `ACTIVATE ${activeDigest}`,
-      confirmedDecisions: candidate.unresolved_decisions,
+      reviewSubmission: boundaryReviewSubmissionForDecisions(candidate, boundaryReviewDecisionRefs(candidate).map(item => item.id)),
       currentInspection: inspection,
     });
     const mirrorSelectedCandidate = structuredClone(candidate);
@@ -4874,7 +4876,7 @@ export default defineCapability({
       expectedDigest: mirrorSelectedDigest,
       actor: "secondary-reviewer@example.test",
       confirmation: `ACTIVATE ${mirrorSelectedDigest}`,
-      confirmedDecisions: mirrorSelectedCandidate.unresolved_decisions,
+      reviewSubmission: boundaryReviewSubmissionForDecisions(mirrorSelectedCandidate, boundaryReviewDecisionRefs(mirrorSelectedCandidate).map(item => item.id)),
       currentInspection: inspection,
       activeSetMode: "add",
     });
@@ -4973,7 +4975,7 @@ export default defineCapability({
         .toBe(staleProgress.candidate_digest);
       // Only an explicit operator review may replace a different pending draft.
       await saveBoundaryReviewProgress(tempDir, createBoundaryReviewProgress({
-        draft: build.exploration_boundary, candidate, confirmedDecisions: candidate.unresolved_decisions,
+        draft: build.exploration_boundary, candidate, submission: boundaryReviewSubmissionForDecisions(candidate, boundaryReviewDecisionRefs(candidate).map(item => item.id)),
         previous: staleProgress, revision: 2, actor: "relationship-reviewer@example.test",
       }));
 
@@ -5007,11 +5009,12 @@ export default defineCapability({
         .relationships).toEqual([
         expect.objectContaining({ id: "members_team_id_fkey" }),
       ]);
-      const relationshipDecision =
-        "public.members: review relationship members_team_id_fkey cardinality and scope on public.teams";
-      expect(staged.confirmed_decisions).toContain(relationshipDecision);
+      const relationshipDecision = boundaryReviewDecisionRefs(staged.candidate).find(item => item.kind === "relationship"
+        && item.resource_id === "public.members" && item.relationship_id === "members_team_id_fkey")!;
+      // Catalog-proof staging is not the separate typed structural Yes.
+      expect(staged.confirmed_decisions).not.toContain(relationshipDecision.id);
       expect(staged.confirmed_decisions).toEqual(expect.arrayContaining(
-        active.activation.reviewed_decisions.map((decision) => decision.decision),
+        active.activation.reviewed_decisions.flatMap((decision) => "id" in decision ? [decision.id] : []),
       ));
       expect(staged.candidate_digest).not.toBe(active.activation.digest);
 	      expect((await loadActivatedExplorationBoundary(tempDir, {
@@ -5025,7 +5028,7 @@ export default defineCapability({
 	        candidate: staged.candidate,
 	        expected_revision: staged.revision,
 	        actor: "relationship-reviewer@example.test",
-	        confirmed_decisions: staged.confirmed_decisions,
+	        review_submission: boundaryReviewSubmissionForDecisions(staged.candidate, boundaryReviewDecisionRefs(staged.candidate).map(item => item.id)),
 	      });
 	      const activated = await postJson(`${url}/api/boundary/activate`, {
 	        "x-synapsor-ui-token": "relationship-review-token",
@@ -5035,7 +5038,7 @@ export default defineCapability({
 	        expected_digest: preview.digest,
 	        actor: "relationship-reviewer@example.test",
 	        confirmation: `ACTIVATE ${preview.digest}`,
-	        confirmed_decisions: staged.confirmed_decisions,
+	        review_submission: boundaryReviewSubmissionForDecisions(staged.candidate, boundaryReviewDecisionRefs(staged.candidate).map(item => item.id)),
 	      });
       expect(activated.active.pack.resources
         .find((resource: { id: string }) => resource.id === "public.members")
@@ -5637,7 +5640,7 @@ export default defineCapability({
       expectedDigest: digest,
       actor: "reviewer@example.test",
       confirmation: `ACTIVATE ${digest}`,
-      confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+      reviewSubmission: boundaryReviewSubmissionForDecisions(build.exploration_boundary, boundaryReviewDecisionRefs(build.exploration_boundary).map(item => item.id)),
       currentInspection: inspection,
     });
     const server = await startLocalUiServer({
@@ -7506,3 +7509,74 @@ function guidedActionInspection(): SchemaInspection {
   table.write_triggers = [];
   return inspection;
 }
+
+describe("Workbench current typed review routes", () => {
+  beforeEach(() => { vi.stubEnv("SYNAPSOR_TENANT_ID", "declared-workbench-test-tenant"); vi.stubEnv("DATABASE_URL", "postgres://fixture:fixture@127.0.0.1:1/fixture"); });
+  afterEach(() => vi.unstubAllEnvs());
+  async function currentReview(accepted = true) {
+    const { nativeReadScopeActivationFixture, reviewNativeReadScopeActivationFixture } = await import("./test-fixtures/native-read-scope-activation.js");
+    const { loadBoundaryReviewContext } = await import("./boundary-review-context.js");
+    const { boundaryReviewSubmissionForDecisions } = await import("./boundary-review-domain.js");
+    const f = await nativeReadScopeActivationFixture();
+    await reviewNativeReadScopeActivationFixture(f, accepted);
+    const context = await loadBoundaryReviewContext(f.dir);
+    const server = await startLocalUiServer({ projectRoot:f.dir, boundaryRoot:path.join(f.dir,"synapsor/generated"),
+      configPath:path.join(f.dir,"synapsor.runner.json"), storePath:path.join(f.dir,".synapsor/local.db"),
+      token:"current-typed-token", csrfToken:"current-typed-csrf", schemaInspector:async()=>f.prepared.inspection });
+    const body = { candidate:context.candidate, expected_revision:context.progress!.revision,
+      actor:"declared Workbench operator", authoring_binding:context.bundle.mutation_bindings.authoring,
+      review_submission:boundaryReviewSubmissionForDecisions(context.candidate,context.bundle.decisions.map(item=>item.id)) };
+    const post=async(route:string,payload:unknown,csrf=true)=>{
+      const response=await fetch(`http://${server.host}:${server.port}/api/boundary/${route}`,{method:"POST",
+        headers:{"content-type":"application/json","x-synapsor-ui-token":"current-typed-token",...(csrf?{"x-synapsor-csrf":"current-typed-csrf"}:{})},body:JSON.stringify(payload)});
+      return {status:response.status,body:await response.json() as Record<string,unknown>};
+    };
+    return {f,context,server,body,post};
+  }
+  it("accepts exact typed preview then activates only with the genuine current native scope",async()=>{
+    const x=await currentReview();const prior=process.env.DATABASE_URL;process.env.DATABASE_URL="postgres://fixture:fixture@127.0.0.1:1/fixture";
+    try {
+      const preview=await x.post("preview",x.body);
+      expect(preview.status).toBe(200);
+      const active=await x.post("activate",{...x.body,expected_digest:preview.body.digest,confirmation:`ACTIVATE ${preview.body.digest}`});
+      expect(active.status).toBe(200);
+      const saved=await loadActivatedExplorationBoundary(x.f.dir);
+      expect(saved.activation.digest).toBe(preview.body.digest);
+      expect(saved.activation.reviewed_decisions.every(item=>item.confirmed)).toBe(true);
+    } finally {await x.server.close();if(prior===undefined)delete process.env.DATABASE_URL;else process.env.DATABASE_URL=prior;}
+  },30000);
+  it.each(["old-strings","partial","foreign","duplicate","stale-revision","no-csrf"])("refuses %s before preview without authority changes",async kind=>{
+    const x=await currentReview();
+    try {
+      const body=structuredClone(x.body);
+      if(kind==="partial")body.review_submission.decisions=[];
+      if(kind==="foreign")body.review_submission.decisions[0]!.id="foreign";
+      if(kind==="duplicate")body.review_submission.decisions.push(structuredClone(body.review_submission.decisions[0]!));
+      if(kind==="stale-revision")body.expected_revision--;
+      const before=await fs.readFile(path.join(x.f.dir,".synapsor/boundary-authoring/resume.json"),"utf8");
+      const result=await x.post("preview",kind==="old-strings"?{...body,confirmed_decisions:body.candidate.unresolved_decisions}:body,kind!=="no-csrf");
+      expect(result.status).toBeGreaterThanOrEqual(400);
+      await expect(loadActivatedExplorationBoundaries(x.f.dir)).rejects.toMatchObject({code:"ENOENT"});
+      expect(await fs.readFile(path.join(x.f.dir,".synapsor/boundary-authoring/resume.json"),"utf8")).toBe(before);
+    } finally {await x.server.close();}
+  },30000);
+  it.each(["native-no","confirmation-no","changed-submission","changed-saved-candidate"])("fences %s after typed preview",async kind=>{
+    const x=await currentReview(kind!=="native-no");
+    try {
+      const preview=await x.post("preview",x.body);
+      expect(preview.status).toBe(200);
+      const body={...structuredClone(x.body),expected_digest:preview.body.digest,confirmation:`ACTIVATE ${preview.body.digest}`};
+      if(kind==="confirmation-no")body.confirmation="No";
+      if(kind==="changed-submission")body.review_submission.decisions=[];
+      if(kind==="changed-saved-candidate") {
+        const {prepareBoundaryResourceReviewMutation,commitBoundaryResourceReviewMutation}=await import("./boundary-review-mutation.js");
+        const change=await prepareBoundaryResourceReviewMutation(x.f.dir,{resource_id:"work.items",metadata:{label:"Changed after preview"},actor:"other declared reviewer",reason:"A separate exact change"},async()=>x.f.prepared.inspection);
+        await commitBoundaryResourceReviewMutation(x.f.dir,change);
+      }
+      const result=await x.post("activate",body);
+      expect(result.status).toBeGreaterThanOrEqual(400);
+      await expect(loadActivatedExplorationBoundaries(x.f.dir)).rejects.toMatchObject({code:"ENOENT"});
+    } finally {await x.server.close();}
+  },30000);
+
+});
