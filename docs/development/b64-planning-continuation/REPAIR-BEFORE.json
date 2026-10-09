@@ -1,0 +1,16 @@
+{
+  "product_pin": "855bf744",
+  "status": "TWO_PRESERVED_FINITE_FAILURES_BEFORE_REPAIR",
+  "stage_ack": {
+    "independent_fixture": "e44913fb",
+    "result": "7 PASS / 1 FAIL: actual protected save writes valid read_mapping stage; recordPlanning returns success although it requested planning",
+    "evidence": "/var/tmp/synapsor-r1-planning-855-owned/evidence/native8-second.json"
+  },
+  "remove_tool_contract": {
+    "test": "apps/runner/src/boundary-planning-remove-contract.test.ts",
+    "result": "0 PASS / 1 FAIL: actual outgoing Remove branch required list omits read_scope",
+    "evidence": "/var/tmp/synapsor-b64-real-readback-owned/evidence/planning-remove-before.json",
+    "boundary": "Actual producer request assembly captured offline once; no response, saved authority, or successful removal claimed"
+  },
+  "repair_scope": "Exact requested/acknowledged native stage comparison; existing conditional typed scope property/required entry on Remove branch. No new authority or schema format."
+}
