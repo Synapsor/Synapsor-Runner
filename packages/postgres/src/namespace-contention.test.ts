@@ -17,7 +17,10 @@ class NamespaceClient implements PostgresApplyClient {
   async query(sql: string): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
     this.sql.push(sql);
     if (sql === "ROLLBACK" && this.rollbackUnknown) throw new Error("private rollback failure");
-    if (sql === namespaceLock && this.failure !== undefined) throw this.failure;
+    if (sql === namespaceLock) {
+      if (this.failure !== undefined) throw this.failure;
+      return { rows: [], rowCount: null };
+    }
     if (sql.includes("server_version_num")) return { rows: [{ version: 170000, isolation: "read committed", replication_role: "origin" }], rowCount: 1 };
     if (sql.includes("pg_catalog.pg_locks")) return { rows: [{ held: this.sql.includes(namespaceLock) && this.protectedAfterLock }], rowCount: 1 };
     if (sql.includes("has_table_privilege")) return { rows: [{ permitted: this.permitted }], rowCount: 1 };
@@ -37,10 +40,11 @@ class IntentStore implements WritebackIntentStore {
 
 async function applyNamespaceComponent(client: NamespaceClient) {
   const vector = createSemanticAdapterConformanceVector("postgres");
-  const proof = { ...vector.job.semantic_authority.proof,
+  const { proof_digest: _oldProofDigest, ...unsigned } = vector.job.semantic_authority.proof;
+  const proof = { ...unsigned,
     verification_transaction: { isolation: "read_committed" as const, timezone: "UTC" as const } };
-  proof.proof_digest = eligibilityProofDigest(proof);
-  const job = parseWritebackJob({ ...vector.job, semantic_authority: { ...vector.job.semantic_authority, proof } });
+  const job = parseWritebackJob({ ...vector.job, semantic_authority: { ...vector.job.semantic_authority,
+    proof: { ...proof, proof_digest: eligibilityProofDigest(proof) } } });
   const verifier = Object.assign(vi.fn(async () => { throw new Error("Reverification must not run after failed namespace admission"); }),
     { admitSource: async () => protectPostgresHardLimitNames(client) });
   const store = new IntentStore();
