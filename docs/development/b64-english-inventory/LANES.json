@@ -1253,10 +1253,10 @@
       ]
     },
     "action": {
-      "pin": "e9e68bab",
-      "typed": 41,
+      "pin": "c942b1a0",
+      "typed": 31,
       "delete": 5,
-      "source": "Nine original typed sites implemented source,13delete implemented; TUI79/guided28/renamed1PASS types0 owner evidence; successor independent acceptance pending. Two reclassified sites assigned.",
+      "source": "Ten closed coverage-error decisions Mainc942 +strictproducer4ea +realconstructorinventoryc909; independentR2source/ownerartifact ACCEPT, Main50PASS. Existing Read inventory failure/one optin skip outside50 retained. Remaining units/Source ranges work active; no wholecaller/public acceptance.",
       "reclassified_open": {
         "typed": [
           "I01961"
@@ -1264,14 +1264,26 @@
         "delete": []
       },
       "with_reclassifications": {
-        "typed": 43,
+        "typed": 33,
         "delete": 5
       },
       "audit_reclassified_ids": [
         "I01961",
         "I01962"
       ],
-      "active_task": "Running typed coverage consumer 40F10P\u219250P; Main producer4ea adopted, actual241P/one pre-existing Read inventory failure/one skip; independent acceptance pending; units/source question producers next."
+      "active_task": "Running typed coverage consumer 40F10P\u219250P; Main producer4ea adopted, actual241P/one pre-existing Read inventory failure/one skip; independent acceptance pending; units/source question producers next.",
+      "accepted_coverage_ids": [
+        "I04444",
+        "I04446",
+        "I04448",
+        "I04449",
+        "I04451",
+        "I04458",
+        "I04459",
+        "I04460",
+        "I04461",
+        "I04462"
+      ]
     },
     "read": {
       "pin": "a1744329",

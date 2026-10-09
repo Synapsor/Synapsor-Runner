@@ -1,0 +1,29 @@
+{
+  "product": "c942b1a0",
+  "producer": "4ea55081",
+  "tests": "e0a0d067",
+  "inventory": "c90997cb",
+  "review": "R2 scoped source + owner artifacts accepted; no independent runtime claim",
+  "main_focused": {
+    "pass": 50,
+    "fail": 0,
+    "skip": 0,
+    "log": "/var/tmp/synapsor-b64-main-owned/evidence/coverage-ten-main-after.json"
+  },
+  "closed_ids": [
+    "I04444",
+    "I04446",
+    "I04448",
+    "I04449",
+    "I04451",
+    "I04458",
+    "I04459",
+    "I04460",
+    "I04461",
+    "I04462"
+  ],
+  "remaining_typed": 33,
+  "remaining_delete": 5,
+  "conflict": "Retained Main unrelated Unaccounted source-lines branch; removed only accepted structure English branch in same context. No whole-file overwrite.",
+  "open": "remaining source decision sites; full Read fixture/API migration; B65 actual public cases unsupported"
+}
