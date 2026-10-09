@@ -6,6 +6,8 @@ import { canonicalJsonDigest, canonicalJsonStringify } from "@synapsor-runner/pr
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { describe, expect, it, vi } from "vitest";
 import {
+  BOUNDARY_REVIEW_SUBMISSION_VERSION, boundaryReviewDecisionRefs,
+  type BoundaryReviewSubmission,
   AUTO_BOUNDARY_OVERRIDES_VERSION,
   AUTO_BOUNDARY_SPEC_VERSION,
   AUTO_BOUNDARY_VERSION,
@@ -29,7 +31,7 @@ import {
   reviewExplorationBoundaryCandidate,
   seedConfiguredPrincipalBindingReview,
   writeAutoBoundaryArtifacts,
-  type AutoBoundaryReviewOverrides,
+  type AutoBoundaryReviewOverrides, type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
 import { prepareReviewedReadCurrentStatePrerequisite } from "./read-prerequisite.js";
 import {
@@ -39,6 +41,13 @@ import {
 } from "./boundary-review-domain.js";
 import { reconstructBoundaryReviewOverrides } from "./boundary-review-policy.js";
 import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
+
+// Explicit structural fixture review only; native Read meaning and activation
+// still require their existing durable owner (no synthetic assessment supplied).
+function fixtureReviewSubmission(candidate: ExplorationBoundaryDraft): BoundaryReviewSubmission {
+  return { schema_version: BOUNDARY_REVIEW_SUBMISSION_VERSION,
+    candidate_digest: explorationBoundaryCandidateDigest(candidate), decisions: boundaryReviewDecisionRefs(candidate) };
+}
 
 describe("Auto Boundary compiler", () => {
   it("binds a reviewed current-state prerequisite into the candidate digest and refuses later removal", () => {
@@ -1304,7 +1313,7 @@ describe("Auto Boundary compiler", () => {
         expectedDigest: unresolvedDigest,
         actor: "reviewer@example.test",
         confirmation: `ACTIVATE ${unresolvedDigest}`,
-        confirmedDecisions: unresolved.unresolved_decisions,
+        reviewSubmission: fixtureReviewSubmission(unresolved),
         currentInspection: inspection,
       })).rejects.toThrow(/nullable; choose whether unmatched rows are kept as null or excluded/i);
 
@@ -1324,7 +1333,7 @@ describe("Auto Boundary compiler", () => {
           expectedDigest: reviewed.digest,
           actor: "reviewer@example.test",
           confirmation: `ACTIVATE ${reviewed.digest}`,
-          confirmedDecisions: reviewed.candidate.unresolved_decisions,
+          reviewSubmission: fixtureReviewSubmission(reviewed.candidate),
           currentInspection: inspection,
         });
       };
@@ -2930,7 +2939,7 @@ describe("Auto Boundary compiler", () => {
         expectedDigest: digest,
         actor: "reviewer@example.test",
         confirmation: `ACTIVATE ${digest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: fixtureReviewSubmission(build.exploration_boundary),
         currentInspection: churnInspection(),
       });
       const active = await fs.readFile(activePath, "utf8");
@@ -3096,7 +3105,7 @@ describe("Auto Boundary compiler", () => {
         expectedDigest: digest,
         actor: "reviewer@example.test",
         confirmation: "ACTIVATE wrong",
-        confirmedDecisions: candidate.unresolved_decisions,
+        reviewSubmission: fixtureReviewSubmission(candidate),
         currentInspection: inspection,
       })).rejects.toThrow(/exact confirmation/i);
 
@@ -3106,7 +3115,7 @@ describe("Auto Boundary compiler", () => {
         expectedDigest: digest,
         actor: "reviewer@example.test",
         confirmation: `ACTIVATE ${digest}`,
-        confirmedDecisions: candidate.unresolved_decisions.slice(1),
+        reviewSubmission: { ...fixtureReviewSubmission(candidate), decisions: fixtureReviewSubmission(candidate).decisions.slice(1) },
         currentInspection: inspection,
       })).rejects.toThrow(/exact complete set/i);
 
@@ -3116,13 +3125,12 @@ describe("Auto Boundary compiler", () => {
         expectedDigest: digest,
         actor: "reviewer@example.test",
         confirmation: `ACTIVATE ${digest}`,
-        confirmedDecisions: candidate.unresolved_decisions,
+        reviewSubmission: fixtureReviewSubmission(candidate),
         currentInspection: inspection,
       });
       expect(active.activation.digest).toBe(digest);
-      expect(active.activation.reviewed_decisions).toEqual(candidate.unresolved_decisions
-        .map((decision) => ({ decision, confirmed: true }))
-        .sort((left, right) => left.decision.localeCompare(right.decision)));
+      expect(active.activation.reviewed_decisions).toEqual(fixtureReviewSubmission(candidate).decisions
+        .map((reference) => ({ ...reference, confirmed: true })));
       expect((await loadActivatedExplorationBoundary(projectRoot)).pack.resources[0]?.selectable_fields).not.toContain("monthly_revenue_cents");
       expect((await loadActivatedExplorationBoundary(projectRoot)).pack.resources[0]?.kept_out_fields).toContain("monthly_revenue_cents");
 
@@ -3135,7 +3143,7 @@ describe("Auto Boundary compiler", () => {
         expectedDigest: digest,
         actor: "reviewer@example.test",
         confirmation: `ACTIVATE ${digest}`,
-        confirmedDecisions: candidate.unresolved_decisions,
+        reviewSubmission: fixtureReviewSubmission(candidate),
         currentInspection: privileged,
       })).rejects.toThrow(
         /generation lock is stale[\s\S]*boundary rescan --from-env DATABASE_URL/i,
@@ -3165,7 +3173,7 @@ describe("Auto Boundary compiler", () => {
           expectedDigest: digest,
           actor: "reviewer@example.test",
           confirmation: `ACTIVATE ${digest}`,
-          confirmedDecisions: candidate.unresolved_decisions,
+          reviewSubmission: fixtureReviewSubmission(candidate),
           currentInspection: inspection,
           activeSetMode: "add",
         });
@@ -3318,7 +3326,7 @@ describe("Auto Boundary compiler", () => {
         expectedDigest: digest,
         actor: "production-owner@example.test",
         confirmation: `ACTIVATE ${digest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: fixtureReviewSubmission(build.exploration_boundary),
         currentInspection: inspection,
       });
       expect(active).toMatchObject({
@@ -3406,13 +3414,13 @@ describe("Auto Boundary compiler", () => {
         expectedDigest: digest,
         actor: "owner@example.test",
         confirmation: `ACTIVATE ${digest}`,
-        confirmedDecisions: build.exploration_boundary.unresolved_decisions,
+        reviewSubmission: fixtureReviewSubmission(build.exploration_boundary),
         currentInspection: inspection,
       });
       expect(active.organization_scope?.organization_id).toBe("internal-finance");
       expect(active.activation.digest).toBe(digest);
-      expect(active.activation.reviewed_decisions.some(({ decision }) =>
-        decision.startsWith("organization scope:"))).toBe(true);
+      expect(active.activation.reviewed_decisions.some((reference) =>
+        "kind" in reference && reference.kind === "organization_scope")).toBe(true);
     } finally {
       await fs.rm(projectRoot, { recursive: true, force: true });
     }

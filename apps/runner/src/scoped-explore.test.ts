@@ -18,6 +18,8 @@ import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { ACTION_RULE_CATALOG_VERSION } from "@synapsor-runner/action-rules";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  BOUNDARY_REVIEW_SUBMISSION_VERSION, boundaryReviewDecisionRefs,
+  type BoundaryReviewSubmission,
   AUTO_BOUNDARY_OVERRIDES_VERSION,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
@@ -52,6 +54,25 @@ import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { analyzeReadWorkloadSet, READ_WORKLOAD_SET_VERSION } from "./read-workload-assist.js";
 import { prepareReviewedReadCurrentStatePrerequisite, type ReadPrerequisiteBoundaryContext } from "./read-prerequisite.js";
 import { actionRuleTypeForColumn } from "./action-rule-schema-metadata.js";
+
+// Explicit structural fixture review only; native Read meaning and activation
+// still require their existing durable owner (no synthetic assessment supplied).
+function fixtureReviewSubmission(candidate: ExplorationBoundaryDraft): BoundaryReviewSubmission {
+  return { schema_version: BOUNDARY_REVIEW_SUBMISSION_VERSION,
+    candidate_digest: explorationBoundaryCandidateDigest(candidate), decisions: boundaryReviewDecisionRefs(candidate) };
+}
+
+// Require the production owner to validate the inspection's complete inventory.
+// Missing inventory remains a fixture dependency; no subset is promoted to proof.
+function fixtureSingleOrganizationScope(inspection: SchemaInspection, root: string): NonNullable<ExplorationBoundaryDraft["organization_scope"]> {
+  const inventory = inspection.inspected_source_inventory;
+  const build = buildAutoBoundary({ inspection, sourceEnv: "DATABASE_URL",
+    ...(inventory?.scope.kind === "schema" ? { inspectedSchema: inventory.scope.schema } : {}),
+    singleOrganization: { organizationId: "internal-finance" },
+    project: { root, package_manager: "pnpm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] } });
+  if (!build.exploration_boundary.organization_scope) throw new Error("The production build did not establish the declared organization scope.");
+  return build.exploration_boundary.organization_scope;
+}
 
 const temporaryRoots: string[] = [];
 
@@ -258,7 +279,7 @@ describe("Scoped Explore", () => {
     const activation = activateExplorationBoundary({ projectRoot: fixture.root, candidate,
       reviewDraft: diskLink ? candidate : prepared!.exploration_boundary,
       generationLock: prepared!.lock, expectedDigest: digest, actor: "reviewer@example.test",
-      confirmation: `ACTIVATE ${digest}`, confirmedDecisions: candidate.unresolved_decisions, currentInspection: inspection,
+      confirmation: `ACTIVATE ${digest}`, reviewSubmission: fixtureReviewSubmission(candidate), currentInspection: inspection,
     });
     if (diskLink) {
       await expect(activation).rejects.toThrow(/Discovery compatibility/u);
@@ -321,7 +342,7 @@ describe("Scoped Explore", () => {
       const activation = activateExplorationBoundary({ projectRoot: fixture.root, candidate, expectedDigest: digest,
         reviewDraft: candidate, generationLock: build.lock,
         actor: "reviewer@example.test", confirmation: `ACTIVATE ${digest}`,
-        confirmedDecisions: candidate.unresolved_decisions, currentInspection: inspection,
+        reviewSubmission: fixtureReviewSubmission(candidate), currentInspection: inspection,
       });
       if (representable) {
         await expect(activation).resolves.toHaveProperty("activation.digest", digest);
@@ -1932,11 +1953,7 @@ describe("Scoped Explore", () => {
   it("counts child rows without fake tenant predicates in an explicit single-organization boundary", async () => {
     const fixture = await activatedDerivedScopeFixture();
     const boundary = structuredClone(fixture.boundary);
-    boundary.organization_scope = {
-      mode: "single_organization",
-      organization_id: "internal-finance",
-      acknowledgement: "all_rows_belong_to_one_organization",
-    };
+    boundary.organization_scope = fixtureSingleOrganizationScope(fixture.inspection, fixture.root);
     for (const resource of boundary.pack.resources) {
       delete resource.tenant_key;
       delete resource.tenant_scope;
@@ -2603,11 +2620,7 @@ describe("Scoped Explore", () => {
   it("emits no tenant predicate only for an explicit single-organization boundary", async () => {
     const fixture = await activatedFixture();
     const boundary = structuredClone(fixture.boundary);
-    boundary.organization_scope = {
-      mode: "single_organization",
-      organization_id: "internal-finance",
-      acknowledgement: "all_rows_belong_to_one_organization",
-    };
+    boundary.organization_scope = fixtureSingleOrganizationScope(fixture.inspection, fixture.root);
     for (const resource of boundary.pack.resources) {
       delete resource.tenant_key;
       delete resource.tenant_scope;
@@ -2692,11 +2705,7 @@ describe("Scoped Explore", () => {
   it("keeps a mandatory derived principal predicate in a single-organization boundary", async () => {
     const fixture = await activatedFixture();
     const boundary = derivedScopeBoundary(fixture.boundary);
-    boundary.organization_scope = {
-      mode: "single_organization",
-      organization_id: "internal-finance",
-      acknowledgement: "all_rows_belong_to_one_organization",
-    };
+    boundary.organization_scope = fixtureSingleOrganizationScope(fixture.inspection, fixture.root);
     const orders = boundary.pack.resources.find((resource) => resource.id === "public.orders")!;
     const orderItems = boundary.pack.resources.find((resource) => resource.id === "public.order_items")!;
     for (const resource of boundary.pack.resources) {
@@ -4552,7 +4561,7 @@ describe("Scoped Explore", () => {
       expectedDigest: unlabelledDigest,
       actor: "reviewer@example.test",
       confirmation: `ACTIVATE ${unlabelledDigest}`,
-      confirmedDecisions: unlabelled.unresolved_decisions,
+      reviewSubmission: fixtureReviewSubmission(unlabelled),
       currentInspection: inspection,
     })).rejects.toThrow(/reviewed vocabulary.*public\.t_0031/is);
 
@@ -4585,7 +4594,7 @@ describe("Scoped Explore", () => {
       expectedDigest: labelledDigest,
       actor: "reviewer@example.test",
       confirmation: `ACTIVATE ${labelledDigest}`,
-      confirmedDecisions: labelled.unresolved_decisions,
+      reviewSubmission: fixtureReviewSubmission(labelled),
       currentInspection: inspection,
     })).resolves.toMatchObject({ activation: { state: "active" } });
   });
@@ -4695,7 +4704,7 @@ describe("Scoped Explore", () => {
   });
 
   it("allows proven relationship analysis without fake tenant scope only in single-organization mode", async () => {
-    const { boundary: activated } = await activatedFixture(undefined, relationshipInspection());
+    const { boundary: activated, inspection, root } = await activatedFixture(undefined, relationshipInspection());
     const relationshipPlan = {
       kind: "aggregate" as const,
       resource: "public.subscriptions",
@@ -4717,11 +4726,7 @@ describe("Scoped Explore", () => {
     );
 
     const singleOrganization = structuredClone(activated);
-    singleOrganization.organization_scope = {
-      mode: "single_organization",
-      organization_id: "internal-finance",
-      acknowledgement: "all_rows_belong_to_one_organization",
-    };
+    singleOrganization.organization_scope = fixtureSingleOrganizationScope(inspection, root);
     for (const resource of singleOrganization.pack.resources) {
       delete resource.tenant_key;
       delete resource.tenant_scope;
@@ -5286,11 +5291,7 @@ describe("Scoped Explore", () => {
       env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection,
     });
-    prepared.boundary.organization_scope = {
-      mode: "single_organization",
-      organization_id: "internal-finance",
-      acknowledgement: "all_rows_belong_to_one_organization",
-    };
+    prepared.boundary.organization_scope = fixtureSingleOrganizationScope(fixture.inspection, fixture.root);
     prepared.lock.organization_scope = prepared.boundary.organization_scope;
     for (const resource of prepared.boundary.pack.resources) {
       delete resource.tenant_key;
@@ -7737,7 +7738,7 @@ async function activatedFixture(
     expectedDigest: digest,
     actor: "reviewer@example.test",
     confirmation: `ACTIVATE ${digest}`,
-    confirmedDecisions: candidate.unresolved_decisions,
+    reviewSubmission: fixtureReviewSubmission(candidate),
     currentInspection: inspection,
   });
   return {
@@ -7797,7 +7798,7 @@ async function activatedDerivedScopeFixture(
     expectedDigest: digest,
     actor: "reviewer@example.test",
     confirmation: `ACTIVATE ${digest}`,
-    confirmedDecisions: candidate.unresolved_decisions,
+    reviewSubmission: fixtureReviewSubmission(candidate),
     currentInspection: inspection,
   });
   return {
@@ -7877,7 +7878,7 @@ async function activatedProductionFixture(
     expectedDigest: digest,
     actor: "production-owner@example.test",
     confirmation: `ACTIVATE ${digest}`,
-    confirmedDecisions: candidate.unresolved_decisions,
+    reviewSubmission: fixtureReviewSubmission(candidate),
     currentInspection: inspection,
   });
   return {
@@ -7981,7 +7982,7 @@ async function activatedSharedReferenceFixture(
     expectedDigest: digest,
     actor: "owner@example.test",
     confirmation: `ACTIVATE ${digest}`,
-    confirmedDecisions: candidate.unresolved_decisions,
+    reviewSubmission: fixtureReviewSubmission(candidate),
     currentInspection: inspection,
   });
   return {
