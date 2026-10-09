@@ -516,10 +516,11 @@ async function prepareStructuredDraft(
   if (read && (!current?.selected || !current.selected.catalog || !read.bindings.authoring)) {
     throw new Error("STRUCTURED_DRAFT_REPOSITORY_REQUIRED: initialize the current disabled Read draft in governed policy storage before submitting a Read change.");
   }
+  if (read && current) assertReadAuthoringBindings(read.bindings.authoring!, current.bindings);
   const progress = read && createBoundaryReviewProgress({
     draft: preparedReadAuthoringDraft(read.build),
     candidate: read.candidate,
-    confirmedDecisions: [],
+    resolvedOrigins: current?.resolvedOrigins,
     previous: read.previous_progress,
     reviewOverrides: read.build.overrides,
     actor: EXTERNAL_DRAFT_ACTOR,
