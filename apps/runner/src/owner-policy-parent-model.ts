@@ -1,3 +1,4 @@
+import { buildOwnerPolicyParentPrompt, buildOwnerPolicyParentCorrectionPrompt, OWNER_POLICY_PARENT_SYSTEM_PROMPT } from "./owner-policy-parent-prompt.js";
 import { isAuthoringGenerationStop } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -150,25 +151,10 @@ export async function draftOperatorParentPolicy(input: {
     },
     async close() {},
   };
-  const baseQuestion = [
-    "Draft one optional operator parent delegation for separate trusted human review.",
-    `Operator request: ${JSON.stringify(operatorMessage)}`,
-    `Verified Action catalog: ${JSON.stringify(catalog)}`,
-    `Editable candidate delegation: ${JSON.stringify(prior)}`,
-    `Currently activated delegation: ${JSON.stringify(active?.delegation ?? null)}`,
-    "The current conversation is with the deployment operator, not a delegated owner. An unactivated candidate is editable, not an immutable parent ceiling. Correct its approval choice or unwanted candidate-only restriction when requested; do not make the operator restart. Catalog allow_automatic_approval is the starting setting, not a prohibition on an operator-reviewed change. Allowing inheritance never bypasses the compiled Action approval conditions or limits.",
-    `Allowed delegable agent IDs: ${JSON.stringify(allowedAgents)}`,
-    "Return exactly one structured tool result. You may change only delegation: delegable agents, outcomes, verified facts, predicates, approval posture, and bounded budgets.",
-    "Use only the listed allowed agent IDs. Never create manager grants, owner-scope bindings, runtime bindings, credentials, identities, activation, a review approval, execution, writeback, SQL, or source changes. Those bindings are trusted local input and are not shown to you.",
-    "Every compiled Action Rule eligibility check remains mandatory at runtime. An owner parent only adds restrictions; it never replaces or repeats compiled checks. Keeping an existing compiled availability, scope, or eligibility check requires no parent fact, predicate, or clarification. Ask only about an additional parent restriction the operator actually requests.",
-    "Use only exact outcome names, compiled digests, fact names, sources, types, effect-envelope fields, and operators from the verified catalog. Facts marked ambiguous_label are verified but intentionally have only a raw qualified identifier; ask one concise human clarification before assigning a business title. If an operator request needs an unavailable business condition, ask one concise clarification instead of inventing a fact or bound.",
-    "On a revision retain every activated delegated agent and every activated budget meter. Preserve candidate settings unless the operator asks to correct them. Preserve reviewed fact titles and operator sets by default; an operator may explicitly label an ambiguous raw identifier for root review. Do not silently remove caps or agents. This remains an untrusted candidate and grants no authority.",
-    "Supported parent budget operations are effect_count and effect_field only. A budget is a positive bounded local window in reviewed integral units: effect_count uses unit effects; effect_field uses an exact allowed effect field with its reviewed integer or money-minor unit. Drafting starts with no runtime effect, reservation, or budget consumption; runtime evaluates only these reviewed effects after separate human review. No source query or execution occurs here.",
-    `Call ${DRAFT_PARENT_TOOL} exactly once.`,
-  ].join("\n");
+  const baseQuestion = buildOwnerPolicyParentPrompt({ operatorMessage, catalog, prior, active, allowedAgents });
   const run = (question: string) => runAskProviderTurn({ configuration, question, history, gateway, tools,
     signal: input.signal ?? new AbortController().signal, dependencies: input.session.dependencies, authorityDigest,
-    providerSystemPrompt: "Produce one bounded operator parent delegation candidate through the required tool. Never invent verified facts, identity bindings, activation, or source-write authority.",
+    providerSystemPrompt: OWNER_POLICY_PARENT_SYSTEM_PROMPT,
     skipRunnerQuestionContext: true, requiredInitialToolName: DRAFT_PARENT_TOOL, completeAfterRequiredTool: true,
     authorityGuard: () => canonicalJsonDigest({ catalog, prior, active, bindings }) === stableDigest ? authorityDigest : canonicalJsonDigest({ stale: true }),
   });
@@ -177,12 +163,7 @@ export async function draftOperatorParentPolicy(input: {
       pendingResolution = undefined;
       correctionAttempt = attempt > 0;
       try {
-        await run(attempt === 0 ? baseQuestion : [
-          "Runner refused the first draft. This is the one bounded correction.",
-          `Validation issue: ${issue}`,
-          "Return one complete corrected candidate or one clarification. Do not add identity bindings or unverified facts.",
-          baseQuestion,
-        ].join("\n"));
+        await run(attempt === 0 ? baseQuestion : buildOwnerPolicyParentCorrectionPrompt({ baseQuestion, issue }));
         if (pendingResolution) {
           if (canonicalJsonDigest({ catalog, prior, active, bindings }) !== stableDigest) {
             throw new OwnerPolicyParentModelError("PARENT_MODEL_AUTHORITY_STALE");

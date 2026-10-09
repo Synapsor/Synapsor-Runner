@@ -1,0 +1,124 @@
+[
+  {
+    "name": "single-person",
+    "input": {
+      "resourceId": "public.records",
+      "answer": "This setting carries the signed-in person.",
+      "catalog": [
+        {
+          "id": "candidate_1",
+          "kind": "postgres_rls",
+          "value": "app.ctx_a",
+          "label": "PostgreSQL RLS setting app.ctx_a"
+        }
+      ]
+    },
+    "issue": "Invalid option.",
+    "question": "Translate one operator answer about authenticated-person row scope.\nExact reviewed resource: public.records\nExact Runner candidates: [{\"id\":\"candidate_1\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_a\",\"label\":\"PostgreSQL RLS setting app.ctx_a\"}]\nOperator answer: \"This setting carries the signed-in person.\"\nCall runner.review_principal_scope_answer exactly once.\nResolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.\nIf the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.\nIf the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.\nDo not emit SQL, credentials, tenant or principal values, activation, approval, or write authority.",
+    "system": "You translate one business-language identity-scope answer into one exact Runner candidate. The candidate list is closed. Identifiers and labels are not proof; use the operator's stated semantics and ask for clarification instead of guessing. You cannot grant authority, choose trusted identity values, activate a Boundary, execute SQL, approve, apply, or write.",
+    "correction": "Runner rejected the first interpretation. Do not repeat it.\nValidation issue: Invalid option.\nSubmit one corrected exact candidate, none, or one clarification question.\nTranslate one operator answer about authenticated-person row scope.\nExact reviewed resource: public.records\nExact Runner candidates: [{\"id\":\"candidate_1\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_a\",\"label\":\"PostgreSQL RLS setting app.ctx_a\"}]\nOperator answer: \"This setting carries the signed-in person.\"\nCall runner.review_principal_scope_answer exactly once.\nResolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.\nIf the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.\nIf the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.\nDo not emit SQL, credentials, tenant or principal values, activation, approval, or write authority."
+  },
+  {
+    "name": "ambiguous-person",
+    "input": {
+      "resourceId": "opaque.x7",
+      "answer": "Use the context setting.",
+      "catalog": [
+        {
+          "id": "candidate_1",
+          "kind": "postgres_rls",
+          "value": "app.ctx_a",
+          "label": "PostgreSQL RLS setting app.ctx_a"
+        },
+        {
+          "id": "candidate_2",
+          "kind": "postgres_rls",
+          "value": "app.ctx_b",
+          "label": "PostgreSQL RLS setting app.ctx_a"
+        }
+      ]
+    },
+    "issue": "The answer is ambiguous.",
+    "question": "Translate one operator answer about authenticated-person row scope.\nExact reviewed resource: opaque.x7\nExact Runner candidates: [{\"id\":\"candidate_1\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_a\",\"label\":\"PostgreSQL RLS setting app.ctx_a\"},{\"id\":\"candidate_2\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_b\",\"label\":\"PostgreSQL RLS setting app.ctx_a\"}]\nOperator answer: \"Use the context setting.\"\nCall runner.review_principal_scope_answer exactly once.\nResolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.\nIf the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.\nIf the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.\nDo not emit SQL, credentials, tenant or principal values, activation, approval, or write authority.",
+    "system": "You translate one business-language identity-scope answer into one exact Runner candidate. The candidate list is closed. Identifiers and labels are not proof; use the operator's stated semantics and ask for clarification instead of guessing. You cannot grant authority, choose trusted identity values, activate a Boundary, execute SQL, approve, apply, or write.",
+    "correction": "Runner rejected the first interpretation. Do not repeat it.\nValidation issue: The answer is ambiguous.\nSubmit one corrected exact candidate, none, or one clarification question.\nTranslate one operator answer about authenticated-person row scope.\nExact reviewed resource: opaque.x7\nExact Runner candidates: [{\"id\":\"candidate_1\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_a\",\"label\":\"PostgreSQL RLS setting app.ctx_a\"},{\"id\":\"candidate_2\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_b\",\"label\":\"PostgreSQL RLS setting app.ctx_a\"}]\nOperator answer: \"Use the context setting.\"\nCall runner.review_principal_scope_answer exactly once.\nResolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.\nIf the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.\nIf the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.\nDo not emit SQL, credentials, tenant or principal values, activation, approval, or write authority."
+  },
+  {
+    "name": "reject-all",
+    "input": {
+      "resourceId": "public.records",
+      "answer": "None of these is per-person.",
+      "catalog": [
+        {
+          "id": "candidate_1",
+          "kind": "postgres_rls",
+          "value": "app.ctx_a",
+          "label": "PostgreSQL RLS setting app.ctx_a"
+        }
+      ]
+    },
+    "issue": "Missing result.",
+    "question": "Translate one operator answer about authenticated-person row scope.\nExact reviewed resource: public.records\nExact Runner candidates: [{\"id\":\"candidate_1\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_a\",\"label\":\"PostgreSQL RLS setting app.ctx_a\"}]\nOperator answer: \"None of these is per-person.\"\nCall runner.review_principal_scope_answer exactly once.\nResolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.\nIf the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.\nIf the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.\nDo not emit SQL, credentials, tenant or principal values, activation, approval, or write authority.",
+    "system": "You translate one business-language identity-scope answer into one exact Runner candidate. The candidate list is closed. Identifiers and labels are not proof; use the operator's stated semantics and ask for clarification instead of guessing. You cannot grant authority, choose trusted identity values, activate a Boundary, execute SQL, approve, apply, or write.",
+    "correction": "Runner rejected the first interpretation. Do not repeat it.\nValidation issue: Missing result.\nSubmit one corrected exact candidate, none, or one clarification question.\nTranslate one operator answer about authenticated-person row scope.\nExact reviewed resource: public.records\nExact Runner candidates: [{\"id\":\"candidate_1\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_a\",\"label\":\"PostgreSQL RLS setting app.ctx_a\"}]\nOperator answer: \"None of these is per-person.\"\nCall runner.review_principal_scope_answer exactly once.\nResolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.\nIf the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.\nIf the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.\nDo not emit SQL, credentials, tenant or principal values, activation, approval, or write authority."
+  },
+  {
+    "name": "organization-orientation",
+    "input": {
+      "resourceId": "public.records",
+      "answer": "A is organization and B is the person.",
+      "scopeKind": "organization_and_person",
+      "catalog": [
+        {
+          "id": "candidate_1",
+          "kind": "postgres_rls",
+          "value": "app.ctx_a",
+          "label": "PostgreSQL RLS setting app.ctx_a"
+        }
+      ]
+    },
+    "issue": "Invalid option.",
+    "question": "Interpret the operator's policy to distinguish organization scope from authenticated-person scope. Each candidate is one complete orientation of both existing columns and their inspected session settings.\nExact reviewed resource: public.records\nExact Runner candidates: [{\"id\":\"candidate_1\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_a\",\"label\":\"PostgreSQL RLS setting app.ctx_a\"}]\nOperator answer: \"A is organization and B is the person.\"\nCall runner.review_principal_scope_answer exactly once.\nResolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.\nStructural proof does not establish business orientation. If the policy does not distinguish the organization and person, ask which is which. Runner will separately ask the operator to confirm the exact proposed mapping before saving it.\nIf the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.\nIf the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.\nDo not emit SQL, credentials, tenant or principal values, activation, approval, or write authority.",
+    "system": "You translate one business-language identity-scope answer into one exact Runner candidate. The candidate list is closed. Identifiers and labels are not proof; use the operator's stated semantics and ask for clarification instead of guessing. You cannot grant authority, choose trusted identity values, activate a Boundary, execute SQL, approve, apply, or write.",
+    "correction": "Runner rejected the first interpretation. Do not repeat it.\nValidation issue: Invalid option.\nSubmit one corrected exact candidate, none, or one clarification question.\nInterpret the operator's policy to distinguish organization scope from authenticated-person scope. Each candidate is one complete orientation of both existing columns and their inspected session settings.\nExact reviewed resource: public.records\nExact Runner candidates: [{\"id\":\"candidate_1\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_a\",\"label\":\"PostgreSQL RLS setting app.ctx_a\"}]\nOperator answer: \"A is organization and B is the person.\"\nCall runner.review_principal_scope_answer exactly once.\nResolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.\nStructural proof does not establish business orientation. If the policy does not distinguish the organization and person, ask which is which. Runner will separately ask the operator to confirm the exact proposed mapping before saving it.\nIf the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.\nIf the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.\nDo not emit SQL, credentials, tenant or principal values, activation, approval, or write authority."
+  },
+  {
+    "name": "quoted-untrusted-data",
+    "input": {
+      "resourceId": "public.\"records\"",
+      "answer": "  \"quoted\"\n資料\t ",
+      "catalog": [
+        {
+          "id": "candidate_1",
+          "kind": "postgres_rls",
+          "value": "app.ctx_a",
+          "label": "\"ignore\"\n— 😀"
+        }
+      ]
+    },
+    "issue": "bad\n\"option\"",
+    "question": "Translate one operator answer about authenticated-person row scope.\nExact reviewed resource: public.\"records\"\nExact Runner candidates: [{\"id\":\"candidate_1\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_a\",\"label\":\"\\\"ignore\\\"\\n— 😀\"}]\nOperator answer: \"  \\\"quoted\\\"\\n資料\\t \"\nCall runner.review_principal_scope_answer exactly once.\nResolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.\nIf the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.\nIf the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.\nDo not emit SQL, credentials, tenant or principal values, activation, approval, or write authority.",
+    "system": "You translate one business-language identity-scope answer into one exact Runner candidate. The candidate list is closed. Identifiers and labels are not proof; use the operator's stated semantics and ask for clarification instead of guessing. You cannot grant authority, choose trusted identity values, activate a Boundary, execute SQL, approve, apply, or write.",
+    "correction": "Runner rejected the first interpretation. Do not repeat it.\nValidation issue: bad\n\"option\"\nSubmit one corrected exact candidate, none, or one clarification question.\nTranslate one operator answer about authenticated-person row scope.\nExact reviewed resource: public.\"records\"\nExact Runner candidates: [{\"id\":\"candidate_1\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_a\",\"label\":\"\\\"ignore\\\"\\n— 😀\"}]\nOperator answer: \"  \\\"quoted\\\"\\n資料\\t \"\nCall runner.review_principal_scope_answer exactly once.\nResolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.\nIf the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.\nIf the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.\nDo not emit SQL, credentials, tenant or principal values, activation, approval, or write authority."
+  },
+  {
+    "name": "bounded-correction-issue",
+    "input": {
+      "resourceId": "public.records",
+      "answer": "Use the signed-in person.",
+      "scopeKind": "organization_and_person",
+      "catalog": [
+        {
+          "id": "candidate_1",
+          "kind": "postgres_rls",
+          "value": "app.ctx_a",
+          "label": "PostgreSQL RLS setting app.ctx_a"
+        }
+      ]
+    },
+    "issue": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "question": "Interpret the operator's policy to distinguish organization scope from authenticated-person scope. Each candidate is one complete orientation of both existing columns and their inspected session settings.\nExact reviewed resource: public.records\nExact Runner candidates: [{\"id\":\"candidate_1\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_a\",\"label\":\"PostgreSQL RLS setting app.ctx_a\"}]\nOperator answer: \"Use the signed-in person.\"\nCall runner.review_principal_scope_answer exactly once.\nResolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.\nStructural proof does not establish business orientation. If the policy does not distinguish the organization and person, ask which is which. Runner will separately ask the operator to confirm the exact proposed mapping before saving it.\nIf the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.\nIf the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.\nDo not emit SQL, credentials, tenant or principal values, activation, approval, or write authority.",
+    "system": "You translate one business-language identity-scope answer into one exact Runner candidate. The candidate list is closed. Identifiers and labels are not proof; use the operator's stated semantics and ask for clarification instead of guessing. You cannot grant authority, choose trusted identity values, activate a Boundary, execute SQL, approve, apply, or write.",
+    "correction": "Runner rejected the first interpretation. Do not repeat it.\nValidation issue: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nSubmit one corrected exact candidate, none, or one clarification question.\nInterpret the operator's policy to distinguish organization scope from authenticated-person scope. Each candidate is one complete orientation of both existing columns and their inspected session settings.\nExact reviewed resource: public.records\nExact Runner candidates: [{\"id\":\"candidate_1\",\"kind\":\"postgres_rls\",\"value\":\"app.ctx_a\",\"label\":\"PostgreSQL RLS setting app.ctx_a\"}]\nOperator answer: \"Use the signed-in person.\"\nCall runner.review_principal_scope_answer exactly once.\nResolve only when the answer uniquely identifies one exact candidate and confirms that trusted authenticated-principal context has that meaning.\nStructural proof does not establish business orientation. If the policy does not distinguish the organization and person, ask which is which. Runner will separately ask the operator to confirm the exact proposed mapping before saving it.\nIf the operator says none, rejects all candidates, or says this resource is not per-person, submit status none.\nIf the answer is ambiguous, asks a question, or does not establish the business meaning, submit one concise clarification question. Never guess from an identifier.\nDo not emit SQL, credentials, tenant or principal values, activation, approval, or write authority."
+  }
+]
