@@ -1,6 +1,6 @@
 import { canonicalJsonDigest as d } from "@synapsor-runner/protocol";
 import { explorationBoundaryCandidateDigest, hasReviewedPrincipalScope } from "./auto-boundary.js";
-import { boundaryReviewDecisions } from "./boundary-review-domain.js";
+import { applicableBoundaryReviewConfirmations, boundaryReviewDecisions } from "./boundary-review-domain.js";
 import type { loadBoundaryReviewContext } from "./boundary-review-context.js";
 import { readSubjectConfigurationDigest, readSubjectScopeKind, type ReadSubjectBinding } from "./read-structured-scope.js";
 
@@ -37,32 +37,40 @@ export function projectReadSubjectContext(input: { context: ReadSubjectReviewCon
   const decisions = boundaryReviewDecisions(candidate);
   if (new Set(decisions.map(decision => decision.id)).size !== decisions.length
     || new Set(progress.confirmations.map(confirmation => confirmation.id)).size !== progress.confirmations.length) changed();
-  const acknowledged = (kind: string, resourceId?: string) => {
-    const matches = decisions.filter(decision => decision.kind === kind && decision.resource_id === resourceId);
+  const applicable = applicableBoundaryReviewConfirmations(candidate, progress.confirmations, input.context.resolvedOrigins);
+  type SubjectDecisionBinding =
+    | { kind: "trusted_context" | "database_role" | "organization_scope" }
+    | { kind: "tenant_scope" | "principal_scope"; resource_id: string };
+  const acknowledged = (binding: SubjectDecisionBinding) => {
+    const matches = decisions.filter(decision => decision.kind === binding.kind
+      && ("resource_id" in binding
+        ? "resource_id" in decision && decision.resource_id === binding.resource_id
+        : !("resource_id" in decision)));
     if (matches.length !== 1) return undefined;
-    const decision = matches[0]!;
-    const confirmation = progress.confirmations.find(item => item.id === decision.id && item.kind === decision.kind
-      && item.resource_id === decision.resource_id && item.input_digest === decision.input_digest
-      && item.status === "confirmed" && item.actor.trim() && item.confirmed_at);
-    const advertised = bundle.decisions.find(item => item.id === decision.id && item.kind === decision.kind
-      && item.resource_id === decision.resource_id && item.input_digest === decision.input_digest && item.confirmed);
-    if (!confirmation || !advertised || !progress.confirmed_decisions.includes(decision.decision)) return undefined;
-    // No decision prose, reason, subject value or credential is disclosed.
-    return { id: decision.id, kind: decision.kind, resource_id: decision.resource_id ?? null,
-      input_digest: decision.input_digest, acknowledgement: d({ actor: confirmation.actor, confirmed_at: confirmation.confirmed_at }) };
+    const { decision: _display, ...reference } = matches[0]!;
+    const confirmed = applicable.find(item => d(item.current) === d(reference));
+    const confirmation = confirmed?.confirmation;
+    const advertised = bundle.decisions.some(({ decision: _display, confirmed: _cached, ...item }) => d(item) === d(reference));
+    if (!confirmation || confirmation.status !== "confirmed" || !confirmation.actor.trim()
+      || !confirmation.confirmed_at || !advertised) return undefined;
+    // Applicability belongs to the existing review owner. Cached display text
+    // and its display flag cannot create or remove a typed acknowledgment.
+    return { id: reference.id, kind: reference.kind,
+      resource_id: "resource_id" in reference ? reference.resource_id : null,
+      input_digest: reference.input_digest, acknowledgement: d({ actor: confirmation.actor, confirmed_at: confirmation.confirmed_at }) };
   };
   // Verified role posture can have no outstanding role decision. Require its
   // acknowledgment only when the existing native review actually defines one;
   // the coherent schema/role fingerprints above remain mandatory in either case.
-  const globals = [acknowledged("trusted_context"),
-    ...(decisions.some(decision => decision.kind === "database_role" && !decision.resource_id) ? [acknowledged("database_role")] : []),
-    ...(candidate.organization_scope ? [acknowledged("organization_scope")] : [])];
+  const globals = [acknowledged({ kind: "trusted_context" }),
+    ...(decisions.some(decision => decision.kind === "database_role" && !("resource_id" in decision)) ? [acknowledged({ kind: "database_role" })] : []),
+    ...(candidate.organization_scope ? [acknowledged({ kind: "organization_scope" })] : [])];
   if (globals.some(value => !value)) return { subject_scopes: [], descriptions: [] };
   const subject_scopes: ReadSubjectBinding[] = [], descriptions: Array<{ root_resource: string; kind: ReadSubjectBinding["kind"]; text: string }> = [];
   for (const resource of candidate.pack.resources) {
     if (resource.relationship_only) continue;
-    const relevant = [...globals, acknowledged("tenant_scope", resource.id),
-      ...(hasReviewedPrincipalScope(resource) ? [acknowledged("principal_scope", resource.id)] : [])];
+    const relevant = [...globals, acknowledged({ kind: "tenant_scope", resource_id: resource.id }),
+      ...(hasReviewedPrincipalScope(resource) ? [acknowledged({ kind: "principal_scope", resource_id: resource.id })] : [])];
     if (relevant.some(value => !value)) continue;
     const configuration_digest = readSubjectConfigurationDigest(resource, candidate);
     const review_digest = d({ boundary_id: progress.boundary_id, root_resource: resource.id,
