@@ -2357,20 +2357,26 @@ function assertRequestedRelationshipsRetained(
           ...target.fields.filter((field) => field.sensitive_suggestion || !field.raw_visible_suggestion).map((field) => field.name),
           target.tenant_key.selected, target.principal_key.selected,
         ]);
-        const excludedKey = inspected.columns.some((field, index) => {
+        const excludedKeys = inspected.columns.flatMap((field, index) => {
           const targetField = inspected.referenced_columns[index]!;
-          return !isReadRelationshipScopePair(
+          if (isReadRelationshipScopePair(
             { tenant_key: source.tenant_key.selected, principal_key: source.principal_key.selected },
             { tenant_key: target.tenant_key.selected, principal_key: target.principal_key.selected },
             field, targetField,
-          ) && (generatedResource.kept_out_fields.includes(field) || targetKeptOut.has(targetField));
+          )) return [];
+          return [
+            ...(generatedResource.kept_out_fields.includes(field) ? [{ resource: source.id, field }] : []),
+            ...(targetKeptOut.has(targetField) ? [{ resource: target.id, field: targetField }] : []),
+          ];
         });
-        if (excludedKey) return { id, reason: "kept_out_join_key" as const };
+        if (excludedKeys.length) return { id, reason: "kept_out_join_key" as const,
+          kept_out_fields: excludedKeys.filter((key, index) => excludedKeys.findIndex(
+            (other) => other.resource === key.resource && other.field === key.field) === index) };
       }
       return { id, reason: "inspected_unavailable" as const };
     });
-    const messages = diagnostics.map(({ id, reason }) => reason === "kept_out_join_key"
-      ? `Relationship ${JSON.stringify(id)} is excluded because a join key is kept out of Read use. Review the field policy separately before requesting this relationship; nothing was changed.`
+    const messages = diagnostics.map(({ id, reason, kept_out_fields }) => reason === "kept_out_join_key"
+      ? `Relationship ${JSON.stringify(id)} is excluded because a join key is kept out of Read use. Review the field policy for ${kept_out_fields!.map(({ resource, field }) => JSON.stringify(`${resource}.${field}`)).join(", ")} separately before requesting this relationship; nothing was changed.`
       : reason === "inspected_unavailable"
         ? `Inspected relationship ${JSON.stringify(id)} is unavailable for Read review under the current structural and scope restrictions.`
         : `Unknown relationship ${JSON.stringify(id)} for ${request.resource_id}.`);
@@ -2378,8 +2384,8 @@ function assertRequestedRelationshipsRetained(
       `${messages.join(" ")} Available relationships: ${[...available.keys()].sort().join(", ") || "none"}.`,
     ), {
       code: "READ_RELATIONSHIP_UNAVAILABLE",
-      // Only requested identifiers and finite reasons, never private join fields
-      // or the full inspected/private Action catalog, enter this diagnostic.
+      // Setup diagnostics name only the exact blocking schema fields, never
+      // Source values or the full inspected/private Action catalog.
       relationships: diagnostics,
     });
   }
