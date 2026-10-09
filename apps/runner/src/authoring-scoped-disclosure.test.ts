@@ -8,7 +8,7 @@ import {parsePolicyCoverage} from './authoring-policy-coverage.js';
 import {policyReviewReadiness} from './authoring-review-readiness.js';
 import {localScopedDisclosureReview} from './authoring-scoped-disclosure-operation.js';
 import {scopedDisclosureInventory,disclosureFields} from './authoring-scoped-disclosure.js';
-import {withProjectAuthorityMutation} from './project-authority-mutation.js';
+import {withProjectAuthorityMutation,withHeldProjectAuthorityAccess,type ProjectAuthorityMutationPermit} from './project-authority-mutation.js';
 import {ensurePreparedPolicyCoverage} from './authoring-prepared-policy-review.js';
 const captures=JSON.parse(await fs.readFile(new URL('./test-fixtures/scoped-disclosure-captures.json',import.meta.url),'utf8'));
 const roots:string[]=[];
@@ -41,6 +41,7 @@ async function setup(lane:'main'|'tester'='main',knownSynthetic=false){
    source_session:f.sources.id,metadata_digest:canonicalJsonDigest("synthetic current reader metadata"),read_digest:READ,store_digest:STORE,reviews:f.sources.scoped_disclosure_reviews??[]}}});
  const input={projectRoot:root,sources:f.sources,session,actor:'synthetic source owner',register:true,location:'active' as const,
    currentDraft,authorityDigest:f.sources.coverage_authority_digest,clarifications:[],assertCurrent:async()=>{},
+   assertCurrentHeld:async(permit:ProjectAuthorityMutationPermit)=>withHeldProjectAuthorityAccess(root,permit,async()=>{}),
    coordinated:async(op:any)=>{await withProjectAuthorityMutation(root,op);}};
  return {f,root,input,prompts,currentDraft,original,
    set:(values:{choice?:string;subset?:string;cancelSave?:boolean})=>{if(values.choice)choice=values.choice;if(values.subset)subset=values.subset;if(values.cancelSave!==undefined)cancelSave=values.cancelSave;},

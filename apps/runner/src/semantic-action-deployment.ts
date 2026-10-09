@@ -1,7 +1,7 @@
 import { inspectReviewedHardLimitWriterSetup, assertReviewedHardLimitWriterSetup, HardLimitWriterReviewChangedError,
   type HardLimitWriterReviewBinding, type HardLimitWriterReviewContext } from "./hard-limit-writer-review-binding.js";
 export type { HardLimitWriterReviewBinding } from "./hard-limit-writer-review-binding.js";
-import { projectHardLimitActivationWriterSelections } from "./hard-limit-writer-selection.js";
+import { projectHardLimitActivationWriterSelectionsHeld } from "./hard-limit-writer-selection.js";
 import { inspectHardLimitWriterSetup, assertHardLimitWriterSetup, type HardLimitWriterSetupReadback } from "./hard-limit-writer-setup.js";
 import { assessActionWithdrawal, assessActionWithdrawalHeld } from "./action-rule-withdrawal.js";
 import { SEMANTIC_ACTION_RUNTIME_CONFIG, executionConfigForReview, readSemanticSupervisedExecutionState, type SemanticSupervisedExecutionState } from "./semantic-execution-state.js";
@@ -14,7 +14,7 @@ import { postgresAdapter } from "@synapsor-runner/postgres";
 import { mysqlAdapter } from "@synapsor-runner/mysql";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import {
   loadRuntimeConfigFromFile,
   resolveRuntimeConfig,
@@ -229,7 +229,15 @@ type ActivationWriterCandidateInput = {
 };
 
 /** One projection for the shown readback and the held publication check. */
-async function activationWriterCandidate(input: ActivationWriterCandidateInput, permit?: ProjectAuthorityMutationPermit) {
+async function activationWriterCandidate(input: ActivationWriterCandidateInput) {
+  const captured = structuredClone(input);
+  return withProjectAuthorityMutation(input.projectRoot, held => activationWriterCandidateProjection(captured, held));
+}
+async function activationWriterCandidateHeld(input: ActivationWriterCandidateInput, permit: ProjectAuthorityMutationPermit) {
+  const captured = structuredClone(input);
+  return withHeldProjectAuthorityAccess(input.projectRoot, permit, held => activationWriterCandidateProjection(captured, held));
+}
+async function activationWriterCandidateProjection(input: ActivationWriterCandidateInput, permit: ProjectAuthorityMutationPermit) {
   const projectRoot = await fs.realpath(input.projectRoot);
   const draft = parseStoredActionRuleAuthority(input.draft);
   if (draft.state !== "disabled") throw new Error("ACTION_RULE_DRAFT_REQUIRED: review a disabled Action revision before activation.");
@@ -247,8 +255,8 @@ async function activationWriterCandidate(input: ActivationWriterCandidateInput, 
     if (binding && !before) throw new HardLimitWriterReviewChangedError();
     const review = await executionConfigForReview(projectRoot, sourceConfigPath, raw, binding, input.env);
     if (before && review.epoch !== before.epoch) throw new HardLimitWriterReviewChangedError();
-    const sourceConfig = await projectHardLimitActivationWriterSelections({ projectRoot,
-      config: review.config as RuntimeConfig, registry, authorityDigest: draft.digest, env: input.env, permit });
+    const sourceConfig = await projectHardLimitActivationWriterSelectionsHeld({ projectRoot,
+      config: review.config as RuntimeConfig, registry, authorityDigest: draft.digest, env: input.env }, permit);
     const nextConfig = bindSemanticReadScope(semanticActionRuntimeConfig({ projectRoot, sourceConfigPath, outputConfigPath,
       sourceConfig, draft, preserveActionRuntime: previous !== undefined }), draft.authority.rules,
       await loadActivatedExplorationBoundaries(projectRoot, binding));
@@ -339,7 +347,7 @@ async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof ac
   const rawSourceConfig = await readJsonObject(sourceConfigPath);
   const parsedDraft = parseActionRuleAuthority(input.draft.authority, input.draft.digest);
   const writerCandidate = !withdrawal && parsedDraft.registry.rules.some(({ compiled }) => compiled.hard_limit)
-    ? await activationWriterCandidate(input, permit) : undefined;
+    ? await activationWriterCandidateHeld(input, permit) : undefined;
   if (writerCandidate && writerCandidate.reviewContext.previousConfigText !== previous) throw new HardLimitWriterReviewChangedError();
   const sourceConfig = rawSourceConfig;
   const binding = await openBoundProjectControlPolicies(projectRoot, input.env);

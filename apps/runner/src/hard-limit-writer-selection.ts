@@ -1,18 +1,28 @@
 import path from 'node:path';
-import type { ProjectAuthorityMutationPermit } from './project-authority-mutation.js';
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from './project-authority-mutation.js';
 import type { RuntimeActionRuleRegistryV1 } from '@synapsor-runner/action-rules';
 import type { RuntimeConfig } from '@synapsor-runner/mcp-server';
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
-import { inspectSemanticReceiptSetup, selectedSemanticReceipts } from './semantic-receipt-setup.js';
+import { inspectSemanticReceiptSetupHeld, selectedSemanticReceipts } from './semantic-receipt-setup.js';
 import { HardLimitWriterSetupError } from './hard-limit-writer-setup.js';
 
 /** Existing separately reviewed disabled setup selects a credential reference,
  * never readiness or execution authority. Its native binding must still match
  * the exact authority being published. No default writer is inferred. */
-export async function projectHardLimitActivationWriterSelections(input: {
+export type HardLimitActivationWriterSelectionInput = {
   projectRoot: string; config: RuntimeConfig; registry: RuntimeActionRuleRegistryV1;
-  authorityDigest: string; env?: NodeJS.ProcessEnv; permit?: ProjectAuthorityMutationPermit;
-}): Promise<RuntimeConfig> {
+  authorityDigest: string; env?: NodeJS.ProcessEnv;
+};
+export async function projectHardLimitActivationWriterSelections(input: HardLimitActivationWriterSelectionInput): Promise<RuntimeConfig> {
+  const captured = structuredClone(input);
+  return withProjectAuthorityMutation(input.projectRoot, held => writerSelectionsHeld(captured, held));
+}
+export async function projectHardLimitActivationWriterSelectionsHeld(input: HardLimitActivationWriterSelectionInput,
+  permit: ProjectAuthorityMutationPermit): Promise<RuntimeConfig> {
+  const captured = structuredClone(input);
+  return withHeldProjectAuthorityAccess(input.projectRoot, permit, held => writerSelectionsHeld(captured, held));
+}
+async function writerSelectionsHeld(input: HardLimitActivationWriterSelectionInput, permit: ProjectAuthorityMutationPermit): Promise<RuntimeConfig> {
   const config = structuredClone(input.config);
   const required = new Map<string, number>();
   const selectedCounts = new Map<string, number>();
@@ -26,8 +36,8 @@ export async function projectHardLimitActivationWriterSelections(input: {
     required.set(compiled.source, (required.get(compiled.source) ?? 0) + 1);
     let setup;
     try {
-      setup = await inspectSemanticReceiptSetup({ projectRoot: input.projectRoot,
-        configPath: path.join(path.resolve(input.projectRoot), 'synapsor.runner.json'), outcome: compiled.outcome, disabled: true, env: input.env, permit: input.permit });
+      setup = await inspectSemanticReceiptSetupHeld({ projectRoot: input.projectRoot,
+        configPath: path.join(path.resolve(input.projectRoot), 'synapsor.runner.json'), outcome: compiled.outcome, disabled: true, env: input.env }, permit);
     } catch (error) {
       if (['SEMANTIC_RECEIPT_REVIEW_UNAVAILABLE', 'SEMANTIC_RECEIPT_DRAFT_STALE', 'SEMANTIC_RECEIPT_SOURCE_MISSING', 'SEMANTIC_RECEIPT_OUTCOME_REQUIRED'].includes(String((error as { code?: unknown }).code))) continue;
       throw error;
