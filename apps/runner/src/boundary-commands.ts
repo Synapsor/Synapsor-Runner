@@ -3726,7 +3726,7 @@ function generationReadControllerMeaning(checkpoint: ReadWorkloadAssistanceCheck
 }
 export async function boundaryGenerationContext(projectRoot: string, resume: BoundaryAuthoringResumeState,
   permit?: ProjectAuthorityMutationPermit): Promise<`sha256:${string}`> {
-  const context = await loadBoundaryReviewContext(projectRoot);
+  const context = await loadBoundaryReviewContext(projectRoot, permit);
   const actions = await readActionRuleAuthorityRevisionBaseline(projectRoot, permit);
   return canonicalJsonDigest({ binding: boundaryAuthoringResumeBinding(context.bundle), candidate: context.candidate,
     actions, source: resume.policy_source_session ? await policySourceSavedDigest(projectRoot, resume.policy_source_session) : null,
