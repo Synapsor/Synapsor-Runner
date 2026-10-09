@@ -364,6 +364,25 @@
       "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "scope": "Scoped owner types including project-authority-access-contract.test.ts @ts-expect-error absent/forged/wrong-context negatives; not whole repository typecheck"
     },
-    "custody": "Earlier runs precede final fixture repairs; separate invocations retained, no aggregate all-pass claim. Final df557cbe receipt source adds required readConfigurationHeld and actual boundary hook. Cold Version 17 NOT REACHED: actual first model context has resources=[]; no public continuation claim. Input cold seven and native recovery ten reached actual native stores/processes; native-port component fixture is not full public/CAS acceptance."
+    "custody": "Earlier runs precede final fixture repairs; separate invocations retained, no aggregate all-pass claim. Final df557cbe receipt source adds required readConfigurationHeld and actual boundary hook. Cold Version 17 NOT REACHED: actual first model context has resources=[]; no public continuation claim. Input cold seven and native recovery ten reached actual native stores/processes; native-port component fixture is not full public/CAS acceptance.",
+    "final_affected": {
+      "pin": "df557cbe45c60e443ee20561c7912e691fd52af2",
+      "passed": 233,
+      "failed": 0,
+      "skipped": 0,
+      "files": 19,
+      "exit": 0,
+      "json": "/var/tmp/synapsor-b64-main-access-owned/evidence/serial-final-affected.json",
+      "json_sha256": "64a39bbcb9241af3c53ae2c6cf6a59731e0d6363c7b68c00a258386999616426",
+      "log_sha256": "053f2443c222c9296e672e7b7fe3b8a403f253ddf19b32cc77589920eac133c7"
+    },
+    "actual_boundary_types": {
+      "exit": 0,
+      "config": "/var/tmp/synapsor-b64-main-access-owned/tsconfig-boundary.json",
+      "config_sha256": "32b8f1c74b520663170dacab428067e84a3c1c1721545b2e3074bf57fe18c63e",
+      "log": "/var/tmp/synapsor-b64-main-access-owned/evidence/serial-boundary-types.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "independent_disposition": "R2: COMPLETE MIGRATION SOURCE + OWNER COMPONENT ARTIFACT ACCEPT; full native/public class qualification OPEN, coldVersion17 NOT_REACHED; no demonstrated remaining product blocker in inspected scope."
   }
 }
