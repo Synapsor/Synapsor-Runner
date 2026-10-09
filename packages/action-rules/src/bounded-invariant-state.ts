@@ -87,3 +87,29 @@ export function projectBoundedInvariantEffect(ctx: BoundedInvariantContext, comp
   validateBoundedInvariantRows(ctx, post, refuse);
   return post;
 }
+
+export function assertBoundedInvariantEffectProfile(c: CompiledActionRuleV1, ctx: BoundedInvariantContext, refuse: Refuse, immutableFields: readonly string[] = []): void {
+  const effect = c.rule.effect, e = c.effect_envelope;
+  const population = ctx.populations.find(b => b.resource.name === c.target_resource.name);
+  if (effect.operation === 'insert') {
+    if (!population || e.conflict_key !== undefined || e.version_advance !== undefined
+      || !e.deduplication?.components.some(v => v.column === population.resource.primary_key && v.source === 'proposal_id')) refuse('insert');
+    const supplied = new Set([...Object.keys(effect.set), ...e.deduplication.components.map(v => v.column), e.tenant_key, e.principal_scope_key]);
+    if (population.resource.fields.some(f => !supplied.has(f.name))) refuse('insert_columns');
+    for (const pair of actionRuleRelationshipPairs(population.relationship!)) {
+      if (pair.local_field === e.tenant_key && pair.target_field === ctx.parent.resource.tenant_key) continue;
+      if (pair.local_field === e.principal_scope_key && pair.target_field === ctx.parent.resource.principal_scope_key) continue;
+      const v = effect.set[pair.local_field];
+      if (v?.kind !== 'field' || v.binding !== ctx.parent.binding || v.field !== pair.target_field) refuse('insert_membership');
+    }
+  } else {
+    const target = c.bindings.find(b => b.binding === effect.target_binding);
+    if (effect.operation !== 'update' || !target || target.verification.cardinality !== 'one'
+      || ![ctx.parent.resource.name, ...ctx.populations.map(b => b.resource.name)].includes(target.resource.name)
+      || e.version_advance?.strategy !== 'integer_increment' || e.version_advance.column !== target.resource.version_field
+      || e.conflict_key !== target.resource.version_field) refuse('update');
+    const identity = new Set([target.resource.primary_key, target.resource.tenant_key, target.resource.principal_scope_key,
+      target.resource.version_field, ...immutableFields, ...ctx.populations.flatMap(b => actionRuleRelationshipPairs(b.relationship!).flatMap(p => [p.local_field, p.target_field]))]);
+    if (Object.keys(effect.set).some(f => identity.has(f) || !target.verification.fields.some(v => v.name === f))) refuse('update_identity');
+  }
+}
