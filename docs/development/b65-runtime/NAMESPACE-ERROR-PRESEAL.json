@@ -1,0 +1,43 @@
+{
+  "owner_addendum": "624dcdf9-3d8f-47d2-a0f2-7f3e595e2ccd",
+  "base": "a9152e403acbce2d136ff7a8bbf3d64bfa315aa2",
+  "target": "packages/postgres/src/hard-limit-source.ts namespace LOCK catch only",
+  "current_finding": "Catch discards exact driver 40P01/55P03 into ACTION_RULE_SCOPE_UNPROVEN before the existing safeErrorCode translator can observe them.",
+  "proposed_narrow_change": "Rethrow the same error object only when its code is exactly the string 40P01 or 55P03; all other failed namespace acquisition remains existing unsupported(namespace_lock). No parser/coercion/prose inference/new retry.",
+  "unchanged": [
+    "Source namespace privilege/engine/isolation checks, lock timeout <=5s, native held-lock evidence and transaction lifetime",
+    "Whole transaction rollback and unknown COMMIT/ROLLBACK precedence",
+    "Qualification/receipt caches and current authority/inventory protections",
+    "No Source, grant, capability, setup/format, access or receipt change"
+  ],
+  "new_controls": {
+    "file": "packages/postgres/src/namespace-contention.test.ts",
+    "count": 12,
+    "before_expectation": "4 failures: exact driver object identity2 and whole adapter typed result2. Other8 controls retain conservative refusal/unknown rollback; classify actual results, do not relabel fixture errors."
+  },
+  "affected_controls": {
+    "file": "packages/postgres/src/index.test.ts",
+    "pattern": "typed source contention outcomes",
+    "count": 13,
+    "includes": "Later failure40P01/55P03; unknown COMMIT and rollback; no prose/coercion; ledger custody"
+  },
+  "connection_companions": {
+    "file": "packages/postgres/src/connection-lifetime.test.ts",
+    "pattern": "owned PostgreSQL connection errors",
+    "count": 2,
+    "scope": "Existing error listener/connection state ONLY; not qualification-cache reset proof."
+  },
+  "requested_groups": {
+    "before": "Only new namespace-contention.test.ts12",
+    "after": "Unchanged new12 + exact existing13 contention +2 connection =27 selected, max1/offline/0700/floors/source and dependency hashes",
+    "runtime": "NOT_RUN; need Main agreement/allocation before launch; no SourceDB/native/provider/build/types"
+  },
+  "other_addendum_proofs": "Same-plan/fact/effect, qualification-cache reset, participant inventory and independent-scope/source-credential binding remain separately crosswalked evidence/pending tests; not inferred by these diagnostics controls.",
+  "hashes": {
+    "packages/postgres/src/hard-limit-source.ts": "4d9b6da606918d5c9a61ed8692ffbd5308cdac7846df8725788af1cc6b4de9fb",
+    "packages/postgres/src/namespace-contention.test.ts": "2c5cabd7499948d063605681d4efdbc7e957c66a862e648f598e64658985f236",
+    "packages/postgres/src/index.ts": "0ade190aceddb3b7a609a431d5c7a3ec94d033e586b94def6acc25ab505f6370",
+    "packages/postgres/src/index.test.ts": "70b3e233ec7c041790b9ff0a9a12984f6e08fc72df48f502a2e16af96ef13448",
+    "packages/postgres/src/connection-lifetime.test.ts": "473cf78e7819c7d323d1173d3db6df446386248c1d881ad4ad79597f043e36a6"
+  }
+}
