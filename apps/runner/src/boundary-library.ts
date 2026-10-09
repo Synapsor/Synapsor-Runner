@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import crypto from "node:crypto";
 import path from "node:path";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   AUTO_BOUNDARY_VERSION,
@@ -28,14 +28,14 @@ import {
   type BoundaryReviewProgress,
 } from "./boundary-review-domain.js";
 import {
-  readBoundaryReviewProgress,
+  readBoundaryReviewProgressHeld,
   saveBoundaryReviewProgress,
 } from "./boundary-review-persistence.js";
 import { resolveBoundaryRevisionState } from "./boundary-revision-state.js";
-import { assertReadAuthoringBindings, readProjectReadAuthoring, saveProjectReadAuthoring,
+import { assertReadAuthoringBindings, readProjectReadAuthoring, readProjectReadAuthoringHeld, saveProjectReadAuthoring,
   type ProjectReadAuthoring, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 import { READ_REVIEW_PROTOCOL, parseStoredReadReviewProgress, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
-import { resolveReadReviewOrigin } from "./read-review-origin.js";
+import { resolveReadReviewOriginHeld } from "./read-review-origin.js";
 import { reconcileReadPrerequisiteForRescan } from "./read-prerequisite.js";
 
 const BOUNDARY_LIBRARY_VERSION = "synapsor.boundary-library.v2" as const;
@@ -146,7 +146,7 @@ export async function synchronizeBoundaryLibrary(
 }
 
 async function synchronizeBoundaryLibraryUnlocked(input: BoundaryLibraryContext, permit: ProjectAuthorityMutationPermit): Promise<BoundaryLibrarySnapshot> {
-  const library = await readOrCreateLibrary(input, permit);
+  const library = await readOrCreateLibraryHeld(input, permit);
   const active = await readActiveBoundaryIdentities(input.projectRoot);
   if (library.stored) return snapshot(input.projectRoot, library, active);
   let selectedChanged = false;
@@ -259,7 +259,7 @@ export async function createSavedBoundary(input: BoundaryLibraryContext & {
 
 async function createSavedBoundaryUnlocked(input: Parameters<typeof createSavedBoundary>[0], permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewProgress> {
   assertBoundaryName(input.name);
-  const library = await readOrCreateLibrary(input, permit);
+  const library = await readOrCreateLibraryHeld(input, permit);
   if (library.boundaries[input.name]) {
     throw new Error(`A saved boundary named ${input.name} already exists.`);
   }
@@ -355,7 +355,7 @@ export async function switchSavedBoundary(input: BoundaryLibraryContext & {
 }
 
 async function switchSavedBoundaryUnlocked(input: Parameters<typeof switchSavedBoundary>[0], permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewProgress> {
-  const library = await readOrCreateLibrary(input, permit);
+  const library = await readOrCreateLibraryHeld(input, permit);
   const stored = library.boundaries[input.name];
   if (!stored) throw new Error(`Saved boundary ${input.name} was not found.`);
   const progress = library.stored ? stored : await normalizeStoredProgress(
@@ -385,7 +385,7 @@ export async function renameSavedBoundary(input: BoundaryLibraryContext & {
 async function renameSavedBoundaryUnlocked(input: Parameters<typeof renameSavedBoundary>[0], permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewProgress> {
   assertBoundaryName(input.name);
   assertBoundaryName(input.newName);
-  const library = await readOrCreateLibrary(input, permit);
+  const library = await readOrCreateLibraryHeld(input, permit);
   const stored = library.boundaries[input.name];
   if (!stored) throw new Error(`Saved boundary ${input.name} was not found.`);
   if (input.name !== input.newName && library.boundaries[input.newName]) {
@@ -432,7 +432,7 @@ export async function deleteSavedBoundary(input: BoundaryLibraryContext & {
 }
 
 async function deleteSavedBoundaryUnlocked(input: Parameters<typeof deleteSavedBoundary>[0], permit: ProjectAuthorityMutationPermit): Promise<{ selected_name: string; progress: BoundaryReviewProgress }> {
-  const library = await readOrCreateLibrary(input, permit);
+  const library = await readOrCreateLibraryHeld(input, permit);
   if (!library.boundaries[input.name]) {
     throw new Error(`Saved boundary ${input.name} was not found.`);
   }
@@ -481,7 +481,7 @@ export async function discardOnlySavedBoundaryReview(input: BoundaryLibraryConte
 
 async function discardOnlySavedBoundaryReviewUnlocked(input: Parameters<typeof discardOnlySavedBoundaryReview>[0], permit: ProjectAuthorityMutationPermit): Promise<{ removed: string[] }> {
   const projectRoot = path.resolve(input.projectRoot);
-  const library = await readOrCreateLibrary(input, permit);
+  const library = await readOrCreateLibraryHeld(input, permit);
   if (!library.boundaries[input.name]) {
     throw new Error(`Saved boundary ${input.name} was not found.`);
   }
@@ -564,8 +564,16 @@ async function discardOnlySavedBoundaryReviewUnlocked(input: Parameters<typeof d
   };
 }
 
-async function readOrCreateLibrary(input: BoundaryLibraryContext, permit?: ProjectAuthorityMutationPermit): Promise<BoundaryLibraryFile> {
-  const stored = await readProjectReadAuthoring(input.projectRoot, undefined, permit);
+async function readOrCreateLibrary(input: BoundaryLibraryContext): Promise<BoundaryLibraryFile> {
+  const frozen = structuredClone(input);
+  return withProjectAuthorityMutation(frozen.projectRoot, held => readOrCreateLibraryUnlocked({ ...frozen, projectRoot: held.projectRoot }, held));
+}
+async function readOrCreateLibraryHeld(input: BoundaryLibraryContext, permit: ProjectAuthorityMutationPermit): Promise<BoundaryLibraryFile> {
+  const frozen = structuredClone(input);
+  return withHeldProjectAuthorityAccess(frozen.projectRoot, permit, held => readOrCreateLibraryUnlocked({ ...frozen, projectRoot: held.projectRoot }, held));
+}
+async function readOrCreateLibraryUnlocked(input: BoundaryLibraryContext, permit: ProjectAuthorityMutationPermit): Promise<BoundaryLibraryFile> {
+  const stored = await readProjectReadAuthoringHeld(input.projectRoot, permit);
   if (stored) {
     assertReadAuthoringBindings(input.expectedAuthoring, stored.bindings);
     if (!stored.selected) throw new Error("No saved Read boundary is selected.");
@@ -580,7 +588,7 @@ async function readOrCreateLibrary(input: BoundaryLibraryContext, permit?: Proje
       updated_at: stored.selected.progress.updated_at, stored };
   }
   if (input.expectedAuthoring) throw new Error("The governed Read authoring repository changed.");
-  const persisted = await readBoundaryReviewProgress(input.projectRoot, input.draft, permit);
+  const persisted = await readBoundaryReviewProgressHeld(input.projectRoot, input.draft, permit);
   if (persisted) {
     const currentDigest = canonicalJsonDigest(input.currentProgress ?? null);
     let matchesSavedReview = currentDigest === canonicalJsonDigest(persisted);
@@ -648,7 +656,7 @@ async function normalizeLibrary(
   raw: unknown,
   draft: ExplorationBoundaryDraft,
   current: BoundaryReviewProgress,
-  permit?: ProjectAuthorityMutationPermit,
+  permit: ProjectAuthorityMutationPermit,
 ): Promise<BoundaryLibraryFile> {
   if (isRecord(raw) && raw.schema_version !== BOUNDARY_LIBRARY_VERSION) {
     throw Object.assign(new Error("This saved boundary library uses an unsupported format. The original file is preserved; no boundary was selected or activated."),
@@ -687,7 +695,7 @@ async function normalizeStoredProgress(
   draft: ExplorationBoundaryDraft,
   raw: unknown,
   expectedName: string,
-  permit?: ProjectAuthorityMutationPermit,
+  permit: ProjectAuthorityMutationPermit,
 ): Promise<BoundaryReviewProgress> {
   if (!isRecord(raw)
     || !isRecord(raw.candidate)
@@ -1215,7 +1223,7 @@ async function writeBoundaryLibrary(projectRoot: string, value: BoundaryLibraryF
     value.boundaries = Object.fromEntries(actual.authoring.entries.map(entry => [entry.progress.candidate.pack.name, entry.progress]));
     return;
   }
-  if (await readProjectReadAuthoring(projectRoot, undefined, permit)) {
+  if (await readProjectReadAuthoringHeld(projectRoot, permit)) {
     throw new Error("The governed Read library requires an exact repository revision. No file-based replacement was saved.");
   }
   for (const progress of Object.values(value.boundaries)) {
@@ -1240,11 +1248,11 @@ async function writeBoundaryLibrary(projectRoot: string, value: BoundaryLibraryF
 }
 
 async function resolveProgressOrigins(projectRoot: string, progress: BoundaryReviewProgress,
-  permit?: ProjectAuthorityMutationPermit): Promise<ResolvedBoundaryReviewOrigin[]> {
+  permit: ProjectAuthorityMutationPermit): Promise<ResolvedBoundaryReviewOrigin[]> {
   const references = new Map(progress.confirmations.flatMap(item => item.origin
     ? [[canonicalJsonDigest(item.origin), item.origin] as const] : []));
   const resolved: ResolvedBoundaryReviewOrigin[] = [];
-  for (const reference of references.values()) resolved.push(await resolveReadReviewOrigin(projectRoot, reference, permit));
+  for (const reference of references.values()) resolved.push(await resolveReadReviewOriginHeld(projectRoot, reference, permit));
   return resolved;
 }
 
@@ -1255,7 +1263,7 @@ async function saveNativeLibraryState(projectRoot: string, original: ProjectRead
   const expected = structuredClone(authoring);
   const receipt = await saveProjectReadAuthoring({ projectRoot, expected: structuredClone(original.bindings),
     authoring: structuredClone(expected), actor: "local_operator", operation }, permit);
-  const actual = await readProjectReadAuthoring(projectRoot, undefined, permit);
+  const actual = await readProjectReadAuthoringHeld(projectRoot, permit);
   if (!actual || canonicalJsonDigest(actual.bindings) !== canonicalJsonDigest(receipt)
     || canonicalJsonDigest(actual.authoring) !== canonicalJsonDigest(expected)) {
     throw Object.assign(new Error("The native Read library save did not acknowledge the exact requested state. Preserve the saved revision and reopen it; no continuation was adopted."),

@@ -3,7 +3,7 @@ import type { BoundaryResourceReviewRequest, BoundaryReviewMutationBindings } fr
 export type { BoundaryResourceReviewRequest, BoundaryReviewMutationBindings } from "./read-authoring-contract-types.js";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { assertGovernedReadEditDecision, type GovernedReadEditDecision } from "./control-policy-read-edit.js";
 import { Buffer } from "node:buffer";
 import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
@@ -65,9 +65,9 @@ import {
   type ManagedBoundaryReviewDecision,
 } from "./boundary-review-domain.js";
 import {
-  readBoundaryReviewProgress,
+  readBoundaryReviewProgressHeld,
 } from "./boundary-review-persistence.js";
-import { readProjectReadAuthoring, saveProjectReadProgress,
+import { readProjectReadAuthoringHeld, saveProjectReadProgress,
   type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 import { preparedReadAuthoringDraft, readAuthoringCatalog } from "./control-policy-read-authoring.js";
 import {
@@ -1459,7 +1459,7 @@ async function commitBoundaryResourceReviewMutationUnlocked(projectRoot: string,
   assertVerifiedMutationPreview(preview, preview.request.actor, verifiedDecision);
   if (preview.partial_scope_resolution) {
     if (preview.candidate.pack.resources.length === 0) {
-      const current = await loadBoundaryReviewFiles(projectRoot, permit);
+      const current = await loadBoundaryReviewFilesHeld(projectRoot, permit);
       assertBindingsEqual(preview.bindings, reviewBindings(current));
       if (current.authoring) {
         const result = await commitPreparedBoundaryReviewMutation({ projectRoot, bindings: preview.bindings,
@@ -1700,7 +1700,7 @@ async function commitPreparedBoundaryReviewMutation(input: {
 
 async function commitPreparedBoundaryReviewMutationUnlocked(input: Parameters<typeof commitPreparedBoundaryReviewMutation>[0],
   permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewMutationCommit> {
-  const current = await loadBoundaryReviewFiles(input.projectRoot, permit);
+  const current = await loadBoundaryReviewFilesHeld(input.projectRoot, permit);
   assertBindingsEqual(input.bindings, reviewBindings(current));
   assertReadPrerequisiteRetained(current.candidate, input.candidate);
 
@@ -2618,7 +2618,13 @@ function semanticDiff(
   };
 }
 
-async function loadBoundaryReviewFiles(projectRoot: string, permit?: ProjectAuthorityMutationPermit): Promise<BoundaryReviewFiles> {
+async function loadBoundaryReviewFiles(projectRoot: string): Promise<BoundaryReviewFiles> {
+  return withProjectAuthorityMutation(projectRoot, held => loadBoundaryReviewFilesUnlocked(held.projectRoot, held));
+}
+async function loadBoundaryReviewFilesHeld(projectRoot: string, permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewFiles> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => loadBoundaryReviewFilesUnlocked(held.projectRoot, held));
+}
+async function loadBoundaryReviewFilesUnlocked(projectRoot: string, permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewFiles> {
   const resolvedRoot = path.resolve(projectRoot);
   const journey = await readGuidedOnboardingState(resolvedRoot);
   const boundaryRoot = path.resolve(
@@ -2626,7 +2632,7 @@ async function loadBoundaryReviewFiles(projectRoot: string, permit?: ProjectAuth
     journey?.artifacts.boundary_root ?? "synapsor/generated",
   );
   assertInsideProject(resolvedRoot, boundaryRoot);
-  const stored = await readProjectReadAuthoring(resolvedRoot, undefined, permit);
+  const stored = await readProjectReadAuthoringHeld(resolvedRoot, permit);
   if (stored && !stored.selected) throw new Error("No saved Read boundary is selected for editing.");
   if (stored && !stored.selected!.catalog) throw Object.assign(new Error(
     "This saved review needs its metadata catalog refreshed. Rescan before editing; file exports cannot replace its exact catalog."),
@@ -2646,7 +2652,7 @@ async function loadBoundaryReviewFiles(projectRoot: string, permit?: ProjectAuth
     ),
   ]);
   const draft = stored?.selected?.draft ?? parseExplorationBoundaryDraftArtifact(draftArtifact, lock);
-  const progress = stored?.selected?.progress ?? await readBoundaryReviewProgress(resolvedRoot, draft, permit);
+  const progress = stored?.selected?.progress ?? await readBoundaryReviewProgressHeld(resolvedRoot, draft, permit);
   return {
     boundary_root: boundaryRoot,
     draft,
