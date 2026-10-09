@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
+import { assertAuthoringMaterial, resolveAuthoringMaterialContext } from "./authoring-resume-material.js";
+import { prepareAuthoringResumeMaterial } from "./authoring-resume-material-access.js";
 import {
-  assertBoundaryAuthoringResumeMaterial,
   buildBoundaryAuthoringResumeState,
   consumeBoundaryReadRevisionResult,
   boundaryAuthoringVersionReviews,
@@ -14,6 +16,7 @@ import {
   writeBoundaryAuthoringResumeState,
   type BoundaryAuthoringResumeBinding,
 } from "./boundary-authoring-resume.js";
+import { STRUCTURED_AUTHORING_PROTOCOL_VERSION } from "./authoring-protocol.js";
 import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { readBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
@@ -21,7 +24,7 @@ import { READ_SCOPE_PROTOCOL, type ReadScopeProposal } from "./read-structured-s
 import { projectReadScopeHostContext } from "./read-current-evidence.js";
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import { generateModelReadBoundaryRevision } from "./read-boundary-revision-model.js";
-import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ExplorationBoundaryDraft } from "./auto-boundary.js";
+import { EXPLORATION_BOUNDARY_VERSION, DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint } from "./authoring-owner-handoff.js";
 import { authoringQuestionAnswerCheckpoint, authoringQuestionCheckpoint,
   configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery } from "./authoring-generation-recovery.js";
@@ -35,10 +38,50 @@ const binding: BoundaryAuthoringResumeBinding = {
   role_posture_fingerprint: `sha256:${"3".repeat(64)}`,
 };
 
+// D4 fixture port: native projects have real configuration; exact old privacy
+// strings use explicitly configured values, not English identity classification.
+const restorations: Array<() => void> = [];
+let configurationIndex = 0;
+afterEach(() => { for (const restore of restorations.splice(0).reverse()) restore(); });
+function configuredEnv(key: string, value: string | undefined) {
+  const previous = process.env[key];
+  restorations.push(() => { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; });
+  if (value === undefined) delete process.env[key]; else process.env[key] = value;
+}
+async function configuredProject(prefix: string, tenant = "acme-corp", principal = "person-123") {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  await fs.chmod(root, 0o700); await fs.mkdir(path.join(root, ".git"));
+  configuredEnv("SYNAPSOR_RUNNER_CONFIG", undefined); configuredEnv("SYNAPSOR_MCP_CONFIG", undefined);
+  const index = ++configurationIndex;
+  const tenantEnv = `D4_RESUME_TENANT_${index}`, principalEnv = `D4_RESUME_PRINCIPAL_${index}`;
+  configuredEnv(tenantEnv, tenant); configuredEnv(principalEnv, principal);
+  const config = path.join(root, "synapsor.runner.json");
+  await fs.writeFile(config, JSON.stringify({ version: 1, mode: "read_only", capabilities: [],
+    sources: { app: { engine: "postgres", read_url_env: "D4_UNUSED_READ_DB" } },
+    trusted_context: { provider: "environment", values: { tenant_id_env: tenantEnv, principal_env: principalEnv } },
+  }), { mode: 0o600 });
+  loadRuntimeConfigFromFile(config);
+  return root;
+}
+async function screenConfiguredMaterial(value: unknown, tenant = "acme-corp", principal = "person-123") {
+  const root = await configuredProject("resume-configured-material-", tenant, principal);
+  try {
+    // Complete native records use the actual retention adapter. Partial dispatch
+    // material uses its same host guard, bound to a genuine builder-created job.
+    if (value && typeof value === "object" && "created_at" in value)
+      return (await prepareAuthoringResumeMaterial(root, value)).json;
+    const job = buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: "Review records.",
+      provider: "openai", model: "offline-test" });
+    const owner = { projectRoot: root, jobCreatedAt: job.created_at };
+    const context = await resolveAuthoringMaterialContext(owner);
+    return await assertAuthoringMaterial({ value, owner, origin: "retained_material", context });
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+}
+
 // Existing Read revision public fixture reduced to the declared model-visible catalog.
 function ownedReadRevisionDraft(): ExplorationBoundaryDraft {
   return {
-      schema_version: "synapsor.exploration-boundary.v1", activation: "disabled_unreviewed", deployment_profile: "staging",
+      schema_version: EXPLORATION_BOUNDARY_VERSION, activation: "disabled_unreviewed", deployment_profile: "staging",
       source: "local_postgres", compiler_version: "1.8.0", spec_version: "1.11.0", reporting_timezone: "UTC",
       trusted_context: { provider: "environment", tenant_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL" },
       generation_lock_fingerprint: binding.generation_lock_fingerprint, role_posture_fingerprint: binding.role_posture_fingerprint,
@@ -79,7 +122,7 @@ function ownedReadRevisionScope(draft: ExplorationBoundaryDraft) {
 
 describe("Boundary authoring resume state", () => {
   it("records a parsed Read revision result with its exact dispatch as inert history and reopens without replay", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-consumed-history-"));
+    const root = await configuredProject("owned-read-consumed-history-");
     const instruction = "Keep order identifiers private. Preserve unrelated access.";
     const draft = ownedReadRevisionDraft();
     const typed = ownedReadRevisionScope(draft);
@@ -122,7 +165,7 @@ describe("Boundary authoring resume state", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
   it("retains an interrupted Read edit input without recording a consumed result", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-dispatch-state-"));
+    const root = await configuredProject("owned-read-dispatch-state-");
     const instruction = "Keep units private and preserve unrelated access.";
     const checkpoint = readBoundaryRevisionCheckpoint({ stage: "dispatching", dispatch_question: instruction,
       input_digest: canonicalJsonDigest("exact input"), boundary_digest: canonicalJsonDigest(binding),
@@ -144,7 +187,7 @@ describe("Boundary authoring resume state", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
   it("retains native answered Read history, exact counters and CAS without acknowledging another result", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-native-history-"));
+    const root = await configuredProject("owned-read-native-history-");
     const instruction = "Use the operator's exact term and preserve unrelated access.";
     const input = { binding, stage: "authority_review" as const, jobIntent: "Read order status.", provider: "openai" as const,
       model: "offline-test", pendingReadRevision: instruction };
@@ -221,7 +264,7 @@ describe("Boundary authoring resume state", () => {
   });
 
   it.each(["cancelled", "malformed", "stale", "late"] as const)("keeps %s Read results unconsumed through the native producer", async failure => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-result-refusal-"));
+    const root = await configuredProject("owned-read-result-refusal-");
     const instruction = "Keep order identifiers private. Preserve unrelated access.", draft = ownedReadRevisionDraft();
     const typed = ownedReadRevisionScope(draft);
     const input = { binding, stage: "authority_review" as const, jobIntent: "Read order status.", provider: "openai" as const,
@@ -275,7 +318,7 @@ describe("Boundary authoring resume state", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
-  it("refuses pending or malformed Read history and never promotes a result disposition twice", () => {
+  it("refuses pending or malformed Read history and never promotes a result disposition twice", async () => {
     const instruction = "Keep order identifiers private.";
     const request = { instruction, provenance: "operator" as const, privacy_only: true };
     const input = { binding, stage: "authority_review" as const, jobIntent: "Read orders.", provider: "openai" as const, model: "offline-test", pendingReadRevision: instruction };
@@ -302,12 +345,12 @@ describe("Boundary authoring resume state", () => {
       previous_question: { stage: "waiting", pending_question: waiting.pending_question } });
     expect(() => consumeBoundaryReadRevisionResult({ ...request, checkpoint: awaiting })).toThrow("unanswered Read question");
     const privateIdentity = readBoundaryRevisionCheckpoint({ ...base, stage: "dispatching", dispatch_question: "Tenant is actual-tenant-42." });
-    expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: {
-      ...consumed, checkpoint_history: privateIdentity } })).toThrow("TRUSTED_IDENTITY_BLOCKED");
+    await expect(screenConfiguredMaterial(buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: {
+      ...consumed, checkpoint_history: privateIdentity } }), "actual-tenant-42")).rejects.toThrow("TRUSTED_IDENTITY_BLOCKED");
     expect(buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: consumed }).completed_policy_reviews).toBeUndefined();
   });
   it("retains exact Read revision mode and consumed-unsaved disposition without granting replay", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-revision-state-"));
+    const root = await configuredProject("owned-read-revision-state-");
     const instruction = "Keep units private.\nPreserve all labels and unrelated access.";
     const input = { binding, stage: "authority_review" as const, jobIntent: "Read the current register.", provider: "openai" as const, model: "test", pendingReadRevision: instruction };
     const request = { instruction, provenance: "guided" as const, privacy_only: true, interpretation_instruction: "Only units must stay private.", result_received: true as const };
@@ -345,7 +388,7 @@ describe("Boundary authoring resume state", () => {
     const request = { operation: "review_rules" as const, request: "Recheck the current disabled candidate.", ...context,
       read_digest: canonicalJsonDigest("current Read"), prior_contexts: [context] };
     const input = { binding, stage: "authority_review" as const, jobIntent: "Retain the saved job.", provider: "openai" as const, model: "test" };
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "prior-review-context-"));
+    const root = await configuredProject("prior-review-context-");
     try {
       const state = buildBoundaryAuthoringResumeState({ ...input, pendingPolicyReview: request });
       await writeBoundaryAuthoringResumeState(root, state);
@@ -360,7 +403,7 @@ describe("Boundary authoring resume state", () => {
   });
 
   it("persists one unfinished Read relationship across recheck and clears it only explicitly or for another job", async () => {
-    const root=await fs.mkdtemp(path.join(os.tmpdir(),'read-relationship-resume-'));
+    const root=await configuredProject("read-relationship-resume-");
     const input={binding,stage:'read_mapping' as const,jobIntent:'Read the related reference.',provider:'openai' as const,model:'test'};
     try {
       const first=buildBoundaryAuthoringResumeState({...input,pendingReadRelationship:{resource:'work.items'}});
@@ -378,7 +421,7 @@ describe("Boundary authoring resume state", () => {
     const request = { outcome: "work.finish", instruction: "Review the existing effect.", baseline_digest: canonicalJsonDigest("exact draft") };
     const generated = { ...request, coverage_repair: { source_digest: canonicalJsonDigest("source"),
       report_digest: canonicalJsonDigest("coverage"), source_ranges: [{ start: 1, end: 1 }] },
-      checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: canonicalJsonDigest("intent"), context_digest: canonicalJsonDigest("context"), components: {} }) };
+      checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION }, intent_digest: canonicalJsonDigest("intent"), context_digest: canonicalJsonDigest("context"), components: {} }) };
     expect(prepareBoundaryActionRevision({ ...request, coverage_repair: generated.coverage_repair }, generated)).toEqual(generated);
     const owner = prepareBoundaryActionRevision(request, generated);
     expect(owner).toEqual(request);
@@ -386,7 +429,7 @@ describe("Boundary authoring resume state", () => {
     expect(owner.checkpoint).toBeUndefined();
   });
   it("retains scoped business decisions through rewrite, restart and rescan without upgrading history or consent", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-scoped-decision-resume-"));
+    const root = await configuredProject("synapsor-scoped-decision-resume-");
     try {
       const conversation = [{ kind: "clarification" as const, question: "Earlier ambiguous question?", answer: "Earlier unscoped business answer." }];
       const input = { binding, stage: "authority_review" as const, jobIntent: "Inspect equipment and close a visit; a separate automatic limit is unanswered.",
@@ -394,7 +437,7 @@ describe("Boundary authoring resume state", () => {
       const records = [{ decision_id: canonicalJsonDigest("host exact scope"), applicability_digest: canonicalJsonDigest("host relevant meaning and fields"),
         question: "For this workflow, is the reviewed register authoritative?", answer: "The operator confirms its business ownership." }];
       const action = { intent: "Schedule follow-up; automatic limit remains unanswered.", intents: ["Close a visit.", "Schedule follow-up; automatic limit remains unanswered."],
-        completed_outcomes: ["operations.close_visit"], checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: canonicalJsonDigest("unfinished intent"),
+        completed_outcomes: ["operations.close_visit"], checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION }, intent_digest: canonicalJsonDigest("unfinished intent"),
           context_digest: canonicalJsonDigest("old proof"), components: {}, operator_messages: ["Business limit remains unanswered."] }) };
       const original = buildBoundaryAuthoringResumeState({ ...input, readPrerequisiteDecisions: records, action,
         privateReadMetadataDigest: canonicalJsonDigest("old consent") });
@@ -435,13 +478,13 @@ describe("Boundary authoring resume state", () => {
   });
 
   it("retains two host counter confirmations after a no-op edit, restart and metadata rescan", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-counter-review-resume-"));
+    const root = await configuredProject("synapsor-counter-review-resume-");
     try {
       const input = { binding, stage: "authority_review" as const, jobIntent: "Exchange the assignment and consume the selected offer atomically.",
         provider: "openai" as const, model: "gpt-test" };
       const reviews = ["operations.assignments", "operations.offers"].map((resource, i) => ({ resource, field: "counter",
         maintenance: "all_writers_increment" as const, proof_digest: `sha256:${String(i + 4).repeat(64)}` as const }));
-      const checkpoint = actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: `sha256:${"6".repeat(64)}`,
+      const checkpoint = actionRuleAuthoringCheckpoint({ authoring_protocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION }, intent_digest: `sha256:${"6".repeat(64)}`,
         context_digest: `sha256:${"7".repeat(64)}`, components: {}, reviewed_version_fields: reviews });
       const old = buildBoundaryAuthoringResumeState({ ...input, pendingActionRevision: { outcome: "operations.exchange",
         instruction: "Confirm the existing operating prerequisites.", baseline_digest: `sha256:${"8".repeat(64)}`, checkpoint } });
@@ -473,7 +516,7 @@ describe("Boundary authoring resume state", () => {
     const latest = { ...older, field: "v2", proof_digest: `sha256:${"b".repeat(64)}` as const };
     const input = { binding, stage: "authority_review" as const, jobIntent: "Change a record.", provider: "openai" as const, model: "gpt-test" };
     const state = buildBoundaryAuthoringResumeState({ ...input, reviewedVersionFields: [latest], action: { intent: input.jobIntent,
-      checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: `sha256:${"c".repeat(64)}`, context_digest: `sha256:${"d".repeat(64)}`,
+      checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION }, intent_digest: `sha256:${"c".repeat(64)}`, context_digest: `sha256:${"d".repeat(64)}`,
         components: {}, reviewed_version_fields: [older] }) } });
     expect(boundaryAuthoringVersionReviews(state)).toEqual([latest]);
     const records = Array.from({ length: 32 }, (_, i) => ({ ...latest, resource: `operations.record_${i}` }));
@@ -482,13 +525,13 @@ describe("Boundary authoring resume state", () => {
     expect(() => buildBoundaryAuthoringResumeState({ ...input, reviewedVersionFields: [older, latest] })).toThrow("CHECKPOINT_INVALID");
   });
   it.each([true, false])("preserves an omitted unfinished agenda on rewrite, clear and rescan (components %s)", async (components) => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-partial-job-resume-"));
+    const root = await configuredProject("synapsor-partial-job-resume-");
     try {
       const input = { binding, stage: "authority_review" as const, jobIntent: "Inspect assets, close a visit, and schedule follow-up when its limits are provided.",
         provider: "openai" as const, model: "gpt-test" };
       const action = { intent: "Inspect an asset.", intents: ["Inspect an asset.", "Close a visit.", "Schedule a follow-up; automatic limits remain unanswered."],
         outcome: "operations.close_visit", completed_outcomes: ["operations.inspect_asset", "operations.close_visit"], strategy: "rule_derived" as const,
-        ...(components ? { checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: `sha256:${"4".repeat(64)}`,
+        ...(components ? { checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION }, intent_digest: `sha256:${"4".repeat(64)}`,
           context_digest: `sha256:${"5".repeat(64)}`, components: { verification: { name: "private_facts", resources: [] } },
           operator_messages: ["The business owner has not supplied the automatic limit. Keep it pending."] }) } : {}),
       };
@@ -511,7 +554,7 @@ describe("Boundary authoring resume state", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
   it("retains an unclassified edit separately from the job through resume and rescan", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-job-edit-resume-"));
+    const root = await configuredProject("synapsor-job-edit-resume-");
     try {
       const input = { binding, stage: "planning" as const, jobIntent: "Review visits and complete approved follow-ups.",
         provider: "openai" as const, model: "gpt-test", intendedClient: "claude-code" as const };
@@ -526,7 +569,7 @@ describe("Boundary authoring resume state", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
   it("retains only a bound custom destination fingerprint and drops it on revalidation", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-custom-destination-resume-"));
+    const root = await configuredProject("synapsor-custom-destination-resume-");
     try {
       const input = { binding, stage: "planning" as const, jobIntent: "Review records.", provider: "openai_compatible" as const, model: "local" };
       const metadataDestinationDigest = `sha256:${"d".repeat(64)}` as const;
@@ -540,7 +583,7 @@ describe("Boundary authoring resume state", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
   it("binds private Read metadata permission to the saved mapping and discards it on rescan", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-private-read-consent-resume-"));
+    const root = await configuredProject("synapsor-private-read-consent-resume-");
     try {
       const input = { binding, stage: "authority_review" as const, jobIntent: "Require current admission.", provider: "openai" as const, model: "gpt-test" };
       const privateReadMetadataDigest = `sha256:${"a".repeat(64)}` as const;
@@ -556,11 +599,11 @@ describe("Boundary authoring resume state", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
   it("saves an in-progress policy edit separately from initial action drafting and drops stale components on rescan", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-action-revision-resume-"));
+    const root = await configuredProject("synapsor-action-revision-resume-");
     try {
       const pendingActionRevision = { outcome: "university.accept_offer", instruction: "Require current admission without changing the other rules.",
         baseline_digest: `sha256:${"4".repeat(64)}` as const,
-        checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: `sha256:${"5".repeat(64)}`,
+        checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION }, intent_digest: `sha256:${"5".repeat(64)}`,
           context_digest: `sha256:${"6".repeat(64)}`, components: {}, operator_messages: ["Save pending"] }),
       };
       const input = { binding, stage: "authority_review" as const, jobIntent: "Help students with registration.", provider: "openai" as const, model: "gpt-5.6-terra" };
@@ -600,12 +643,12 @@ describe("Boundary authoring resume state", () => {
     expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingActionRemoval: "clinic.obsolete" as never })).toThrow("removal review");
   });
   it("preserves exact operator provenance through revision save and invalidates a changed statement checkpoint", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-repair-provenance-"));
+    const root = await configuredProject("synapsor-repair-provenance-");
     try {
       const revision = { outcome: "gym.freeze", instruction: "Generated repair diagnostic.",
         operator_statements: ["Original policy:\n\nKeep the cap per organization.\n", "Keep the existing reviewer."],
         baseline_digest: `sha256:${"4".repeat(64)}` as const,
-        checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: `sha256:${"5".repeat(64)}`,
+        checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION }, intent_digest: `sha256:${"5".repeat(64)}`,
           context_digest: `sha256:${"6".repeat(64)}`, components: {}, operator_messages: [] }),
       };
       const input = { binding, stage: "authority_review" as const, jobIntent: "Apply the original policy.", provider: "openai" as const, model: "gpt-test" };
@@ -617,7 +660,11 @@ describe("Boundary authoring resume state", () => {
       expect(changed.checkpoint).toBeUndefined();
       expect(() => revalidateBoundaryAuthoringResume({ ...state, pending_action_revision: changed }, binding)).toThrow("digest");
       for (const statement of ["tenant_id = acme-corp", "Use postgres://operator:secret@db.example/app"]) {
-        expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingActionRevision: { ...revision, operator_statements: [statement] } })).toThrow(/BLOCKED/u);
+        const blocked = () => buildBoundaryAuthoringResumeState({ ...input, pendingActionRevision: { ...revision, operator_statements: [statement] } });
+        if (statement === "tenant_id = acme-corp")
+          await expect(writeBoundaryAuthoringResumeState(root, blocked(), { expectedRevisionDigest: state.revision_digest })).rejects.toThrow(/BLOCKED/u);
+        else expect(blocked).toThrow(/BLOCKED/u);
+        expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: state });
       }
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
@@ -669,7 +716,7 @@ describe("Boundary authoring resume state", () => {
         intent: "Reschedule visits.", outcome: "clinic.reschedule", strategy: "rule_derived",
         intents: ["Reschedule visits.", "Notify the clinic."],
         completed_outcomes: ["clinic.reschedule"],
-        checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" },
+        checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION },
           intent_digest: `sha256:${"7".repeat(64)}`,
           context_digest: `sha256:${"8".repeat(64)}`,
           components: { verification: { name: "clinic.verify_notification", resources: [] } },
@@ -697,7 +744,7 @@ describe("Boundary authoring resume state", () => {
     expect(() => revalidateBoundaryAuthoringResume({ ...state, job_intent: "tampered" }, current)).toThrow("digest");
   });
   it("persists bounded symbolic context without credentials or trusted identities", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-resume-"));
+    const root = await configuredProject("synapsor-boundary-resume-");
     try {
       const state = buildBoundaryAuthoringResumeState({
         binding,
@@ -745,7 +792,7 @@ describe("Boundary authoring resume state", () => {
   });
 
   it("round-trips clarification history and rejects unsupported saved turn kinds", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-resume-kind-"));
+    const root = await configuredProject("synapsor-boundary-resume-kind-");
     try {
       const state = buildBoundaryAuthoringResumeState({
         binding,
@@ -819,7 +866,7 @@ describe("Boundary authoring resume state", () => {
   });
 
   it("refuses a digest-tampered resume record", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-resume-tamper-"));
+    const root = await configuredProject("synapsor-boundary-resume-tamper-");
     try {
       const state = buildBoundaryAuthoringResumeState({
         binding,
@@ -843,7 +890,7 @@ describe("Boundary authoring resume state", () => {
   });
 
   it("marks schema or role drift stale without silently clearing the structured setup", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-resume-stale-"));
+    const root = await configuredProject("synapsor-boundary-resume-stale-");
     try {
       const state = buildBoundaryAuthoringResumeState({
         binding,
@@ -871,7 +918,7 @@ describe("Boundary authoring resume state", () => {
     }
   });
 
-  it("refuses credentials, endpoint URLs, and concrete trusted identities", () => {
+  it("refuses credentials, endpoint URLs, and concrete trusted identities", async () => {
     expect(() => buildBoundaryAuthoringResumeState({
       binding,
       stage: "planning",
@@ -879,23 +926,22 @@ describe("Boundary authoring resume state", () => {
       provider: "openai",
       model: "gpt-test",
     })).toThrow("BOUNDARY_AUTHORING_RESUME_PRIVATE_MATERIAL_BLOCKED");
-    expect(() => buildBoundaryAuthoringResumeState({
+    await expect(screenConfiguredMaterial(buildBoundaryAuthoringResumeState({
       binding,
       stage: "planning",
       jobIntent: "Use tenant_id: acme-corp to review tickets.",
       provider: "openai",
       model: "gpt-test",
-    })).toThrow("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED");
+    }))).rejects.toThrow("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED");
   });
 
   it.each([
     "Never infer customer scope from tenant isolation alone.",
     "Preserve tenant isolation and resolve each tenant issue through review.",
     "A principal isolation issue does not establish its business meaning.",
-  ])("keeps privacy copula lexing exact in dispatch checkpoints: %s", (dispatchQuestion) => {
-    expect(() => assertBoundaryAuthoringResumeMaterial({
-      pending_read_revision_state: { checkpoint: { stage: "dispatching", dispatch_question: dispatchQuestion } },
-    })).not.toThrow();
+  ])("retains dispatch prose without a configured identity: %s", async (dispatchQuestion) => {
+    const material = { pending_read_revision_state: { checkpoint: { stage: "dispatching", dispatch_question: dispatchQuestion } } };
+    expect(JSON.parse(await screenConfiguredMaterial(material))).toEqual(material);
   });
 
   it.each([
@@ -903,13 +949,13 @@ describe("Boundary authoring resume state", () => {
     "tenant: acme-corp", '"tenant": "acme-corp"', "principal_id: person-123", "tenant is\nacme-corp",
     "tenant IS acme-corp", "tenant isolation is required. tenant is acme-corp",
     "A principal issue remains pending. principal_id = person-123",
-  ])("keeps concrete identity fences in dispatch checkpoints: %s", (dispatchQuestion) => {
-    expect(() => assertBoundaryAuthoringResumeMaterial({
+  ])("keeps concrete configured identity fences in dispatch checkpoints: %s", async (dispatchQuestion) => {
+    await expect(screenConfiguredMaterial({
       pending_read_revision_state: { checkpoint: { stage: "dispatching", dispatch_question: dispatchQuestion } },
-    })).toThrow("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED");
+    })).rejects.toThrow("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED");
   });
 
-  it("retains bounded B35 producer origin without exempting it from saved-state privacy checks", () => {
+  it("retains bounded B35 producer origin without exempting it from saved-state privacy checks", async () => {
     const generationRecovery = {version: 1 as const, operations: [{id: "11111111-1111-4111-8111-111111111111",
       request_digest: canonicalJsonDigest("encoded request"), context_digest: canonicalJsonDigest("current context"),
       deadline: new Date().toISOString(), state: "checkpointed" as const,
@@ -919,7 +965,9 @@ describe("Boundary authoring resume state", () => {
     expect(buildBoundaryAuthoringResumeState(input).generation_recovery?.operations[0]!.producer_input).toEqual(generationRecovery.operations[0]!.producer_input);
     for (const text of ["api_key=private-value", "https://private.example/endpoint", "BEGIN PRIVATE KEY", "tenant_id: concrete-customer"]) {
       const changed = structuredClone(input);changed.generationRecovery.operations[0]!.producer_input.operator_message = text;
-      expect(() => buildBoundaryAuthoringResumeState(changed)).toThrow(/BLOCKED/);
+      if (text === "tenant_id: concrete-customer")
+        await expect(screenConfiguredMaterial(buildBoundaryAuthoringResumeState(changed), "concrete-customer")).rejects.toThrow(/BLOCKED/);
+      else expect(() => buildBoundaryAuthoringResumeState(changed)).toThrow(/BLOCKED/);
     }
     const oversized = structuredClone(input);oversized.generationRecovery.operations[0]!.producer_input.operator_message = "a".repeat(4_001);
     expect(() => revalidateBoundaryAuthoringResume(buildBoundaryAuthoringResumeState(oversized), binding)).toThrow(/INVALID/);
@@ -951,7 +999,7 @@ describe("Boundary authoring resume state", () => {
     "principal: limit of two approvals per day; tenant: up to six.",
     "tenant: maximum 2\nprincipal: at most 1 per day",
   ])("saves complete quota-description checkpoints and retains meanings on restart: %s", async answer => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-quota-description-"));
+    const root = await configuredProject("synapsor-quota-description-");
     try {
       const input = { binding, stage: "authority_review" as const, jobIntent: "Maintain reviewed limits.",
         provider: "openai" as const, model: "gpt-test" };
@@ -962,13 +1010,20 @@ describe("Boundary authoring resume state", () => {
         conversation: [...initial.conversation, { question: "Describe the saved policy.", answer }],
         pendingActionRevision: { outcome: "operations.review", instruction: "Retain the original quotas.",
           baseline_digest: canonicalJsonDigest("baseline"), operator_statements: [initial.conversation[0]!.answer],
-          checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" }, intent_digest: canonicalJsonDigest("intent"),
+          checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION }, intent_digest: canonicalJsonDigest("intent"),
             context_digest: canonicalJsonDigest("context"), components: {}, operator_messages: [answer] }) } });
       await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: initial.revision_digest });
       expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: next });
-      for (const prohibited of ["tenant: 2", "principal_id = 17", "tenant: customer123", "principal is a7", 'tenant: "maximum 2"', "principal: 'at most 1'", "tenant: `maximum 2`", '{"tenant": "7"}', "api_key=private"]) {
-        expect(() => buildBoundaryAuthoringResumeState({ ...input, previous: next,
-          conversation: [...next.conversation, { question: "Mixed material", answer: `${answer}; ${prohibited}` }] })).toThrow(/BLOCKED/);
+      // Exact short/quoted values are declared private configuration for each
+      // negative; they are not inferred from quota prose in the saved project.
+      for (const [prohibited, privateValue] of [["tenant: 2", "2"], ["principal_id = 17", "17"],
+        ["tenant: customer123", "customer123"], ["principal is a7", "a7"], ['tenant: "maximum 2"', "maximum 2"],
+        ["principal: 'at most 1'", "at most 1"], ["tenant: `maximum 2`", "maximum 2"], ['{"tenant": "7"}', "7"],
+        ["api_key=private", undefined]] as const) {
+        const blocked = () => buildBoundaryAuthoringResumeState({ ...input, previous: next,
+          conversation: [...next.conversation, { question: "Mixed material", answer: `${answer}; ${prohibited}` }] });
+        if (privateValue === undefined) expect(blocked).toThrow(/BLOCKED/);
+        else await expect(screenConfiguredMaterial(blocked(), privateValue)).rejects.toThrow(/BLOCKED/);
         expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: next });
       }
     } finally { await fs.rm(root, { recursive: true, force: true }); }
@@ -983,12 +1038,12 @@ describe("Boundary authoring resume state", () => {
     "Yes. app.person is the authenticated patron's trusted identity and filters c01. app.tenant is the trusted library/account identity and filters c02. They are distinct even though both source columns are UUID. Keep these bindings private and outside model arguments.",
     "The tenant is the trusted account context; the principal is the reviewed authenticated person.",
   ])("retains descriptive trusted identity clarification through checkpoint save: %s", async (answer) => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-symbolic-scope-resume-"));
+    const root = await configuredProject("synapsor-symbolic-scope-resume-");
     try {
       const state = buildBoundaryAuthoringResumeState({ binding, stage: "action_drafting",
         jobIntent: "Let people collect eligible holds.", provider: "openai", model: "gpt-test",
         conversation: [{ question: "What do the identity bindings mean?", answer, kind: "clarification" }],
-        action: { intent: "Collect an eligible hold.", checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: "synapsor.structured-authoring.v2" },
+        action: { intent: "Collect an eligible hold.", checkpoint: actionRuleAuthoringCheckpoint({ authoring_protocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION },
           intent_digest: `sha256:${"4".repeat(64)}`, context_digest: `sha256:${"5".repeat(64)}`, components: {},
           operator_messages: [answer],
         }) },
@@ -1000,16 +1055,19 @@ describe("Boundary authoring resume state", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
-  it.each(["tenant is acme-corp", "app.tenant = acme-corp", "principal_id: user-123", "tenant is the-account-123",
-    "tenant is bound to customer123",
-    "tenant = exactly one organization", "tenant: one organization", "tenant is exactly one customer123",
-    "Each tenant is exactly one organization. principal_id = user-123",
-    "Which column is bound as the tenant - scope_a or scope_b? tenant is bound to acme-corp",
-    "Which column is bound as the tenant - scope_a or scope_b? tenant is bound to scope_b. principal_id = user-123",
-    "Which column is bound as the tenant - scope_a or scope_b? tenant = bound",
-    "tenant is the trusted identity. principal_id = 45000000-0000-4000-8000-000000000001"])("still refuses concrete identity assignment: %s", (answer) => {
-    expect(() => buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: "Review records.",
+  it.each([
+    ["tenant is acme-corp", "acme-corp"], ["app.tenant = acme-corp", "acme-corp"], ["principal_id: user-123", "user-123"],
+    ["tenant is the-account-123", "the-account-123"], ["tenant is bound to customer123", "customer123"],
+    ["tenant = exactly one organization", "exactly one organization"], ["tenant: one organization", "one organization"],
+    ["tenant is exactly one customer123", "customer123"],
+    ["Each tenant is exactly one organization. principal_id = user-123", "user-123"],
+    ["Which column is bound as the tenant - scope_a or scope_b? tenant is bound to acme-corp", "acme-corp"],
+    ["Which column is bound as the tenant - scope_a or scope_b? tenant is bound to scope_b. principal_id = user-123", "user-123"],
+    ["Which column is bound as the tenant - scope_a or scope_b? tenant = bound", "bound"],
+    ["tenant is the trusted identity. principal_id = 45000000-0000-4000-8000-000000000001", "45000000-0000-4000-8000-000000000001"],
+  ])("still refuses configured concrete identity assignment: %s", async (answer, privateValue) => {
+    await expect(screenConfiguredMaterial(buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: "Review records.",
       provider: "openai", model: "gpt-test", conversation: [{ question: "Scope?", answer }],
-    })).toThrow("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED");
+    }), privateValue)).rejects.toThrow("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED");
   });
 });
