@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import { ActionRuleError, type RuntimeActionRuleRegistryV1 } from '@synapsor-runner/action-rules';
 import { resolveSemanticSupervisedWriterSource, type RuntimeConfig, type RuntimeSupervisedWorkerOutcomePolicy } from '@synapsor-runner/mcp-server';
 import { assertPostgresHardLimitSource, createPostgresPool } from '@synapsor-runner/postgres';
-import { inspectDatabase, rolePostureFingerprint } from '@synapsor-runner/schema-inspector';
+import { inspectDatabase, rolePostureFingerprint, schemaFingerprintForInspection } from '@synapsor-runner/schema-inspector';
 import { assessSemanticSupervisedWriterPosture } from './worker-policy.js';
 
 export type HardLimitWriterSetupInput = {
@@ -11,6 +11,14 @@ export type HardLimitWriterSetupInput = {
   config: RuntimeConfig;
   env?: NodeJS.ProcessEnv;
   outcome?: string;
+  /** Host-only observation of this invocation's successful native assessment. */
+  observeNativeAssessment?: (assessment: HardLimitWriterNativeAssessment) => void;
+};
+export type HardLimitWriterNativeAssessment = {
+  source: string; outcome: string; writer_env: string; writer_role: string;
+  writer_posture_fingerprint: string; source_schema_fingerprint: string;
+  native_source: { database: string; database_oid: string; server_address: string | null; server_port: number | null; server_version: number };
+  namespace_privilege: 'exact_maintain_no_global_maintain_or_catalog_dml';
 };
 export type HardLimitWriterSetupReadback = {
   status: 'not_required' | 'ready' | 'refused';
@@ -70,6 +78,7 @@ export async function inspectHardLimitWriterSetup(input: HardLimitWriterSetupInp
     let pool: ReturnType<typeof createPostgresPool> | undefined;
     let client: PoolClient | undefined;
     let began = false;
+    let nativeAssessment: HardLimitWriterNativeAssessment | undefined;
     try {
       pool = createPostgresPool(url, { max: 1, connectionTimeoutMillis: 5_000, statement_timeout: 5_000, idleTimeoutMillis: 5_000 });
       client = await pool.connect();
@@ -88,18 +97,38 @@ export async function inspectHardLimitWriterSetup(input: HardLimitWriterSetupInp
         // privilege and RLS envelope. The connection is the selected writer.
         const inspection = await inspectDatabase({ engine: 'postgres', databaseUrlEnv: source.write_url_env, statementTimeoutMs: 5_000, env });
         if (inspection.current_user !== check.writer_role) { refuse('writer_role_changed'); continue; }
+        const writerPostureFingerprint = rolePostureFingerprint(inspection);
         const policies: RuntimeSupervisedWorkerOutcomePolicy[] = input.registry.rules.filter(entry => {
           const policy = input.config.supervised_worker?.outcomes?.find(p => p.outcome === entry.compiled.outcome);
           const selected = policy ? resolveSemanticSupervisedWriterSource(input.config, entry.compiled.source, policy) : input.config.sources?.[entry.compiled.source];
           return selected?.write_url_env === source.write_url_env && entry.compiled.effect_envelope.writeback.mode === 'direct_sql' && entry.compiled.effect_envelope.writeback.supervised_worker === 'allowed';
-        }).map(entry => ({ outcome: entry.compiled.outcome, action_boundary_digest: entry.action_boundary_digest, mode: 'supervised_worker', concurrency: 1, queue_limit: 100, lease_seconds: 300, max_attempts: 5, proposal_ttl_seconds: 86400, rate_limit: { executions: 60, window_seconds: 60 }, write_url_env: source.write_url_env!, require_least_privilege_writer: true, writer_posture_fingerprint: rolePostureFingerprint(inspection) }));
+        }).map(entry => ({ outcome: entry.compiled.outcome, action_boundary_digest: entry.action_boundary_digest, mode: 'supervised_worker', concurrency: 1, queue_limit: 100, lease_seconds: 300, max_attempts: 5, proposal_ttl_seconds: 86400, rate_limit: { executions: 60, window_seconds: 60 }, write_url_env: source.write_url_env!, require_least_privilege_writer: true, writer_posture_fingerprint: writerPostureFingerprint }));
         const policy = policies.find(item => item.outcome === compiled.outcome);
         if (!policy) refuse('hard_limit_execution_profile_unsupported');
         else {
           const candidate = { ...input.config, supervised_worker: { enabled: false, profile: 'development' as const, capabilities: [], outcomes: policies } };
           const assessment = assessSemanticSupervisedWriterPosture(candidate, policy, input.registry, inspection);
           if (!assessment.ok) refuse('writer_posture_unproven');
-          else check.status = 'ready';
+          else {
+            if (input.observeNativeAssessment) {
+              const identity = await client.query(`SELECT pg_catalog.current_database() AS database,
+                (SELECT d.oid::pg_catalog.text FROM pg_catalog.pg_database d WHERE d.datname=pg_catalog.current_database()) AS database_oid,
+                pg_catalog.inet_server_addr()::pg_catalog.text AS server_address,pg_catalog.inet_server_port() AS server_port`);
+              const value = identity.rows[0];
+              if (identity.rows.length !== 1 || typeof value?.database !== 'string' || typeof value.database_oid !== 'string'
+                || !/^\d+$/u.test(value.database_oid) || !(value.server_address === null || typeof value.server_address === 'string')
+                || !(value.server_port === null || Number.isInteger(value.server_port))) {
+                refuse('writer_source_identity_unproven'); continue;
+              }
+              nativeAssessment = { source: compiled.source, outcome: compiled.outcome, writer_env: source.write_url_env,
+                writer_role: inspection.current_user, writer_posture_fingerprint: writerPostureFingerprint,
+                source_schema_fingerprint: schemaFingerprintForInspection(inspection),
+                native_source: { database: value.database, database_oid: value.database_oid,
+                  server_address: value.server_address, server_port: value.server_port, server_version: Number(engine.rows[0].version) },
+                namespace_privilege: 'exact_maintain_no_global_maintain_or_catalog_dml' };
+            }
+            check.status = 'ready';
+          }
         }
       }
     } catch (error) {
@@ -112,6 +141,8 @@ export async function inspectHardLimitWriterSetup(input: HardLimitWriterSetupInp
       }
       try { await pool?.end(); } catch { check.status = 'refused'; refuse('setup_connection_close_unproven'); }
     }
+    // No observation can survive an unacknowledged rollback/close or refusal.
+    if (check.status === 'ready' && nativeAssessment) input.observeNativeAssessment?.(nativeAssessment);
   }
   return readback;
 }

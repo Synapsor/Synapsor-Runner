@@ -1,0 +1,46 @@
+{
+  "schema_version": "b65.writer-review-binding.preseal.v1",
+  "classification": "IMPLEMENTED_UNREVIEWED_SOURCE_NOT_RUN",
+  "base": "1119fa23",
+  "composition_dependency": "Main e030d369/27cd86c7 integrated composition remains separately unaccepted; code based1119 and must compose with Main lower-permit repair/public typed adapters.",
+  "auth": "Main delegates semantic-action-deployment + new typed review-binding + narrow native observer; source development only until explicit finite test allocation.",
+  "actual_before_reported_by_Main": "R1 6ba3f9aa DP09: shownR1_WRITE then normal disabledselection R1_OTHER_WRITE duringYes publishes undisplayedB. DP01\u201308 actual8PASS is distinct. No altered oracle or stale refusal relabel.",
+  "fix": "Host-issued ephemeral typed binding from same checked projection and actual native assessment. Under held publication permit, freshly project and compare privately before publication, then rerun native capability and compare assessment. Fail with SEMANTIC_ACTION_WRITER_REVIEW_CHANGED on drift.",
+  "ports": {
+    "preview": "inspectSemanticActionActivationWriterSetup -> SemanticActionActivationWriterSetupReadback with writerReviewBinding?",
+    "publish": "activateSemanticActionRuntime input writerReviewBinding?",
+    "public_owner": "Main must forward owned typed binding through pre-Yes adapter to final publisher; no copied selection/hash logic",
+    "trusted_direct": "Existing actual configured-writer/lower readiness API without displayed binding retains fresh capability guard; no binding manufactured for direct calls",
+    "nonhard": "No binding/extra Source inspection/consent for unmarked authority"
+  },
+  "binding_scope": [
+    "Canonical project and exact source/output paths",
+    "Original source/runtime text and full resolved projected runtime including selected Source aliases, receipt/storage/scope/config",
+    "Actual parsed authority/digest and compiled plans/hard-limit digests",
+    "Native policy project/deployment/current epoch and execution-review digest",
+    "Privately hashed selected writer/read credential values and process PG connection defaults",
+    "Same successful native exact MAINTAIN/no global maintenance/catalogDML inspection",
+    "Actual database name/OID/server address/port/version from same qualified writer backend",
+    "Actual inspected schema and role posture fingerprints from same successful assessment"
+  ],
+  "privacy": "Opaque empty frozen object with module-private WeakMap digests; not persisted, parsed from user input, serialized as permission, or displayed. No URLs, credential digest, database identity or native assessment added to public readback.",
+  "concurrency": "No lock held across human wait; final projection under existing permit. Check native epoch/config consistency around projection and after native wait before publication. Existing final authority/publication CAS guards remain.",
+  "native_identity_limit": "DatabaseOID/serveraddress scoped to existing connection binding; no global cluster or compromised-DBA identity guarantee is claimed.",
+  "observer": "Only optional host observer triggers additional bounded native identity query; emit only after acknowledged rollback+connection close. Missing identity/refusal yields no binding. Plain existing readiness path keeps its ordinary behavior.",
+  "unit_regressions": "Mocked native producer only: same context, writer/credential/receipt/epoch/authority drift, native DB/schema drift, fresh grant revocation, lost rollback, forged token, nonhard. Written, NOT RUN; no public/native qualification inferred.",
+  "independent_required": [
+    "Unchanged DP09 normal public readback+Yes selection drift before/after, native state unchanged on refusal",
+    "Exact same selection/config/credentials/nativeassessment ready positive",
+    "Actual public preactivation missing/revoked/unsafe effects refusals retained",
+    "Same env label changed credential/receipt/current native state refuses; no secret logging",
+    "Main direct-lower held permit DP10 with same checks retained",
+    "Supported public numeric/race worker acceptance remains separate"
+  ],
+  "owner_test_status": "NOT_RUN; no allocated runtime test/build/types/native/container/grant/DML/provider execution. Source diff/check only.",
+  "files_sha256": {
+    "apps/runner/src/semantic-action-deployment.ts": "6f8641730f38416c108578a0a9cd83ee2418c850392f13eff2a64bc4936b4424",
+    "apps/runner/src/hard-limit-writer-review-binding.ts": "d279b110f987d1dced8da3b4e9e4fab68c31e58f75e4a6f2d8c3653a8954b2ea",
+    "apps/runner/src/hard-limit-writer-setup.ts": "2be2751e076bded9769d2ced72d4177a6f2c538abd45f527377e8667a5c50f08",
+    "scripts/experiments/b65/hard-limit-writer-setup.test.ts": "194b1018aa63e289b41723d7410420104e015d34c68efd16a9be01944e68f354"
+  }
+}

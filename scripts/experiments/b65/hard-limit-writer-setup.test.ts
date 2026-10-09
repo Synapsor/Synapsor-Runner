@@ -3,12 +3,14 @@ import { createActionRuleAuthority, ActionRuleError } from '@synapsor-runner/act
 import type { HardLimitDesignationV1 } from '@synapsor-runner/action-rules';
 import type { RuntimeConfig } from '@synapsor-runner/mcp-server';
 import { invariantFixture } from './writer-setup-fixture.js';
-const native = vi.hoisted(() => ({ maintain: true, global: false, qualifier: vi.fn(), pool: vi.fn(), query: vi.fn(), release: vi.fn(), end: vi.fn(), inspect: vi.fn(), posture: vi.fn(), selection: vi.fn() }));
+const native = vi.hoisted(() => ({ maintain: true, global: false, qualifier: vi.fn(), pool: vi.fn(), query: vi.fn(), release: vi.fn(), end: vi.fn(), inspect: vi.fn(), posture: vi.fn(), selection: vi.fn(), identity: { database: "fixture", database_oid: "1234", server_address: "127.0.0.1", server_port: 5432 }, schemaFingerprint: "a" }));
 vi.mock('@synapsor-runner/postgres', () => ({ createPostgresPool: native.pool, assertPostgresHardLimitSource: native.qualifier }));
-vi.mock('@synapsor-runner/schema-inspector', () => ({ inspectDatabase: native.inspect, rolePostureFingerprint: () => `sha256:${'a'.repeat(64)}` }));
+vi.mock('@synapsor-runner/schema-inspector', () => ({ inspectDatabase: native.inspect, rolePostureFingerprint: () => `sha256:${'a'.repeat(64)}`, schemaFingerprintForInspection: () => `sha256:${native.schemaFingerprint.repeat(64)}` }));
 vi.mock('../../../apps/runner/src/worker-policy.js', () => ({ assessSemanticSupervisedWriterPosture: native.posture }));
 vi.mock('../../../apps/runner/src/semantic-receipt-setup.js', () => ({ inspectSemanticReceiptSetup: native.selection, selectedSemanticReceipts: (setup: any, writer: string) => { if (!setup.selection_current || setup.selection.write_url_env !== writer) throw new Error('stale selection'); return setup.selection.receipts; } }));
 import { projectHardLimitActivationWriterSelections } from '../../../apps/runner/src/hard-limit-writer-selection.js';
+import { inspectReviewedHardLimitWriterSetup, assertReviewedHardLimitWriterSetup,
+  type HardLimitWriterReviewContext, type HardLimitWriterReviewBinding } from '../../../apps/runner/src/hard-limit-writer-review-binding.js';
 import { assertHardLimitWriterSetup, inspectHardLimitWriterSetup, hardLimitWriterSetupLines } from '../../../apps/runner/src/hard-limit-writer-setup.js';
 function fixture(hard = true, multiple = false) {
   const f = invariantFixture(25);
@@ -22,9 +24,10 @@ function fixture(hard = true, multiple = false) {
   return { authorityDigest: authority.authority.digest, registry: authority.registry, config, env: { READ: 'postgres://reader', WRITE: 'postgres://writer' }, source };
 }
 beforeEach(() => {
-  vi.clearAllMocks(); native.selection.mockReset().mockResolvedValue(undefined); native.maintain = true; native.global = false;
+  vi.clearAllMocks(); native.selection.mockReset().mockResolvedValue(undefined); native.maintain = true; native.global = false; native.schemaFingerprint = "a";
+  native.identity = { database: "fixture", database_oid: "1234", server_address: "127.0.0.1", server_port: 5432 };
   native.qualifier.mockReset().mockResolvedValue(undefined);
-  native.query.mockReset().mockImplementation(async (sql: string) => ({ rows: sql.startsWith("SELECT pg_catalog.current_setting('server_version_num')") ? [{ version: 170000 }] : sql.startsWith('SELECT current_user') ? [{ role: 'dedicated_writer', maintain: native.maintain, global_maintain: native.global, catalog_dml: false }] : [], rowCount: 0 }));
+  native.query.mockReset().mockImplementation(async (sql: string) => ({ rows: sql.startsWith("SELECT pg_catalog.current_setting('server_version_num')") ? [{ version: 170000 }] : sql.startsWith('SELECT current_user') ? [{ role: 'dedicated_writer', maintain: native.maintain, global_maintain: native.global, catalog_dml: false }] : sql.startsWith('SELECT pg_catalog.current_database()') ? [native.identity] : [], rowCount: 0 }));
   native.end.mockResolvedValue(undefined); native.release.mockReset();
   native.pool.mockReturnValue({ connect: async () => ({ query: native.query, release: native.release }), end: native.end });
   native.inspect.mockResolvedValue({ engine: 'postgres', current_user: 'dedicated_writer', tables: [] });
@@ -150,4 +153,61 @@ it('refuses conflicting selected writer references on the same unselected Source
   const f = fixture(true, true), setup = disabledSelection(f);
   native.selection.mockImplementation(async input => ({ ...setup, outcome: input.outcome, selection: { ...setup.selection, write_url_env: input.outcome === setup.outcome ? 'ONE_WRITE' : 'OTHER_WRITE' } }));
   await expect(projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' })).rejects.toMatchObject({ code: 'SEMANTIC_ACTION_HARD_LIMIT_WRITER_REQUIRED', readback: { checks: [expect.objectContaining({ reason_code: 'writer_selection_ambiguous' })] } });
+});
+
+// Mocked producer regressions only; actual public DP09 remains independent.
+function reviewFixture(hard = true) {
+  const f = fixture(hard);
+  const reviewContext: HardLimitWriterReviewContext = { projectRoot: '/fixture/project',
+    sourceConfigPath: '/fixture/project/synapsor.runner.json', outputConfigPath: '/fixture/project/synapsor.actions.runner.json',
+    sourceConfigText: JSON.stringify(f.config), draft: { digest: f.authorityDigest },
+    executionReview: { digest: f.authorityDigest, epoch: 4 },
+    nativePolicy: { project_id: 'fixture-project', deployment_id: 'fixture-deployment', epoch: 4 } };
+  return { ...f, reviewContext };
+}
+it('issues an opaque review identity only after successful native inspection and rollback', async () => {
+  const f = reviewFixture(), shown = await inspectReviewedHardLimitWriterSetup(f);
+  expect(shown.status).toBe('ready'); expect(shown.writerReviewBinding).toBeDefined();
+  expect(JSON.stringify(shown.writerReviewBinding)).toBe('{}');
+  expect(JSON.stringify(shown)).not.toContain(f.env.WRITE);
+  await expect(assertReviewedHardLimitWriterSetup(f, shown.writerReviewBinding!)).resolves.toBeUndefined();
+  expect(native.pool).toHaveBeenCalledTimes(2);
+});
+it.each(['writer', 'credential', 'receipt', 'native_epoch', 'authority'])('refuses %s drift after the shown writer assessment before opening a new writer', async change => {
+  const f = reviewFixture(), shown = await inspectReviewedHardLimitWriterSetup(f);
+  const opens = native.pool.mock.calls.length;
+  if (change === 'writer') f.config.sources![f.source]!.write_url_env = 'OTHER_WRITE';
+  if (change === 'credential') f.env.WRITE = 'postgres://different-fixture-writer';
+  if (change === 'receipt') f.config.sources![f.source]!.receipts = { authority: 'runner_ledger' };
+  if (change === 'native_epoch') f.reviewContext.nativePolicy!.epoch++;
+  if (change === 'authority') f.reviewContext.draft.digest = `sha256:${'b'.repeat(64)}`;
+  await expect(assertReviewedHardLimitWriterSetup(f, shown.writerReviewBinding!)).rejects.toMatchObject({ code: 'SEMANTIC_ACTION_WRITER_REVIEW_CHANGED' });
+  expect(native.pool).toHaveBeenCalledTimes(opens);
+});
+it.each(['database', 'schema'])('refuses native %s identity drift despite unchanged selection and ready privilege', async change => {
+  const f = reviewFixture(), shown = await inspectReviewedHardLimitWriterSetup(f);
+  if (change === 'database') native.identity.database_oid = '5678';
+  else native.schemaFingerprint = 'b';
+  await expect(assertReviewedHardLimitWriterSetup(f, shown.writerReviewBinding!)).rejects.toMatchObject({ code: 'SEMANTIC_ACTION_WRITER_REVIEW_CHANGED' });
+  expect(native.pool).toHaveBeenCalledTimes(2);
+});
+it('a review identity does not bypass current native privilege refusal', async () => {
+  const f = reviewFixture(), shown = await inspectReviewedHardLimitWriterSetup(f);
+  native.maintain = false;
+  await expect(assertReviewedHardLimitWriterSetup(f, shown.writerReviewBinding!)).rejects.toMatchObject({ code: 'SEMANTIC_ACTION_HARD_LIMIT_WRITER_REQUIRED' });
+});
+it('does not issue review identity if native rollback becomes unproven', async () => {
+  const f = reviewFixture(), query = native.query.getMockImplementation()!;
+  native.query.mockImplementation(async (sql: string) => { if (sql === 'ROLLBACK') throw new Error('lost'); return query(sql); });
+  const shown = await inspectReviewedHardLimitWriterSetup(f);
+  expect(shown.status).toBe('refused'); expect(shown.writerReviewBinding).toBeUndefined();
+});
+it('rejects a caller-created empty token before a writer connection', async () => {
+  await expect(assertReviewedHardLimitWriterSetup(reviewFixture(), {} as HardLimitWriterReviewBinding)).rejects.toMatchObject({ code: 'SEMANTIC_ACTION_WRITER_REVIEW_CHANGED' });
+  expect(native.pool).not.toHaveBeenCalled();
+});
+it('ordinary unmarked authority has no binding or native inspection', async () => {
+  const shown = await inspectReviewedHardLimitWriterSetup(reviewFixture(false));
+  expect(shown.status).toBe('not_required'); expect(shown.writerReviewBinding).toBeUndefined();
+  expect(native.pool).not.toHaveBeenCalled();
 });

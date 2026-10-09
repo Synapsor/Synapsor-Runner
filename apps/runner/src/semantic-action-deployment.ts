@@ -1,5 +1,8 @@
+import { inspectReviewedHardLimitWriterSetup, assertReviewedHardLimitWriterSetup, HardLimitWriterReviewChangedError,
+  type HardLimitWriterReviewBinding, type HardLimitWriterReviewContext } from "./hard-limit-writer-review-binding.js";
+export type { HardLimitWriterReviewBinding } from "./hard-limit-writer-review-binding.js";
 import { projectHardLimitActivationWriterSelections } from "./hard-limit-writer-selection.js";
-import { inspectHardLimitWriterSetup, assertHardLimitWriterSetup } from "./hard-limit-writer-setup.js";
+import { inspectHardLimitWriterSetup, assertHardLimitWriterSetup, type HardLimitWriterSetupReadback } from "./hard-limit-writer-setup.js";
 import { assessActionWithdrawal } from "./action-rule-withdrawal.js";
 import { SEMANTIC_ACTION_RUNTIME_CONFIG, executionConfigForReview, readSemanticSupervisedExecutionState, type SemanticSupervisedExecutionState } from "./semantic-execution-state.js";
 export { SEMANTIC_ACTION_RUNTIME_CONFIG, readSemanticSupervisedExecutionState, type SemanticSupervisedExecutionState } from "./semantic-execution-state.js";
@@ -220,25 +223,71 @@ export async function prepareSemanticWriterHandoff(input: {
   return { ...result, plan: result.plan };
 }
 
-/** Pre-approval readback using the same saved deployment candidate as publish. */
-export async function inspectSemanticActionActivationWriterSetup(input: {
-  projectRoot: string; baseConfigPath?: string; draft: ActionRuleAuthorityDraftV1; env?: NodeJS.ProcessEnv;
-}) {
-  const registry = parseActionRuleAuthority(input.draft.authority, input.draft.digest).registry;
-  if (!registry.rules.some(({ compiled }) => compiled.hard_limit)) return inspectHardLimitWriterSetup({ registry, config: { version: 1, mode: "review" }, env: input.env });
-  const projectRoot = path.resolve(input.projectRoot);
-  const outputConfigPath = path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG);
+type ActivationWriterCandidateInput = {
+  projectRoot: string; baseConfigPath?: string; outputConfigPath?: string;
+  draft: ActionRuleAuthorityDraftV1; env?: NodeJS.ProcessEnv;
+};
+
+/** One projection for the shown readback and the held publication check. */
+async function activationWriterCandidate(input: ActivationWriterCandidateInput, permit?: ProjectAuthorityMutationPermit) {
+  const projectRoot = await fs.realpath(input.projectRoot);
+  const draft = parseStoredActionRuleAuthority(input.draft);
+  const registry = parseActionRuleAuthority(draft.authority, draft.digest).registry;
+  const outputConfigPath = path.resolve(input.outputConfigPath ?? path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG));
+  assertContainedProjectPath(projectRoot, outputConfigPath);
   const previous = await readOptionalText(outputConfigPath);
   const sourceConfigPath = previous === undefined ? path.resolve(input.baseConfigPath ?? path.join(projectRoot, "synapsor.runner.json")) : outputConfigPath;
   assertContainedProjectPath(projectRoot, sourceConfigPath);
-  const review = await executionConfigForReview(projectRoot, sourceConfigPath, await readJsonObject(sourceConfigPath), undefined, input.env);
+  const sourceConfigText = await fs.readFile(sourceConfigPath, "utf8");
+  const raw = await readJsonObject(sourceConfigPath);
   const binding = await openBoundProjectControlPolicies(projectRoot, input.env);
   try {
-    const config = bindSemanticReadScope(semanticActionRuntimeConfig({ projectRoot, sourceConfigPath, outputConfigPath,
-      sourceConfig: await projectHardLimitActivationWriterSelections({ projectRoot, config: review.config as RuntimeConfig, registry, authorityDigest: input.draft.digest, env: input.env }), draft: input.draft, preserveActionRuntime: previous !== undefined }), input.draft.authority.rules,
+    const before = binding ? await binding.repository.deployment(binding.deployment_id) : undefined;
+    if (binding && !before) throw new HardLimitWriterReviewChangedError();
+    const review = await executionConfigForReview(projectRoot, sourceConfigPath, raw, binding, input.env);
+    if (before && review.epoch !== before.epoch) throw new HardLimitWriterReviewChangedError();
+    const sourceConfig = await projectHardLimitActivationWriterSelections({ projectRoot,
+      config: review.config as RuntimeConfig, registry, authorityDigest: draft.digest, env: input.env, permit });
+    const nextConfig = bindSemanticReadScope(semanticActionRuntimeConfig({ projectRoot, sourceConfigPath, outputConfigPath,
+      sourceConfig, draft, preserveActionRuntime: previous !== undefined }), draft.authority.rules,
       await loadActivatedExplorationBoundaries(projectRoot, binding));
-    return inspectHardLimitWriterSetup({ registry, config: resolveRuntimeConfig(config as RuntimeConfig, path.dirname(outputConfigPath)), env: input.env });
+    const after = binding ? await binding.repository.deployment(binding.deployment_id) : undefined;
+    if (before && (!after || after.epoch !== before.epoch)) throw new HardLimitWriterReviewChangedError();
+    if (await fs.readFile(sourceConfigPath, "utf8") !== sourceConfigText
+      || await readOptionalText(outputConfigPath) !== previous) throw new HardLimitWriterReviewChangedError();
+    const reviewContext: HardLimitWriterReviewContext = { projectRoot, sourceConfigPath, outputConfigPath,
+      sourceConfigText, previousConfigText: previous, draft,
+      executionReview: { digest: review.digest, ...(review.epoch === undefined ? {} : { epoch: review.epoch }) },
+      ...(binding && before ? { nativePolicy: { project_id: binding.project_id, deployment_id: binding.deployment_id, epoch: before.epoch } } : {}) };
+    return { registry, nextConfig, config: resolveRuntimeConfig(nextConfig as RuntimeConfig, path.dirname(outputConfigPath)), reviewContext };
   } finally { await binding?.close(); }
+}
+
+async function assertActivationWriterContextCurrent(context: HardLimitWriterReviewContext, env?: NodeJS.ProcessEnv): Promise<void> {
+  const binding = await openBoundProjectControlPolicies(context.projectRoot, env);
+  try {
+    const current = binding ? await binding.repository.deployment(binding.deployment_id) : undefined;
+    if (context.nativePolicy ? !binding || !current || binding.project_id !== context.nativePolicy.project_id
+      || binding.deployment_id !== context.nativePolicy.deployment_id || current.epoch !== context.nativePolicy.epoch : binding !== undefined) {
+      throw new HardLimitWriterReviewChangedError();
+    }
+    if (await fs.readFile(context.sourceConfigPath, "utf8") !== context.sourceConfigText
+      || await readOptionalText(context.outputConfigPath) !== context.previousConfigText) throw new HardLimitWriterReviewChangedError();
+  } finally { await binding?.close(); }
+}
+
+export type SemanticActionActivationWriterSetupReadback = HardLimitWriterSetupReadback & {
+  writerReviewBinding?: HardLimitWriterReviewBinding;
+};
+/** Pre-approval readback and ephemeral identity from the same checked candidate. */
+export async function inspectSemanticActionActivationWriterSetup(input: ActivationWriterCandidateInput): Promise<SemanticActionActivationWriterSetupReadback> {
+  const registry = parseActionRuleAuthority(input.draft.authority, input.draft.digest).registry;
+  if (!registry.rules.some(({ compiled }) => compiled.hard_limit)) return inspectHardLimitWriterSetup({ registry, config: { version: 1, mode: "review" }, env: input.env });
+  const env = { ...(input.env ?? process.env) };
+  const candidate = await activationWriterCandidate({ ...input, env });
+  const readback = await inspectReviewedHardLimitWriterSetup({ ...candidate, env });
+  await assertActivationWriterContextCurrent(candidate.reviewContext, env);
+  return readback;
 }
 
 /**
@@ -256,6 +305,8 @@ export async function activateSemanticActionRuntime(input: {
   env?: NodeJS.ProcessEnv;
   /** Exact local withdrawal preview, never a model-supplied bypass. */
   withdrawalContext?: string;
+  /** Ephemeral host readback identity carried through the operator confirmation. */
+  writerReviewBinding?: HardLimitWriterReviewBinding;
 }): Promise<SemanticActionRuntimeActivation> {
   const draft = parseStoredActionRuleAuthority(input.draft);
   if (draft.state !== "disabled") throw new Error("ACTION_RULE_DRAFT_REQUIRED: review a disabled Action revision before activation.");
@@ -286,12 +337,13 @@ async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof ac
   const sourceConfigPath = previous === undefined ? baseConfigPath : outputConfigPath;
   const rawSourceConfig = await readJsonObject(sourceConfigPath);
   const parsedDraft = parseActionRuleAuthority(input.draft.authority, input.draft.digest);
-  const sourceConfig = !withdrawal && parsedDraft.registry.rules.some(({ compiled }) => compiled.hard_limit)
-    ? await projectHardLimitActivationWriterSelections({ projectRoot, registry: parsedDraft.registry, authorityDigest: input.draft.digest, env: input.env, permit,
-      config: (await executionConfigForReview(projectRoot, sourceConfigPath, rawSourceConfig, undefined, input.env)).config as RuntimeConfig }) : rawSourceConfig;
+  const writerCandidate = !withdrawal && parsedDraft.registry.rules.some(({ compiled }) => compiled.hard_limit)
+    ? await activationWriterCandidate(input, permit) : undefined;
+  if (writerCandidate && writerCandidate.reviewContext.previousConfigText !== previous) throw new HardLimitWriterReviewChangedError();
+  const sourceConfig = rawSourceConfig;
   const binding = await openBoundProjectControlPolicies(projectRoot, input.env);
   try {
-    const nextConfig = bindSemanticReadScope(semanticActionRuntimeConfig({
+    const nextConfig = writerCandidate?.nextConfig ?? bindSemanticReadScope(semanticActionRuntimeConfig({
       projectRoot,
       sourceConfigPath,
       outputConfigPath,
@@ -300,8 +352,13 @@ async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof ac
       preserveActionRuntime: previous !== undefined,
     }), input.draft.authority.rules, await loadActivatedExplorationBoundaries(projectRoot, binding));
     await validateRuntimeConfig(nextConfig, outputConfigPath);
-    if (!withdrawal) await assertHardLimitWriterSetup({ registry: parseActionRuleAuthority(input.draft.authority, input.draft.digest).registry,
-      config: resolveRuntimeConfig(nextConfig as RuntimeConfig, path.dirname(outputConfigPath)), env: input.env });
+    if (!withdrawal) {
+      if (writerCandidate && input.writerReviewBinding) await assertReviewedHardLimitWriterSetup({ ...writerCandidate,
+        env: input.env }, input.writerReviewBinding);
+      else await assertHardLimitWriterSetup({ registry: parsedDraft.registry,
+        config: resolveRuntimeConfig(nextConfig as RuntimeConfig, path.dirname(outputConfigPath)), env: input.env });
+      if (writerCandidate) await assertActivationWriterContextCurrent(writerCandidate.reviewContext, input.env);
+    }
     const nextText = `${JSON.stringify(nextConfig, null, 2)}\n`;
     const configChanged = nextText !== previous;
     if (binding) {
