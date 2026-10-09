@@ -1498,10 +1498,20 @@
       "Typed identity-bearing slots remain forbidden; credential/endpoint/key redaction stays. Actual literal screening must cover every retained text/history path.",
       "Do not silently replace this guard with model assertions or drop the concrete-identity negative tests. Define the privacy boundary and port those tests first.",
       "Owner decision needed for the exact trusted context source and collision treatment before retiring this privacy guard. No schema, grant, store, provider or frozen change."
+    ],
+    "Action_unit_provenance": [
+      "I01946 remains OPEN: units cannot be inferred from policy wording or field names.",
+      "Need the authoritative owner-confirmed unit binding and prospective compatibility decision if its durable typed record is new.",
+      "No inferred default/model-only unit, new authority, fixture-name exception or omission-guard waiver; exact compiler/currentness checks remain."
+    ],
+    "Action_transition_provenance": [
+      "I01957/I01960 remain OPEN: the transition meaning/designation must have an authoritative typed provenance.",
+      "Decide the bounded owner-confirmed contract/compatibility before adding a new durable record.",
+      "No status-name, phrase, absence or model-prose fallback; existing privacy/scope/authority refusal remains."
     ]
   },
-  "serial_current_item": 6,
-  "serial_state": "SERIAL item6 Main accepted source batch integrated; I03537 decision BLOCKED, public Read revision OPEN. Action sole next implementation, others HELD; paid CLOSED.",
+  "serial_current_item": 7,
+  "serial_state": "SERIAL7 MySQL sole Tester active; item6 Action scoped SOURCE/component ACCEPT, whole integration BLOCKED and held, accepted counts unchanged. Main bookkeeping only; R2 final checkpoint then HOLD; paid CLOSED.",
   "serial_main_retirement": {
     "status": "INTEGRATED_SCOPED_SOURCE_COMPONENT_ACCEPT_PUBLIC_OPEN",
     "base": "2392f7df",
@@ -1511,5 +1521,22 @@
     "counts": "accepted remaining Main1typed0delete (I03537); Action28typed5delete",
     "next": "Action remaining typed/delete batch, required independent review; no Main identity guard waiver or public PASS",
     "head": "00bdc02f"
+  },
+  "serial_action_retirement": {
+    "status": "SCOPED_SOURCE_COMPONENT_ACCEPT_WHOLE_INTEGRATION_BLOCKED_HELD",
+    "branch": "codex/b64-action-adapters-serial-20261010",
+    "head": "c8e56e3a4fce8b8ac33097fa0bbbc735acbef05d",
+    "accepted_counts": "Action28typed5delete unchanged; Main1typed0delete",
+    "actual_checks": "qualified370P15F1skip386; scoped actualBCtypes exit0; earlier failing profiles preserved",
+    "open": "I01951 Quick Replace English classification is real existing decision; nine safe terminal-oracle migrations not silently greened; four B35 durable no-response prerequisites NOTREACHED; initializer newformat decision BLOCKED; public/full gates OPEN",
+    "next": "HOLD; current product WIP not integrated. Serial7 MySQL on accepted00bd only. Main1/0 and Action28/5 unchanged.",
+    "test_docs_head": "a9a87003acf6543b47cbebd113f2f3027580978d",
+    "review": "R2 final c8 exact23blobs; eligible candidates only after explicit unchanged adoption/reconciliation I01944,I01947-50,I04457,I01928; no accepted counter decrement; I01961/62 fixes separate."
+  },
+  "serial_mysql_matrix": {
+    "owner_thread": "01a117fd-4600-76a3-baf7-e404eb16d0d3",
+    "status": "DISPATCHED_SOLE_ITEM7",
+    "accepted_Main": "00bdc02f869378f0704e0006f0b761e7c35eaf67",
+    "next": "Inspect exact engine-native current supported fixture/manifests; full matrix independent MySQL results; hard-limit public cases remain gated by blockedPG6; no old-effect replay or authority seed."
   }
 }

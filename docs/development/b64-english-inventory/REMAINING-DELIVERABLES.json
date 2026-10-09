@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-09T06:23:46.870867+00:00",
+  "updated": "2026-10-09T13:01:02.036384+00:00",
   "accepted_Main": "00bdc02f: accepted permit+Main retirement source/component batch. Main1/0 remains Owner-blocked; public qualification OPEN.",
   "B2_composition": "be48873f: accepted02d structured caller/receipt ports/Read held-permit closure + independently accepted exact-code contention fix. Public PG/MySQL arithmetic/races pending; no release acceptance.",
   "windows": {
@@ -18,21 +18,21 @@
       "id": "1",
       "deliverable": "B64 English decision sites \u21920",
       "owner": "Main boundary hooks + dedicated non-boundary helper; B66 Action owner",
-      "status": "Main29/30 source accepted by R2 and integrated00bdc02f; I03537 Owner decision pending1typed0delete. Action28typed5delete next. Read/Ask/Chat/Privacy source0/0. Public/full gates OPEN.",
-      "active_work": true
+      "status": "Main29/30 integrated00bd; I03537 Owner-blocked1typed0delete. Action28typed5delete unchanged: c8 exact source+retainedcomponents acceptedR2; complete Action/public/integration BLOCKED, WIPa9private/HELD. Native/manual repairs370P15F1skip; SafeAction exact structural oracle16P separate; no full/count closure.",
+      "active_work": false
     },
     {
       "id": "2",
       "deliverable": "B64 Runner cards + editable fields; Enter keeps suggestion, never confirms",
       "owner": "Main/B66 presentation",
-      "status": "SERIAL4 ACTIVE sole cards helper + Main hotspot: resume0b08 actual setup/edit50\u219260/Enterkeeps/restart/explicitconfirm/separateactivation/compound display; owner component20P remains limited; real-screen hooks/proofs OPEN, R2 independent review queued.",
-      "active_work": true
+      "status": "SERIAL4 CLOSED BLOCKED:8ab8059e WIP source/components scoped ACCEPT; raw correction history/diff and actual public proof OPEN. R2 integration NOTACCEPTED; no card hook integration.",
+      "active_work": false
     },
     {
       "id": "3",
       "deliverable": "B64 /details full per-operation history",
       "owner": "Main/B66 presentation",
-      "status": "SCOPED SOURCE+OWNER COMPONENT ACCEPT bb8/d4 byR2 formal30c33b: prior18PASS and successor14PASS separate; no new ownedproduct/historytest typeerrors, wholetypesexit2. Main protected loader/nested historicalaccess/currentness/actual setup-edit fullhistory integration OPEN. Visible helper resumed selective accepted-history composition and protected actual setup/edit loader proposal; shared access interface pending.",
+      "status": "SERIAL5 index/native scoped ACCEPT966a WIP; exact protected loader projection implemented. Full historical payload capability requires Owner decision; actual public dispatch/full payload NOTQUALIFIED, not integrated.",
       "active_work": false
     },
     {
@@ -108,9 +108,9 @@
     {
       "id": "14",
       "deliverable": "MySQL full B65 race matrix plus post-change hard-limit cases after PG6",
-      "owner": "R1 independent MySQL native tester",
-      "status": "PARTIAL native19+adapter2PASS; planning v4/v3 prospective repair b2+Main0b8 native16 and independent8PASS, genuine fresh OS public planner1\u21920 continuationPASS5db. Other acceptance groups/final ONE fresh MySQL public job OPEN. Old held job unchanged. MySQL source_db unknown-COMMIT reconciliation explicitly unsupported, separate deliverable18; no backend/replay/mode change authorized.",
-      "active_work": false
+      "owner": "Tester independent MySQL native lane",
+      "status": "SERIAL7 DISPATCHED sole active Tester: exact native MySQL full matrix on accepted source, no PG transfer. Prior19+adapter2 native PASS retained. Public hard-limit cases gated on blocked PG arithmetic; unsupported source_db unknownCOMMIT honest refusal separate18. Old held jobs/evidence untouched.",
+      "active_work": true
     },
     {
       "id": "15",

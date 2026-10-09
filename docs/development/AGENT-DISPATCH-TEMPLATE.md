@@ -11,3 +11,5 @@ Use the existing isolated 0700 HOME/TMP/DB resources, at most four heavy jobs an
 Continue routine authorized work without per-case Main/Owner GO; stop affected work only for a real unresolved business/authority/privacy/recovery/format decision or binding limit.
 Keep active handoffs at ≤15 lines with exact stopped point/next step/pins/open findings; include this standing ceremony rule. Keep status replies short.
 Paid stays CLOSED unless the Owner explicitly opens the accepted paid lane; never replay uncertain effects or reset used counters/holds.
+
+Owner SERIAL overnight: one active implementation item plus its reviewer; follow the exact CURRENT_STATE order, finish/clearly block before next; decisions <=10lines then move onward; all other lanes HELD.
