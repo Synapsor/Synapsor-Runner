@@ -23,7 +23,7 @@ export type ReadRevisionCheckpointAccess = {
   mutate<T>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>): Promise<T>;
   contextDigest(permit: ProjectAuthorityMutationPermit): Promise<Digest>;
   scopeDigest(): Digest;
-  currentCandidate(): Promise<{ candidate_digest: Digest }>;
+  currentCandidate(permit?: ProjectAuthorityMutationPermit): Promise<{ candidate_digest: Digest }>;
   readRevision(): BoundaryAuthoringReadRevision | undefined;
   readInstruction(): string | undefined;
   /** Actual current preview, resolved again under the existing protected save.
@@ -53,7 +53,7 @@ export function createReadRevisionCheckpointHost({ access }: { access: ReadRevis
       if (!accepted) throw access.checkpointFailure("The Read revision result");
       await access.mutate(async permit => {
         const context = await access.contextDigest(permit);
-        const current = await access.currentCandidate();
+        const current = await access.currentCandidate(permit);
         if (!access.readRevision() || explorationBoundaryCandidateDigest(currentBoundary) !== current.candidate_digest) {
           throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The consumed revision belongs to another current candidate.");
         }
@@ -88,7 +88,7 @@ export function createReadRevisionCheckpointHost({ access }: { access: ReadRevis
     await access.mutate(async permit => {
       if (!access.readRevision() || access.readRevision()!.instruction !== access.readInstruction()) throw access.checkpointFailure("The pending Read revision");
       const currentContext = await access.contextDigest(permit);
-      const current = await access.currentCandidate();
+      const current = await access.currentCandidate(permit);
       if (explorationBoundaryCandidateDigest(currentBoundary) !== current.candidate_digest) {
         throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The exact Read candidate changed. Preserve this question and inspect the current saved job.");
       }

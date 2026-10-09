@@ -34,7 +34,7 @@ export type ReadAssistanceCheckpointAccess = {
   mutate<T>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>): Promise<T>;
   scopeDigest(): Digest;
   contextDigest(permit: ProjectAuthorityMutationPermit): Promise<Digest>;
-  currentCandidate(): Promise<{ candidate_digest: Digest }>;
+  currentCandidate(permit?: ProjectAuthorityMutationPermit): Promise<{ candidate_digest: Digest }>;
   readCheckpoint(): ReadWorkloadAssistanceCheckpoint | undefined;
   readPreparedRead?(): BoundaryAuthoringResumeRead | undefined;
   /** Exact currently saved revision projection, reloaded under this mutation.
@@ -65,7 +65,7 @@ export function createReadAssistanceCheckpointHost({ access }: { access: ReadAss
   const persist = async (checkpoint: ReadWorkloadAssistanceCheckpoint | undefined,
     currentBoundary: ExplorationBoundaryDraft, accepted?: ModelReadWorkloadResult, completion?: AuthoringQuestionCompletion) => access.mutate(async permit => {
       const currentContext = await access.contextDigest(permit);
-      const current = await access.currentCandidate();
+      const current = await access.currentCandidate(permit);
       if (explorationBoundaryCandidateDigest(currentBoundary) !== current.candidate_digest) {
         throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The exact Read candidate changed. Preserve the assistance and inspect the current saved job.");
       }
