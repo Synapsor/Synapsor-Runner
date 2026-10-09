@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ownerQuestionScopeDigest, ownerQuestionContextDigest, type AuthoringOwnerQuestionScopeInput, type AuthoringOwnerQuestionContextInput } from "./authoring-owner-question-binding.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 
 // Exact pre-extraction projection from boundary-commands.ts at 3eb73a42.
@@ -55,9 +56,55 @@ describe("existing authoring owner question binding characterization", () => {
     expect(originalContext(contextCases[2])).not.toBe(originalContext(contextCases[0]));
   });
   it("distinguishes pending edits, interpretation and resolved destination", () => {
-    const base = scopeCases[4];
+    const base = scopeCases[4]!;
     expect(originalScope(base)).not.toBe(originalScope({ ...base, pendingReadRevision: "another edit" }));
     expect(originalScope(base)).not.toBe(originalScope({ ...base, model: { ...base.model, destination: "another exact endpoint" } }));
     expect(originalScope(base)).not.toBe(originalScope({ ...base, readRevision: { ...base.readRevision, interpretation_instruction: "another interpretation" } }));
+  });
+});
+
+// Incomplete payloads here deliberately test only byte-identical projection;
+// real native record validation remains with the protected caller/owners.
+describe("shared owner projection parity", () => {
+  it.each(scopeCases.map((input, i) => [i, input] as const))("preserves scope case %s", (_i, input) => {
+    expect(ownerQuestionScopeDigest(input as AuthoringOwnerQuestionScopeInput)).toBe(originalScope(input));
+  });
+  it.each(contextCases.map((input, i) => [i, input] as const))("preserves context case %s", (_i, input) => {
+    expect(ownerQuestionContextDigest(input as unknown as AuthoringOwnerQuestionContextInput)).toBe(originalContext(input));
+  });
+  it("retains missing job/model refusal and never mutates input", () => {
+    expect(() => ownerQuestionScopeDigest({ job: "Read" })).toThrow("undefined");
+    expect(() => ownerQuestionScopeDigest({ model })).toThrow("undefined");
+    const input = structuredClone(scopeCases[4]) as AuthoringOwnerQuestionScopeInput;
+    const before = structuredClone(input);
+    ownerQuestionScopeDigest(input);
+    expect(input).toEqual(before);
+  });
+  it("distinguishes every existing scope dependency", () => {
+    const input = scopeCases[4] as AuthoringOwnerQuestionScopeInput;
+    const original = ownerQuestionScopeDigest(input);
+    for (const delta of [ { job: "different job" }, { pendingJobRevision: "new edit" },
+      { pendingReadRevision: "new read edit" },
+      ...["instruction", "provenance", "privacy_only", "vocabulary_only", "interpretation_instruction"].map(key => ({
+        readRevision: { ...input.readRevision, [key]: key === "privacy_only" ? false : key === "vocabulary_only" ? undefined : "changed" } })),
+      ...["provider", "model", "destination"].map(key => ({ model: { ...input.model, [key]: "changed" } })) ]) {
+      expect(ownerQuestionScopeDigest({ ...input, ...delta } as AuthoringOwnerQuestionScopeInput)).not.toBe(original);
+    }
+  });
+  it("distinguishes current candidate, structural binding, Source, reader and program posture", () => {
+    const input = { ...contextCases[5], sources: source } as unknown as AuthoringOwnerQuestionContextInput;
+    const original = ownerQuestionContextDigest(input);
+    for (const delta of [ { scope: canonicalJsonDigest("other scope") },
+      { binding: { ...input.binding, boundary_name: "other" } },
+      { candidate: { ...input.candidate, description: "other candidate" } },
+      { sources: { ...input.sources, operator_messages: ["changed declaration"] } },
+      { readerSchema: "changed schema" }, { readerRole: "changed role" },
+      { inputActions: { projectRoot: "/other", drafts: {}, active: null } },
+      { policy: { ...input.policy, action_schema: "changed action schema" } },
+      { policy: { ...input.policy, action_role: "changed action role" } },
+      { policy: { ...input.policy, authority: { projectRoot: "/other", drafts: {}, active: null } } } ]) {
+      expect(ownerQuestionContextDigest({ ...input, ...delta } as AuthoringOwnerQuestionContextInput)).not.toBe(original);
+    }
+    expect(input).toEqual({ ...contextCases[5], sources: source });
   });
 });
