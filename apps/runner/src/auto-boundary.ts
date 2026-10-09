@@ -2728,9 +2728,12 @@ function assertDraftArtifactPayload(value: unknown, lock: GenerationLock): asser
   else assertStoredExplorationPolicy(boundary, lock);
 }
 
-export async function readOptionalExplorationDraft(projectRoot: string): Promise<ExplorationBoundaryDraft | undefined> {
+export async function readOptionalExplorationDraftContext(
+  projectRoot: string,
+  boundaryRoot = path.join(projectRoot, DEFAULT_GENERATED_DIR),
+): Promise<{ boundary: ExplorationBoundaryDraft; lock: GenerationLock } | undefined> {
   let source: string;
-  try { source = await fs.readFile(path.join(projectRoot, DEFAULT_GENERATED_DIR, "exploration-boundary.draft.json"), "utf8"); }
+  try { source = await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8"); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; }
   // A present artifact with a missing/invalid lock is not an absent draft.
   let lock: GenerationLock;
@@ -2740,7 +2743,11 @@ export async function readOptionalExplorationDraft(projectRoot: string): Promise
       throw new Error("READ_BOUNDARY_ARTIFACT_INVALID: The present draft has no exact generation lock; no authority was loaded.", { cause: error });
     throw error;
   }
-  return parseExplorationBoundaryDraftArtifact(JSON.parse(source), lock);
+  return { boundary: parseExplorationBoundaryDraftArtifact(JSON.parse(source), lock), lock };
+}
+
+export async function readOptionalExplorationDraft(projectRoot: string): Promise<ExplorationBoundaryDraft | undefined> {
+  return (await readOptionalExplorationDraftContext(projectRoot))?.boundary;
 }
 
 async function assertRuntimeReadDiscoveryFits(projectRoot: string, boundaries: ActivatedExplorationBoundary[]): Promise<void> {

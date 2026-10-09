@@ -26,7 +26,7 @@ import {
 import { terminalTheme } from "./boundary-cli-picker.js";
 import {
   DEFAULT_GENERATED_DIR,
-  readOptionalExplorationDraft,
+  readOptionalExplorationDraftContext,
   type ExplorationBoundaryDraft,
   type GenerationLock,
 } from "./auto-boundary.js";
@@ -437,10 +437,7 @@ type ProductionExploreDraftContext = {
 };
 
 async function readProductionExploreDraft(projectRoot: string): Promise<ProductionExploreDraftContext | undefined> {
-  const boundary = await readOptionalExplorationDraft(projectRoot);
-  if (!boundary) return undefined;
-  const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
-  return { boundary, lock };
+  return readOptionalExplorationDraftContext(projectRoot);
 }
 
 type ProductionBindingVerificationCheck = {

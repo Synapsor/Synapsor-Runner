@@ -1,4 +1,4 @@
-import { parseExplorationBoundaryDraftArtifact, readOptionalExplorationDraft } from "./auto-boundary.js";
+import { parseExplorationBoundaryDraftArtifact, readOptionalExplorationDraft, readOptionalExplorationDraftContext } from "./auto-boundary.js";
 import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -7529,16 +7529,14 @@ function instantActivationActor(): string {
     : "local-developer";
 }
 
+async function readWorkbenchDraftContext(projectRoot: string, boundaryRoot: string): Promise<{ boundary: ExplorationBoundaryDraft; lock: GenerationLock }> {
+  const context = await readOptionalExplorationDraftContext(projectRoot, boundaryRoot);
+  if (!context) throw Object.assign(new Error("The Workbench draft file is absent."), { code: "ENOENT" });
+  return context;
+}
+
 async function readWorkbenchDraftArtifact(projectRoot: string, boundaryRoot: string): Promise<ExplorationBoundaryDraft> {
-  const raw = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8"));
-  let lock: GenerationLock;
-  try { lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock; }
-  catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT")
-      throw new Error("READ_BOUNDARY_ARTIFACT_INVALID: The present Workbench draft has no exact generation lock.", { cause: error });
-    throw error;
-  }
-  return parseExplorationBoundaryDraftArtifact(raw, lock);
+  return (await readWorkbenchDraftContext(projectRoot, boundaryRoot)).boundary;
 }
 
 async function readWorkbenchBoundaryReview(projectRoot: string, boundaryRoot: string): Promise<{
@@ -7552,9 +7550,8 @@ async function readWorkbenchBoundaryReview(projectRoot: string, boundaryRoot: st
     return { draft: stored.selected.draft, lock: stored.selected.draft_lock, progress: stored.selected.progress,
       review: stored.selected.catalog.review, authoring: stored.bindings };
   }
-  const draft = await readWorkbenchDraftArtifact(projectRoot, boundaryRoot);
-  return { draft,
-    lock: JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock,
+  const { boundary: draft, lock } = await readWorkbenchDraftContext(projectRoot, boundaryRoot);
+  return { draft, lock,
     review: JSON.parse(await fs.readFile(path.join(boundaryRoot, "generation-review.json"), "utf8")) as AutoBoundaryBuild["review"],
     progress: await readSharedBoundaryReviewProgress(projectRoot, draft) };
 }
