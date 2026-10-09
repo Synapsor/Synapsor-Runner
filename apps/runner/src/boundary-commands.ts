@@ -19,7 +19,7 @@ import { presentAuthoringRecovery } from "./authoring-interrupted-step-review.js
 import { retainedRecoveryOwner } from "./authoring-recovery-owner.js";
 import { saveAuthoringRecoveryResume } from "./authoring-recovery-resume.js";
 import { createAuthoringRecoveryHost } from "./authoring-recovery-host.js";
-import { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
+import { BOUNDARY_REVIEW_BUNDLE_VERSION, loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
 export { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
 import { authoringConsumedTurnCheckpoint, type AuthoringQuestionCompletion, authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, authoringInterruptedRecoveryNeeded, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
@@ -18167,7 +18167,7 @@ function assertCurrentBoundaryReviewBundle(
   supplied: BoundaryReviewBundle,
   current: BoundaryReviewBundle,
 ): void {
-  if (supplied.schema_version !== "synapsor.boundary-review-bundle.v1") {
+  if (supplied.schema_version !== BOUNDARY_REVIEW_BUNDLE_VERSION) {
     throw new Error("Unsupported boundary review bundle version.");
   }
   const {
