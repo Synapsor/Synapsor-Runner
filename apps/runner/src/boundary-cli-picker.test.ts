@@ -17,6 +17,31 @@ import {
 } from "./boundary-review-mutation.js";
 
 describe("boundary review terminal picker", () => {
+  it.each([false, true])("renders optional vocabulary metadata without changing scope controls (labels=%s)", async (labels) => {
+    const { input, output } = fakeTerminal(160);
+    const view = reviewView();
+    for (const candidate of [view.candidate, view.generated_candidate]) {
+      if (!candidate) continue;
+      candidate.field_metadata = labels ? {
+        outcome: { label: "Outcome", description: "Reviewed display text" },
+        tenant_id: { label: "PRIVATE LABEL", description: "PRIVATE DESCRIPTION" },
+      } : {};
+    }
+    const original = structuredClone(view);
+    const pending = createBoundaryReviewInteractiveSession(input, output).editFieldTiers(view, { focusedAccess: true });
+    const result = pending.then((value) => ({ value }), (error: unknown) => ({ error }));
+    const rendered = stripAnsi(output.read()?.toString() ?? "");
+    await send(input, "b");
+    expect(await result).toEqual({ value: "back" });
+    expect(rendered).toContain(`${labels ? 1 : 0}/1 field labels`);
+    expect(rendered).toContain("optional presentation metadata");
+    expect(rendered).not.toMatch(/VOCABULARY REQUIRED|VOCABULARY ADVISED|PRIVATE LABEL|PRIVATE DESCRIPTION/);
+    expect(rendered).toContain("Privacy - withhold groups below 5");
+    expect(rendered).toContain("User/owner scope - restrict rows per user [not configured]");
+    expect(rendered).toContain("Keep out completely");
+    expect(view).toEqual(original);
+  });
+
   it("preserves supplied blocker prose even when an English prefix resembles a scope kind", () => {
     const resource = summary("public.check_ins", 1);
     resource.status = "blocked_scope";
