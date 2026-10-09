@@ -42,7 +42,7 @@
       "agent": "B66 /root/b64_action_resume",
       "workspace": "../b64-action-typed",
       "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
-      "execution_state": "HELD: Owner serial item6; exact next task/pin retained"
+      "execution_state": "NEXT: sole serial implementation owner, resume716752b5; no Main shared hotspot edits"
     },
     "main": {
       "agent": "Main",
@@ -64,7 +64,7 @@
         "Use existing 0700 resources, max 4 heavy jobs/8 workers, at least 8 GiB RAM/disk; status short, handoff <=15 lines; routine authorized work continues.",
         "Use actual visible inputs and declared operator facts; no English decision fallback, fake authority, paid runs, or uncertain-effect replay."
       ],
-      "execution_state": "HELD: Owner serial item6; exact next task/pin retained"
+      "execution_state": "Main source batch complete/scoped accepted; I03537 Owner decision BLOCKED; no active implementation"
     }
   },
   "heavy_slots": {
@@ -1501,14 +1501,15 @@
     ]
   },
   "serial_current_item": 6,
-  "serial_state": "SERIAL item6 Main sole implementation/reviewer; current retirement batch awaiting R2; I03537 privacy decision prepared; cards/details WIP not integrated; Action/MySQL HELD.",
+  "serial_state": "SERIAL item6 Main accepted source batch integrated; I03537 decision BLOCKED, public Read revision OPEN. Action sole next implementation, others HELD; paid CLOSED.",
   "serial_main_retirement": {
-    "status": "ACTIVE_WIP_NOT_INTEGRATED",
+    "status": "INTEGRATED_SCOPED_SOURCE_COMPONENT_ACCEPT_PUBLIC_OPEN",
     "base": "2392f7df",
     "branch": "codex/b64-main-retirement-serial-20261010",
     "checks": "guard4F\u219219P; RF3F1P\u21924P; R2 sole-lookup/change literal variants2F\u2192P; final160P12files; scoped actual boundary types1 arity diagnostic\u21920 after explicit(undefined,false) fix",
-    "review": "R2:913 NB13 source sites ACCEPT; current boundary/RF successors pending; public qualification OPEN",
-    "counts": "accepted Main30/0 Action28/5 unchanged pending exact integrated review",
-    "next": "R2 batch source/counterexample/count verdict; integrate accepted scope only; privacy I03537 decision prepared; then Action only once Main closes or is clearly blocked"
+    "review": "R2 8551d3bed092bdd5039f31e647ea5c5a29827eb71705d79d88a522a2c66f56e1:29/30 ACCEPT; I03537 BLOCKED; public Read revision OPEN",
+    "counts": "accepted remaining Main1typed0delete (I03537); Action28typed5delete",
+    "next": "Action remaining typed/delete batch, required independent review; no Main identity guard waiver or public PASS",
+    "head": "00bdc02f"
   }
 }
