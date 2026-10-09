@@ -90,9 +90,11 @@ export type ReceiptCouplingAssessment = {
   phase: 'compiled_capability'; observed: false;
 };
 
+export const RECEIPT_COMPONENT_IDS = ["compiled_effect", "receipt_configuration", "receipt_read_exclusion", "source_transaction_coupling"] as const;
+export type ReceiptComponentId = typeof RECEIPT_COMPONENT_IDS[number];
 export type PolicyPassage = {
-  /** Explicit capability claim; every load recomputes its exact host proof. */
-  receipt_component?: "source_transaction_coupling";
+  /** Component identity only; current host evidence supplies every proof. */
+  receipt_component?: ReceiptComponentId;
   receipt_coupling?: ReceiptCouplingAssessment;
   /** Host-only phase assessment; submitted annotation remains on this passage. */
   obligation_assessment?: ReviewObligationAssessment; start: number; end: number;
@@ -698,6 +700,7 @@ export function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextS
       && ["implemented", "needs_decision", "conflict", "unsupported", "background", "overridden"].includes(passage.disposition)
       && typeof passage.interpretation === "string" && passage.interpretation.length <= 800
       && Array.isArray(passage.draft_paths) && passage.draft_paths.length <= 32
+      && (passage.receipt_component === undefined || RECEIPT_COMPONENT_IDS.includes(passage.receipt_component))
       && passage.draft_paths.every((pointer) => typeof pointer === "string" && pointer.startsWith("/") && pointer.length <= 500)
       && (passage.topic === undefined || typeof passage.topic === "string" && passage.topic.length <= 90)
       && (passage.next_step === undefined || typeof passage.next_step === "string" && passage.next_step.length <= 400)

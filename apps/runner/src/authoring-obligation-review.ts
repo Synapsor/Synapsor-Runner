@@ -167,9 +167,8 @@ export function receiptCouplingPaths(outcome: string): string[] {
   const root = `/runner_evidence/actions/${outcome.replace(/~/gu, '~0').replace(/\//gu, '~1')}`;
   return [`${root}/effect`, `${root}/execution`, RECEIPT_PATH];
 }
-/** Exact canonical meaning for this narrow component. Free prose cannot add an
- * observation, provisioning claim, or independent readback to its proof. The
- * raw correction remains retained separately by the scoped producer. */
+/** Host display for this typed component, never a narration recognizer. The
+ * raw correction stays retained separately; current evidence supplies proof. */
 export function receiptCouplingInterpretation(outcome: string): string {
   return `The compiled ${outcome} direct-SQL capability couples every listed business effect and its required source_db receipt in one source transaction: they commit together or roll back. This establishes capability only. Provisioning, execution authorization, a performed receipt and independent source readback remain separately unverified.`;
 }
@@ -203,7 +202,7 @@ export function repairableReceiptCouplingRepresentation(p: PolicyPassage, source
   // typed claims and sibling passages remain outside this isolation boundary.
   if (typeof p.interpretation !== 'string' || !p.interpretation.trim()
     || p.interpretation.length > 2_000) return false;
-  if (p.responsibility === 'runner' && p.issue_kind === 'coverage_link' && p.interpretation === canonical) return false;
+  if (p.responsibility === 'runner' && p.issue_kind === 'coverage_link') return false;
   try {
     return assessReceiptCouplingCapability({ ...p, responsibility: 'runner', issue_kind: 'coverage_link',
       interpretation: canonical }, source, draft)?.origin === 'HOST-RESOLVED';
@@ -245,9 +244,6 @@ export function assessReceiptCouplingCapability(p: PolicyPassage, source: Policy
   const actionRevision = at(draft, '/runner_evidence/action_revision');
   const executionReview = at(draft, '/runner_evidence/runtime_contract/saved_execution_review');
   const reader = at(draft, '/runner_evidence/runtime_contract/onboarding_reader');
-  if (p.interpretation !== receiptCouplingInterpretation(action.outcome)) {
-    return couplingFailure('The component must preserve the exact canonical capability meaning, without observation or setup assertions.');
-  }
   if (action.effect?.writeback !== 'supervised' || host?.outcome !== action.outcome
     || execution?.configured_mode !== 'direct_sql' || execution.supported_automatic_completion !== true
     || execution.activation !== 'separate_operator_review'

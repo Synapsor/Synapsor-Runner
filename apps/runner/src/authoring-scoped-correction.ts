@@ -1,3 +1,4 @@
+import { RECEIPT_COMPONENT_IDS } from "./authoring-policy-source.js";
 import { createHash } from 'node:crypto';
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import { coverageFeedbackParentDigest, type CoverageFeedback, type CoverageFinding } from './authoring-coverage-feedback.js';
@@ -320,7 +321,7 @@ function replacementPassage(value: unknown, category: CoverageRepairCategory, ta
   }
   if (!Array.isArray(value.draft_paths) || value.draft_paths.length > 32 || value.draft_paths.some(path => typeof path !== 'string'
     || !target.allowed_references[category].includes(path))) fail('A replacement reference is outside its nominated category and exact permitted references.');
-  if (value.receipt_component !== undefined && (category !== 'source_transaction_coupling' || value.receipt_component !== category)) {
+  if (value.receipt_component !== undefined && (!(RECEIPT_COMPONENT_IDS as readonly string[]).includes(category) || value.receipt_component !== category)) {
     fail('The typed receipt component disagrees with its nominated category.');
   }
   const children: Array<[string, string[], string[]]> = [
@@ -546,11 +547,11 @@ export function scopeToolSchema(scope: CoverageRepairScope, passageSchema: Recor
           if(!checks.length)delete properties.field_checks;
           else properties.field_checks={...properties.field_checks,items:{enum:checks}};
         }
-        if(category==='source_transaction_coupling')properties.receipt_component={type:'string',const:category};
+        if((RECEIPT_COMPONENT_IDS as readonly string[]).includes(category))properties.receipt_component={type:'string',const:category};
         else delete properties.receipt_component;
         return {type:'object',additionalProperties:false,required:['category','passage'],properties:{
           category:{type:'string',const:category},passage:{...structuredClone(passageSchema),properties,
-            ...(category==='source_transaction_coupling'
+            ...((RECEIPT_COMPONENT_IDS as readonly string[]).includes(category)
               ? {required:[...new Set([...(Array.isArray(passageSchema.required)?passageSchema.required:[]),'receipt_component'])]} : {})},
         }};
       });
