@@ -4,6 +4,13 @@ import { describe, expect, it } from "vitest";
 // Source ownership guards, not substitutes for public setup/Resume acceptance.
 const source = fs.readFileSync(new URL("./boundary-commands.ts", import.meta.url), "utf8");
 describe("Main typed boundary ownership", () => {
+  it("does not treat a business answer word as a recovery command", () => {
+    expect(source.includes('answer?.trim().toLowerCase() === "retry"')).toBe(false);
+  });
+  it("uses typed resources, complete analyzed plans and nonsemantic review formatting", () => {
+    for (const retired of ["jobExplicitlyNamesResource", "boundaryIntentTokens", 'entry.description.startsWith("Review the exact fields required to ")', 'Client integration still unverified|Next|Sequence|Still needed', 'Before activation|UNMET REQUEST|Privacy decision', 'line.startsWith("Run: ")'])
+      expect(source.includes(retired)).toBe(false);
+  });
   it("does not reconstruct activation semantics from formatted business lines", () => {
     expect(source.includes('business[0]!.replace(/^Change: /u')).toBe(false);
     expect(source.includes('line.startsWith("Completion:")')).toBe(false);

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@synapsor-runner/worker-core", () => import("../../../packages/worker-core/src/mcp-audit.js"));
 import { buildAuditCandidateBundle } from "./audit-candidates.js";
 
-// Prospective post-coordinator-finding controls only: NOT RUN, no guard changed.
+// Prospective controls promoted only after actual failing-before execution; no runtime authority claim.
 // Main subsequently required actual canonical typed diagnostic refusal, superseding c48 alias draft.
 // External field roles remain untrusted. These tests cannot establish runtime safety or activation.
 const bundle = (field: string, role: string, lookup = true) => buildAuditCandidateBundle({ tools: [{
@@ -20,6 +20,20 @@ const assertBlocked = (value: ReturnType<typeof bundle>) => {
 };
 
 describe("Main non-boundary residual field-name fallback counterexamples", () => {
+  it("R2 lookup-name variant retains the exact declared non-reserved lookup", () => {
+    const candidate=bundle("source_id","lookup",false).contract.capabilities[0]!;
+    expect(candidate.lookup?.id_from_arg).toBe("source_id");
+    expect(candidate.args.source_id).toEqual({type:"string",required:true,max_length:48});
+    expect(candidate.args).not.toHaveProperty("review_request_id");
+    assertBlocked(bundle("source_id","lookup",false));
+  });
+  it("R2 change-name variant retains the declared change suggestion", () => {
+    const candidate=bundle("query","change_value").contract.capabilities[0]!;
+    expect(candidate.lookup?.id_from_arg).toBe("fixture_lookup");
+    expect(candidate.args.query).toEqual({type:"string",required:true,max_length:48});
+    expect(candidate.proposal!["x-runner-suggested-allowed-fields"]).toEqual(["query"]);
+    assertBlocked(bundle("query","change_value"));
+  });
   it("RF01 keeps declared non-reserved business inputs independent of scope/predicate words", () => {
     const neutral = bundle("neutral", "business_value");
     for (const name of ["where", "query", "statement", "source_id", "project_id", "tenant", "principalid", "rowversion", "allowed_columns"]) {

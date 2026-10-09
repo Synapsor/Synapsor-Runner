@@ -34,8 +34,10 @@ import { type OperatorQuestion } from "./authoring-operator-question.js";
 import { operatorBusinessContext, operatorBusinessLabel, operatorBusinessReadback, presentOperatorClarification,
   type OperatorBusinessContext } from "./authoring-operator-presentation.js";
 import { randomUUID } from "node:crypto";
+import { requestedSharedCatalogResources, analyzedReadCoverage } from "./authoring-read-catalog-projection.js";
+import type { ReadScopeProposal } from "./read-structured-scope.js";
 import { semanticActionBusinessReviewView } from "./authoring-action-business-view.js";
-import { readCurrentAuthoringRawAnswer } from "./authoring-raw-answer.js";
+import { readCurrentAuthoringRawAnswer, chooseRetainedReadRevision } from "./authoring-raw-answer.js";
 import { boundaryMapFieldReview, describeInspectedBoundaryField } from "./boundary-map-presentation.js";
 import { reviewSourceInputPolicy } from "./authoring-input-policy-operation.js";
 import { runSourceInputConversation } from "./authoring-input-policy-conversation.js";
@@ -6043,7 +6045,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       projectRoot: input.projectRoot,
       schemaInspector: input.schemaInspector,
       session: input.session,
-      jobIntent: jobIntent.trim(),
+      requestedReadScope: planningResult?.plan.read_scope?.proposal,
       ...(input.authoringChat ? {
         write: (title, lines) => input.authoringChat!.rememberDetails(title, lines),
         progress: (message, operation) => input.authoringChat!.progress(message, operation),
@@ -6618,7 +6620,6 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   };
   let semanticActionActivation: ActionRuleAuthorityActivationV1 | undefined;
   let semanticExecutionEnabled = false;
-  const semanticExecutionRunCommands: string[] = [];
   const preMappedActions: Array<{
     intent: string;
     result: Awaited<ReturnType<typeof generateModelActionSuggestion>>;
@@ -7063,7 +7064,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         ?? (resumingDisabledRead ? readWorkloadSetFromAnalysis(workload!, mappingBoundary) : undefined);
       let mappedAnalysis = mapped?.analysis ?? workload!.analysis;
       const representativeReadPlanCount = mappedWorkload?.allowed.length
-        ?? representativeReadCoverage(workload!.analysis).total;
+        ?? analyzedReadCoverage(workload!.analysis).total;
       let actionSupportPlanCount = 0;
       let exactModelDraftLines = mappedWorkload
         ? [
@@ -8303,7 +8304,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     });
   }
   const coverage = workload.analysis.coverage;
-  const requestedReadCoverage = representativeReadCoverage(workload.analysis);
+  const requestedReadCoverage = analyzedReadCoverage(workload.analysis);
   const exposure = workload.analysis.exposure;
   let committed: {
     candidate_digest: `sha256:${string}`;
@@ -8841,11 +8842,22 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           if (guidedInstruction && guidedInstruction !== pendingReadRevisionState.instruction) throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Inspect the existing exact Read edit before proposing another request.");
           guidedInstruction ??= pendingReadRevisionState.instruction;
         }
+        let retryingRetainedRequest = false;
+        if (failedReadRevision && !guidedInstruction && !preparedRevision && input.session.chooseOption
+          && ownerHandoffs.at(-1)?.state !== "waiting") {
+          const choice = await chooseRetainedReadRevision({ assertCurrent: () => assertAuthoringResumeCurrent(undefined, false),
+            choose: () => input.session.chooseOption!("RETAINED READ REVISION", [
+              { value: "retry_retained", label: "Continue the exact retained request", detail: "Existing producer fences and allowances still apply." },
+              { value: "change", label: "Describe a different correction" }, { value: "pause", label: "Keep it saved and pause" },
+            ], { initialValue: "pause", reviewOnly: true, context: [failedReadRevision!.instruction] }) });
+          if (choice === "pause") return false;
+          if (choice === "retry_retained") { retryingRetainedRequest = true; guidedInstruction = failedReadRevision.instruction; }
+        }
         const modelSession = modelAssistSession!;
         const narrator = input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep;
         const revisionQuestion = [
           failedReadRevision
-            ? "Your previous revision request is retained. Say retry to use it again, or describe what should change."
+            ? "Your previous revision request is retained. Describe what should change; continuation is a separate Runner choice."
             : "What should change in this Read Boundary?",
         ].join(" ");
         let instructionHandoff = ownerHandoffs.at(-1);
@@ -8894,7 +8906,6 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
 
         const answer = guidedInstruction ?? await readModelAnswer(instructionHandoff?.state === "waiting" && instructionHandoff.consumer === "read_revision_instruction"
           ? instructionHandoff.question : revisionQuestion, instructionHandoff?.state === "waiting" && instructionHandoff.consumer === "read_revision_instruction" ? instructionHandoff : undefined);
-        const retryingRetainedRequest = answer?.trim().toLowerCase() === "retry" && failedReadRevision;
         const request: RetainedReadRevisionRequest | undefined = pendingReadRevisionState && guidedInstruction === pendingReadRevisionState.instruction
           ? { instruction: pendingReadRevisionState.instruction, provenance: pendingReadRevisionState.provenance,
               privacyOnly: pendingReadRevisionState.privacy_only,
@@ -8922,9 +8933,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         // Guided repair instructions are Runner orchestration, not a new
         // operator policy decision. The actual business answer is already saved.
         if (!preparedRevision && !guidedInstruction && instructionHandoff?.state === "waiting" && instructionHandoff.consumer === "read_revision_instruction") {
-          // Preserve the actual control answer. Runner's retained repair text
-          // must not become an attributed business meaning merely on "retry".
-          await recordOwnerAnswer(instructionHandoff, answer!.trim(), retryingRetainedRequest ? { policyMeaning: false } : undefined);
+          await recordOwnerAnswer(instructionHandoff, answer!.trim());
         } else if (!preparedRevision && request.provenance === "operator" && !retryingRetainedRequest && !pendingReadRevisionState?.checkpoint) {
           rememberModelAuthoringClarification(authoringConversation, revisionQuestion, request.instruction);
         }
@@ -10580,7 +10589,6 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           inspectDatabaseFn: input.schemaInspector,
         });
         if (executionNotice) {
-          semanticExecutionRunCommands.push(...executionNotice.lines.filter((line) => line.startsWith("Run: ")));
           const lines = [
             ...executionNotice.lines,
             ...(executionNotice.footer ? [executionNotice.footer] : []),
@@ -10589,7 +10597,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             input.authoringChat.rememberDetails(executionNotice.title, lines);
             await input.authoringChat.streamCheckpoint(
               executionNotice.title,
-              lines.filter((line) => !line.startsWith("Run: ")).slice(0, 1),
+              lines.slice(0, 1),
               executionNotice.tone,
             );
           } else {
@@ -10720,14 +10728,13 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         authorityRows,
         { widths: [8, 23, 12, 14], rowSeparators: false },
       ),
-      `Validated job: ${requestedReadCoverage.supported}/${requestedReadCoverage.total} read plans | `
+      `Validated Read: ${requestedReadCoverage.supported}/${requestedReadCoverage.total} analyzed plans | `
         + `${exposure.candidate_resources} resource${exposure.candidate_resources === 1 ? "" : "s"} | `
         + `${exposure.candidate_return_fields} model field${exposure.candidate_return_fields === 1 ? "" : "s"}`,
       ...(coverage.forbidden_total
         ? [`Deny checks: ${coverage.forbidden_denied}/${coverage.forbidden_total} remain refused`]
         : []),
       "Source database changed during setup: no.",
-      ...semanticExecutionRunCommands,
     ],
     footer: setupComplete
       ? semanticExecutionRequested
@@ -10844,7 +10851,7 @@ async function prepareJobMappingCatalog(input: {
   projectRoot: string;
   schemaInspector: typeof inspectDatabase;
   session: BoundaryReviewInteractiveSession;
-  jobIntent: string;
+  requestedReadScope?: ReadScopeProposal;
   write?: (
     title: string,
     lines: string[],
@@ -10854,12 +10861,11 @@ async function prepareJobMappingCatalog(input: {
 }): Promise<boolean> {
   const plan = await loadJobMappingCatalog(input.projectRoot);
   const acceptedShared: string[] = [];
-  const relevantShared = plan.shared_reference_resources.filter((resource) =>
-    jobExplicitlyNamesResource(input.jobIntent, resource.resource_id));
+  const relevantShared = requestedSharedCatalogResources(plan.shared_reference_resources, input.requestedReadScope);
   const skippedSharedCount = plan.shared_reference_resources.length - relevantShared.length;
   if (relevantShared.length) {
     const reviewShared = await input.session.confirm(
-      `Review ${relevantShared.length} job-matched shared-reference table${relevantShared.length === 1 ? "" : "s"} now?`,
+      `Review ${relevantShared.length} typed-proposal shared-reference table${relevantShared.length === 1 ? "" : "s"} now?`,
       {
         defaultValue: false,
         context: [
@@ -10868,7 +10874,7 @@ async function prepareJobMappingCatalog(input: {
           ...(relevantShared.length > 6
             ? [`- and ${relevantShared.length - 6} more`]
             : []),
-          "The job explicitly names this table concept. Choose No unless every tenant should receive the same reviewed rows.",
+          "The typed Read proposal names these exact resources. This is a proposal, not confirmed business meaning. Choose No unless every tenant should receive the same reviewed rows.",
           "Choose Yes to review each business assertion separately; Runner cannot infer it from schema structure.",
         ],
       },
@@ -10961,24 +10967,6 @@ async function prepareJobMappingCatalog(input: {
   if (input.write) await input.write("MAPPING CATALOG READY", readyLines, "success");
   else process.stdout.write(["", "MAPPING CATALOG READY", ...readyLines, ""].join("\n"));
   return true;
-}
-
-function jobExplicitlyNamesResource(jobIntent: string, resourceId: string): boolean {
-  const table = resourceId.split(".").at(-1) ?? resourceId;
-  const tableTokens = boundaryIntentTokens(table);
-  if (!tableTokens.length) return false;
-  const jobTokens = new Set(boundaryIntentTokens(jobIntent));
-  return tableTokens.every((token) => jobTokens.has(token));
-}
-
-function boundaryIntentTokens(value: string): string[] {
-  const raw = value.toLowerCase().replace(/[_./:-]+/gu, " ").match(/[a-z0-9]+/gu) ?? [];
-  return [...new Set(raw.filter((token) => token.length > 1).map((token) =>
-    token.endsWith("ies") && token.length > 4
-      ? `${token.slice(0, -3)}y`
-      : token.endsWith("s") && !token.endsWith("ss") && token.length > 3
-        ? token.slice(0, -1)
-        : token))];
 }
 
 async function promptReadWorkloadQuestions(
@@ -12500,20 +12488,6 @@ async function actionRuleAuthorityDraftFromCompiled(
     incoming,
     now: createdAt,
   });
-}
-
-function representativeReadCoverage(analysis: ReadWorkloadView["analysis"]): {
-  supported: number;
-  total: number;
-} {
-  const requested = analysis.allowed.filter((entry) =>
-    !((entry.id.startsWith("action_review_")
-      && entry.description.startsWith("Review the exact fields required to "))
-      || entry.id.startsWith("semantic_action_subject_")));
-  return {
-    supported: requested.filter((entry) => entry.status === "supported").length,
-    total: requested.length,
-  };
 }
 
 function modelReadPlanSummary(plan: ReadWorkloadSet["allowed"][number]["plan"]): string {
@@ -14954,14 +14928,9 @@ export function formatReadActivationBusinessSummary(bundle: BoundaryReviewBundle
 }
 
 export function formatReadActivationDecisionSummary(lines: string[], columns: number): string[] {
-  const pending = lines.filter((line) => /^(?:Client integration still unverified|Next|Sequence|Still needed):/u.test(line));
-  const facts = lines.filter((line) => !pending.includes(line));
-  const concern = (line: string) => /^(?:Before activation|UNMET REQUEST|Privacy decision|Discovery compatibility|Execution prerequisite):/u.test(line);
-  facts.sort((a, b) => Number(concern(b)) - Number(concern(a)));
-  if (pending.length) facts.push(`Still needed: ${pending.map((line) => line.slice(line.indexOf(":") + 1).trim()).join(" ")}`);
   const rows: Array<[string, string]> = [];
   const notes: string[] = [];
-  for (const line of facts) {
+  for (const line of lines) {
     const colon = line.indexOf(":");
     if (colon > 0 && colon < 40) rows.push([line.slice(0, colon), line.slice(colon + 1).trim()]);
     else notes.push(line);

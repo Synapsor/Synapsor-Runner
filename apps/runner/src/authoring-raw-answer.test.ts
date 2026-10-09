@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { readCurrentAuthoringRawAnswer } from "./authoring-raw-answer.js";
+import { readCurrentAuthoringRawAnswer, chooseRetainedReadRevision } from "./authoring-raw-answer.js";
 
 describe("raw business answer ownership", () => {
   it.each(["Why wait? Allow it after two reviewers approve.", "How often? Three times per day.", "retry", "  keep these exact words\n", "", undefined])("returns %j without language-based routing", async answer => {
@@ -20,5 +20,17 @@ describe("raw business answer ownership", () => {
       assertCurrent: async () => { if (!current) throw new Error("stale"); },
       read: async () => { current = false; return "yes"; },
     })).rejects.toThrow("stale");
+  });
+});
+
+describe("explicit retained revision recovery", () => {
+  it.each(["retry_retained", "change", "pause", "retry", undefined])("uses only the typed selection %j", async value => {
+    const assertCurrent = vi.fn(async () => {});
+    expect(await chooseRetainedReadRevision({assertCurrent,choose:async()=>value})).toBe(value === "retry_retained" || value === "change" ? value : "pause");
+    expect(assertCurrent).toHaveBeenCalledTimes(2);
+  });
+  it("refuses currentness drift across the choice", async () => {
+    let current=true;
+    await expect(chooseRetainedReadRevision({assertCurrent:async()=>{if(!current)throw new Error("stale");},choose:async()=>{current=false;return "retry_retained";}})).rejects.toThrow("stale");
   });
 });

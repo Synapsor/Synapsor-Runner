@@ -11,3 +11,16 @@ export async function readCurrentAuthoringRawAnswer(input: {
   await input.assertCurrent();
   return answer;
 }
+
+/** A retained request is a recovery choice, never an English answer classifier.
+ * Existing producer fences and budgets are checked by the caller before this
+ * choice and again at dispatch. The choice does not clear or save any fence. */
+export async function chooseRetainedReadRevision(input: {
+  assertCurrent: () => Promise<void>;
+  choose: () => Promise<string | undefined>;
+}): Promise<"retry_retained" | "change" | "pause"> {
+  await input.assertCurrent();
+  const choice = await input.choose();
+  await input.assertCurrent();
+  return choice === "retry_retained" || choice === "change" ? choice : "pause";
+}

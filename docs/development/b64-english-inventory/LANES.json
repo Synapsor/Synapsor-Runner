@@ -1490,17 +1490,25 @@
       "No existing exact historical actor/nested-value inspection capability found; current default[] redacts all payloads.",
       "Owner decision: authenticated local authoring actor may inspect only specified parts/nested fields of exact current job-owned owner/id/digest records.",
       "No parent-right transfer, model forwarding, Source query/write, acceptance/activation/recovery grant, new store or reconstruction of missing payloads."
+    ],
+    "resume_identity_screening": [
+      "I03537 remains OPEN: boundary-authoring-resume.ts1488 infers concrete identities from English and English exemptions.",
+      "The Resume writer currently has no authoritative runtime-literal/origin input; prose syntax cannot establish which words are real identity data.",
+      "Recommended: caller-owned exact runtime identity screening input, scoped to current job/root/trusted configuration; never persist those private values.",
+      "Typed identity-bearing slots remain forbidden; credential/endpoint/key redaction stays. Actual literal screening must cover every retained text/history path.",
+      "Do not silently replace this guard with model assertions or drop the concrete-identity negative tests. Define the privacy boundary and port those tests first.",
+      "Owner decision needed for the exact trusted context source and collision treatment before retiring this privacy guard. No schema, grant, store, provider or frozen change."
     ]
   },
   "serial_current_item": 6,
-  "serial_state": "Item4 cardsWIP8ab8059e integrationNOTACCEPTED; item5 redacted index966a716b scopedSource/nativeACCEPT, publicdispatchOPEN/fullpayloadBLOCKED. Item6MainEnglish30/0 soleimplementation next, Action28/5QUEUED; MySQLitem7QUEUED. Acceptedintegration2392/productbf5 unchanged.",
+  "serial_state": "SERIAL item6 Main sole implementation/reviewer; current retirement batch awaiting R2; I03537 privacy decision prepared; cards/details WIP not integrated; Action/MySQL HELD.",
   "serial_main_retirement": {
     "status": "ACTIVE_WIP_NOT_INTEGRATED",
     "base": "2392f7df",
     "branch": "codex/b64-main-retirement-serial-20261010",
-    "checks": "4 source guards failed before\u219219P; canonical candidate3F1P\u21924P; activation source guard1F4P\u2192after; combined122P10files; scoped actual boundary types0",
+    "checks": "guard4F\u219219P; RF3F1P\u21924P; R2 sole-lookup/change literal variants2F\u2192P; final160P12files; scoped actual boundary types1 arity diagnostic\u21920 after explicit(undefined,false) fix",
     "review": "R2:913 NB13 source sites ACCEPT; current boundary/RF successors pending; public qualification OPEN",
     "counts": "accepted Main30/0 Action28/5 unchanged pending exact integrated review",
-    "next": "finish remaining current Main sites and batch independent review; do not claim zero"
+    "next": "R2 batch source/counterexample/count verdict; integrate accepted scope only; privacy I03537 decision prepared; then Action only once Main closes or is clearly blocked"
   }
 }
