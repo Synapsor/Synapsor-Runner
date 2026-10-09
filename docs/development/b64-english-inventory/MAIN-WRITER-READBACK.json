@@ -1,0 +1,31 @@
+{
+  "scope": "Public setup hard-limit actual-writer readback shown before activation confirmation; same inspected requirement/breadth; no new consent/authority/state/Source-write",
+  "base": "487e2289",
+  "before": {
+    "passed": 2,
+    "failed": 1,
+    "cause": "Ready actual-writer prerequisite was only stored as optional details and never shown by the public adapter"
+  },
+  "after": {
+    "passed": 3,
+    "failed": 0
+  },
+  "commands": "/var/tmp/synapsor-main-relationship-next-step-ij7b0oak/WRITER-AFTER-COMMAND.json",
+  "evidence_level": "actual owned adapter with mocked native assessment; independent actual PG17 readiness8 and real publication controls remain separate",
+  "files": {
+    "writer-before.json": "eeed3c5319b8cff988c7a83da653eb1158cda6e9960e6389c9c720ee91b1ff1c",
+    "writer-before.log": "8b30b5f769aad8b1dd797472158fb457561d810575a01ee0df544dce4c0bf897",
+    "WRITER-BEFORE-COMMAND.json": "7123ac639d99bb83d56415789d55a7898c893e23116155e95398380da69e9117",
+    "WRITER-BEFORE-SOURCE.json": "a98a4a611e76931d5cfed9456329dc5a7904b3749d4d30856b4c5432545df3a0",
+    "writer-after.json": "07727ca0c606a5ecf8c0fe1d53d13bff1e715070f451e7c5aa4c2a1373766958",
+    "WRITER-AFTER-COMMAND.json": "1beb8987826998af0971eff40db92f185359aff9d9f31379aa5d40ada50816ee",
+    "WRITER-AFTER-SOURCE.json": "48535a83f771dd278f9c06395aa519b5b364ce6b9adbf03560449a028aa9bd77",
+    "WRITER-AFTER-EXIT.json": "af8e6950063832b8a889f72e043f322601f09cf32f12a9982b3cdb81a7621ee9"
+  },
+  "main_boundary_lines": 19121,
+  "strict_source_guard": "unchanged",
+  "scope_support": "Existing strict hard-limit capability only, no blanket PG14\u201316 or other engine rejection",
+  "grant": "Catalog-wide SHARE fence; PG17 MAINTAIN maintenance+locking authority; local fixture only approved, no automatic/customer grant",
+  "review": "R1 actual public final publication pending",
+  "slot": "Main Slot3 END; no owned process"
+}

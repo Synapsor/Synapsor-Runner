@@ -10,10 +10,9 @@ export async function reviewHardLimitActionWriter(input: Parameters<typeof inspe
   if (readback.status === "not_required") return true;
   const lines = hardLimitWriterSetupLines(readback);
   input.session.rememberDetails?.("Hard-limit writer prerequisites", lines);
-  if (readback.status === "ready") return true;
-  await input.session.showReviewDetails?.("Hard-limit writer prerequisites", [
+  await input.session.showReviewDetails?.("Hard-limit writer prerequisites", readback.status === "ready" ? lines : [
     ...lines, "The disabled business rules remain saved. Configure the dedicated writer, then resume this review.",
     "No Action activation, execution approval, or Source change occurred.",
   ]);
-  return false;
+  return readback.status === "ready";
 }
