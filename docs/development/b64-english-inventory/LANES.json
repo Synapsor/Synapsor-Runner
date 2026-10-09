@@ -15,29 +15,50 @@
     "read": {
       "agent": "/root/b59_regression_fix",
       "workspace": "../b56-owned-dir-remedy",
-      "current_task": "Coherent strict file consumers integrated7b13; Main21PASS. Remaining old typed fixtures/native-history/cold compatibility qualification."
+      "current_task": "Coherent strict file consumers integrated7b13; Main21PASS. Remaining old typed fixtures/native-history/cold compatibility qualification.",
+      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
     },
     "privacy_visibility": {
       "agent": "/root/b64_visibility_retirement",
       "workspace": "../b64-visibility-retirement",
-      "current_task": "Owned English decisions0/0 independently accepted; qualification separate. Main I03537 compatibility decision pending."
+      "current_task": "Owned English decisions0/0 independently accepted; qualification separate. Main I03537 compatibility decision pending.",
+      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
     },
     "chat_presentation": {
       "agent": "B65 Tester /root/b64_chat_resume",
-      "workspace": "../b64-chat-retirement"
+      "workspace": "../b64-chat-retirement",
+      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
     },
     "ask": {
       "agent": "R2 /root/b64_ask_typed",
-      "workspace": "../b64-ask-typed"
+      "workspace": "../b64-ask-typed",
+      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
     },
     "action": {
       "agent": "B66 /root/b64_action_resume",
-      "workspace": "../b64-action-typed"
+      "workspace": "../b64-action-typed",
+      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
     },
     "main": {
       "agent": "Main",
       "workspace": ".",
-      "current_task": "Read public activation d6 accepted R1 7PASS; boundary decision retirement; SC04 CLI integration"
+      "current_task": "Read public activation d6 accepted R1 7PASS; boundary decision retirement; SC04 CLI integration",
+      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
+      "nonboundary_active_handoff": [
+        "Main English non-boundary owner; paid CLOSED; continue exact current window and preserve holds/results.",
+        "Owned product: audit-candidates.ts, capability-surface-lint.ts, contract-tools.ts, worker-core/mcp-audit.ts only.",
+        "Private branch codex/b64-main-nonboundary-retirement-20261009; current source 91380523, evidence 394c9827.",
+        "Original 15 component PASS on 52a6ee49; separate R2 before 10 PASS/3 FAIL \u2192 unchanged after 13 PASS on 91380523.",
+        "R2 independent review still pending; no Main count closure or native/public/Source effect claim.",
+        "Open: candidate normalized name classification; typed canonical MODEL_CONTROLLED_TRUST_ARG correction prepared externally only.",
+        "RF01\u201304 prospective controls unrun; retain canonical spec guards, credential redaction, blocked/shadow/no-source/writeback-none.",
+        "Next: complete bounded candidate correction with focused before/after under allocated resources, then batch independent deliverable review.",
+        "Small fixes: focused failing-before + passing-after tests in SAME product commit, plus one-line record; no per-test seal/archive copies.",
+        "Independent review per complete deliverable/batch; full preseal/seal only format, security/permission, concurrency, paid/customer data.",
+        "Main integrates reviewed batches hourly; checkpoint private backup only; one editor per hotspot and preserve frozen evidence.",
+        "Use existing 0700 resources, max 4 heavy jobs/8 workers, at least 8 GiB RAM/disk; status short, handoff <=15 lines; routine authorized work continues.",
+        "Use actual visible inputs and declared operator facts; no English decision fallback, fake authority, paid runs, or uncertain-effect replay."
+      ]
     }
   },
   "heavy_slots": {
