@@ -55,4 +55,22 @@ describe('reviewed shared SUM complete authoritative inventory', () => {
     delete downgraded.shared_sum;
     expect(() => parseActionRuleAuthority(downgraded)).toThrow();
   });
+  it('preserves physical guard identity when populations reorder and the limit value changes', () => {
+    const f = reviewedSharedSumFixture(), shared_sum = structuredClone(f.shared_sum), rules = structuredClone(f.entries);
+    shared_sum.designation.populations.reverse();
+    shared_sum.designation.unit.meaning = 'Updated operator wording for the same units';
+    shared_sum.confirmation.designation_digest = canonicalJsonDigest(shared_sum.designation);
+    for (const entry of rules) {
+      if (entry.rule.require.kind !== 'compare' || entry.rule.require.left.kind !== 'math') throw new Error('Fixture formula changed');
+      entry.rule.require.left.inputs.reverse();
+    }
+    const changed = createActionRuleAuthority({ name: 'reordered', action_boundary_name: 'shared.actions',
+      catalog: f.catalog, rules, shared_sum });
+    const before = deriveReviewedSharedSumProtection(f.registry)!, after = deriveReviewedSharedSumProtection(changed.registry)!;
+    const facts = structuredClone(f.facts);
+    facts.bindings.team!.rows[0]!.limit = 400;
+    expect(f.registry.digest).not.toBe(changed.registry.digest);
+    expect(reviewedSharedSumGuardIdentity(before, f.registry.rules[0]!.compiled, f.facts))
+      .toBe(reviewedSharedSumGuardIdentity(after, changed.registry.rules[0]!.compiled, facts));
+  });
 });

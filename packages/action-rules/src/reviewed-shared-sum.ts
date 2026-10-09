@@ -82,5 +82,13 @@ export function checkReviewedSharedSumPostState(plan: ReviewedSharedSumProtectio
 }
 export function reviewedSharedSumGuardIdentity(plan: ReviewedSharedSumProtection, compiled: CompiledActionRuleV1,
   facts: ActionRuleFactSetV1): `sha256:${string}` {
-  return kernel(() => sharedSumDerivedGuardIdentity(plan.state, compiled, facts));
+  return kernel(() => {
+    const parent = sharedSumDerivedGuardIdentity(plan.state, compiled, facts);
+    const ctx = plan.state.contexts.get(compiled.outcome)!;
+    const populations = ctx.populations.map(b => canonicalJsonDigest([
+      b.resource.engine, b.resource.source, b.resource.schema, b.resource.table])).sort();
+    // A diagnostic identity for the existing physical parent-row lock, never
+    // a new lock family keyed by policy revision, presentation or amount.
+    return canonicalJsonDigest({ parent, populations });
+  });
 }

@@ -1,6 +1,7 @@
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import type { ActionRuleBooleanExpressionV1 } from '@synapsor/spec';
 import { ActionRuleError } from './errors.js';
+import { normalizeActionRuleBooleanExpression } from './normalize.js';
 import { HardLimitPostStateExceeded } from './hard-limit.js';
 import { actionRuleRelationshipPairs } from './relationships.js';
 import { snapshotActionRuleRegistry } from './registry.js';
@@ -102,7 +103,7 @@ function context(compiled: CompiledActionRuleV1, d: ExperimentalSharedSumDesigna
     right: { kind: 'field', binding: parent.binding, field: d.limit.field } };
   // The existing immutable rule/proof binds the exact reviewed shared meaning.
   // Runner supplies only the additional post-state projection, never a formula.
-  if (canonicalJsonDigest(compiled.rule.require) !== canonicalJsonDigest(condition)) refuse('reviewed_condition');
+  if (canonicalJsonDigest(compiled.rule.require) !== canonicalJsonDigest(normalizeActionRuleBooleanExpression(condition))) refuse('reviewed_condition');
   validateEffect(compiled, { parent, populations });
   return { parent, populations };
 }
