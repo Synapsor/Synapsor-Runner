@@ -309,30 +309,36 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     | { state: "pending" }
     | { state: "restored"; workload: ReadWorkloadView; reuse: boolean; disabled: boolean }
     | { state: "replacement"; owner: ReadScopeReplacementOwner }> => {
-    await withProjectAuthorityMutation(input.projectRoot, held => input.ports.assertCurrent(held));
-    const saved = snapshot().read;
-    if (!saved) return unavailable("The exact saved Read analysis");
-    const workload = await readReadWorkloadAnalysis({ projectRoot: input.projectRoot,
-      analysisId: saved.analysis_id, generatedBoundary: boundary });
-    if (workload.analysis_digest !== saved.analysis_digest)
-      throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: the saved Read analysis no longer matches this authoring checkpoint.");
-    await withProjectAuthorityMutation(input.projectRoot, held => input.ports.assertCurrent(held));
+    const { saved, workload, stage } = await withProjectAuthorityMutation(input.projectRoot, async permit => {
+      await input.ports.assertCurrent(permit);
+      const before = snapshot(), saved = before.read;
+      if (!saved) return unavailable("The exact saved Read analysis");
+      const workload = await readReadWorkloadAnalysis({ projectRoot: input.projectRoot,
+        analysisId: saved.analysis_id, generatedBoundary: boundary });
+      if (workload.analysis_digest !== saved.analysis_digest)
+        throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: the saved Read analysis no longer matches this authoring checkpoint.");
+      await input.ports.assertCurrent(permit);
+      if (snapshot().revision !== before.revision) return unavailable("The coherent saved Read mapping");
+      return { saved, workload, stage: before.resume.stage };
+    });
     if (saved.scope_question_id) {
       const decision = await host.review(saved.scope_question_id);
       if (decision.state === "replace_requested") {
-        await withProjectAuthorityMutation(input.projectRoot, held => input.ports.assertCurrent(held));
-        const current = snapshot();
-        if (current.read?.analysis_digest !== saved.analysis_digest
-          || current.read.scope_question_id !== saved.scope_question_id)
-          return unavailable("The exact declined Read mapping");
-        return { state: "replacement", owner: { read: current.read, questions: current.questions,
-          handoffs: current.handoffs, generation: current.generation,
-          question_id: saved.scope_question_id, analysis: workload.analysis } };
+        return withProjectAuthorityMutation(input.projectRoot, async permit => {
+          await input.ports.assertCurrent(permit);
+          const current = snapshot();
+          if (current.read?.analysis_digest !== saved.analysis_digest
+            || current.read.scope_question_id !== saved.scope_question_id)
+            return unavailable("The exact declined Read mapping");
+          return { state: "replacement" as const, owner: { read: current.read, questions: current.questions,
+            handoffs: current.handoffs, generation: current.generation,
+            question_id: saved.scope_question_id!, analysis: workload.analysis } };
+        });
       }
       if (decision.state !== "confirmed") return { state: "pending" };
       return { state: "restored", workload, reuse: Boolean(workload.review), disabled: false };
     }
-    const reuse = snapshot().resume.stage === "authority_review" || Boolean(workload.review);
+    const reuse = stage === "authority_review" || Boolean(workload.review);
     return { state: "restored", workload, reuse, disabled: !reuse };
   };
   const principalRequirement = async (resources: readonly string[], proposed?: ReadScopeRecord) => withProjectAuthorityMutation(input.projectRoot, async permit => {
