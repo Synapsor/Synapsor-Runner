@@ -1,3 +1,4 @@
+import { boundaryReviewDecisionResourceId } from "./boundary-review-domain.js";
 import { withAuthoringRequestTimeout } from "./authoring-request-timeout.js";
 import {
   inspectDatabase,
@@ -1490,7 +1491,7 @@ export async function boundaryCommand(
       ? savedAuthoringGenerationGuidance(savedAuthoring.value.generation_recovery) : undefined;
     const unresolvedResources = [...new Set(context.bundle.decisions
       .filter((decision) => context.bundle.outstanding_decision_ids.includes(decision.id))
-      .map((decision) => decision.resource_id)
+      .map(boundaryReviewDecisionResourceId)
       .filter((resource): resource is string => Boolean(resource)))].sort();
     const candidateDigest = context.bundle.candidate_digest;
     const editingState: "disabled_draft" | "active" | "active_with_disabled_draft_changes" = !editingActive

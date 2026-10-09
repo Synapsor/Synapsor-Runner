@@ -6,6 +6,7 @@ import type { ControlPolicyPointer, ControlPolicyRevision } from "@synapsor-runn
 import { listActionRuleAuthorityDrafts, parseStoredActionRuleAuthority, readActionRuleAuthorityActivation } from "./action-rule-authority.js";
 import { parseExplorationBoundaryDraftArtifact, type GenerationLock, loadActivatedExplorationBoundaries, loadGenerationLockForActivatedBoundary, loadGenerationLockSnapshot,
   type ExplorationBoundaryDraft } from "./auto-boundary.js";
+import { READ_REVIEW_PROTOCOL } from "./control-policy-read-authoring.js";
 import { readBoundaryReviewProgress } from "./boundary-review-persistence.js";
 import { loadBoundaryLibraryForReconciliation, resolveSavedBoundaryReviewAuthority } from "./boundary-library.js";
 import { encodeOperatorAuthority, encodeOperatorExecutionPolicy, validateOperatorPolicySnapshot,
@@ -107,7 +108,7 @@ Promise<ProjectControlPolicyMigrationPreview> {
       }
       const selected = library.boundaries[library.selected_name];
       if (!selected) refuse("POLICY_MIGRATION_UNSUPPORTED_LEGACY_STATE");
-      authorities.push({ state: "active", policy: { type: "read_authoring", selected_boundary_id: selected.boundary_id, entries } });
+      authorities.push({ state: "active", policy: { type: "read_authoring", review_protocol: READ_REVIEW_PROTOCOL, selected_boundary_id: selected.boundary_id, entries } });
     }
 
     const drafts = await listActionRuleAuthorityDrafts(root);

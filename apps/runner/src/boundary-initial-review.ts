@@ -1,7 +1,7 @@
 import type { AutoBoundaryBuild } from "./auto-boundary.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { createBoundaryReviewProgress, newBoundaryReviewId } from "./boundary-review-domain.js";
-import { preparedReadAuthoringDraft, readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
+import { READ_REVIEW_PROTOCOL, preparedReadAuthoringDraft, readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
 import { assertReadAuthoringBindings, readProjectReadAuthoring, saveProjectReadAuthoring,
   type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 
@@ -20,8 +20,8 @@ export async function saveInitialGovernedBoundaryReview(input: {
   const draft = preparedReadAuthoringDraft(frozen.build);
   const candidate = recommendedBoundaryReviewCandidate(frozen.build.exploration_boundary);
   const progress = createBoundaryReviewProgress({ draft, candidate, boundaryId: newBoundaryReviewId(),
-    reviewOverrides: frozen.build.overrides, confirmedDecisions: [], actor: frozen.actor, revision: 1 });
-  const authoring: StoredReadAuthoring = { type: "read_authoring", selected_boundary_id: progress.boundary_id,
+    reviewOverrides: frozen.build.overrides, actor: frozen.actor, revision: 1 });
+  const authoring: StoredReadAuthoring = { type: "read_authoring", review_protocol: READ_REVIEW_PROTOCOL, selected_boundary_id: progress.boundary_id,
     entries: [{ draft, draft_lock: frozen.build.lock, candidate_lock: frozen.build.lock,
       progress, catalog: readAuthoringCatalog(frozen.build),
       ...(candidate.pack.resources.length === 0 ? { stage: "metadata_only" as const } : {}),

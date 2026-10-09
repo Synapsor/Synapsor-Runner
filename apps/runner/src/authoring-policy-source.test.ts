@@ -4,7 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { activePolicySource, authoringDestination, confirmedReadFieldMeanings, newPolicySourceSession, policySourceHistory, policyTextSnapshot,
-  readPolicyTextFile, recordReadInterpretation, savePolicySources, loadPolicySources, removePolicySources, POLICY_TEXT_MAX_BYTES } from "./authoring-policy-source.js";
+  readPolicyTextFile, recordReadInterpretation, savePolicySources, loadPolicySources, loadPolicySourcesHeld, removePolicySources, POLICY_TEXT_MAX_BYTES } from "./authoring-policy-source.js";
 import { createModelAuthoringConversation, modelAuthoringHistory, rememberModelAuthoringTurn } from "./model-authoring-conversation.js";
 import { appendPolicySourceOperatorMessage, installPolicySourceCommands } from "./authoring-policy-source-ui.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
@@ -54,7 +54,7 @@ describe("complete operator-selected policy text", () => {
     const before=structuredClone(sources),expectedDigest=canonicalJsonDigest(sources),answer="The existing assigned reviewer must review the proposal.";
     await withProjectAuthorityMutation(root,async permit=>{
       await appendPolicySourceOperatorMessage(root,sources,answer,{permit,expectedDigest});
-      expect(sources).toEqual({...before,operator_messages:[answer]});expect(await loadPolicySources(root,sources.id)).toEqual(sources);
+      expect(sources).toEqual({...before,operator_messages:[answer]});expect(await loadPolicySourcesHeld(root,sources.id,permit)).toEqual(sources);
     });
   });
   it.each([false,true])("refuses a stale append without altering the in-memory session (explicit digest=%s)", async explicit => {

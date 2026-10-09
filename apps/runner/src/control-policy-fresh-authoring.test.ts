@@ -11,6 +11,7 @@ import { readProjectReadAuthoring, saveProjectReadAuthoring } from "./control-po
 import { buildActionCatalogForSavedReadRevision } from "./action-rule-read-revision.js";
 import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
 import { readRuntimeConfig } from "./cli-project.js";
+import { saveInitialGovernedBoundaryReview } from "./boundary-initial-review.js";
 import { initializeFreshGovernedAuthoring } from "./control-policy-fresh-authoring.js";
 import { openBoundProjectControlPolicies } from "./control-policy-store.js";
 import { decodeOperatorAuthority, encodeOperatorAuthority } from "./control-policy-authority-codec.js";
@@ -21,6 +22,27 @@ const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 
 describe("fresh governed authoring bootstrap", () => {
+  it("saves a current-protocol initial review without confirming or activating it", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-initial-governed-review-")); roots.push(root);
+    const build = fixture(root);
+    const guided = await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.8.0" });
+    const config = await readRuntimeConfig(guided.config_path);
+    const initial = await initializeFreshGovernedAuthoring({ projectRoot: root, config, storePath: guided.store_path,
+      build, actor: "local_operator" });
+    const empty = { ...initial.authoring.authoring, selected_boundary_id: null, entries: [] };
+    const before = await saveProjectReadAuthoring({ projectRoot: root, expected: initial.authoring.bindings,
+      authoring: empty, actor: "local_operator", operation: "prepare_read" });
+    const saved = await saveInitialGovernedBoundaryReview({ projectRoot: root, build,
+      expectedAuthoring: before, actor: "local_operator" });
+    const current = await readProjectReadAuthoring(root);
+    expect(current?.authoring.review_protocol).toBe("synapsor.read-review.v2");
+    expect(current?.selected?.progress.confirmations).toEqual([]);
+    expect(current?.selected?.progress.candidate.activation).toBe("disabled_unreviewed");
+    expect(current?.selected?.progress.boundary_id).toBe(saved.progress.boundary_id);
+    await expect(saveInitialGovernedBoundaryReview({ projectRoot: root, build,
+      expectedAuthoring: current!.bindings, actor: "local_operator" })).rejects.toThrow("already exists");
+    expect(await readProjectReadAuthoring(root)).toEqual(current);
+  });
   it("rebinds a minimized Action catalog from exact governed metadata history without legacy snapshot files", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-governed-lock-history-")); roots.push(root);
     const build = fixture(root);
@@ -34,7 +56,7 @@ describe("fresh governed authoring bootstrap", () => {
     const authoring = structuredClone(initial.authoring.authoring);
     const previous = initial.authoring.selected!;
     const progress = createBoundaryReviewProgress({ draft: next.exploration_boundary, candidate: next.exploration_boundary,
-      boundaryId: previous.progress.boundary_id, reviewOverrides: next.overrides, confirmedDecisions: [], actor: "local_operator",
+      boundaryId: previous.progress.boundary_id, reviewOverrides: next.overrides, actor: "local_operator",
       reason: "Minimize the disabled Read draft after mapping.", revision: 2 });
     authoring.entries = [{ draft: next.exploration_boundary, draft_lock: next.lock, candidate_lock: next.lock,
       progress, catalog: readAuthoringCatalog(next) }];
