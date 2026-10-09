@@ -7,6 +7,7 @@ import { selectUnplannedActionIntents } from "./authoring-action-entry.js";
 import { reviewRequiredPrincipalScopes } from "./authoring-principal-scope-host.js";
 import { enterSavedAuthoringSetup, savedSetupEntryNotice } from "./authoring-saved-setup-entry.js";
 import { createNativeReadScope } from "./authoring-read-scope-native.js";
+import { createSavedReadActivationAssessment } from "./authoring-read-activation-route.js";
 import { ownerQuestionScopeDigest, ownerQuestionContextDigest, type AuthoringOwnerQuestionContextInput } from "./authoring-owner-question-binding.js";
 import { READ_SCOPE_PROTOCOL } from "./read-structured-scope.js";
 import { currentBoundaryJobReadRequests } from './boundary-job-read-requests.js';
@@ -14424,7 +14425,9 @@ async function confirmAndActivateFocusedBoundary(input: {
     ?? readPrivacyReview({ boundary: context.candidate, confirmedMeanings: input.reviewOptions?.confirmedFieldMeanings?.(context.bundle.candidate_digest) });
   const discoveryConcerns = readDiscoveryCompatibility(context.candidate, context.bundle.candidate_digest,
     await readOptionalExplorationDraft(input.projectRoot));
-  const scopeAssessment = await input.reviewOptions?.assessReadScope?.(context.candidate);
+  const assessReadScope = input.reviewOptions?.assessReadScope
+    ?? createSavedReadActivationAssessment(input.projectRoot, input.schemaInspector);
+  const scopeAssessment = await assessReadScope(context.candidate);
   const readScopeReady = readScopeReadyForActivation(context.candidate, scopeAssessment);
   const scopeLines = readScopeReady ? [] : [
     "The current Read meaning still needs its saved scope review or confirmation.",
@@ -14785,7 +14788,7 @@ async function confirmAndActivateFocusedBoundary(input: {
     input.schemaInspector,
     input.session,
     input.activationHandoff,
-    { assessReadScope: input.reviewOptions?.assessReadScope },
+    { assessReadScope },
   );
   if (activationResult === 0) input.reviewOptions?.onDisposition?.("activated");
   return activationResult;
@@ -17666,7 +17669,7 @@ export async function boundaryActivateCommand(
       confirmation: expectedConfirmation,
       verifiedDecision: governedDecision,
       reviewSubmission: boundaryReviewSubmissionForDecisions(context.candidate, context.bundle.decisions.map(decision => decision.id)),
-      assessReadScope: options.assessReadScope,
+      assessReadScope: options.assessReadScope ?? createSavedReadActivationAssessment(projectRoot, schemaInspector),
       currentInspection: activationInspection,
       activeSetMode: "add",
     });
