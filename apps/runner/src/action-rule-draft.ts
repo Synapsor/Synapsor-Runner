@@ -10,6 +10,7 @@ import {
   type ActionRuleCatalogResourceV1,
   type ActionRuleCatalogV1,
   type LoadedActionRuleAuthorityV1,
+  type HardLimitDesignationV1,
 } from "@synapsor-runner/action-rules";
 import type { ActionBoundarySharedLimitV1 } from "@synapsor-runner/protocol";
 import type {
@@ -50,6 +51,8 @@ export type ActionRuleModelDraftV1 = {
   outcome: string;
   discovery?: { title: string; summary: string; aliases?: string[] };
   inputs?: ActionRuleInputSpecV1[];
+  /** Reviewed meaning; Runtime validates supported scope and compiled identity. */
+  hard_limit?: HardLimitDesignationV1;
   verification: {
     name: string;
     resources: ActionRuleVerificationDraftResourceV1[];
@@ -104,6 +107,8 @@ export type CompiledActionRuleModelDraftV1 = {
   approval_class: ActionRuleApprovalClassSourceV1;
   loaded: LoadedActionRuleAuthorityV1;
   review: ActionRuleModelDraftV1["review"];
+  /** Exact compiled designation for the Main-owned visible review caller. */
+  hard_limit_review?: string[];
 };
 
 /**
@@ -146,6 +151,11 @@ export function actionRuleModelDraftFromAuthority(input: {
     ...Object.values(source.rule.effect.set),
     ...(source.rule.atomic_updates ?? []).flatMap((member) => Object.values(member.set)),
     ...(approvalRule.auto_approve_when ? [approvalRule.auto_approve_when] : []),
+    ...(source.hard_limit ? [
+      { kind: "aggregate", operation: "sum", binding: source.hard_limit.population.binding,
+        field: source.hard_limit.population.field, where: source.hard_limit.population.where },
+      { kind: "field", binding: source.hard_limit.limit.binding, field: source.hard_limit.limit.field },
+    ] : []),
   ]) {
     collectActionRuleFieldReferences(expression, referencedFields);
   }
@@ -154,6 +164,7 @@ export function actionRuleModelDraftFromAuthority(input: {
     ...(source.rule.inputs ? { inputs: structuredClone(source.rule.inputs) } : {}),
     name: source.rule.name,
     outcome: source.rule.outcome,
+    ...(source.hard_limit === undefined ? {} : { hard_limit: structuredClone(source.hard_limit) }),
     ...(source.rule["x-runner-discovery"] === undefined ? {} : {
       discovery: structuredClone(source.rule["x-runner-discovery"]) as ActionRuleModelDraftV1["discovery"],
     }),
@@ -569,6 +580,7 @@ export function compileActionRuleModelDraft(input: {
       effect_envelope: envelope,
       rule,
       activated_at: canonicalTimestamp(input.activatedAt),
+      ...(draft.hard_limit === undefined ? {} : { hard_limit: structuredClone(draft.hard_limit) }),
     }],
     approval_classes: [approvalClass],
   });
@@ -581,7 +593,20 @@ export function compileActionRuleModelDraft(input: {
     client_compatibility: actionSubjectCompatibility(loaded.authority, [input.readBoundary]),
     loaded,
     review: draft.review,
+    ...(loaded.registry.rules[0]!.compiled.hard_limit === undefined ? {} : {
+      hard_limit_review: actionRuleHardLimitReviewLines(loaded.registry.rules[0]!.compiled.hard_limit!.designation),
+    }),
   };
+}
+
+/** Display only the exact designation already validated by the Runtime factory. */
+export function actionRuleHardLimitReviewLines(designation: HardLimitDesignationV1): string[] {
+  return [
+    `Hard limit: sum ${designation.population.binding}.${designation.population.field} must not exceed ${designation.limit.binding}.${designation.limit.field}.`,
+    `Scope: tenant field ${designation.scope.tenant_field}; principal field ${designation.scope.principal_field}.`,
+    `Time: ${designation.time} | external writers: ${designation.external_writers}.`,
+    ...(designation.population.where ? [`Population filter: ${JSON.stringify(designation.population.where)}`] : ["Population filter: all rows of the exact reviewed population."]),
+  ];
 }
 
 function assertNoUndefined(value: unknown, path: string): void {

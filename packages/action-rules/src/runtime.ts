@@ -9,6 +9,8 @@ import {
   type NormalizedWritebackJobV5,
   type SemanticAuthorityV1,
 } from "@synapsor-runner/protocol";
+import { checkHardLimitPostState, HardLimitPostStateExceeded, assertHardLimitWriterInventory } from "./hard-limit.js";
+import { ActionRuleHardLimitRefusal } from "./hard-limit-refusal.js";
 import { ActionRuleError } from "./errors.js";
 import { validateActionRuleInputs } from "./inputs.js";
 import {
@@ -321,16 +323,19 @@ function trustedFactsFromJob(job: SemanticReverificationSubject, checkedAt: stri
   };
 }
 
+export type CurrentSemanticActionVerifier = ((request: {
+  job: NormalizedWritebackJobV5; factLoader: ActionRuleFactLoaderAdapterV1;
+}) => Promise<SemanticActionReverificationV1>) & {
+  admitSource(request: { job: NormalizedWritebackJobV5; factLoader: ActionRuleFactLoaderAdapterV1 }): Promise<void>;
+};
+
 export function createSemanticActionVerifier(input: {
   registry: RuntimeActionRuleRegistryV1 | ((outcome: string) => RuntimeActionRuleRegistryV1 | Promise<RuntimeActionRuleRegistryV1>);
   clock?: () => string;
   check_delegation?: SemanticExecutionDelegationCheck;
   allow_delayed_work?: (job: NormalizedWritebackJobV5, checkedAt: string) => Promise<void>;
-}): (request: {
-  job: NormalizedWritebackJobV5;
-  factLoader: ActionRuleFactLoaderAdapterV1;
-}) => Promise<SemanticActionReverificationV1> {
-  return async ({ job, factLoader }) => {
+}): CurrentSemanticActionVerifier {
+  const verifier: CurrentSemanticActionVerifier = Object.assign(async ({ job, factLoader }: { job: NormalizedWritebackJobV5; factLoader: ActionRuleFactLoaderAdapterV1 }) => {
     // Refuse before loading rows when the execution path cannot enforce the
     // proof extension, or when a delegated deployment receives an unbound job.
     if (Boolean(job.semantic_authority.proof.delegation) !== Boolean(input.check_delegation)) {
@@ -351,8 +356,45 @@ export function createSemanticActionVerifier(input: {
     const verified = await reverifySemanticOperation({ registry, job, factLoader, checkedAt, mode: "transaction_reverify" });
     await input.check_delegation?.({ job, activated: verified.activated, evaluation: verified.evaluation,
       facts: verified.facts, inputs: verified.inputs, checked_at: checkedAt });
+    // A Source wait must not preserve an obsolete designation, authority or expiry.
+    const current = typeof input.registry === "function" ? await input.registry(job.semantic_authority.proof.outcome) : input.registry;
+    assertSemanticActionAuthorityCurrent(current, job);
+    assertHardLimitWriterInventory(current, verified.activated.compiled);
+    if (!job.delayed_work && Date.parse(job.semantic_authority.proof.valid_until) <= Date.parse(canonicalTimestamp(input.clock?.(), "Post-wait verification time"))) {
+      throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The semantic proposal proof has expired.");
+    }
+    if (verified.activated.compiled.hard_limit) {
+      if (!factLoader.assertHardLimitSource) throw new ActionRuleError("ACTION_RULE_SCOPE_UNPROVEN", "Native Source effects cannot be inspected.");
+      await factLoader.assertHardLimitSource(verified.activated.compiled);
+      try { checkHardLimitPostState(verified.activated.compiled, verified.facts, verified.evaluation.effect, verified.inputs); }
+      catch (error) {
+        if (!(error instanceof HardLimitPostStateExceeded)) throw error;
+        const proof = job.semantic_authority.proof;
+        throw new ActionRuleHardLimitRefusal({ job_digest: canonicalJsonDigest(job),
+          proof_digest: validatedDigest(proof.proof_digest, "Proof"), action_boundary_digest: validatedDigest(proof.action_boundary_digest, "Boundary"),
+          compiled_plan_digest: validatedDigest(proof.compiled_plan_digest, "Plan"), effect_digest: validatedDigest(proof.derived_effect_digest, "Effect"),
+          invariant_digest: verified.activated.compiled.hard_limit.digest });
+      }
+    }
     return verified.result;
-  };
+  }, { async admitSource({ job, factLoader }: { job: NormalizedWritebackJobV5; factLoader: ActionRuleFactLoaderAdapterV1 }) {
+    const registry = typeof input.registry === "function" ? await input.registry(job.semantic_authority.proof.outcome) : input.registry;
+    const { activated } = assertSemanticActionAuthorityCurrent(registry, job);
+    if (!activated.compiled.hard_limit) return;
+    assertHardLimitWriterInventory(registry, activated.compiled);
+    // Initial bounded hard-invariant capability excludes delayed/delegated work.
+    if (job.delayed_work || job.semantic_authority.proof.delegation || !factLoader.assertHardLimitSource) {
+      throw new ActionRuleError("ACTION_RULE_SCOPE_UNPROVEN", "Native Source effects cannot be inspected.");
+    }
+    await factLoader.assertHardLimitSource(activated.compiled);
+    const after = typeof input.registry === "function" ? await input.registry(job.semantic_authority.proof.outcome) : input.registry;
+    assertSemanticActionAuthorityCurrent(after, job);
+    assertHardLimitWriterInventory(after, activated.compiled);
+    if (Date.parse(job.semantic_authority.proof.valid_until) <= Date.parse(canonicalTimestamp(input.clock?.(), "Source admission time"))) {
+      throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The semantic proposal proof has expired.");
+    }
+  } });
+  return verifier;
 }
 
 /** Approval-time checks compare the same exact facts/effect as the writer,

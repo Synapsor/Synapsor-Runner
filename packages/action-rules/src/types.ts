@@ -78,6 +78,21 @@ export type CompiledRuleBindingV1 = {
   relationship?: ActionRuleCatalogRelationshipV1;
 };
 
+/** Reviewed DEV capability; scoped current-state participating writers only. */
+export type HardLimitDesignationV1 = {
+  kind: "hard_invariant";
+  scope: { tenant_field: string; principal_field: string };
+  population: { binding: string; field: string; where?: ActionRuleBooleanExpressionV1 };
+  limit: { binding: string; field: string };
+  time: "current_state";
+  external_writers: "participating_only";
+};
+export type CompiledHardLimitV1 = {
+  designation: HardLimitDesignationV1;
+  condition: ActionRuleBooleanExpressionV1;
+  digest: `sha256:${string}`;
+};
+
 export type CompiledActionRuleV1 = {
   schema_version: typeof COMPILED_ACTION_RULE_VERSION;
   compiler_version: typeof ACTION_RULE_COMPILER_VERSION;
@@ -99,6 +114,7 @@ export type CompiledActionRuleV1 = {
   derivation_order: string[];
   derived_types: Record<string, ActionRuleScalarTypeSpecV1>;
   effect_field_types: Record<string, ActionRuleScalarTypeSpecV1>;
+  hard_limit?: CompiledHardLimitV1;
   atomic_updates?: Array<{
     target_resource: ActionRuleCatalogResourceV1;
     effect_field_types: Record<string, ActionRuleScalarTypeSpecV1>;

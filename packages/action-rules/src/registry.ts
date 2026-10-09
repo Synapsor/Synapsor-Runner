@@ -169,6 +169,7 @@ export function createActionRuleApprovalClasses(input: {
           throw new ActionRuleError(
             "ACTION_RULE_INVALID",
             `Automatic approval class ${source.name} requires one action/boundary count and one trusted-scope count (tenant, tenant_principal, or tenant_object) for ${rule.outcome}. A tenant_principal count already satisfies trusted scope.`,
+            "approval.shared_limits",
           );
         }
       }

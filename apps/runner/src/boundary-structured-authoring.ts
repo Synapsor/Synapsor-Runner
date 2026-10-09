@@ -854,7 +854,7 @@ function parseStructuredActionDraft(value: unknown, index: number): ActionRuleMo
   }
   assertKeys(draft, [
     "schema_version", "name", "outcome", "discovery", "inputs", "verification", "effect",
-    "require", "derive", "approval", "ttl_seconds", "review",
+    "require", "derive", "approval", "hard_limit", "ttl_seconds", "review",
   ], label);
   if (draft.schema_version !== "synapsor.action-rule-model-draft.v1") {
     throw new Error(`${label}.schema_version must be synapsor.action-rule-model-draft.v1.`);

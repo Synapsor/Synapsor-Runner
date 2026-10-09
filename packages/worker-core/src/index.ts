@@ -71,10 +71,12 @@ export type SemanticActionReverification = {
   checked_at: string;
 };
 
-export type SemanticActionVerifier = (input: {
+export type SemanticActionVerifier = ((input: {
   job: NormalizedWritebackJobV5;
   factLoader: ActionRuleFactLoaderAdapterV1;
-}) => Promise<SemanticActionReverification>;
+}) => Promise<SemanticActionReverification>) & {
+  admitSource?(input: { job: NormalizedWritebackJobV5; factLoader: ActionRuleFactLoaderAdapterV1 }): Promise<void>;
+};
 
 export function assertSemanticActionReverification(
   job: NormalizedWritebackJobV5,

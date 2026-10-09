@@ -13,6 +13,8 @@ export {
   ActionRuleError,
   type ActionRuleErrorCode,
 } from "./errors.js";
+export { ActionRuleHardLimitRefusal, matchesActionRuleHardLimitRefusal, ACTION_RULE_HARD_LIMIT_REASON,
+  type HardLimitRefusalBinding } from "./hard-limit-refusal.js";
 export { ACTION_RULE_MATH_OPERATIONS, ACTION_RULE_MATH_MIN_INPUTS, ACTION_RULE_MATH_MAX_INPUTS, ACTION_RULE_MATH_GUIDANCE } from "./expression-contract.js";
 export {
   compileActionRule,
@@ -76,3 +78,5 @@ export { actionRuleEffectEnvelopes, actionRuleEffects, MAX_ATOMIC_UPDATE_TARGETS
 export { actionRuleDiscoveryMetadata, actionRuleDiscoveryContract, actionRulePublicInputs, assertActionDiscoveryContractFits, ACTION_DISCOVERY_CONTRACT_BYTES } from "./discovery.js";
 export { ACTION_AUTHORITY_LIMITS } from "./limits.js";
 export { actionRuleEffectInventory, actionRuleEffectLines, actionRulePublicEffects } from "./effect-inventory.js";
+
+export type { HardLimitDesignationV1, CompiledHardLimitV1 } from "./types.js";

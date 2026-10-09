@@ -58,6 +58,7 @@ export type ActionRuleAuthoritySourceV1 = {
   effect_envelope: DerivedEffectEnvelopeSpecV1;
   rule: ActionRuleSpecV1;
   activated_at: string;
+  hard_limit?: import("./types.js").HardLimitDesignationV1;
 };
 
 export type ActionRuleAuthorityV1 = {
@@ -99,12 +100,14 @@ export function createActionRuleAuthority(input: {
     effect_envelope: normalizeDerivedEffectEnvelope(entry.effect_envelope),
     rule: normalizeActionRule(entry.rule),
     activated_at: timestamp(entry.activated_at),
+    ...(entry.hard_limit === undefined ? {} : { hard_limit: structuredClone(entry.hard_limit) }),
   })).sort((left, right) => left.rule.outcome.localeCompare(right.rule.outcome));
   const compile = createActionRuleCompiler(catalog);
   const compiled = sources.map((entry) => compile({
     verification_boundary: entry.verification_boundary,
     effect_envelope: entry.effect_envelope,
     rule: entry.rule,
+    ...(entry.hard_limit === undefined ? {} : { hard_limit: entry.hard_limit }),
   }));
   const approvalClasses = createActionRuleApprovalClasses({
     rules: compiled,

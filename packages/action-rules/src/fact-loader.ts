@@ -39,6 +39,7 @@ export type ActionRuleFactQueryV1 = {
 
 export type ActionRuleFactLoaderAdapterV1 = {
   engine: "postgres" | "mysql";
+  assertHardLimitSource?(compiled: CompiledActionRuleV1): Promise<void>;
   assertResourceCompatible?(binding: CompiledRuleBindingV1): Promise<void>;
   assertRelationshipCompatible?(binding: CompiledRuleBindingV1, parent: CompiledRuleBindingV1,
     mode?: "proposal_snapshot" | "transaction_reverify"): Promise<void>;

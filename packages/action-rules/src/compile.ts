@@ -9,6 +9,7 @@ import type {
   RuleVerificationBoundarySpecV1,
   RuleVerificationResourceSpecV1,
 } from "@synapsor/spec";
+import { compileHardLimit } from "./hard-limit.js";
 import { ActionRuleError } from "./errors.js";
 import { actionRuleRelationshipPairs } from "./relationships.js";
 import { actionRuleEffectEnvelopes, actionRuleEffects, assertAtomicUpdateShape } from "./atomic-updates.js";
@@ -38,6 +39,7 @@ export type CompileActionRuleInput = {
   verification_boundary: RuleVerificationBoundarySpecV1;
   effect_envelope: DerivedEffectEnvelopeSpecV1;
   catalog: ActionRuleCatalogV1;
+  hard_limit?: import("./types.js").HardLimitDesignationV1;
 };
 
 export function compileActionRuleBooleanPredicate(input: {
@@ -807,7 +809,7 @@ function compileAgainstCatalog(
     effect_field_types: effectFieldTypes,
     ...(atomicUpdates === undefined ? {} : { atomic_updates: atomicUpdates }),
   });
-  return {
+  const compiled: CompiledActionRuleV1 = {
     schema_version: COMPILED_ACTION_RULE_VERSION,
     compiler_version: ACTION_RULE_COMPILER_VERSION,
     name: rule.name,
@@ -833,4 +835,15 @@ function compileAgainstCatalog(
     ttl_seconds: rule.ttl_seconds,
     uses: 1,
   };
+  if (input.hard_limit !== undefined) {
+    compiled.hard_limit = compileHardLimit(compiled, input.hard_limit);
+    compiled.compiled_plan_digest = canonicalJsonDigest({
+      compiler_version: ACTION_RULE_COMPILER_VERSION, rule_digest: ruleDigest,
+      verification_boundary_digest: boundaryDigest, effect_envelope_digest: envelopeDigest,
+      schema_lock_digest: schemaLockDigest, target_resource: targetResource, bindings: bindingList,
+      derivation_order: order, derived_types: derivedTypes, effect_field_types: effectFieldTypes,
+      ...(atomicUpdates === undefined ? {} : { atomic_updates: atomicUpdates }), hard_limit: compiled.hard_limit,
+    });
+  }
+  return compiled;
 }

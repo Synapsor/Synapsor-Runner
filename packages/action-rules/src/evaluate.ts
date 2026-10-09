@@ -71,6 +71,7 @@ function compiledPlanDigest(compiled: CompiledActionRuleV1): `sha256:${string}` 
     derived_types: compiled.derived_types,
     effect_field_types: compiled.effect_field_types,
     ...(compiled.atomic_updates === undefined ? {} : { atomic_updates: compiled.atomic_updates }),
+    ...(compiled.hard_limit === undefined ? {} : { hard_limit: compiled.hard_limit }),
   });
 }
 

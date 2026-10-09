@@ -121,6 +121,8 @@ type EffectSubmission = {
 };
 
 type RuleSubmission = {
+  /** Exact host baseline/checkpoint designation; provider phase edits cannot change it. */
+  hard_limit?: ActionRuleModelDraftV1["hard_limit"];
   name: string;
   outcome: string;
   inputs?: ActionRuleModelDraftV1["inputs"];
@@ -518,7 +520,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     for (const phase of ACTION_RULE_PHASES) {
       const component = saved.components[phase];
       if (!component) continue;
-      const parsed = parsePhaseSubmission(phase, { ...component, status: "draft" });
+      const parsed = parsePhaseSubmission(phase, { ...component, status: "draft" }, false, "host_checkpoint");
       if (parsed.state !== "submitted") throw new Error("ACTION_AUTHORING_CHECKPOINT_INVALID");
       submissions[phase] = baseline
         ? mergeRevisionSubmission({ phase, candidate: parsed.submission, current: submissions[phase]!, baseline, changedFields: revisionFieldsForPhase(phase) })
@@ -1334,7 +1336,7 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
     const original = phaseSubmissionsFromDraft(sourceRepair.original_parent);
     for (const phase of ACTION_RULE_PHASES) {
       const saved = savedCheckpoint?.components[phase];
-      const parsed = saved ? parsePhaseSubmission(phase, { ...saved, status: "draft" }) : undefined;
+      const parsed = saved ? parsePhaseSubmission(phase, { ...saved, status: "draft" }, false, "host_checkpoint") : undefined;
       if (parsed && parsed.state !== "submitted") throw new Error("ACTION_AUTHORING_CHECKPOINT_INVALID");
       submissions[phase] = parsed?.state === "submitted" ? parsed.submission : submissions[phase] ?? original[phase];
     }
@@ -2255,6 +2257,23 @@ export function actionRuleModelDraftJsonSchema(options?: { purpose: "compiled_ch
     properties: {
       schema_version: { const: ACTION_RULE_MODEL_DRAFT_VERSION },
       ...rule.properties,
+      hard_limit: objectVariant(["kind", "scope", "population", "limit", "time", "external_writers"], {
+        kind: { const: "hard_invariant" },
+        scope: objectVariant(["tenant_field", "principal_field"], {
+          tenant_field: { type: "string", minLength: 1, maxLength: 128 },
+          principal_field: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+        population: objectVariant(["binding", "field"], {
+          binding: { type: "string", minLength: 1, maxLength: 128 },
+          field: { type: "string", minLength: 1, maxLength: 128 },
+          where: { $ref: "#/$defs/boolean_expression" },
+        }),
+        limit: objectVariant(["binding", "field"], {
+          binding: { type: "string", minLength: 1, maxLength: 128 },
+          field: { type: "string", minLength: 1, maxLength: 128 },
+        }),
+        time: { const: "current_state" }, external_writers: { const: "participating_only" },
+      }),
       verification: withoutStatus(drafts("verification")[0]!),
       effect: { oneOf: drafts("effect").map(withoutStatus) },
       approval: withoutStatus(drafts("approval")[0]!),
@@ -2767,12 +2786,22 @@ function parsePhaseSubmission(
   phase: PhaseName,
   value: Record<string, unknown>,
   revision = false,
+  origin: "model" | "host_checkpoint" = "model",
 ): { state: "submitted"; submission: PhaseSubmission; changed_fields?: RevisionField[] }
   | { state: "clarification"; question: string } {
   if (value.status === "clarification") {
     return { state: "clarification", question: boundedText(value.question, "model clarification", 500) };
   }
   if (value.status !== "draft") throw new Error("status must be draft or clarification.");
+  // This retained invariant is outside the phase model's edit surface. Only
+  // actual host checkpoint restoration may transport it; Runtime still owns
+  // complete designation validation when the whole candidate is recompiled.
+  if (Object.hasOwn(value, "hard_limit") && (origin !== "host_checkpoint" || phase !== "rule")) {
+    throw new Error("ACTION_RULE_HARD_LIMIT_PHASE_CHANGE_UNSUPPORTED: The exact reviewed hard invariant cannot be altered or removed by a phased model submission. Keep it unchanged and use its owning review before requesting a change.");
+  }
+  if (Object.hasOwn(value, "hard_limit") && !isRecord(value.hard_limit)) {
+    throw new Error("ACTION_RULE_HARD_LIMIT_CHECKPOINT_INVALID: The retained hard invariant must be an exact typed designation; no removal was inferred.");
+  }
   const changedFields = revision ? parseRevisionFields(phase, value.changed_fields) : undefined;
   if (phase === "verification") {
     if (!Array.isArray(value.resources)) {
@@ -2806,6 +2835,7 @@ function parsePhaseSubmission(
     if (value.inputs !== undefined && !Array.isArray(value.inputs)) throw new Error("inputs must be the array of reviewed typed business inputs.");
     if (value.discovery !== undefined && !isRecord(value.discovery)) throw new Error("discovery must contain a reviewed title, summary and aliases.");
     return { state: "submitted", submission: {
+      ...(value.hard_limit === undefined ? {} : { hard_limit: structuredClone(value.hard_limit) as ActionRuleModelDraftV1["hard_limit"] }),
       name: boundedText(value.name, "rule name", 256),
       outcome: boundedText(value.outcome, "outcome", 256),
       ...(value.inputs === undefined ? {} : { inputs: structuredClone(value.inputs) as ActionRuleModelDraftV1["inputs"] }),
@@ -2856,6 +2886,7 @@ function assembleDraft(submissions: Partial<Record<PhaseName, PhaseSubmission>>)
     schema_version: ACTION_RULE_MODEL_DRAFT_VERSION,
     name: rule.name,
     outcome: rule.outcome,
+    ...(rule.hard_limit === undefined ? {} : { hard_limit: structuredClone(rule.hard_limit) }),
     ...(rule.inputs ? { inputs: structuredClone(rule.inputs) } : {}),
     ...(rule.discovery === undefined ? {} : { discovery: structuredClone(rule.discovery) }),
     verification,
@@ -2877,6 +2908,7 @@ function phaseSubmissionsFromDraft(
     rule: {
       name: draft.name,
       outcome: draft.outcome,
+      ...(draft.hard_limit === undefined ? {} : { hard_limit: structuredClone(draft.hard_limit) }),
       ...(draft.inputs ? { inputs: structuredClone(draft.inputs) } : {}),
       ...(draft.discovery === undefined ? {} : { discovery: structuredClone(draft.discovery) }),
       require: structuredClone(draft.require),

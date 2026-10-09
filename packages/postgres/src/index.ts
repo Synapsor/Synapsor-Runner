@@ -1,12 +1,13 @@
 import { sourceRollbackBinding, sourceCompletionBinding } from "@synapsor-runner/worker-core";
 import crypto from "node:crypto";
+import { assertPostgresHardLimitSource, resetHardLimitQualification, hardLimitReceiptTable, inspectPostgresSourceReceiptRead } from "./hard-limit-source.js";
 import { observePostgresClientErrors, postgresClientConnectionFailed } from "./connection-lifetime.js";
 import { isCompleteCollectionScopeExpression } from "./complete-collection-scope.js";
 import { assertPostgresRequiredSingletonRelationship } from "./required-singleton.js";
 export { isCompleteCollectionScopeExpression } from "./complete-collection-scope.js";
 import { postgresActionRuleVerificationScope } from "./action-rule-rls-scope.js";
 export { postgresActionRuleVerificationScope } from "./action-rule-rls-scope.js";
-import { ActionRuleError, actionRuleRelationshipPairs } from "@synapsor-runner/action-rules";
+import { ActionRuleError, ActionRuleHardLimitRefusal, matchesActionRuleHardLimitRefusal, actionRuleRelationshipPairs } from "@synapsor-runner/action-rules";
 import { Pool, types as pgTypes, type PoolClient, type PoolConfig } from "pg";
 import type {
   ActionRuleFactLoaderAdapterV1,
@@ -197,10 +198,12 @@ export function buildPostgresActionRuleFactQuery(query: ActionRuleFactQueryV1): 
 export function createPostgresActionRuleFactLoader(
   client: PostgresApplyClient,
   databaseScope?: PostgresActionRuleRlsScope,
+  admission?: { receipt?: { table: string; provisioning: "precreated" | "auto_migrate" } },
 ): ActionRuleFactLoaderAdapterV1 {
   const compatible = new Set<string>();
   return {
     engine: "postgres",
+    assertHardLimitSource: compiled => assertPostgresHardLimitSource(client, compiled, databaseScope, admission?.receipt),
     async assertResourceCompatible(binding: CompiledRuleBindingV1): Promise<void> {
       const scope = databaseScope && postgresActionRuleVerificationScope(binding, databaseScope);
       const key = JSON.stringify([binding.resource.schema, binding.resource.table, scope]);
@@ -644,7 +647,7 @@ async function sourceCompletionColumnAvailable(client: PostgresApplyClient, conf
   const result = await client.query(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute
     WHERE attrelid = to_regclass($1) AND attname = 'completion_evidence_json'
       AND atttypid = 'jsonb'::regtype AND NOT attisdropped
-      AND (NOT $2::boolean OR has_column_privilege(current_user, attrelid, attnum, 'UPDATE'))) AS available`, [sourceReceiptTable(config), forWrite]);
+      AND (NOT $2::boolean OR has_column_privilege(current_user, attrelid, attnum, 'UPDATE'))) AS available`, [hardLimitReceiptTable(client, sourceReceiptTable(config)), forWrite]);
   return result.rows[0]?.available === true;
 }
 
@@ -1175,6 +1178,7 @@ async function sourceTransaction<T>(
   fn: () => Promise<T>,
   hooks: { afterBegin?: () => Promise<void>; afterMutation?: () => Promise<void>; beforeCommit?: () => Promise<void> } = {},
 ): Promise<T> {
+  resetHardLimitQualification(client);
   await client.query("BEGIN");
   try {
     if (job.protocol_version === "5.0") {
@@ -1212,6 +1216,10 @@ async function sourceTransaction<T>(
       }
       await bindPostgresRlsScope(client, config.databaseScope);
     }
+    if (job.protocol_version === "5.0") {
+      await configurePostgresActionRuleTransaction(client);
+
+    }
     await hooks.afterBegin?.();
     const result = await fn();
     await hooks.afterMutation?.();
@@ -1232,15 +1240,28 @@ async function sourceTransaction<T>(
     }
     // Only this point has observed a successful whole-transaction ROLLBACK.
     // Failed/unknown COMMIT or ROLLBACK must never produce no-effect evidence.
+    const refusalCode = safeErrorCode(error, operationOf(job), job);
     if (!(error instanceof SourceOutcomeUnknownError) && job.protocol_version === "5.0"
-      && safeErrorCode(error, operationOf(job)) === "SEMANTIC_AUTHORITY_STALE") {
+      && ["SEMANTIC_AUTHORITY_STALE", "ACTION_RULE_HARD_LIMIT_EXCEEDED"].includes(refusalCode)) {
       const binding = sourceRollbackBinding({ ...config, sourceId: job.source_id });
-      if (binding) config.onSourceRollback?.({ producer: "synapsor.postgres.source_db.rollback.v1",
-        outcome: "rollback_acknowledged", job_digest: canonicalJsonDigest(job), source_binding_digest: binding,
-        observed_at: new Date().toISOString() });
+      if (binding) {
+        try {
+          await config.onSourceRollback?.({ producer: "synapsor.postgres.source_db.rollback.v1",
+            outcome: "rollback_acknowledged", job_digest: canonicalJsonDigest(job), source_binding_digest: binding,
+            observed_at: new Date().toISOString() });
+        } catch (publicationError) { throw new SourceOutcomeUnknownError(publicationError); }
+      }
     }
     throw error;
-  }
+  } finally { resetHardLimitQualification(client); }
+}
+
+async function admitNewPostgresSource(client: PostgresApplyClient, job: WritebackJob, config: RunnerConfig): Promise<void> {
+  if (job.protocol_version !== "5.0") return;
+      await config.semanticActionVerifier?.admitSource?.({ job,
+        factLoader: createPostgresActionRuleFactLoader(client, config.databaseScope,
+          receiptAuthority(config) === "source_db" ? { receipt: {
+            table: sourceReceiptTable(config), provisioning: config.receipts?.provisioning ?? "precreated" } } : undefined) });
 }
 
 function assertDatabaseScopeMatchesJob(job: WritebackJob, scope: PostgresRlsScope): void {
@@ -1260,6 +1281,13 @@ class SourceOutcomeUnknownError extends Error {
   constructor(public readonly cause: unknown) { super("source transaction outcome is unknown"); }
 }
 
+/** Minted only at the actual verifier refusal boundary, never from native error
+ * text/code or a class-shaped error from another transaction stage. */
+class PostgresVerifierHardLimitRefusal extends Error {
+  readonly code = "ACTION_RULE_HARD_LIMIT_EXCEEDED";
+  constructor(readonly refusal: ActionRuleHardLimitRefusal) { super(refusal.message); }
+}
+
 export async function applyPostgresJob(job: WritebackJob, config: RunnerConfig): Promise<WritebackResult> {
   if (config.dryRun) {
     validateOperation(job);
@@ -1276,7 +1304,7 @@ export async function applyPostgresJob(job: WritebackJob, config: RunnerConfig):
     discardClient = result.status === "reconciliation_required";
     return result;
   } catch (error) {
-    return failedResult(job, config, safeErrorCode(error, operationOf(job)));
+    return failedResult(job, config, safeErrorCode(error, operationOf(job), job));
   } finally {
     try { if (client) client.release(discardClient || postgresClientConnectionFailed(client)); }
     catch { /* cleanup must not make a committed write look retryable */ }
@@ -1287,7 +1315,7 @@ export async function applyPostgresJob(job: WritebackJob, config: RunnerConfig):
 export async function applyPostgresJobWithClient(job: WritebackJob, config: RunnerConfig, client: PostgresApplyClient): Promise<WritebackResult> {
   validateOperation(job);
   if (receiptAuthority(config) === "runner_ledger") return await applyWithRunnerLedger(job, config, client);
-  if (config.receipts?.provisioning === "auto_migrate") await client.query(postgresReceiptMigrationForConfig(config));
+  if (job.protocol_version !== "5.0" && config.receipts?.provisioning === "auto_migrate") await client.query(postgresReceiptMigrationForConfig(config));
   const store = config.writebackIntentStore;
   const binding = sourceCompletionBinding(job, config);
   const claim = store ? await store.claimWritebackIntent(job, config.runnerId, binding) : undefined;
@@ -1301,11 +1329,22 @@ export async function applyPostgresJobWithClient(job: WritebackJob, config: Runn
   }
   // An old table remains usable but supplies no new positive recovery proof.
   // This metadata inspection never upgrades it or changes grants.
-  const completionBinding = store && binding && (job.protocol_version === "5.0" || (job.protocol_version === "2.0" && job.operation === "single_row_update"))
+  let completionBinding = store && binding && (job.protocol_version === "2.0" && job.operation === "single_row_update")
     && await sourceCompletionColumnAvailable(client, config, true) ? binding : undefined;
   let result: WritebackResult;
   try {
     result = await sourceTransaction(client, job, config, async () => {
+      if (job.protocol_version === "5.0") {
+        if (config.semanticActionVerifier?.admitSource && config.receipts?.provisioning !== "auto_migrate") {
+          const table = await inspectPostgresSourceReceiptRead(client, sourceReceiptTable(config));
+          const selected = await client.query(`SELECT job_id, proposal_id, status, result_hash, semantic_verification_json FROM ${table} WHERE idempotency_key = $1`, [job.idempotency_key]);
+          if (selected.rows.length > 1) throw new Error("SOURCE_RECEIPT_UNAVAILABLE");
+          if (selected.rows[0]) return resultFromExistingReceipt(job, config, selected.rows[0]);
+        }
+        await admitNewPostgresSource(client, job, config);
+        if (config.receipts?.provisioning === "auto_migrate") await client.query(postgresReceiptMigrationForConfig(config));
+        completionBinding = store && binding && await sourceCompletionColumnAvailable(client, config, true) ? binding : undefined;
+      }
       const existing = await claimSourceReceipt(client, job, config);
       if (existing) return existing;
       const outcome = await mutatePostgres(job, client, config);
@@ -1318,7 +1357,7 @@ export async function applyPostgresJobWithClient(job: WritebackJob, config: Runn
       if (claim && store) await preserveSourceUncertainty(store, claim.intent_id, "database COMMIT acknowledgement was not observed");
       return reconciliationResult(job, config, claim?.intent_id ?? sourceReconciliationIntentId(job), "OUTCOME_UNKNOWN");
     }
-    if (claim && store) await store.completeWritebackIntent(claim.intent_id, failedResult(job, config, safeErrorCode(error, operationOf(job))));
+    if (claim && store) await store.completeWritebackIntent(claim.intent_id, failedResult(job, config, safeErrorCode(error, operationOf(job), job)));
     throw error;
   }
   if (claim && store) {
@@ -1355,7 +1394,10 @@ async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, cl
   await config.testFailpoint?.("after_intent_applying");
   let result: WritebackResult;
   try {
-    const outcome = await sourceTransaction(client, job, config, () => mutatePostgres(job, client, config), {
+    const outcome = await sourceTransaction(client, job, config, async () => {
+      await admitNewPostgresSource(client, job, config);
+      return mutatePostgres(job, client, config);
+    }, {
       afterBegin: () => Promise.resolve(config.testFailpoint?.("after_source_begin")),
       afterMutation: () => Promise.resolve(config.testFailpoint?.("after_source_mutation")),
       beforeCommit: () => Promise.resolve(config.testFailpoint?.("before_source_commit")),
@@ -1366,7 +1408,7 @@ async function applyWithRunnerLedger(job: WritebackJob, config: RunnerConfig, cl
       await preserveSourceUncertainty(store, claim.intent_id, "database COMMIT acknowledgement was not observed");
       return reconciliationResult(job, config, claim.intent_id);
     }
-    result = failedResult(job, config, safeErrorCode(error, operationOf(job)));
+    result = failedResult(job, config, safeErrorCode(error, operationOf(job), job));
     await store.completeWritebackIntent(claim.intent_id, result);
     return result;
   }
@@ -1455,10 +1497,21 @@ async function mutatePostgresSemantic(
 ): Promise<MutationOutcome> {
   if (config.semanticActionVerifier === undefined) throw new Error("SEMANTIC_REVERIFIER_UNAVAILABLE");
   await configurePostgresActionRuleTransaction(client);
-  const semanticVerification = await config.semanticActionVerifier({
-    job,
-    factLoader: createPostgresActionRuleFactLoader(client, config.databaseScope),
-  });
+  let semanticVerification: Awaited<ReturnType<NonNullable<RunnerConfig["semanticActionVerifier"]>>>;
+  try {
+    semanticVerification = await config.semanticActionVerifier({
+      job,
+      factLoader: createPostgresActionRuleFactLoader(client, config.databaseScope,
+        receiptAuthority(config) === "source_db" ? { receipt: {
+          table: sourceReceiptTable(config), provisioning: config.receipts?.provisioning ?? "precreated" } } : undefined),
+    });
+  } catch (error) {
+    if (error instanceof ActionRuleHardLimitRefusal) {
+      if (!matchesActionRuleHardLimitRefusal(error, job)) throw new Error("SEMANTIC_AUTHORITY_STALE");
+      throw new PostgresVerifierHardLimitRefusal(error);
+    }
+    throw error;
+  }
   assertSemanticActionReverification(job, semanticVerification);
 
   if (job.semantic_authority.effect.atomic_updates) {
@@ -1988,7 +2041,7 @@ function verifyVersionAdvanced(job: WritebackJob, actual: unknown): void {
 }
 
 async function claimSourceReceipt(client: PostgresApplyClient, job: WritebackJob, config: RunnerConfig): Promise<WritebackResult | undefined> {
-  const table = sourceReceiptTable(config);
+  const table = hardLimitReceiptTable(client, sourceReceiptTable(config));
   const semanticReceipt = job.protocol_version === "5.0";
   const claimed = await client.query(
     semanticReceipt
@@ -2012,7 +2065,7 @@ async function recordSourceReceipt(client: PostgresApplyClient, job: WritebackJo
   if (binding && result.status === "applied") {
     const evidence = parseSourceCompletionEvidence({ schema_version: "synapsor.postgres.source-completion.v1",
       job_digest: canonicalJsonDigest(job), binding_digest: binding.digest, result, result_digest: canonicalJsonDigest(result) }, job, binding);
-    const updated = await client.query(`UPDATE ${sourceReceiptTable(config)} SET status = $2, result_hash = $3,
+    const updated = await client.query(`UPDATE ${hardLimitReceiptTable(client, sourceReceiptTable(config))} SET status = $2, result_hash = $3,
       semantic_verification_json = $4::jsonb, completion_evidence_json = $5::jsonb, completed_at = now()
       WHERE idempotency_key = $1 AND job_id = $6 AND proposal_id = $7`,
     [job.idempotency_key, result.status, resultHashFromResult(job, result),
@@ -2024,14 +2077,14 @@ async function recordSourceReceipt(client: PostgresApplyClient, job: WritebackJo
   if (job.protocol_version === "5.0") {
     if (result.protocol_version !== "5.0") throw new Error("SOURCE_RECEIPT_SEMANTIC_PROOF_UNAVAILABLE");
     const updated = await client.query(
-      `UPDATE ${sourceReceiptTable(config)}\nSET status = $2, result_hash = $3, semantic_verification_json = $4::jsonb, completed_at = now()\nWHERE idempotency_key = $1`,
+      `UPDATE ${hardLimitReceiptTable(client, sourceReceiptTable(config))}\nSET status = $2, result_hash = $3, semantic_verification_json = $4::jsonb, completed_at = now()\nWHERE idempotency_key = $1`,
       [job.idempotency_key, result.status, resultHashFromResult(job, result), JSON.stringify(result.semantic_verification)],
     );
     if (updated.rowCount !== 1) throw new Error("SOURCE_RECEIPT_UNAVAILABLE");
     return;
   }
   const updated = await client.query(
-    `UPDATE ${sourceReceiptTable(config)}\nSET status = $2, result_hash = $3, completed_at = now()\nWHERE idempotency_key = $1`,
+    `UPDATE ${hardLimitReceiptTable(client, sourceReceiptTable(config))}\nSET status = $2, result_hash = $3, completed_at = now()\nWHERE idempotency_key = $1`,
     [job.idempotency_key, result.status, resultHashFromResult(job, result)],
   );
   if (updated.rowCount !== 1) throw new Error("SOURCE_RECEIPT_UNAVAILABLE");
@@ -2086,7 +2139,7 @@ function resultFromOutcome(job: WritebackJob, config: RunnerConfig, outcome: Mut
     const proof = job.semantic_authority.proof;
     const code = outcome.code ?? overrideCode;
     const semanticVerification = outcome.semanticVerification ?? {
-      status: code === "SEMANTIC_AUTHORITY_STALE" ? "refused" as const : "not_run" as const,
+      status: code === "SEMANTIC_AUTHORITY_STALE" || code === "ACTION_RULE_HARD_LIMIT_EXCEEDED" ? "refused" as const : "not_run" as const,
       proof_digest: proof.proof_digest,
       action_rule_digest: proof.action_rule_digest,
       compiled_plan_digest: proof.compiled_plan_digest,
@@ -2195,8 +2248,11 @@ function resultHashFromResult(job: WritebackJob, result: WritebackResult): `sha2
   return typeof result.result_hash === "string" && result.result_hash.startsWith("sha256:") ? result.result_hash as `sha256:${string}` : resultHash(job, result.status, "result_version" in result ? result.result_version : undefined);
 }
 
-function safeErrorCode(error: unknown, operation?: Operation): string {
+function safeErrorCode(error: unknown, operation?: Operation, job?: WritebackJob): string {
   if (error instanceof SourceOutcomeUnknownError) return "OUTCOME_UNKNOWN";
+  if (error instanceof PostgresVerifierHardLimitRefusal) {
+    return matchesActionRuleHardLimitRefusal(error.refusal, job) ? "ACTION_RULE_HARD_LIMIT_EXCEEDED" : "SEMANTIC_AUTHORITY_STALE";
+  }
   const code = error && typeof error === "object" && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("POSTGRES_RLS_PREREQUISITE_FAILED")) return "POSTGRES_RLS_PREREQUISITE_FAILED";
