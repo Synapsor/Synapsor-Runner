@@ -6,7 +6,7 @@ import { parseActionRuleModelDraftProposal } from "./action-rule-draft.js";
 import { STRUCTURED_AUTHORING_PROTOCOL_VERSION, STRUCTURED_AUTHORING_RESUME_VERSION } from "./authoring-protocol.js";
 import { structuredTestAction } from "./structured-authoring-test-fixture.js";
 import { Ajv2020 } from "ajv/dist/2020.js";
-import { parseActionRequirementProposals, assertActionRequirementColumns, actionRequirementProposalsJsonSchema } from "./authoring-action-requirements.js";
+import { parseActionRequirementProposals, assertActionRequirementColumns, actionRequirementProposalsJsonSchema, actionRequirementsPending, actionRequirementsReadback } from "./authoring-action-requirements.js";
 import { parseActionRequirementsQuestionBinding, assertActionRequirementsQuestionGeneration } from "./authoring-action-requirements-binding.js";
 import { prepareActionRequirementsOperatorQuestion, assertActionRequirementsQuestionDependencies, projectConfirmedActionRequirements } from "./authoring-action-requirements-question.js";
 import { parseActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
@@ -95,6 +95,25 @@ describe("Action requirement substitution and unsupported meaning fences", () =>
     expect(() => parseActionRequirementProposals([{ ...retained, value: { ...c.value, selector: { kind: "outcome", outcome: "inventory.update" } } }])).toThrow();
     expect(() => parseActionRequirementProposals([{ ...retained, value: { ...c.value, maximum: 4 } }])).toThrow();
     expect(() => parseActionRequirementProposals([{ ...c, value: { ...c.value, selector: null } }])).toThrow();
+  });
+  it("refuses a pooled selector in capability scope in parser and model grammar", () => {
+    const c = count(), validate = new Ajv2020({ strict: false }).compile(actionRequirementProposalsJsonSchema());
+    const conflict = { ...c, value: { ...c.value, scope: "capability" } };
+    expect(() => parseActionRequirementProposals([conflict])).toThrow();
+    expect(validate([conflict])).toBe(false);
+    const exact = { ...conflict, value: { ...conflict.value, selector: { kind: "outcome", outcome: "inventory.update" } } };
+    expect(parseActionRequirementProposals([exact])).toEqual([exact]); expect(validate([exact])).toBe(true);
+  });
+  it("keeps legacy capability selection bytes pending without relabelling them pooled", () => {
+    const c = count(), prior = [{ id: "daily", kind: "count", scope: "capability", maximum: 3, window_seconds: 86400 }];
+    const pending = [{ ...c, intent: "retain", previous_limits: prior, value: { state: "unknown", reason: "missing_meaning" } }];
+    const before = structuredClone(pending), parsed = parseActionRequirementProposals(pending);
+    expect(parsed).toEqual(before); expect(pending).toEqual(before); expect(actionRequirementsPending(parsed)).toEqual([c.id]);
+    const readback = actionRequirementsReadback(parsed).join("\n");
+    expect(readback).toContain("selection review pending"); expect(readback).toContain("each current outcome separately");
+    expect(readback).not.toContain("all participating outcomes");
+    expect(() => parseActionRequirementProposals([{ ...pending[0], value: { ...c.value, scope: "capability" } }])).toThrow();
+    expect(() => parseActionRequirementProposals([{ ...pending[0], value: { ...c.value, scope: "capability", selector: { kind: "outcome", outcome: "inventory.update" } } }])).toThrow();
   });
   it("refuses unknown fields, kind/target substitutions and duplicate requirements", () => {
     const f = requirementFixture();

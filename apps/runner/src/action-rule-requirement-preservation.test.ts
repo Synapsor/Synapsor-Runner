@@ -44,6 +44,20 @@ describe("scoped count/execution proposal preservation DATA", () => {
     f.candidate.approval.shared_limits[1]!.maximum++;
     expect(() => check(f)).toThrow("ACTION_RULE_REQUIREMENTS_UNMET");
   });
+  it("refuses capability scope with pooled meaning for retain/replace and new/existing drafts", () => {
+    for (const intent of ["retain", "replace"] as const) for (const fresh of [false, true]) {
+      const f = fixture(), p = f.proposals[0]!;
+      if (p.kind !== "approval_count" || p.value.state !== "proposed") throw new Error("fixture");
+      p.intent = intent; p.value.scope = "capability";
+      const limit = { id: "joint_company", kind: "count" as const, scope: "capability" as const, maximum: 2, window_seconds: 3600 };
+      f.baseline.approval.shared_limits[1] = limit;
+      p.previous_limits = fresh ? [] : structuredClone(f.baseline.approval.shared_limits);
+      f.candidate.approval.shared_limits = fresh ? [limit] : structuredClone(f.baseline.approval.shared_limits);
+      const before = structuredClone(f);
+      expect(() => check({ ...f, baseline: fresh ? null : f.baseline })).toThrow("ACTION_RULE_REQUIREMENTS_UNMET");
+      expect(f).toEqual(before);
+    }
+  });
   it("refuses a per-outcome replacement of a reviewed pooled count", () => {
     const f = fixture(); f.candidate.approval.shared_limits[1]!.capability = f.baseline.outcome;
     expect(() => check(f)).toThrow("ACTION_RULE_REQUIREMENTS_UNMET");

@@ -44,6 +44,7 @@ export function assertActionRuleCountExecutionProposalsPreserved(input: {
       const index = expected.findIndex(l => l.id === p.target.limit_id);
       if (baseline && index < 0) refuse();
       const v = p.value;
+      if (v.scope === "capability" && v.selector.kind === "all_outcomes") refuse();
       const limit: ActionBoundarySharedLimitV1 = { id: p.target.limit_id, kind: "count", scope: v.scope,
         maximum: v.maximum, window_seconds: v.window_seconds,
         ...(v.selector.kind === "outcome" ? { capability: v.selector.outcome } : {}) };

@@ -55,6 +55,10 @@ export function parseActionRequirementProposals(value: unknown): ActionRequireme
       if (new Set(p.previous_limits.map(l => l.id)).size !== p.previous_limits.length
         || p.previous_limits.some(l => l.kind === "count" ? l.field !== undefined : l.field === undefined)) invalid();
     }
+    // Capability scope implicitly selects the current outcome in approval history.
+    // Missing capability is not a pooled selector; preserve legacy bytes pending review.
+    if (p.kind === "approval_count" && p.value.state === "proposed"
+      && p.value.scope === "capability" && p.value.selector.kind === "all_outcomes") invalid();
     if (p.kind === "approval_count" && p.value.state === "proposed" && p.intent === "retain") {
       const old = p.previous_limits.find(l => l.id === p.target.limit_id), v = p.value;
       if (!old || old.kind !== "count" || old.scope !== v.scope || old.maximum !== v.maximum || old.window_seconds !== v.window_seconds
@@ -93,7 +97,7 @@ export function actionRequirementsReadback(proposals: ActionRequirementProposals
       else if (p.kind === "column_unit") meaning = `Integer unit ${p.value.unit}; scale ${p.value.scale}. Proposed business meaning: ${p.value.meaning}`;
       else meaning = `Fixed destination ${JSON.stringify(p.value.to)}; allowed previous values ${JSON.stringify(p.value.allowed_from)}.`;
       return [`${p.id} / ${target}. ${meaning}`, ...("previous_limits" in p ? p.previous_limits.map(l =>
-        `Existing limit ${l.id}: ${l.kind} maximum ${l.maximum}, scope ${l.scope}, rolling ${l.window_seconds} seconds, ${l.capability === undefined ? "all participating outcomes" : `only ${l.capability}`}${l.field === undefined ? "" : `, field ${l.field}`}.`) : [])];
+        `Existing limit ${l.id}: ${l.kind} maximum ${l.maximum}, scope ${l.scope}, rolling ${l.window_seconds} seconds, ${l.capability !== undefined ? `only ${l.capability}` : l.scope === "capability" ? "each current outcome separately; no explicit selector recorded; selection review pending" : "all participating outcomes"}${l.field === undefined ? "" : `, field ${l.field}`}.`) : [])];
     })];
 }
 
@@ -148,7 +152,7 @@ export function actionRequirementProposalsJsonSchema(): Record<string, unknown> 
   const window = { ...number, minimum: 60, maximum: 31_536_000 }, maximum = { ...number, minimum: 1 };
   const hash = { type: "string", pattern: "^sha256:[a-f0-9]{64}$" };
   const pending = obj({ state: fixed("unknown"), reason: choices(["missing_meaning", "unsupported_basis", "unsupported_unit", "unsupported_transition"]) });
-  const value = (properties: Record<string, unknown>) => ({ oneOf: [pending, obj({ state: fixed("proposed"), ...properties })] });
+  const value = (properties: Record<string, unknown>, constraints: Record<string, unknown> = {}) => ({ oneOf: [pending, { ...obj({ state: fixed("proposed"), ...properties }), ...constraints }] });
   const scalar = { anyOf: [{ type: "string", maxLength: 4096 }, number, { type: "boolean" }, { type: "null" }] };
   const previous = { type: "array", maxItems: 64, items: obj({ id: text, kind: choices(["count", "total"]), scope, maximum,
     window_seconds: window, capability: text, field: text }, ["capability", "field"]) };
@@ -161,7 +165,9 @@ export function actionRequirementProposalsJsonSchema(): Record<string, unknown> 
   return { type: "array", minItems: 1, maxItems: 64, items: { oneOf: [
     entry("approval_count", { target: limitTarget, intent: choices(["retain", "replace"]), previous_limits: previous,
       value: value({ basis: fixed("rolling_approved_events"), scope, maximum, window_seconds: window,
-        selector: { oneOf: [obj({ kind: fixed("all_outcomes") }), obj({ kind: fixed("outcome"), outcome: text })] } }) }),
+        selector: { oneOf: [obj({ kind: fixed("all_outcomes") }), obj({ kind: fixed("outcome"), outcome: text })] } },
+        { allOf: [{ if: { properties: { scope: fixed("capability") }, required: ["scope"] },
+          then: { properties: { selector: obj({ kind: fixed("outcome"), outcome: text }) } } }] }) }),
     entry("execution", { target: obj({ slot: fixed("effect.writeback"), outcome: text }), value: value({ mode: choices(["proposal_only", "supervised"]) }) }),
     entry("trusted_scope_duration", { target: obj({ slot: fixed("resource.policy.shared_limits"), resource: text, limit_id: text }), previous_limits: previous,
       value: value({ scope, window_seconds: window }) }),
