@@ -422,5 +422,44 @@
       "sha256": "2fae6f6dc3a7a9c9498c61eda7ce7c4a2c300c44f492d7bee1b0bcda4f76ece5"
     },
     "head": "b668c143"
+  },
+  "read_commit_successor": {
+    "base": "0c87e2d0",
+    "cause": "Actual same D01 W consumed typed planning + Read mapping and explicit native scope confirmation, then BC8465 holder called Entry reload. New required Held read retains exact progress/candidate/revision/authoring ack checks; BC wiring only,19067lines unchanged.",
+    "native_before": "Original fixture guard NOT_REACHED; explicit operator allow label fixture then0P1F exact POLICY_MUTATION_PERMIT_REQUIRED. Native five + exportthree after8PASS, old predecessor assertions unchanged.",
+    "fixture_port": "Explicit operator allow_reviewed_fields(label) in native/public typed fixtures, no assertion/responder/scope/confirmation changes; R2 fixture-only reason accepted.",
+    "types": {
+      "exit": 0,
+      "config": "/var/tmp/synapsor-b64-main-access-owned/tsconfig-read-commit.json"
+    },
+    "public": "Original revision exposure guard NOT_REACHED; explicit reviewed label whole6 yields0P6F (retained). Selected transcript reaches typed scope confirmation, saved disabled Read; current scope remains stale/pending and revision refuses READ_SCOPE_PROTOCOL_REQUIRED before transport. No public/arithmetic qualification inferred; these consumer wiring/old fixture selection issues remain OPEN.",
+    "raw": {
+      "read-commit-held-before": {
+        "json": "e14779faca9e2212b760963389fd82ca79d2bf15c8b99ba1fd19d6e37ca1d539",
+        "log": "577960fc66021c40a6c785cae485afc34a55d756eb892e4389b0ae4feeb8c5da"
+      },
+      "read-commit-held-native-before": {
+        "json": "6a6f6ef7887a9b212e4fa810b160aa5bcdfaf6dfa870ac076354dfdff13b7298",
+        "log": "b113ab65bf77fe6db3616cd80f4d1983e2e56aedaf1ac861b3d04e3d71f68f44"
+      },
+      "read-commit-held-native-explicit-before": {
+        "json": "9910424be32b0c5e7727b4ca7e0384738d9c37eefb2c370a2e42982bd20e7043",
+        "log": "e6561944c1510284c1c2873401b1ae0a09de736cf3cee2f324c5216379ac898a"
+      },
+      "read-commit-held-after": {
+        "json": "edb2731ec2651e25bf3c8011f258ae1e9344ee459617339ed18c50512d6b9f4b",
+        "log": "4430eb00852db802199d09659588f3fd62729a48949127750f56f0050fcd1661"
+      },
+      "read-commit-held-public-after": {
+        "json": "d2ca1757fd01d5b6c7ca76a267d917f9867f05a99472765e37fa3aef9130e213",
+        "log": "8d0e050a491e3bcc0c68f674da60aa16e64b2812063268f843b0ace2d414a6aa"
+      },
+      "read-commit-held-public-diagnostic": {
+        "json": "6f4950417211006a846831a6c699c7be5277618d619b07e7cb9815a5f3e56101",
+        "log": "9188903e8c03330f5574953119eae88c5dcb0f2f28832685c26948a84eff524e"
+      },
+      "types_log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "review": "R2 prospectiveRC01\u201311; immutable successor independent verdict pending."
   }
 }

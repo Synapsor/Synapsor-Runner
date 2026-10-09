@@ -6,7 +6,7 @@ import { saveBoundaryReviewProgress } from "./boundary-review-persistence.js";
 import type { BoundaryReviewMutationBindings } from "./read-authoring-contract-types.js";
 import { readProjectReadAuthoringHeld, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 import type { BoundaryReviewSubmission } from "./auto-boundary.js";
-import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
 type ReviewContext = Awaited<ReturnType<typeof loadBoundaryReviewContext>>;
 /** The exact local signoff that its protected writer acknowledged. This does
@@ -21,13 +21,29 @@ export type ReadReviewSignoff = (context: ReviewContext, committed: ReadReviewCo
 /** A local projection check only; never prompt, call a model, or wait here. */
 export type ReadReviewPredecessorCheck = (before: ReviewContext) => undefined;
 
-export async function reloadReadReviewAfterCommit(projectRoot: string, mutation: {
+type AcknowledgedReadMutation = {
   candidate_digest: `sha256:${string}`;
   review_revision: number;
   progress?: BoundaryReviewProgress;
   authoring_binding?: BoundaryReviewMutationBindings["authoring"];
-}): Promise<Awaited<ReturnType<typeof loadBoundaryReviewContext>>> {
-  const context = await loadBoundaryReviewContext(projectRoot);
+};
+
+export function reloadReadReviewAfterCommit(projectRoot: string, mutation: AcknowledgedReadMutation): Promise<ReviewContext> {
+  return withProjectAuthorityMutation(projectRoot, permit => reloadReadReviewAfterCommitHeld(projectRoot, mutation, permit));
+}
+
+/** Reload only this acknowledged save under the caller's existing live access.
+ * This cannot adopt a later revision or acquire another mutation lease. */
+export function reloadReadReviewAfterCommitHeld(projectRoot: string, mutation: AcknowledgedReadMutation,
+  permit: ProjectAuthorityMutationPermit): Promise<ReviewContext> {
+  const expected = structuredClone(mutation);
+  return withHeldProjectAuthorityAccess(projectRoot, permit, async held => {
+    const context = await loadBoundaryReviewContextHeld(held.projectRoot, held);
+    return checkReadCommitAcknowledgement(context, expected);
+  });
+}
+
+function checkReadCommitAcknowledgement(context: ReviewContext, mutation: AcknowledgedReadMutation): ReviewContext {
   if ((mutation.progress && canonicalJsonDigest(context.progress ?? null) !== canonicalJsonDigest(mutation.progress))
     || context.bundle.candidate_digest !== mutation.candidate_digest
     || context.bundle.mutation_bindings.review_revision !== mutation.review_revision

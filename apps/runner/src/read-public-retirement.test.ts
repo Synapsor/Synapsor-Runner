@@ -107,7 +107,7 @@ async function runVariant(mode:Mode, continueAfterCancel=false, firstBlank=false
  try{
   await onboard(['db','--project-root',root,'--from-env','B64_PUBLIC_READ_URL','--schema','studio','--json'],{interactive:false,schemaInspector:inspect});
   // Declared structural fixture origin; no typed proposal or completion is seeded.
-  await commitBoundaryResourceReviewMutation(root,await prepareBoundaryResourceReviewMutation(root,{resource_id:'studio.parcels',include:true,tenant_key:'tenant_id',principal_key:'principal_id',selectable_fields:['label'],actor:'declared parcel operator',reason:'Signed-in customers may see only their own parcel labels.'},inspect));
+  await commitBoundaryResourceReviewMutation(root,await prepareBoundaryResourceReviewMutation(root,{resource_id:'studio.parcels',include:true,tenant_key:'tenant_id',principal_key:'principal_id',selectable_fields:['label'],allow_reviewed_fields:['label'],actor:'declared parcel operator',reason:'Signed-in customers may see only their own parcel labels.'},inspect));
   await boundaryReviewCommand(['--project-root',root,'--confirm','--actor','declared parcel operator','--output',path.join(root,'reviewed-structural-context.json')],inspect,{presentationMode:'conversation',promptText:async()=>undefined,confirm:async(_message,options)=>{expect(options?.context?.length).toBeGreaterThan(0);return true;},chooseResource:async()=>undefined,editFieldTiers:async()=>undefined});
   expect((await loadBoundaryReviewContext(root)).candidate.activation).not.toBe('active');
   await start(['--project-root',root,'--from-env','B64_PUBLIC_READ_URL','--schema','studio','--cli'],{interactive:true,schemaInspector:inspect,runBoundaryReview:(args,inspection)=>boundaryReviewCommand(args,inspection,outer,undefined,options)});

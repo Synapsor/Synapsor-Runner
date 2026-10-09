@@ -4,7 +4,7 @@ import { actionRuleDraftFailureView } from "./action-rule-diagnostic-view.js";
 import { boundaryAuthoringResumeBinding } from "./authoring-resume-binding.js";
 export { boundaryAuthoringResumeBinding } from "./authoring-resume-binding.js";
 import { authoringPermissionPresentation } from "./authoring-permission-presentation.js";
-import { reloadReadReviewAfterCommit, saveBoundaryReviewSignoff, saveReviewedDisabledBoundary, saveReadReviewSignoff, type ReadReviewSignoff, type ReadReviewPredecessorCheck } from "./authoring-read-review-save.js";
+import { reloadReadReviewAfterCommitHeld, reloadReadReviewAfterCommit, saveBoundaryReviewSignoff, saveReviewedDisabledBoundary, saveReadReviewSignoff, type ReadReviewSignoff, type ReadReviewPredecessorCheck } from "./authoring-read-review-save.js";
 import { readMeaningPromptHandoff } from "./authoring-read-prompt-binding.js";
 import { selectUnplannedActionIntents } from "./authoring-action-entry.js";
 import { reviewRequiredPrincipalScopes } from "./authoring-principal-scope-host.js";
@@ -8463,7 +8463,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       // the saved job to this exact commit before any further model/human wait;
       // a competing Read or resume must not become its replacement identity.
       await withProjectAuthorityMutation(input.projectRoot, async permit => {
-        context = await reloadReadReviewAfterCommit(input.projectRoot, savedRead);
+        context = await reloadReadReviewAfterCommitHeld(input.projectRoot, savedRead, permit);
         mappingBoundary = context.candidate;
         await persistAuthoringResume(actionIntents.length ? "action_drafting" : "authority_review", permit);
         if (resumePersistenceBlocked) throw checkpointSaveFailure("The committed Read mapping");
