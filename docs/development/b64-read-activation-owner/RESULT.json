@@ -1,0 +1,23 @@
+{
+  "base": "3eb73a42",
+  "before_test": "31ff0fdf",
+  "contract": "Native Read meaning must be freshly assessed by its existing owner under the same protected authority operation as the active-set save. No static assessment snapshot, human prompt, or model call in that operation.",
+  "before": {
+    "tests": 2,
+    "fail": 2,
+    "cause": "Existing activation clones the callback input and cannot invoke a native owner under its writer permit."
+  },
+  "after": {
+    "new_tests_pass": 2,
+    "existing_mutation_tests_pass": 15,
+    "first_after": "15 PASS plus 2 test-fixture expectation failures: no-active reader truthfully throws ENOENT instead of returning []. Kept logs; changed only no-active assertion to exact existing API.",
+    "public_positive": "NOT RUN; route hydration and structural-save wiring remain next."
+  },
+  "evidence_root": "/var/tmp/synapsor-b64-main-owned/evidence/",
+  "logs": [
+    "read-activation-owner-before.json",
+    "read-activation-owner-after.json",
+    "read-activation-owner-after-v2.json"
+  ],
+  "review": "PENDING R1; no acceptance or decision-site decrement claimed"
+}

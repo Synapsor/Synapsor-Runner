@@ -2722,7 +2722,12 @@ async function assertRuntimeReadDiscoveryFits(projectRoot: string, boundaries: A
 }
 
 
-export async function activateExplorationBoundary(input: {
+/** A read-only native owner projection. Never prompt or call a model while the
+ * activation writer holds this permit. Caller snapshots are not authority. */
+export type ReadScopeActivationAssessment = (candidate: ExplorationBoundaryDraft,
+  permit: ProjectAuthorityMutationPermit) => Promise<NativeReadScopeAssessment>;
+
+type ExplorationBoundaryActivationInput = {
   projectRoot: string;
   candidate: ExplorationBoundaryDraft;
   reviewDraft?: ExplorationBoundaryDraft;
@@ -2732,8 +2737,7 @@ export async function activateExplorationBoundary(input: {
   expectedDigest: string;
   actor: string;
   confirmation: string;
-  /** Derived by the existing native Read owner in the same protected operation. */
-  readScopeAssessment?: NativeReadScopeAssessment;
+  assessReadScope?: ReadScopeActivationAssessment;
   reviewSubmission: BoundaryReviewSubmission;
   currentInspection: SchemaInspection;
   activeSetMode?: "replace" | "add";
@@ -2747,8 +2751,17 @@ export async function activateExplorationBoundary(input: {
       | "activate_for_existing_client"
       | "activate_for_no_model";
   };
-}): Promise<ActivatedExplorationBoundary> {
-  input = structuredClone(input);
+};
+
+export async function activateExplorationBoundary(input: ExplorationBoundaryActivationInput): Promise<ActivatedExplorationBoundary> {
+  const { assessReadScope, ...material } = input;
+  const frozen = structuredClone(material);
+  return withProjectAuthorityMutation(frozen.projectRoot, permit =>
+    activateExplorationBoundaryUnlocked({ ...frozen, assessReadScope }, permit));
+}
+
+async function activateExplorationBoundaryUnlocked(input: ExplorationBoundaryActivationInput,
+  permit: ProjectAuthorityMutationPermit): Promise<ActivatedExplorationBoundary> {
   const projectRoot = path.resolve(input.projectRoot);
   const draftPath = path.join(projectRoot, DEFAULT_GENERATED_DIR, "exploration-boundary.draft.json");
   const lockPath = path.join(projectRoot, ".synapsor/generation-lock.json");
@@ -2772,7 +2785,7 @@ export async function activateExplorationBoundary(input: {
       throw new Error(`${resource.id} relationship ${unresolved.id} is nullable; choose whether unmatched rows are kept as null or excluded.`);
     }
   }
-  const readScope = input.readScopeAssessment;
+  const readScope = await input.assessReadScope?.(structuredClone(candidate), permit);
   if (!readScope || readScope.kind !== "native" || readScope.status !== "confirmed"
     || readScope.candidate_digest !== explorationBoundaryCandidateDigest(candidate)
     || readScope.replacement_pending || readScope.record.proposal.applicability !== "read_requested"
@@ -2844,6 +2857,7 @@ export async function activateExplorationBoundary(input: {
     input.activeSetMode ?? "replace",
     lock,
     { expected: input.expectedAuthoring, candidate: input.candidate, verifiedDecision: input.verifiedDecision },
+    permit,
   );
   return active;
 }
@@ -3315,10 +3329,11 @@ async function writeActivatedExplorationBoundarySet(
   mode: "replace" | "add",
   lock: GenerationLock,
   review: { expected?: ReadAuthoringBindings; candidate: ExplorationBoundaryDraft; verifiedDecision?: GovernedReadActivationDecision },
+  permit?: ProjectAuthorityMutationPermit,
 ): Promise<void> {
-  await withActiveExplorationBoundaryLock(projectRoot, async (heldRoot) => {
-    await writeActivatedExplorationBoundarySetUnlocked(heldRoot, active, mode, lock, review);
-  });
+  await withProjectAuthorityMutation(projectRoot, async (held) => {
+    await writeActivatedExplorationBoundarySetUnlocked(held.projectRoot, active, mode, lock, review);
+  }, { permit });
 }
 
 async function writeActivatedExplorationBoundarySetUnlocked(

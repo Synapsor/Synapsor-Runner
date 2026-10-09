@@ -35,7 +35,7 @@ it("activation obtains current meaning from its owner under the same held author
     },
   })).rejects.toMatchObject({ code: "READ_SCOPE_REVIEW_REQUIRED" });
   expect(calls).toBe(1);
-  expect(await loadActivatedExplorationBoundaries(root)).toEqual([]);
+  await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
   await expect(withProjectAuthorityMutation(root, async () => undefined, { permit: observed }))
     .rejects.toMatchObject({ code: "POLICY_MUTATION_PERMIT_INVALID" });
 });
@@ -45,5 +45,5 @@ it("a current owner refusal is preserved and cannot activate a structurally revi
   const refusal = Object.assign(new Error("The saved Read answer was replaced."), { code: "READ_OWNER_REPLACED" });
   await expect(activateExplorationBoundary({ ...input, assessReadScope: async () => { throw refusal; } }))
     .rejects.toBe(refusal);
-  expect(await loadActivatedExplorationBoundaries(root)).toEqual([]);
+  await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
 });
