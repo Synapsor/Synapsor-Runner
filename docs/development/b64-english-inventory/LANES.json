@@ -15,9 +15,9 @@
     "read": {
       "agent": "/root/b59_regression_fix",
       "workspace": "../b56-owned-dir-remedy",
-      "current_task": "Coherent strict file consumers integrated7b13; Main21PASS. Remaining old typed fixtures/native-history/cold compatibility qualification.",
+      "current_task": "WS1 complete prospective batch; native controls before1P2F after3P; permutation/restriction/public proof next",
       "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
-      "execution_state": "HELD: Owner serial item6; exact next task/pin retained"
+      "execution_state": "ACTIVE WS1"
     },
     "privacy_visibility": {
       "agent": "/root/b64_visibility_retirement",
@@ -42,7 +42,7 @@
       "agent": "B66 /root/b64_action_resume",
       "workspace": "../b64-action-typed",
       "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
-      "execution_state": "NEXT: sole serial implementation owner, resume716752b5; no Main shared hotspot edits"
+      "execution_state": "ACTIVE WS3 prospective format/initializer and cards"
     },
     "main": {
       "agent": "Main",
@@ -64,7 +64,7 @@
         "Use existing 0700 resources, max 4 heavy jobs/8 workers, at least 8 GiB RAM/disk; status short, handoff <=15 lines; routine authorized work continues.",
         "Use actual visible inputs and declared operator facts; no English decision fallback, fake authority, paid runs, or uncertain-effect replay."
       ],
-      "execution_state": "Main source batch complete/scoped accepted; I03537 Owner decision BLOCKED; no active implementation"
+      "execution_state": "ACTIVE WS2 saved Read applicability/public Resume/Replace"
     }
   },
   "heavy_slots": {
@@ -1463,7 +1463,7 @@
     "record": "Main explicit Held callers/owned currentness extraction: scoped tsc0; initial composed101P9test-adapterF\u2192Read-host9P; native19P2fixtureF\u2192affected10P; receipt dropped configuration port actualbefore0P1F\u2192fullreceipt21P +coldInput7P; affectedcoverage2P; coldVersion17NOT_REACHED empty unreviewed syntheticcatalog. Raw failures preserved under /var/tmp/synapsor-b64-main-access-owned/evidence; BC19067 vs19069; R2 complete SA review/public closure OPEN; no English count credit.",
     "next": "Serial item2 D01 UPDATE and supported public cases; initializer format decision queued; no other implementation active."
   },
-  "controlling_mode": "SERIAL",
+  "controlling_mode": "PARALLEL_COMPLETION_4_WORKSTREAMS",
   "serial_decision_queue": {
     "B53_extension_format": [
       "R2 design review, then Owner decision required; no implementation approval inferred.",
@@ -1511,7 +1511,7 @@
     ]
   },
   "serial_current_item": 7,
-  "serial_state": "OVERNIGHT SERIAL PASS CLOSED: all7 finished at scoped level or clearlyblocked. Every lane HOLD, paid CLOSED; no active tests/Runner/model/worker. Main accepted00bd unchanged, ActionWIP private/unintegrated.",
+  "serial_state": "HISTORICAL: superseded by Owner 8b31; original scoped results retained.",
   "serial_main_retirement": {
     "status": "INTEGRATED_SCOPED_SOURCE_COMPONENT_ACCEPT_PUBLIC_OPEN",
     "base": "2392f7df",
@@ -1543,5 +1543,21 @@
     "report": "b65-native-review/docs/development/b65-serial7-mysql/RESULTS.json",
     "report_sha256": "780c6c7241fabc858331cd2102c03146dc0dc430a1ced813c7c89b6217acfe49",
     "cases": "38:31NOTREACHED publicsetup +5PGgate/engineunsupported +1backendunsupported +1bounded reader-refusalPASS"
+  },
+  "controlling_owner_amendment": "/home/sandesh-tiwari/.codex/attachments/8b31a779-ca23-490f-bb29-47f7db03c762/Pasted text.txt",
+  "parallel_workstreams": {
+    "batch": "/root/b59_regression_fix: boundary-review-mutation.ts + batch tests",
+    "scope_resume": "Main: BC/Resume/native Read scope + tests",
+    "action_format_cards": "B66 01a11d25: single format coordinator, Action model/checkpoint/meaning/cards; no Main hotspots",
+    "runtime_native": "Runtime01a112d4 + independent Tester01a117fd: shared SUM experimental plan/native matrix"
+  },
+  "review_queue": "R2 01a114f6: only format/privacy/permission/concurrency; batched deliverables",
+  "owner_decisions_current": {
+    "D1": "APPROVED exact reviewed units existing records",
+    "D2": "APPROVED prospective staged initializer; single coordinated format owner",
+    "D3": "APPROVED exact transition meaning existing records",
+    "D4": "APPROVED scoped host-only known identity context, no blanket exemptions",
+    "D5": "APPROVED scoped nested history through protected loader",
+    "D6": "CONDITIONAL after R2 format acceptance; existing experiment accounting unchanged"
   }
 }

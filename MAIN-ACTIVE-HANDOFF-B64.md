@@ -1,15 +1,15 @@
-B64/B65 SERIAL OVERNIGHT CLOSED — all7 scoped-finished/clearlyblocked; every lane HOLD, paid CLOSED; no active tests/Runner/model/worker. No freeze/release qualification.
-Pins: acceptedMain00bdc02f (codex/b64-shared-access-main-hooks-20261009); ActionWIPa9a87003/c8product (codex/b64-action-adapters-serial-20261010) private/unintegrated; cards8ab/details966 privateWIP; frozen untouched.
+B64/B65 PARALLEL COMPLETION ACTIVE — Owner 8b31 supersedes serial-night HOLD; paid CLOSED; frozen candidates/history/jobs/holds preserved.
+Pins: accepted Main00bdc02f untouched; working Main d87e9564 (Action WIP remains unintegrated); batch owner994bb1b3; no freeze/release claim.
 Windows unchanged: B64 2026-10-08T06:32:23Z→2026-10-13T06:32:23Z; B65 2026-10-08T16:56:15Z→2026-10-12T16:56:15Z.
-#1 English→0: accepted remaining Main1typed/0delete (I03537 Owner privacy decision), Action28typed/5delete; Read/Ask/Chat/Privacy source0/0. R2 Action bounded source/component accepted; no integration/count decrement.
-#2 Cards: real correction raw/history+diff/public proof OPEN, not integrated. #3 /details: native/index ACCEPT; full historical payload capability needs Owner decision/public dispatch OPEN.
-#4 Full suite QUEUED coherent final integration. #5 real Terra needs Owner approval/accepted artifact; paid CLOSED.
-#6 PG arithmetic: D01 saved Resume READ_SCOPE_REVIEW_CHANGED/0dispatches; INSERT3 initializer-format BLOCKED; UPDATE2 NOTREACHED; no55/50/40/45/55 verdict claimed.
-#7 actual-writer readiness scoped ACCEPT; #8 portable identity unproven report; #9 T01–T10 queued. #14 MySQL BLOCKED READ_SCOPE_REVIEW_CHANGED;38rows:31setupNOTREACHED/5PGgate+engineunsupported/1backendunsupported/1reader-refusalPASS.
-#10 B62 scoped25PASS/suggestion28P1F retained; #11 B53 extension format decision OPEN; #12 native65/128PASS-publicOPEN; #13 source_db scoped readback/setupOPEN.
-#15 typed contention ACCEPT; #16 vocabulary strict schema ACCEPT; #17 permits scoped233P/export26P/reload8P ACCEPT, coldVersion17 NOTREACHED/public6F retained; #18 MySQL source_db unknownCOMMIT truthfulunsupported.
-#19 Demo first break STRUCTURED_DRAFT_VALIDATION_FAILED: Read boundary batch temporarily empty; activation/agent/worker/edit NOTREACHED, Source/business unchanged (Tester8ee901db).
-Action actual final profile370P15F1skip/5files +SafeAction16P separate; scopedBCtypes0. I01951 Replace English route OPEN;9 oracle migrations/4transport prerequisites/1initializer format unresolved; original failures preserved.
-Decisions≤10lines each in docs/development/b64-english-inventory/LANES.json: initializer/B53/history payload/Resume identity/Action unit/transition. Main current public generator missing structuredScope; no seed/waiver.
-NEXT: native failing-before for preserved PG/MySQL saved-scope continuation, inspect public generation/save binding; no old reply/effect replay. Evidence SERIAL-RESULT.md +MORNING-REPORT.md +Tester12111c4b/serial7 RESULTS780c6c72 +R2 Actionf5a4de4b.
-Standing ceremony: small fixes tests+one-line samecommit; review batched/deliverable; fullseal only format/security/permission/concurrency/paid/customerdata; private backup only/no deletion/grant widening/frozen change.
+WS1 batch /root/b59_regression_fix: complete prospective candidate before final validation; before1P2F→after3P; permutations/restrictions/public entry proof next.
+WS2 Main: native saved Read current/stale-inspectable/unavailable + public Resume/Replace; historical load is not authority; failing-before and protected save bindings next.
+WS3 B66 01a11d25: single FORMAT owner; D2 staged initializer + typed unit/transition + Action cards/raw history; Main owns BC/Resume codec hooks.
+WS4 Runtime01a112d4 + native Tester01a117fd: experimental shared SUM Source protection + native matrix preparation; public arithmetic waits on integrated Bug2/D2.
+R2 01a114f6 sole high-risk queue: Bug2 matrix4070440d DESIGN_NOTRUN; D2 format then shared SUM concurrency; small local fixes need no review gate.
+D1/D3 exact units/transitions APPROVED; D2 prospective initializer APPROVED; D4 scoped host identity context and D5 protected nested /details APPROVED; D6 conditional R2 format acceptance.
+#1 remaining accepted English Main1typed/0delete, Action28typed/5delete; Read/Ask/Chat/Privacy0/0. Action370P15F1skip retained, not integration PASS.
+#2 cards/raw-history+diff/public OPEN; #3 details protected full-history/public OPEN; #4 coherent types/full OPEN (357diagnostics/93paths retained); #5 paid CLOSED.
+#6 PG55refuse/50/40/45/55refuse NOTREACHED; #7 writer readiness scoped ACCEPT; #8 portable identity unproven; #9/#14 matrices partial; #18 MySQL source_db unknownCOMMIT unsupported.
+#10 prompts scoped ACCEPT; #11 D6 extension lowerpriority; #12 native65/128 publicOPEN; #13 receipt readback publicOPEN; #15 contention/#16 vocabulary/#17 permits scoped ACCEPT; #19 demo first batch break preserved.
+NEXT Main: type-only native failure API d87e9564; failing-before stale history/Replace + currentness/invalid-proof controls; integrate reviewed repairs then actual public proof without replay.
+Standing: small fixes tests+one-line samecommit; independent review only format/privacy/permission/concurrency; ≤4heavy/≤8workers/run/≥8GiB; docs-excluded snapshots; private push; cleanup only classified closed resources after review.
