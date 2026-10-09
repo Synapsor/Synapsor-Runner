@@ -11,6 +11,7 @@ import { createActionRuleCompiler } from "./compile.js";
 import { ActionRuleError } from "./errors.js";
 import { ACTION_AUTHORITY_LIMITS } from "./limits.js";
 import { parseReviewedSharedSum, type ReviewedSharedSumV1 } from "./shared-sum-designation.js";
+import { parseReviewedWeightedSharedSum, REVIEWED_WEIGHTED_SHARED_SUM_VERSION, type ReviewedWeightedSharedSumV2 } from "./weighted-shared-sum-designation.js";
 import {
   normalizeActionRule,
   normalizeActionRuleCatalog,
@@ -31,6 +32,8 @@ export const SEMANTIC_ACTION_BOUNDARY_VERSION = "synapsor.semantic-action-bounda
 export const ACTION_RULE_AUTHORITY_VERSION = "synapsor.action-rule-authority.v1" as const;
 export const REVIEWED_ACTION_RULE_AUTHORITY_VERSION = "synapsor.action-rule-authority.v2" as const;
 export const REVIEWED_SEMANTIC_ACTION_BOUNDARY_VERSION = "synapsor.semantic-action-boundary.v2" as const;
+export const WEIGHTED_ACTION_RULE_AUTHORITY_VERSION = "synapsor.action-rule-authority.v3" as const;
+export const WEIGHTED_SEMANTIC_ACTION_BOUNDARY_VERSION = "synapsor.semantic-action-boundary.v3" as const;
 
 export type SemanticActionBoundaryRuleV1 = {
   outcome: string;
@@ -52,7 +55,8 @@ export type SemanticActionBoundaryV1 = {
   rules: SemanticActionBoundaryRuleV1[];
   digest: `sha256:${string}`;
 } & ({ schema_version: typeof SEMANTIC_ACTION_BOUNDARY_VERSION; shared_sum_digest?: never }
-  | { schema_version: typeof REVIEWED_SEMANTIC_ACTION_BOUNDARY_VERSION; shared_sum_digest: `sha256:${string}` });
+  | { schema_version: typeof REVIEWED_SEMANTIC_ACTION_BOUNDARY_VERSION; shared_sum_digest: `sha256:${string}` }
+  | { schema_version: typeof WEIGHTED_SEMANTIC_ACTION_BOUNDARY_VERSION; shared_sum_digest: `sha256:${string}` });
 
 export type ActionRuleAuthoritySourceV1 = {
   read_boundary_name: string;
@@ -72,7 +76,8 @@ export type ActionRuleAuthorityV1 = {
   approval_classes: ActionRuleApprovalClassSourceV1[];
   digest: `sha256:${string}`;
 } & ({ schema_version: typeof ACTION_RULE_AUTHORITY_VERSION; shared_sum?: never }
-  | { schema_version: typeof REVIEWED_ACTION_RULE_AUTHORITY_VERSION; shared_sum: ReviewedSharedSumV1 });
+  | { schema_version: typeof REVIEWED_ACTION_RULE_AUTHORITY_VERSION; shared_sum: ReviewedSharedSumV1 }
+  | { schema_version: typeof WEIGHTED_ACTION_RULE_AUTHORITY_VERSION; shared_sum: ReviewedWeightedSharedSumV2 });
 
 export type LoadedActionRuleAuthorityV1 = {
   authority: ActionRuleAuthorityV1;
@@ -85,7 +90,7 @@ export function createActionRuleAuthority(input: {
   catalog: ActionRuleCatalogV1;
   rules: ActionRuleAuthoritySourceV1[];
   approval_classes?: ActionRuleApprovalClassSourceV1[];
-  shared_sum?: ReviewedSharedSumV1;
+  shared_sum?: ReviewedSharedSumV1 | ReviewedWeightedSharedSumV2;
 }): LoadedActionRuleAuthorityV1 {
   const name = safeName(input.name, "Action Rule authority");
   const actionBoundaryName = safeName(input.action_boundary_name, "semantic Action Boundary");
@@ -97,7 +102,10 @@ export function createActionRuleAuthority(input: {
     throw new ActionRuleError("ACTION_RULE_INVALID", "Action Rule authority exceeds the supported 64 MiB source budget.");
   }
   const catalog = normalizeActionRuleCatalog(input.catalog);
-  const sharedSum = input.shared_sum === undefined ? undefined : parseReviewedSharedSum(input.shared_sum);
+  const sharedSum = input.shared_sum === undefined ? undefined
+    : input.shared_sum.schema_version === REVIEWED_WEIGHTED_SHARED_SUM_VERSION
+      ? parseReviewedWeightedSharedSum(input.shared_sum) : parseReviewedSharedSum(input.shared_sum);
+  const weighted = sharedSum?.schema_version === REVIEWED_WEIGHTED_SHARED_SUM_VERSION;
   const sources = input.rules.map((entry) => ({
     read_boundary_name: safeName(entry.read_boundary_name, "Read Boundary"),
     read_boundary_digest: digest(entry.read_boundary_digest, "Read Boundary digest"),
@@ -156,7 +164,8 @@ export function createActionRuleAuthority(input: {
   })).sort((left, right) => left.outcome.localeCompare(right.outcome));
   const actionBoundaryMaterial = {
     ...(sharedSum === undefined ? { schema_version: SEMANTIC_ACTION_BOUNDARY_VERSION }
-      : { schema_version: REVIEWED_SEMANTIC_ACTION_BOUNDARY_VERSION, shared_sum_digest: canonicalJsonDigest(sharedSum) }),
+      : { schema_version: weighted ? WEIGHTED_SEMANTIC_ACTION_BOUNDARY_VERSION : REVIEWED_SEMANTIC_ACTION_BOUNDARY_VERSION,
+          shared_sum_digest: canonicalJsonDigest(sharedSum) }),
     name: actionBoundaryName,
     rules: actionRules,
   } as const;
@@ -179,7 +188,9 @@ export function createActionRuleAuthority(input: {
   });
   const material = {
     ...(sharedSum === undefined ? { schema_version: ACTION_RULE_AUTHORITY_VERSION }
-      : { schema_version: REVIEWED_ACTION_RULE_AUTHORITY_VERSION, shared_sum: sharedSum }),
+      : sharedSum.schema_version === REVIEWED_WEIGHTED_SHARED_SUM_VERSION
+        ? { schema_version: WEIGHTED_ACTION_RULE_AUTHORITY_VERSION, shared_sum: sharedSum }
+        : { schema_version: REVIEWED_ACTION_RULE_AUTHORITY_VERSION, shared_sum: sharedSum }),
     name,
     catalog,
     action_boundary: actionBoundary,
@@ -200,7 +211,8 @@ export function parseActionRuleAuthority(
   expectedDigest?: string,
 ): LoadedActionRuleAuthorityV1 {
   if (!isRecord(value)) throw invalidAuthority();
-  const reviewed = value.schema_version === REVIEWED_ACTION_RULE_AUTHORITY_VERSION;
+  const weighted = value.schema_version === WEIGHTED_ACTION_RULE_AUTHORITY_VERSION;
+  const reviewed = weighted || value.schema_version === REVIEWED_ACTION_RULE_AUTHORITY_VERSION;
   const record = exactRecord(value, [
     "schema_version",
     "name",
@@ -229,7 +241,8 @@ export function parseActionRuleAuthority(
     catalog: record.catalog as ActionRuleCatalogV1,
     rules: record.rules as ActionRuleAuthoritySourceV1[],
     approval_classes: record.approval_classes as ActionRuleApprovalClassSourceV1[],
-    ...(reviewed ? { shared_sum: parseReviewedSharedSum(record.shared_sum) } : {}),
+    ...(reviewed ? { shared_sum: weighted ? parseReviewedWeightedSharedSum(record.shared_sum)
+      : parseReviewedSharedSum(record.shared_sum) } : {}),
   });
   if (record.digest !== loaded.authority.digest
     || expectedDigest !== undefined && expectedDigest !== loaded.authority.digest
@@ -240,7 +253,7 @@ export function parseActionRuleAuthority(
   return loaded;
 }
 
-function assertSharedSumDependencies(sharedSum: ReviewedSharedSumV1, catalog: ActionRuleCatalogV1,
+function assertSharedSumDependencies(sharedSum: ReviewedSharedSumV1 | ReviewedWeightedSharedSumV2, catalog: ActionRuleCatalogV1,
   sources: ActionRuleAuthoritySourceV1[]): void {
   const confirmation = sharedSum.confirmation;
   if (confirmation.catalog_digest !== canonicalJsonDigest(catalog)

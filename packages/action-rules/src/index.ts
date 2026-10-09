@@ -1,8 +1,10 @@
 export {
   ACTION_RULE_AUTHORITY_VERSION,
   REVIEWED_ACTION_RULE_AUTHORITY_VERSION,
+  WEIGHTED_ACTION_RULE_AUTHORITY_VERSION,
   SEMANTIC_ACTION_BOUNDARY_VERSION,
   REVIEWED_SEMANTIC_ACTION_BOUNDARY_VERSION,
+  WEIGHTED_SEMANTIC_ACTION_BOUNDARY_VERSION,
   createActionRuleAuthority,
   parseActionRuleAuthority,
   type ActionRuleAuthoritySourceV1,
@@ -79,6 +81,9 @@ export { WEIGHTED_SHARED_SUM_DESIGNATION_VERSION, REVIEWED_WEIGHTED_SHARED_SUM_V
   type WeightedSharedSumUnitV2, type WeightedSharedSumValuationV2, type WeightedSharedSumPopulationV2,
   type WeightedSharedSumMeasureV2, type WeightedSharedSumDesignationV2, type ReviewedWeightedSharedSumV2,
 } from "./weighted-shared-sum-designation.js";
+export { assertReviewedWeightedSharedSumRegistry, deriveReviewedWeightedSharedSumProtection,
+  resolveReviewedWeightedSharedSumProtection, checkReviewedWeightedSharedSumPostState,
+  reviewedWeightedSharedSumGuardIdentity, type ReviewedWeightedSharedSumProtection } from "./weighted-protection.js";
 export { validateActionRuleInputs } from "./inputs.js";
 export { actionRuleRelationshipPairs } from "./relationships.js";
 export { actionRuleEffectEnvelopes, actionRuleEffects, MAX_ATOMIC_UPDATE_TARGETS } from "./atomic-updates.js";

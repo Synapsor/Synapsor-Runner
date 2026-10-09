@@ -4,11 +4,14 @@ import { ActionRuleError } from "./errors.js";
 import { assertActionDiscoveryContractFits } from "./discovery.js";
 import { ACTION_AUTHORITY_LIMITS } from "./limits.js";
 import { parseReviewedSharedSum, type ReviewedSharedSumV1 } from "./shared-sum-designation.js";
+import { parseReviewedWeightedSharedSum, REVIEWED_WEIGHTED_SHARED_SUM_VERSION, type ReviewedWeightedSharedSumV2 } from "./weighted-shared-sum-designation.js";
 import { assertReviewedSharedSumRegistry } from "./reviewed-shared-sum.js";
+import { assertReviewedWeightedSharedSumRegistry } from "./weighted-protection.js";
 import {
   ACTION_RULE_APPROVAL_CLASS_VERSION,
   ACTION_RULE_REGISTRY_VERSION,
   REVIEWED_ACTION_RULE_REGISTRY_VERSION,
+  WEIGHTED_ACTION_RULE_REGISTRY_VERSION,
   type ActionRuleApprovalClassSourceV1,
   type ActivatedActionRuleApprovalClassV1,
   type ActivatedActionRuleV1,
@@ -19,6 +22,18 @@ import {
 const QUALIFIED_NAME = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$/u;
 const ROLE_NAME = /^[A-Za-z_][A-Za-z0-9_.:-]{0,159}$/u;
 const LIMIT_ID = /^[A-Za-z][A-Za-z0-9_.-]{0,79}$/u;
+type ReviewedSharedSumRecord = ReviewedSharedSumV1 | ReviewedWeightedSharedSumV2;
+
+function sharedSumMaterial(value: ReviewedSharedSumRecord | undefined) {
+  return value === undefined ? { schema_version: ACTION_RULE_REGISTRY_VERSION }
+    : value.schema_version === REVIEWED_WEIGHTED_SHARED_SUM_VERSION
+      ? { schema_version: WEIGHTED_ACTION_RULE_REGISTRY_VERSION, shared_sum: parseReviewedWeightedSharedSum(value) }
+      : { schema_version: REVIEWED_ACTION_RULE_REGISTRY_VERSION, shared_sum: parseReviewedSharedSum(value) };
+}
+function assertSharedSumRegistry(registry: RuntimeActionRuleRegistryV1): void {
+  if (registry.schema_version === WEIGHTED_ACTION_RULE_REGISTRY_VERSION) assertReviewedWeightedSharedSumRegistry(registry);
+  else assertReviewedSharedSumRegistry(registry);
+}
 
 const registryIndexes = new WeakMap<RuntimeActionRuleRegistryV1, {
   rules: Map<string, ActivatedActionRuleV1>;
@@ -207,11 +222,10 @@ export function actionRuleRegistryDigest(input: {
   name: string;
   rules: ActivatedActionRuleV1[];
   approval_classes: ActivatedActionRuleApprovalClassV1[];
-  shared_sum?: ReviewedSharedSumV1;
+  shared_sum?: ReviewedSharedSumRecord;
 }): `sha256:${string}` {
   return canonicalJsonDigest({
-    ...(input.shared_sum === undefined ? { schema_version: ACTION_RULE_REGISTRY_VERSION }
-      : { schema_version: REVIEWED_ACTION_RULE_REGISTRY_VERSION, shared_sum: parseReviewedSharedSum(input.shared_sum) }),
+    ...sharedSumMaterial(input.shared_sum),
     name: input.name,
     rules: canonicalRules(input.rules),
     approval_classes: canonicalApprovalClasses(input.approval_classes),
@@ -222,7 +236,7 @@ export function createActionRuleRegistry(input: {
   name: string;
   rules: ActivatedActionRuleInputV1[];
   approval_classes?: ActivatedActionRuleApprovalClassV1[];
-  shared_sum?: ReviewedSharedSumV1;
+  shared_sum?: ReviewedSharedSumRecord;
 }): RuntimeActionRuleRegistryV1 {
   if (input.rules.length > ACTION_AUTHORITY_LIMITS.rules) {
     throw new ActionRuleError("ACTION_RULE_INVALID", `Action Rule registry exceeds ${ACTION_AUTHORITY_LIMITS.rules} reviewed rules.`);
@@ -274,17 +288,17 @@ export function createActionRuleRegistry(input: {
   }
   const canonicalRuleList = canonicalRules(rules);
   const canonicalClassList = canonicalApprovalClasses(approvalClasses);
-  const sharedSum = input.shared_sum === undefined ? undefined : parseReviewedSharedSum(input.shared_sum);
+  const sharedMaterial = sharedSumMaterial(input.shared_sum);
+  const sharedSum = sharedMaterial.shared_sum;
   const registry: RuntimeActionRuleRegistryV1 = {
-    ...(sharedSum === undefined ? { schema_version: ACTION_RULE_REGISTRY_VERSION }
-      : { schema_version: REVIEWED_ACTION_RULE_REGISTRY_VERSION, shared_sum: sharedSum }),
+    ...sharedMaterial,
     name: input.name,
     digest: actionRuleRegistryDigest({ name: input.name, rules: canonicalRuleList, approval_classes: canonicalClassList,
       ...(sharedSum === undefined ? {} : { shared_sum: sharedSum }) }),
     rules: canonicalRuleList,
     approval_classes: canonicalClassList,
   };
-  assertReviewedSharedSumRegistry(registry);
+  assertSharedSumRegistry(registry);
   return indexImmutableRegistry(registry);
 }
 
@@ -310,10 +324,13 @@ function indexImmutableRegistry(value: RuntimeActionRuleRegistryV1): RuntimeActi
 function assertRegistryIntegrity(registry: RuntimeActionRuleRegistryV1): void {
   if (registryIndexes.has(registry)) return;
   const expectedKeys = ["schema_version", "name", "digest", "rules", "approval_classes",
-    ...(registry.schema_version === REVIEWED_ACTION_RULE_REGISTRY_VERSION ? ["shared_sum"] : [])].sort();
+    ...(registry.schema_version === REVIEWED_ACTION_RULE_REGISTRY_VERSION
+      || registry.schema_version === WEIGHTED_ACTION_RULE_REGISTRY_VERSION ? ["shared_sum"] : [])].sort();
   if (canonicalJsonStringify(Object.keys(registry).sort()) !== canonicalJsonStringify(expectedKeys)
     || (registry.shared_sum === undefined ? registry.schema_version !== ACTION_RULE_REGISTRY_VERSION
-      : registry.schema_version !== REVIEWED_ACTION_RULE_REGISTRY_VERSION)) {
+      : registry.shared_sum.schema_version === REVIEWED_WEIGHTED_SHARED_SUM_VERSION
+        ? registry.schema_version !== WEIGHTED_ACTION_RULE_REGISTRY_VERSION
+        : registry.schema_version !== REVIEWED_ACTION_RULE_REGISTRY_VERSION)) {
     throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The activated Action Rule registry has an unsupported authority version.");
   }
   const expected = actionRuleRegistryDigest({
@@ -326,7 +343,7 @@ function assertRegistryIntegrity(registry: RuntimeActionRuleRegistryV1): void {
     throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The activated Action Rule registry failed its integrity check.");
   }
   registry.approval_classes.forEach(assertApprovalClassIntegrity);
-  assertReviewedSharedSumRegistry(registry);
+  assertSharedSumRegistry(registry);
 }
 
 export function snapshotActionRuleRegistry(registry: RuntimeActionRuleRegistryV1): RuntimeActionRuleRegistryV1 {

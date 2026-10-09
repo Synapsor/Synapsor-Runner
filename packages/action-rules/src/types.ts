@@ -14,6 +14,7 @@ export const ACTION_RULE_CATALOG_VERSION = "synapsor.action-rule-catalog.v1" as 
 export const COMPILED_ACTION_RULE_VERSION = "synapsor.compiled-action-rule.v1" as const;
 export const ACTION_RULE_REGISTRY_VERSION = "synapsor.action-rule-registry.v1" as const;
 export const REVIEWED_ACTION_RULE_REGISTRY_VERSION = "synapsor.action-rule-registry.v2" as const;
+export const WEIGHTED_ACTION_RULE_REGISTRY_VERSION = "synapsor.action-rule-registry.v3" as const;
 export const ACTION_RULE_APPROVAL_CLASS_VERSION = "synapsor.action-rule-approval-class.v1" as const;
 
 export type ActionRuleCatalogFieldV1 = {
@@ -256,4 +257,6 @@ export type RuntimeActionRuleRegistryV1 = {
   approval_classes: ActivatedActionRuleApprovalClassV1[];
 } & ({ schema_version: typeof ACTION_RULE_REGISTRY_VERSION; shared_sum?: never }
   | { schema_version: typeof REVIEWED_ACTION_RULE_REGISTRY_VERSION;
-      shared_sum: import("./shared-sum-designation.js").ReviewedSharedSumV1 });
+      shared_sum: import("./shared-sum-designation.js").ReviewedSharedSumV1 }
+  | { schema_version: typeof WEIGHTED_ACTION_RULE_REGISTRY_VERSION;
+      shared_sum: import("./weighted-shared-sum-designation.js").ReviewedWeightedSharedSumV2 });
