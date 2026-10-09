@@ -1,0 +1,276 @@
+{
+  "scope": "Per-site retirement closure; no full-lane/native activation/Source continuity claim",
+  "branch_pin_before_packet": "5494bc13594d84dbb4ea9294f4310940219d1ae1",
+  "Main_observed_pin": "065ad6eda2dfbbd220adad85e976be4b7fba948b",
+  "product_blobs": {
+    "apps/runner/src/explore-vocabulary.ts": "d4232cc1dde1ca7c177b887dc89a6a1aa798c975",
+    "packages/schema-inspector/src/index.ts": "b4f35046594312cb08166ad06dec01e6d484ee17"
+  },
+  "counts_remaining": {
+    "owned_source_implementation": {
+      "typed": 0,
+      "delete": 0
+    },
+    "independent_source_component_scope": {
+      "typed": 15,
+      "delete": 0
+    },
+    "Main_coherent_consumers": {
+      "typed": 21,
+      "delete": 2
+    },
+    "canonical_Main_ledger_before_update": {
+      "typed": 23,
+      "delete": 2
+    }
+  },
+  "count_meaning": "Independent source/component acceptance closes vocabulary6+2 and inspector2 only at that scope. Inspector2 exact name-guess removal is already in Main; vocabulary6+2 consumer integration remains open. Auto15 is Main-owned now and remains pending coherent native/fullscope qualification. Do not conflate product blob presence with working consumers.",
+  "sites": [
+    {
+      "id": "I00048",
+      "file": "apps/runner/src/explore-vocabulary.ts",
+      "disposition": "replace_with_typed",
+      "historical_disposition": "replace_with_typed",
+      "source_status": "complete",
+      "replacement": "Placeholder/name-shape classifiers removed; metadata-only profile/counts; actual native scope owner establishes meaning",
+      "independent_status": "accepted within exact source/component scope",
+      "independent_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-ae226-5494-native-vocabulary-independent-v1.json",
+      "Main_product_blob_equal_accepted_source": true,
+      "Main_consumer_status": "open: removed exports still imported in Main boundary commands/local UI and frontend still infers label readiness",
+      "owned_source_gap": null,
+      "proof": [
+        "owner native3 plus host9/question8; R2 independent2; legacy vocabulary18 and strict targeted types0"
+      ]
+    },
+    {
+      "id": "I00049",
+      "file": "apps/runner/src/explore-vocabulary.ts",
+      "disposition": "replace_with_typed",
+      "historical_disposition": "replace_with_typed",
+      "source_status": "complete",
+      "replacement": "Placeholder/name-shape classifiers removed; metadata-only profile/counts; actual native scope owner establishes meaning",
+      "independent_status": "accepted within exact source/component scope",
+      "independent_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-ae226-5494-native-vocabulary-independent-v1.json",
+      "Main_product_blob_equal_accepted_source": true,
+      "Main_consumer_status": "open: removed exports still imported in Main boundary commands/local UI and frontend still infers label readiness",
+      "owned_source_gap": null,
+      "proof": [
+        "owner native3 plus host9/question8; R2 independent2; legacy vocabulary18 and strict targeted types0"
+      ]
+    },
+    {
+      "id": "I00050",
+      "file": "apps/runner/src/explore-vocabulary.ts",
+      "disposition": "replace_with_typed",
+      "historical_disposition": "replace_with_typed",
+      "source_status": "complete",
+      "replacement": "Placeholder/name-shape classifiers removed; metadata-only profile/counts; actual native scope owner establishes meaning",
+      "independent_status": "accepted within exact source/component scope",
+      "independent_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-ae226-5494-native-vocabulary-independent-v1.json",
+      "Main_product_blob_equal_accepted_source": true,
+      "Main_consumer_status": "open: removed exports still imported in Main boundary commands/local UI and frontend still infers label readiness",
+      "owned_source_gap": null,
+      "proof": [
+        "owner native3 plus host9/question8; R2 independent2; legacy vocabulary18 and strict targeted types0"
+      ]
+    },
+    {
+      "id": "I00051",
+      "file": "apps/runner/src/explore-vocabulary.ts",
+      "disposition": "replace_with_typed",
+      "historical_disposition": "replace_with_typed",
+      "source_status": "complete",
+      "replacement": "Placeholder/name-shape classifiers removed; metadata-only profile/counts; actual native scope owner establishes meaning",
+      "independent_status": "accepted within exact source/component scope",
+      "independent_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-ae226-5494-native-vocabulary-independent-v1.json",
+      "Main_product_blob_equal_accepted_source": true,
+      "Main_consumer_status": "open: removed exports still imported in Main boundary commands/local UI and frontend still infers label readiness",
+      "owned_source_gap": null,
+      "proof": [
+        "owner native3 plus host9/question8; R2 independent2; legacy vocabulary18 and strict targeted types0"
+      ]
+    },
+    {
+      "id": "I00052",
+      "file": "apps/runner/src/explore-vocabulary.ts",
+      "disposition": "replace_with_typed",
+      "historical_disposition": "replace_with_typed",
+      "source_status": "complete",
+      "replacement": "Placeholder/name-shape classifiers removed; metadata-only profile/counts; actual native scope owner establishes meaning",
+      "independent_status": "accepted within exact source/component scope",
+      "independent_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-ae226-5494-native-vocabulary-independent-v1.json",
+      "Main_product_blob_equal_accepted_source": true,
+      "Main_consumer_status": "open: removed exports still imported in Main boundary commands/local UI and frontend still infers label readiness",
+      "owned_source_gap": null,
+      "proof": [
+        "owner native3 plus host9/question8; R2 independent2; legacy vocabulary18 and strict targeted types0"
+      ]
+    },
+    {
+      "id": "I00053",
+      "file": "apps/runner/src/explore-vocabulary.ts",
+      "disposition": "replace_with_typed",
+      "historical_disposition": "replace_with_typed",
+      "source_status": "complete",
+      "replacement": "Placeholder/name-shape classifiers removed; metadata-only profile/counts; actual native scope owner establishes meaning",
+      "independent_status": "accepted within exact source/component scope",
+      "independent_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-ae226-5494-native-vocabulary-independent-v1.json",
+      "Main_product_blob_equal_accepted_source": true,
+      "Main_consumer_status": "open: removed exports still imported in Main boundary commands/local UI and frontend still infers label readiness",
+      "owned_source_gap": null,
+      "proof": [
+        "owner native3 plus host9/question8; R2 independent2; legacy vocabulary18 and strict targeted types0"
+      ]
+    },
+    {
+      "id": "I00054",
+      "file": "apps/runner/src/explore-vocabulary.ts",
+      "disposition": "delete",
+      "historical_disposition": "legitimate; R1 reclassified as semantic advisory decision, subsequently deleted",
+      "source_status": "complete",
+      "replacement": "Coded-value classifier removed; schema enum spelling does not create advisory meaning status",
+      "independent_status": "accepted within exact source/component scope",
+      "independent_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-ae226-5494-native-vocabulary-independent-v1.json",
+      "Main_product_blob_equal_accepted_source": true,
+      "Main_consumer_status": "open: removed exports still imported in Main boundary commands/local UI and frontend still infers label readiness",
+      "owned_source_gap": null,
+      "proof": [
+        "owner native3 plus host9/question8; R2 independent2; legacy vocabulary18 and strict targeted types0"
+      ]
+    },
+    {
+      "id": "I00055",
+      "file": "apps/runner/src/explore-vocabulary.ts",
+      "disposition": "delete",
+      "historical_disposition": "legitimate; R1 reclassified as semantic advisory decision, subsequently deleted",
+      "source_status": "complete",
+      "replacement": "Coded-value classifier removed; schema enum spelling does not create advisory meaning status",
+      "independent_status": "accepted within exact source/component scope",
+      "independent_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-ae226-5494-native-vocabulary-independent-v1.json",
+      "Main_product_blob_equal_accepted_source": true,
+      "Main_consumer_status": "open: removed exports still imported in Main boundary commands/local UI and frontend still infers label readiness",
+      "owned_source_gap": null,
+      "proof": [
+        "owner native3 plus host9/question8; R2 independent2; legacy vocabulary18 and strict targeted types0"
+      ]
+    },
+    {
+      "id": "I02080",
+      "file": "packages/schema-inspector/src/index.ts",
+      "disposition": "replace_with_typed",
+      "historical_disposition": "replace_with_typed",
+      "source_status": "complete",
+      "replacement": "English tenant/conflict/immutable sets removed; normalizeColumn nominates no tenant/conflict role, and only exact catalog primary-key membership nominates immutable",
+      "independent_status": "accepted within exact source/component scope",
+      "independent_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-5d-2fb-full-inventory-source-artifact-independent-v1.json",
+      "Main_product_blob_equal_accepted_source": true,
+      "Main_consumer_status": "closed for this exact name-to-role retirement; whole-source inspection/activation qualification remains separately open under auto-boundary consumer obligations",
+      "owned_source_gap": null,
+      "proof": [
+        "original role/inventory7:6FAIL1PASS; accepted fullsource21 includes role4",
+        "current composition exact unchanged inspector14:14PASS"
+      ]
+    },
+    {
+      "id": "I02081",
+      "file": "packages/schema-inspector/src/index.ts",
+      "disposition": "replace_with_typed",
+      "historical_disposition": "replace_with_typed",
+      "source_status": "complete",
+      "replacement": "English tenant/conflict/immutable sets removed; normalizeColumn nominates no tenant/conflict role, and only exact catalog primary-key membership nominates immutable",
+      "independent_status": "accepted within exact source/component scope",
+      "independent_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-5d-2fb-full-inventory-source-artifact-independent-v1.json",
+      "Main_product_blob_equal_accepted_source": true,
+      "Main_consumer_status": "closed for this exact name-to-role retirement; whole-source inspection/activation qualification remains separately open under auto-boundary consumer obligations",
+      "owned_source_gap": null,
+      "proof": [
+        "original role/inventory7:6FAIL1PASS; accepted fullsource21 includes role4",
+        "current composition exact unchanged inspector14:14PASS"
+      ]
+    }
+  ],
+  "independent_reports": [
+    {
+      "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-ae226-5494-native-vocabulary-independent-v1.json",
+      "sha256": "bbb17d99f8c14dfab38d4b46d8412e0975173f3abb80825aa898a38f48ea7e64",
+      "verdict": "SCOPED_NATIVE_VOCABULARY_OWNER20_ARTIFACT_R2_INDEPENDENT2_AND_LEGACY18_CONTRACT_PORT_ACCEPT_NO_PRODUCT_CHANGE"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-5d-2fb-full-inventory-source-artifact-independent-v1.json",
+      "sha256": "1d67c2619001b04f57f41e908a92d9611440710234b12fbf7cb220e5caecead1",
+      "verdict": "SCOPED_SOURCE_AND_OWNER_COMPONENT_AFTER_ARTIFACT_ACCEPT; MAIN_NATIVE_PUBLIC_INTEGRATION_OPEN"
+    }
+  ],
+  "inspector_current_repeat": {
+    "tests": 14,
+    "passed": 14,
+    "failed": 0,
+    "test_source_pin": "2fb150c9 unchanged",
+    "log": "/var/tmp/b64-privacy-evidence/inspector-current-composition-after.log",
+    "sha256": "d03ba2666d68b17982b8b67428c32790b823f23262fc228b68d7f0748fcc80f5",
+    "network": "bwrap --unshare-net",
+    "workers": 1,
+    "MemAvailable_bytes": 20849590272,
+    "disk_available_bytes": 58567110656,
+    "slot": "launched on explicit2 grant; completed before reassignment to3, no surviving process"
+  },
+  "Main_hooks": [
+    {
+      "file": "apps/runner/src/boundary-commands.ts",
+      "observed_lines": [
+        163,
+        10312,
+        14436
+      ],
+      "change": "Remove retired exploreBoundaryVocabularyGaps import, automatic label repair and activation vocabulary gate; use existing exact native meaning assessment/missing delta. Missing optional labels must not require another question."
+    },
+    {
+      "file": "apps/runner/src/local-ui.ts",
+      "observed_lines": [
+        241,
+        976,
+        979
+      ],
+      "change": "Transferred narrow consumer to Privacy separate worktree: replace retired structural profile export with presentation metadata profile and honest vocabulary_metadata_profiles payload key."
+    },
+    {
+      "file": "apps/runner/src/boundary-workbench.ts",
+      "observed_lines": [
+        1039,
+        1067,
+        3886,
+        3934,
+        8895
+      ],
+      "change": "Main owns: consume metadata profiles; remove fabricated opaque default/readiness/blocking and automatic vocabulary-gap selection. Retain optional metadata counts without semantic grant."
+    },
+    {
+      "file": "apps/runner/src/scoped-explore.ts",
+      "observed_lines": [
+        493
+      ],
+      "change": "For explicit global boundary, fresh existing inspector verifySingleOrganization must not depend on a nonempty selected-resource subset."
+    },
+    {
+      "file": "apps/runner/src/boundary-commands.ts; apps/runner/src/local-ui.ts; apps/runner/src/guided-start.ts",
+      "change": "Fullscope consumer qualification: actual fresh existing loaded Source name/engine/env/schema/deployment/role under protected current operation; request full inventory only for explicit operator global intent, including after interactive choice. No absent-inventory default, readable-subset completeness, new query or physical-server continuity claim."
+    }
+  ],
+  "auto_pending_ids": [
+    "I00296",
+    "I00297",
+    "I00298",
+    "I00299",
+    "I00300",
+    "I00302",
+    "I00303",
+    "I00304",
+    "I00312",
+    "I00313",
+    "I00314",
+    "I00321",
+    "I00322",
+    "I00323",
+    "I00324"
+  ]
+}
