@@ -1,3 +1,4 @@
+import { parseExplorationBoundaryDraftArtifact } from "./auto-boundary.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { compileAgentDsl, formatAgentDsl } from "@synapsor/dsl";
@@ -2835,17 +2836,19 @@ async function readReviewedPendingActionBoundary(
   if (relativeRoot.startsWith("..") || path.isAbsolute(relativeRoot)) {
     throw new Error("GUIDED_ACTION_BOUNDARY_ROOT_INVALID: managed boundary root escapes the project.");
   }
-  const draft = await fs.readFile(
+  const draftArtifact = await fs.readFile(
     path.join(boundaryRoot, "exploration-boundary.draft.json"),
     "utf8",
   ).then(
-    (value) => JSON.parse(value) as ExplorationBoundaryDraft,
+    (value) => JSON.parse(value) as unknown,
     (error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT") return undefined;
       throw error;
     },
   );
-  if (!draft) return undefined;
+  if (draftArtifact === undefined) return undefined;
+  const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as import("./auto-boundary.js").GenerationLock;
+  const draft = parseExplorationBoundaryDraftArtifact(draftArtifact, lock);
   const progress = await readBoundaryReviewProgress(projectRoot, draft);
   const candidate = progress?.candidate ?? recommendedBoundaryReviewCandidate(draft);
   if (selector.boundaryName && candidate.pack.name !== selector.boundaryName) return undefined;

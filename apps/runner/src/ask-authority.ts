@@ -8,6 +8,7 @@ import {
 } from "./model-ask.js";
 import {
   explorationBoundaryCandidateDigest,
+  readOptionalExplorationDraft,
   loadActivatedExplorationBoundaries,
   type ActivatedExplorationBoundary,
   type ExplorationBoundaryDraft,
@@ -204,9 +205,7 @@ export async function resolveAskDeploymentProfile(
 ): Promise<AskDeploymentProfile> {
   if (configured) return configured;
   const active = (await optionalActiveBoundaries(projectRoot))[0];
-  const draft = await readOptionalJson(
-    path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"),
-  );
+  const draft = active ? undefined : await readOptionalExplorationDraft(projectRoot);
   const profile = active
     ? active.deployment_profile
     : isRecord(draft)
@@ -325,24 +324,13 @@ async function optionalActiveBoundaries(
       await policyStore.close();
     }
   }
-  const registry = await readOptionalJson(
-    path.join(projectRoot, ".synapsor/exploration-boundaries.active.json"),
-  );
-  if (registry !== null) {
-    if (!isRecord(registry)
-      || registry.schema_version !== "synapsor.active-exploration-boundaries.v1"
-      || !Array.isArray(registry.boundaries)
-      || registry.boundaries.length < 1
-      || registry.boundaries.length > 8) {
-      throw new AskError("ASK_AUTHORITY_FILE_INVALID", "Ask could not read a valid reviewed authority file.", 409);
-    }
-    return registry.boundaries.map((boundary, index) =>
-      activeBoundaryIdentity(boundary, `active boundary ${index + 1}`));
+  try {
+    const active = await loadActivatedExplorationBoundaries(projectRoot);
+    return active.map((boundary, index) => activeBoundaryIdentity(boundary, `active boundary ${index + 1}`));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
   }
-  const legacy = await readOptionalJson(
-    path.join(projectRoot, ".synapsor/exploration-boundary.active.json"),
-  );
-  return legacy === null ? [] : [activeBoundaryIdentity(legacy, "legacy active boundary")];
 }
 
 function activeBoundaryIdentity(

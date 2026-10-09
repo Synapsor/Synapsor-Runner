@@ -1,3 +1,4 @@
+import { parseExplorationBoundaryDraftArtifact } from "./auto-boundary.js";
 import type { BoundaryResourceReviewRequest, BoundaryReviewMutationBindings } from "./read-authoring-contract-types.js";
 export type { BoundaryResourceReviewRequest, BoundaryReviewMutationBindings } from "./read-authoring-contract-types.js";
 import fs from "node:fs/promises";
@@ -2583,8 +2584,8 @@ async function loadBoundaryReviewFiles(projectRoot: string, permit?: ProjectAuth
   if (stored && !stored.selected!.catalog) throw Object.assign(new Error(
     "This saved review needs its metadata catalog refreshed. Rescan before editing; file exports cannot replace its exact catalog."),
   { code: "POLICY_AUTHORING_CATALOG_MISSING" });
-  const [draft, lock, review] = await Promise.all([
-    stored?.selected?.draft ?? readJson<ExplorationBoundaryDraft>(
+  const [draftArtifact, lock, review] = await Promise.all([
+    stored?.selected?.draft ?? readJson<unknown>(
       path.join(boundaryRoot, "exploration-boundary.draft.json"),
       "exploration boundary draft",
     ),
@@ -2597,6 +2598,7 @@ async function loadBoundaryReviewFiles(projectRoot: string, permit?: ProjectAuth
       "boundary review report",
     ),
   ]);
+  const draft = stored?.selected?.draft ?? parseExplorationBoundaryDraftArtifact(draftArtifact, lock);
   const progress = stored?.selected?.progress ?? await readBoundaryReviewProgress(resolvedRoot, draft, permit);
   return {
     boundary_root: boundaryRoot,

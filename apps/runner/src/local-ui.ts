@@ -1,3 +1,4 @@
+import { parseExplorationBoundaryDraftArtifact, readOptionalExplorationDraft } from "./auto-boundary.js";
 import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
@@ -1500,7 +1501,7 @@ async function handleRequest(input: {
     }
     const stored = await readProjectReadAuthoring(projectRoot);
     const draft = stored?.selected?.draft ?? (stored ? undefined
-      : JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft);
+      : await readWorkbenchDraftArtifact(projectRoot, boundaryRoot));
     if (stored || (draft && await readBoundaryReviewProgress(projectRoot, draft))) {
       sendJson(response, 409, {
         ok: false,
@@ -1751,10 +1752,7 @@ async function handleRequest(input: {
       });
       return;
     }
-    const draft = JSON.parse(await fs.readFile(
-      path.join(boundaryRoot, "exploration-boundary.draft.json"),
-      "utf8",
-    )) as ExplorationBoundaryDraft;
+    const draft = await readWorkbenchDraftArtifact(projectRoot, boundaryRoot);
     const progress = await readBoundaryReviewProgress(projectRoot, draft);
     const candidate = progress?.candidate ?? recommendedBoundaryReviewCandidate(draft);
     const library = await synchronizeBoundaryLibrary({
@@ -3754,10 +3752,10 @@ async function handleRequest(input: {
     let gateway: AskToolGateway | undefined;
     try {
       const boundaries = await loadActivatedExplorationBoundaries(projectRoot);
-      const draft = await fs.readFile(
-        path.join(boundaryRoot, "exploration-boundary.draft.json"),
-        "utf8",
-      ).then((value) => JSON.parse(value) as ExplorationBoundaryDraft).catch(() => undefined);
+      const draft = await readWorkbenchDraftArtifact(projectRoot, boundaryRoot).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      });
       gateway = await askGatewayFactory({
         configPath,
         storePath,
@@ -4425,10 +4423,7 @@ async function handleRequest(input: {
     const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
     const options = body.authoring_catalog === true
       ? guidedActionOptionsFromCandidate({
-          candidate: JSON.parse(await fs.readFile(
-            path.join(boundaryRoot, "exploration-boundary.draft.json"),
-            "utf8",
-          )) as ExplorationBoundaryDraft,
+          candidate: await readWorkbenchDraftArtifact(projectRoot, boundaryRoot),
           inspection,
         })
       : await guidedActionOptions({
@@ -4485,10 +4480,7 @@ async function handleRequest(input: {
     const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
     const options = body.authoring_catalog === true
       ? guidedActionOptionsFromCandidate({
-          candidate: JSON.parse(await fs.readFile(
-            path.join(boundaryRoot, "exploration-boundary.draft.json"),
-            "utf8",
-          )) as ExplorationBoundaryDraft,
+          candidate: await readWorkbenchDraftArtifact(projectRoot, boundaryRoot),
           inspection,
         })
       : await guidedActionOptions({
@@ -4577,10 +4569,7 @@ async function handleRequest(input: {
     const inspection = await inspectGuidedProject(projectRoot, schemaInspector);
     const options = body.authoring_catalog === true
       ? guidedActionOptionsFromCandidate({
-          candidate: JSON.parse(await fs.readFile(
-            path.join(boundaryRoot, "exploration-boundary.draft.json"),
-            "utf8",
-          )) as ExplorationBoundaryDraft,
+          candidate: await readWorkbenchDraftArtifact(projectRoot, boundaryRoot),
           inspection,
         })
       : await guidedActionOptions({ projectRoot, inspection, allowReviewedPending: true });
@@ -7211,7 +7200,7 @@ async function resolveWorkbenchDeploymentProfile(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
   });
-  const draft = await readOptionalJson(path.join(projectRoot, "synapsor/generated/exploration-boundary.draft.json"));
+  const draft = active ? undefined : await readOptionalExplorationDraft(projectRoot);
   const profile = isRecord(active)
     ? active.deployment_profile
     : isRecord(draft)
@@ -7540,6 +7529,18 @@ function instantActivationActor(): string {
     : "local-developer";
 }
 
+async function readWorkbenchDraftArtifact(projectRoot: string, boundaryRoot: string): Promise<ExplorationBoundaryDraft> {
+  const raw = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8"));
+  let lock: GenerationLock;
+  try { lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock; }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      throw new Error("READ_BOUNDARY_ARTIFACT_INVALID: The present Workbench draft has no exact generation lock.", { cause: error });
+    throw error;
+  }
+  return parseExplorationBoundaryDraftArtifact(raw, lock);
+}
+
 async function readWorkbenchBoundaryReview(projectRoot: string, boundaryRoot: string): Promise<{
   draft: ExplorationBoundaryDraft; lock: GenerationLock; review: AutoBoundaryBuild["review"];
   progress: BoundaryReviewProgress | undefined; authoring?: ReadAuthoringBindings;
@@ -7551,7 +7552,7 @@ async function readWorkbenchBoundaryReview(projectRoot: string, boundaryRoot: st
     return { draft: stored.selected.draft, lock: stored.selected.draft_lock, progress: stored.selected.progress,
       review: stored.selected.catalog.review, authoring: stored.bindings };
   }
-  const draft = JSON.parse(await fs.readFile(path.join(boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
+  const draft = await readWorkbenchDraftArtifact(projectRoot, boundaryRoot);
   return { draft,
     lock: JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock,
     review: JSON.parse(await fs.readFile(path.join(boundaryRoot, "generation-review.json"), "utf8")) as AutoBoundaryBuild["review"],
@@ -9790,7 +9791,8 @@ async function prepareAutoBoundaryRescan(input: {
   diff: JsonRecord;
 }> {
   const lock = JSON.parse(await fs.readFile(path.join(input.projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
-  const oldDraft = JSON.parse(await fs.readFile(path.join(input.boundaryRoot, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
+  const oldDraft = parseExplorationBoundaryDraftArtifact(JSON.parse(await fs.readFile(
+    path.join(input.boundaryRoot, "exploration-boundary.draft.json"), "utf8")), lock);
   const inspection = await input.schemaInspector({
     engine: lock.engine,
     databaseUrlEnv: lock.source_env,

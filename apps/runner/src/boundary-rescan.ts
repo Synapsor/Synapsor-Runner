@@ -1,3 +1,4 @@
+import { parseExplorationBoundaryDraftArtifact } from "./auto-boundary.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
@@ -199,8 +200,8 @@ export async function prepareBoundaryRescan(input: {
   const baseStateDigest = await boundaryRescanBaseStateDigest(projectRoot, boundaryRoot);
   const stored = await readProjectReadAuthoring(projectRoot);
   if (stored && !stored.selected) throw new Error("No saved Read boundary is selected. Prepare a new draft before rescanning.");
-  const [oldDraft, oldLock, hadSavedReviewState] = await Promise.all([
-    stored?.selected?.draft ?? readJson<ExplorationBoundaryDraft>(
+  const [oldDraftArtifact, oldLock, hadSavedReviewState] = await Promise.all([
+    stored?.selected?.draft ?? readJson<unknown>(
       path.join(boundaryRoot, "exploration-boundary.draft.json"),
       "exploration boundary draft",
     ),
@@ -213,6 +214,7 @@ export async function prepareBoundaryRescan(input: {
       path.join(projectRoot, ".synapsor/boundary-review-progress.json"),
     ]),
   ]);
+  const oldDraft = stored?.selected?.draft ?? parseExplorationBoundaryDraftArtifact(oldDraftArtifact, oldLock);
   const inspection = input.inspection ?? await (input.schemaInspector ?? inspectDatabase)({
     engine: oldLock.engine,
     databaseUrlEnv: oldLock.source_env,

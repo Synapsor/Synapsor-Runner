@@ -2,6 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   exactGroupingDataTypeSupported,
+  parseExplorationBoundaryDraftArtifact,
+  type GenerationLock,
   loadActivatedExplorationBoundaries,
   reviewedNumericAggregateFunctions,
   type ExplorationBoundaryDraft,
@@ -74,8 +76,14 @@ export async function readReviewedAskAccessSummary(
 
 export async function resolveAskAccessGuidance(input: { projectRoot: string; question: string; toolCalls?: AskToolTrace[] }): Promise<AskAccessGuidance | undefined> {
   const [draft, activeBoundaries] = await Promise.all([
-    readGeneratedBoundaryDraft(input.projectRoot).catch(() => undefined),
-    loadActivatedExplorationBoundaries(input.projectRoot).catch(() => []),
+    readGeneratedBoundaryDraft(input.projectRoot).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }),
+    loadActivatedExplorationBoundaries(input.projectRoot).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }),
   ]);
   return resolveRefusalAccessGuidance({ toolCalls: input.toolCalls ?? [], draft, activeBoundaries });
 }
@@ -547,10 +555,12 @@ async function readGeneratedBoundaryDraft(projectRoot: string): Promise<Explorat
     throw new Error("Generated boundary draft must be a bounded regular project file.");
   }
   const value = JSON.parse(await fs.readFile(filePath, "utf8")) as unknown;
-  if (!isRecord(value) || !isRecord(value.pack) || !Array.isArray(value.pack.resources)) {
-    throw new Error("Generated boundary draft is invalid.");
-  }
-  return value as ExplorationBoundaryDraft;
+  const lockText = await fs.readFile(path.join(root, ".synapsor/generation-lock.json"), "utf8").catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new Error("READ_BOUNDARY_ARTIFACT_INVALID: Present draft has no generation lock.");
+    throw error;
+  });
+  const lock = JSON.parse(lockText) as GenerationLock;
+  return parseExplorationBoundaryDraftArtifact(value, lock);
 }
 
 function candidateVisibleFields(

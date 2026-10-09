@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
+  loadActivatedExplorationBoundaries,
   emptyReviewOverrides,
   normalizeAutoBoundaryReviewOverrides,
   type AutoBoundaryReviewOverrides,
@@ -318,15 +319,11 @@ async function loadUnambiguousLegacyOverrides(
   if (isRecord(library) && isRecord(library.boundaries)) {
     Object.keys(library.boundaries).forEach((name) => names.add(name));
   }
-  const activeSet = await readOptionalJson(path.join(stateRoot, "exploration-boundaries.active.json"));
-  if (isRecord(activeSet) && Array.isArray(activeSet.boundaries)) {
-    activeSet.boundaries.forEach((boundary) => collectStoredBoundaryName(boundary, names));
-  } else {
-    collectStoredBoundaryName(
-      await readOptionalJson(path.join(stateRoot, "exploration-boundary.active.json")),
-      names,
-    );
-  }
+  const active = await loadActivatedExplorationBoundaries(path.dirname(stateRoot)).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  });
+  active.forEach(boundary => collectStoredBoundaryName(boundary, names));
   if (names.size > 1 || (names.size === 1 && !names.has(expectedName))) return undefined;
   const legacy = await readOptionalJson(path.join(stateRoot, "review-overrides.json"));
   return legacy === undefined ? undefined : normalizeAutoBoundaryReviewOverrides(legacy);

@@ -26,6 +26,7 @@ import {
 import { terminalTheme } from "./boundary-cli-picker.js";
 import {
   DEFAULT_GENERATED_DIR,
+  readOptionalExplorationDraft,
   type ExplorationBoundaryDraft,
   type GenerationLock,
 } from "./auto-boundary.js";
@@ -436,21 +437,10 @@ type ProductionExploreDraftContext = {
 };
 
 async function readProductionExploreDraft(projectRoot: string): Promise<ProductionExploreDraftContext | undefined> {
-  const boundaryPath = path.join(projectRoot, DEFAULT_GENERATED_DIR, "exploration-boundary.draft.json");
-  const lockPath = path.join(projectRoot, ".synapsor", "generation-lock.json");
-  try {
-    const [boundary, lock] = await Promise.all([
-      fs.readFile(boundaryPath, "utf8"),
-      fs.readFile(lockPath, "utf8"),
-    ]);
-    return {
-      boundary: JSON.parse(boundary) as ExplorationBoundaryDraft,
-      lock: JSON.parse(lock) as GenerationLock,
-    };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
+  const boundary = await readOptionalExplorationDraft(projectRoot);
+  if (!boundary) return undefined;
+  const lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock;
+  return { boundary, lock };
 }
 
 type ProductionBindingVerificationCheck = {

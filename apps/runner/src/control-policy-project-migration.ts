@@ -4,7 +4,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
 import type { ControlPolicyPointer, ControlPolicyRevision } from "@synapsor-runner/proposal-store";
 import { listActionRuleAuthorityDrafts, parseStoredActionRuleAuthority, readActionRuleAuthorityActivation } from "./action-rule-authority.js";
-import { loadActivatedExplorationBoundaries, loadGenerationLockForActivatedBoundary, loadGenerationLockSnapshot,
+import { parseExplorationBoundaryDraftArtifact, type GenerationLock, loadActivatedExplorationBoundaries, loadGenerationLockForActivatedBoundary, loadGenerationLockSnapshot,
   type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { readBoundaryReviewProgress } from "./boundary-review-persistence.js";
 import { loadBoundaryLibraryForReconciliation, resolveSavedBoundaryReviewAuthority } from "./boundary-library.js";
@@ -80,7 +80,9 @@ Promise<ProjectControlPolicyMigrationPreview> {
     const selectedActiveName = selectedActiveReadName(activeReads, activeSet);
     authorities.push({ state: "active", policy: { type: "read_selection", selected_name: selectedActiveName } });
 
-    const draft = await addProvenance(GENERATED_DRAFT) as ExplorationBoundaryDraft | undefined;
+    const draftArtifact = await addProvenance(GENERATED_DRAFT);
+    const draft = draftArtifact === undefined ? undefined : parseExplorationBoundaryDraftArtifact(draftArtifact,
+      await addProvenance(".synapsor/generation-lock.json") as GenerationLock);
     const progressArtifact = await addProvenance(REVIEW_PROGRESS);
     if ((draft === undefined) !== (progressArtifact === undefined)) refuse("POLICY_MIGRATION_UNSUPPORTED_LEGACY_STATE");
     if (draft) {
