@@ -1,0 +1,12 @@
+{
+  "pin": "3798057fe52e1cebd201bcf35cc188a9f8315d3f",
+  "source_file": "apps/runner/src/read-workload-model.ts",
+  "source_sha256": "1d78a55cd081c3a7e7d55306522e7f689214f166c2f2bcc81b281d5eabbf12ec",
+  "captured_block_sha256": "3c53f754cc9f7e086bbe90d562258a43f7225d9fc0278b19269d3293286af745",
+  "captured_block_start": "const workloadDescriptionGuidance",
+  "captured_block_end": "const diagnostics",
+  "capture_method": "Evaluate exact preexisting array/system literal with declared serialization-only snapshots; remove only TypeScript nonnull assertion. No provider/authority/CAS path executed.",
+  "cases": 8,
+  "protocol": "synapsor.read-scope.v2",
+  "golden_sha256": "e0e1b5552c4cc21a423b571310eb408cfa8fbc4f151b0ee7dba2d9995b0cd7f6"
+}
