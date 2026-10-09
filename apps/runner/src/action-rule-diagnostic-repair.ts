@@ -65,7 +65,7 @@ export function actionRuleDiagnosticRepair(
   if (/STALE|REVISION_CHANGED|REVIEW_CHANGED/u.test(diagnostic.code)) {
     return { category: "draft_structure", next_action: "Refresh the inspected metadata and reopen the saved draft against the current reviewed revision. Preserve the business rules; do not copy an old fingerprint into a new draft." };
   }
-  const collectionScope = /^Complete collection ([A-Za-z_][A-Za-z0-9_]*) requires an inverse foreign key from one directly scoped parent and explicit matching child scope\.$/u.exec(diagnostic.message);
+  const collectionScope = /^verification_boundary\.resources\.([A-Za-z_][A-Za-z0-9_]*)\.collection_consistency$/u.exec(diagnostic.path ?? "");
   if (diagnostic.code === "ACTION_RULE_UNBOUNDED" && collectionScope && context) {
     const matches = context.verification?.resources.filter(entry => entry.binding === collectionScope[1]) ?? [];
     const resources = matches.length === 1
@@ -78,8 +78,7 @@ export function actionRuleDiagnosticRepair(
       };
     }
   }
-  if (/VERSION|CONFLICT|COMPLETE_COLLECTION|PHANTOM|ISOLATION/u.test(diagnostic.code)
-    || /complete[_ -]locked|phantom|deterministic ordering|conflict (?:guard|counter)/iu.test(diagnostic.message)) {
+  if (/VERSION|CONFLICT|COMPLETE_COLLECTION|PHANTOM|ISOLATION/u.test(diagnostic.code)) {
     return { category: "concurrency", next_action: "Review the named verification or conflict requirement against the inspected schema. A write grant does not supply a missing conflict field, complete collection, or concurrency guarantee. Keep setup pending if the source cannot prove it." };
   }
   if (/WRITER|GRANT|RECEIPT|DEPLOYMENT/u.test(diagnostic.code)) {

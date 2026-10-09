@@ -302,10 +302,6 @@ export function coverageFinding(error: unknown, component: string, identityBasis
     reason = 'The counting requirement, comparison or its current evidence is not established. This is not an invitation for another policy opinion.';
     structural = ['COUNTING_COMPARISON_INVALID','COUNTING_REFERENCE_OVERBROAD'].includes(code);
     repair = structural ? 'Use one valid narrow typed comparison per counter; broad context cannot prove child properties. Preserve every unrelated claim.' : 'Retain the unresolved requirement and use its existing decision or current-evidence review. No selector change or ownership completion is inferred.';
-  } else if (message.startsWith('Unaccounted source lines:')) {
-    code = 'COVERAGE_SOURCE_LINES_MISSING'; structural = true;
-    reason = 'One or more nonblank source lines have no submitted disposition.';
-    repair = 'Account for every nonblank line of the current consented source, including restrictions and unsupported requirements. Submit the complete replacement; omission is not evidence of implementation.';
   } else if (message.startsWith('RECEIPT_READ_EXCLUSION_UNESTABLISHED:')) {
     code = 'RECEIPT_READ_EXCLUSION_UNESTABLISHED';
     reason = 'The exact isolated receipt-destination exclusion is absent, stale, false or combined with claims outside its scope.';

@@ -1,3 +1,4 @@
+import { ActionRuleAuthoringError, actionRuleTrustedFailure, type ActionRuleAuthoringPhase } from "./action-rule-authoring-error.js";
 import { actionSubjectTargets, assertActionSubjectStage, type ActionSubjectPorts, type ActionSubjectStaged } from "./authoring-action-subject-ports.js";
 import { parseOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -136,7 +137,7 @@ type RuleSubmission = {
 type ApprovalSubmission = ActionRuleModelDraftV1["approval"];
 
 type PhaseSubmission = VerificationSubmission | EffectSubmission | RuleSubmission | ApprovalSubmission;
-type PhaseName = "verification" | "effect" | "rule" | "approval";
+type PhaseName = ActionRuleAuthoringPhase;
 const ACTION_RULE_PHASES = ["verification", "effect", "rule", "approval"] as const;
 type RevisionField =
   | "inputs"
@@ -467,7 +468,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     const selected = preparedDrafts.find((draft) => draft.outcome === selection.outcome
       && canonicalJsonDigest(draft) === selection.digest);
     if (!selected || selection.covered_intent_indexes.some((index) => index >= pendingIntents.length)) {
-      throw new Error("ACTION_RULE_REVISION_STALE: select an exact prepared draft and only the listed pending intents. No authority changed.");
+      throw new ActionRuleAuthoringError("ACTION_RULE_REVISION_STALE", "ACTION_RULE_REVISION_STALE: select an exact prepared draft and only the listed pending intents. No authority changed.", { presentation: "terminal" });
     }
     baseline = structuredClone(selected);
     initial = phaseSubmissionsFromDraft(baseline);
@@ -709,6 +710,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let diagnostics: ReturnType<typeof actionRuleDraftDiagnostics> = [];
   let clarification: string | undefined;
   let infrastructureFailure: unknown;
+  let terminalToolFailure: { error: unknown } | undefined;
   const declinedVersionFields = new Set<string>();
   let readOnlyRequest: string | undefined;
   // This is the current whole-Action input, not a field-specific permission.
@@ -918,7 +920,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
         }
         const phase = ACTION_RULE_PHASES.find((candidate) => phaseTool(candidate).name === name);
         if (!phase) return phaseRefusal("This tool is outside the disabled authoring surface.");
-        const parsed = parsePhaseSubmission(phase, args, !!baseline);
+        const parsed = parsePhaseSubmission(phase, args, !!baseline, "model", Boolean(protocol));
         if (parsed.state === "clarification") {
           if (protocol && (args.context_digest !== clarificationContext().context_digest
             || (args.target as { kind?: unknown; phase?: unknown } | undefined)?.kind !== "action_component"
@@ -971,9 +973,14 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
         await saveCheckpoint().catch((error) => { infrastructureFailure = error; throw error; });
         return { ok: true, value: { status: "disabled_component_saved", component: phase, ...snapshot() } };
       } catch (error) {
-        if (error instanceof ActionWorkUnitSourcePendingError) throw error;
-        if(error instanceof SourceInputFidelityError && error.findings.some(f=>f.code==='SOURCE_INPUT_REQUIREMENT_PENDING')) throw error;
+        if (error instanceof ActionWorkUnitSourcePendingError
+          || (error instanceof SourceInputFidelityError && error.findings.some(f => f.code === "SOURCE_INPUT_REQUIREMENT_PENDING"))) {
+          terminalToolFailure = { error };
+          throw error;
+        }
         if (infrastructureFailure) throw infrastructureFailure;
+        if (!(error instanceof ActionWorkUnitFidelityError) && !(error instanceof SourceInputFidelityError)
+          && actionRuleTrustedFailure(error)?.presentation !== "reviewed_grammar") { terminalToolFailure = { error }; throw error; }
         correctionUsed = true;
         diagnostics = error instanceof ActionWorkUnitFidelityError ? actionWorkUnitFidelityDiagnostics(error) : actionRuleDraftDiagnostics(error, {
           builtCatalog: context.builtCatalog,
@@ -986,7 +993,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
         if (error instanceof ActionWorkUnitFidelityError) {
           await saveCheckpoint().catch(failure => { infrastructureFailure = failure; throw failure; });
         }
-        return { ...phaseRefusal("Repair the named schema issue yourself. Choose internal draft names and aliases; never ask the operator to supply them. Ask only about unknown business meaning or policy, and do not broaden authority."), value: { ...snapshot(), status: "needs_repair" } };
+        return { ...phaseRefusal("Repair the named schema issue yourself. Choose internal draft names and aliases; never ask the operator to supply them. Ask only about unknown business meaning or policy, and do not broaden authority."), value: { ...snapshot(), status: "needs_repair", diagnostics: structuredClone(diagnostics) } };
       }
     },
   };
@@ -1035,10 +1042,10 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   const askPendingQuestion = async () => {
     const pending = pendingQuestion!;
     const beforeAnswerTurn = input.session.conversation?.turns.at(-1);
-    if (!input.askClarification) throw new Error(`ACTION_RULE_MODEL_CLARIFICATION_REQUIRED: ${pending.question}`);
+    if (!input.askClarification) throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_CLARIFICATION_REQUIRED", `ACTION_RULE_MODEL_CLARIFICATION_REQUIRED: ${pending.question}`, { presentation: "terminal", details: { kind: "operator_clarification", question: pending.question } });
     const answer = await input.askClarification(presentOperatorClarification(pending.question,
       { stage: "action", context: operatorBusinessContext(context.builtCatalog.authoring.resources) }));
-    if (answer === undefined) throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
+    if (answer === undefined) throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_CANCELLED", "ACTION_RULE_MODEL_DRAFT_CANCELLED", { presentation: "terminal" });
     if (input.signal?.aborted) throw new AskError("ASK_CANCELLED", "The saved question remains unanswered.", 499);
     const previousOperatorMessage = operatorMessage;
     const previousOperatorMessages = operatorMessages;
@@ -1081,7 +1088,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   }
   // Autonomous work is bounded by runAskProviderTurn; deliberate human follow-ups are not a retry budget.
   while (true) {
-    if (input.signal?.aborted) throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
+    if (input.signal?.aborted) throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_CANCELLED", "ACTION_RULE_MODEL_DRAFT_CANCELLED", { presentation: "terminal" });
     clarification = undefined;
     businessWordingIssue = undefined;
     const origin = await authoringInterruptedProducerInput("action_rule_components");
@@ -1155,6 +1162,12 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       ].join("\n"),
       providerSystemPrompt: system, skipRunnerQuestionContext: true,
       conversationalAuthoring: true,
+    }).catch(error => {
+      // The Ask tool boundary may wrap a thrown gateway failure. Preserve the
+      // actual owning save/terminal failure rather than parsing that wrapper.
+      if (infrastructureFailure) throw infrastructureFailure;
+      if (terminalToolFailure) throw terminalToolFailure.error;
+      throw error;
     });
     usage = mergeUsage(usage, result.usage);
     if (stagedSubject) {
@@ -1223,13 +1236,13 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     // regardless of whether an older component caller supplied a protocol pin.
     if (!clarification) {
       if (mechanicalResponseRepairs >= 2) {
-        throw new Error([
+        throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_INCOMPLETE", [
           "ACTION_RULE_MODEL_DRAFT_INCOMPLETE: the model did not finish its structured draft after two internal corrections. Saved drafts are retained.",
           ...(configuration.endpoint_scope === "custom_loopback"
             ? ["Check the local server's configured context window and the model's structured tool-call support before retrying; a successful connection alone does not establish authoring compatibility."]
             : []),
           "Retry with a compatible model or use the documented structured draft/export recovery; no authority or source data changed.",
-        ].join(" "));
+        ].join(" "), { presentation: "terminal" });
       }
       mechanicalResponseRepairs += 1;
       correctionUsed = true;
@@ -1433,6 +1446,8 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
       if (error instanceof ActionWorkUnitSourcePendingError) throw error;
       if(error instanceof SourceInputFidelityError && error.findings.some(f=>f.code==='SOURCE_INPUT_REQUIREMENT_PENDING'))throw error;
       lastCompileError = error;
+      if (!(error instanceof ActionWorkUnitFidelityError) && !(error instanceof SourceInputFidelityError)
+        && actionRuleTrustedFailure(error)?.presentation !== "reviewed_grammar") throw error;
       if (repairCount >= MAX_FINAL_COMPILER_REPAIRS) break;
       const diagnostics = error instanceof ActionWorkUnitFidelityError ? actionWorkUnitFidelityDiagnostics(error)
         : actionRuleDraftDiagnostics(error, { builtCatalog: activeContext.builtCatalog, verification: draft.verification });
@@ -1495,9 +1510,7 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
   if (!compiled) throw lastCompileError;
   if (existingDraft && existingSubmissions && ACTION_RULE_PHASES.every((phase) =>
     canonicalJsonDigest(existingSubmissions[phase]) === canonicalJsonDigest(submissions[phase]))) {
-    throw new Error(
-      "ACTION_RULE_REVISION_NO_CHANGE: the model did not produce an exact change to the reviewed baseline; the active authority is unchanged.",
-    );
+    throw new ActionRuleAuthoringError("ACTION_RULE_REVISION_NO_CHANGE", "ACTION_RULE_REVISION_NO_CHANGE: the model did not produce an exact change to the reviewed baseline; the active authority is unchanged.", { presentation: "terminal" });
   }
   rememberModelAuthoringTurn(
     input.session.conversation,
@@ -1533,7 +1546,7 @@ function assertOnlyApprovalLimitsChanged(baseline: ActionRuleModelDraftV1 | unde
     return { ...program, approval: { ...program.approval, shared_limits: [] } };
   };
   if (!baseline || canonicalJsonDigest(withoutLimitsAndNarration(baseline)) !== canonicalJsonDigest(withoutLimitsAndNarration(next))) {
-    throw new Error("ACTION_RULE_DRAFT_INVALID: this repair may change only approval.shared_limits and its review explanation. Restore every other component from the saved baseline.");
+    throw new ActionRuleAuthoringError("ACTION_RULE_DRAFT_INVALID", "ACTION_RULE_DRAFT_INVALID: this repair may change only approval.shared_limits and its review explanation. Restore every other component from the saved baseline.", { presentation: "reviewed_grammar" });
   }
 }
 
@@ -1541,7 +1554,7 @@ function actionOperatorStatements(input: ModelActionRuleDraftInput): string[] {
   if (input.operatorStatements === undefined) return [input.intent];
   if (!Array.isArray(input.operatorStatements) || input.operatorStatements.length < 1 || input.operatorStatements.length > 72
     || input.operatorStatements.reduce((total, text) => total + (typeof text === "string" ? text.length : 65_537), 0) > 65_536) {
-    throw new Error("ACTION_RULE_INTENT_INVALID: original operator statements exceed the bounded repair context.");
+    throw new ActionRuleAuthoringError("ACTION_RULE_INTENT_INVALID", "ACTION_RULE_INTENT_INVALID: original operator statements exceed the bounded repair context.", { presentation: "terminal" });
   }
   return input.operatorStatements.map(text => boundedText(text, "Original operator statement", 32_768));
 }
@@ -1593,7 +1606,7 @@ function assertApprovalHistorySelectorsPreserved(before: ApprovalSubmission, aft
     const selected = (item: ApprovalSubmission["shared_limits"][number]) => item.capability
       ?? (item.scope === "capability" ? outcome : undefined);
     if (previous && selected(previous) !== selected(limit)) {
-      throw new Error("ACTION_RULE_HISTORY_SELECTOR_REVIEW_REQUIRED: Preserve each existing shared limit's exact capability filter, including its absence. A quota or recovery edit does not authorize changing counted history. Restore the saved filters; a deliberate filter change requires a separate exact structured draft and operator review.");
+      throw new ActionRuleAuthoringError("ACTION_RULE_HISTORY_SELECTOR_REVIEW_REQUIRED", "ACTION_RULE_HISTORY_SELECTOR_REVIEW_REQUIRED: Preserve each existing shared limit's exact capability filter, including its absence. A quota or recovery edit does not authorize changing counted history. Restore the saved filters; a deliberate filter change requires a separate exact structured draft and operator review.", { presentation: "terminal" });
     }
   }
 }
@@ -1616,7 +1629,7 @@ function bindApprovalLimitsToValidatedOutcome(
 function serializeAuthoringCatalog(builtCatalog: BuiltActionRuleAuthoringCatalogV1): string {
   const serialized = JSON.stringify(compactActionRuleAuthoringCatalog(builtCatalog.authoring));
   if (Buffer.byteLength(serialized) > MAX_CATALOG_BYTES) {
-    throw new Error("ACTION_RULE_AUTHORING_CATALOG_TOO_LARGE: narrow the reviewed resources before model-assisted rule drafting.");
+    throw new ActionRuleAuthoringError("ACTION_RULE_AUTHORING_CATALOG_TOO_LARGE", "ACTION_RULE_AUTHORING_CATALOG_TOO_LARGE: narrow the reviewed resources before model-assisted rule drafting.", { presentation: "terminal" });
   }
   return serialized;
 }
@@ -1720,37 +1733,33 @@ function validateAndResolveEffectSubmission(input: {
   if (input.submission.atomic_updates !== undefined) {
     const { atomic_updates, ...main } = input.submission;
     if (main.operation !== "update" || !Array.isArray(atomic_updates) || atomic_updates.length < 1 || atomic_updates.length > 3) {
-      throw new Error("ACTION_RULE_ATOMIC_BOUNDS: use two through four exact version-guarded updates in one transaction.");
+      throw new ActionRuleAuthoringError("ACTION_RULE_ATOMIC_BOUNDS", "ACTION_RULE_ATOMIC_BOUNDS: use two through four exact version-guarded updates in one transaction.", { presentation: "reviewed_grammar", phase: "effect" });
     }
     const checkedMain = validateAndResolveEffectSubmission({ ...input, submission: main });
     const members = atomic_updates.map((member) => {
       if (!isRecord(member) || member.operation !== "update" || !Array.isArray(member.allowed_fields) || !isRecord(member.set)
         || Object.keys(member).some((key) => !["operation", "target_resource", "target_binding", "allowed_fields", "set"].includes(key))) {
-        throw new Error("ACTION_RULE_ATOMIC_SHAPE: each companion must be one exact UPDATE, without nested effects or separate execution authority.");
+        throw new ActionRuleAuthoringError("ACTION_RULE_ATOMIC_SHAPE", "ACTION_RULE_ATOMIC_SHAPE: each companion must be one exact UPDATE, without nested effects or separate execution authority.", { presentation: "reviewed_grammar", phase: "effect" });
       }
       const checked = validateAndResolveEffectSubmission({ ...input, submission: { ...member, name: main.name, writeback: main.writeback } });
       return { ...member, target_binding: checked.target_binding! };
     });
     const bindings = [checkedMain.target_binding, ...members.map((member) => member.target_binding)];
-    if (new Set(bindings).size !== bindings.length) throw new Error("ACTION_RULE_ATOMIC_TARGET_DUPLICATED: each update must target a different verified row.");
+    if (new Set(bindings).size !== bindings.length) throw new ActionRuleAuthoringError("ACTION_RULE_ATOMIC_TARGET_DUPLICATED", "ACTION_RULE_ATOMIC_TARGET_DUPLICATED: each update must target a different verified row.", { presentation: "reviewed_grammar", phase: "effect" });
     return { ...checkedMain, atomic_updates: members };
   }
   if (!input.verification) {
-    throw new Error("ACTION_RULE_EFFECT_VERIFICATION_REQUIRED: an Effect draft requires the accepted Verification draft from this same authoring run.");
+    throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_VERIFICATION_REQUIRED", "ACTION_RULE_EFFECT_VERIFICATION_REQUIRED: an Effect draft requires the accepted Verification draft from this same authoring run.", { presentation: "reviewed_grammar", phase: "effect" });
   }
   const target = input.builtCatalog.catalog.resources.find((resource) =>
     resource.name === input.submission.target_resource);
   const targetAuthoring = input.builtCatalog.authoring.resources.find((resource) =>
     resource.name === input.submission.target_resource);
   if (!target || !targetAuthoring) {
-    throw new Error(
-      `ACTION_RULE_EFFECT_TARGET_UNAVAILABLE: ${input.submission.target_resource} is outside the reviewed Action catalog.`,
-    );
+    throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_TARGET_UNAVAILABLE", `ACTION_RULE_EFFECT_TARGET_UNAVAILABLE: ${input.submission.target_resource} is outside the reviewed Action catalog.`, { presentation: "reviewed_grammar", phase: "effect" });
   }
   if (!targetAuthoring.operations[input.submission.operation]) {
-    throw new Error(
-      `ACTION_RULE_EFFECT_OPERATION_UNAVAILABLE: ${input.submission.operation.toUpperCase()} ${target.name} is not source-proven for this Action draft.`,
-    );
+    throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_OPERATION_UNAVAILABLE", `ACTION_RULE_EFFECT_OPERATION_UNAVAILABLE: ${input.submission.operation.toUpperCase()} ${target.name} is not source-proven for this Action draft.`, { presentation: "reviewed_grammar", phase: "effect" });
   }
 
   const targetFields = new Map(target.fields.map((field) => [field.name, field]));
@@ -1758,58 +1767,50 @@ function validateAndResolveEffectSubmission(input: {
   const allowedNames = new Set<string>();
   for (const field of input.submission.allowed_fields) {
     if (allowedNames.has(field.name)) {
-      throw new Error(`ACTION_RULE_EFFECT_FIELD_DUPLICATED: ${target.name}.${field.name} appears more than once.`);
+      throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_FIELD_DUPLICATED", `ACTION_RULE_EFFECT_FIELD_DUPLICATED: ${target.name}.${field.name} appears more than once.`, { presentation: "reviewed_grammar", phase: "effect" });
     }
     const catalogField = targetFields.get(field.name);
     if (!catalogField || writable.get(field.name) !== true) {
-      throw new Error(
-        `ACTION_RULE_EFFECT_FIELD_UNAVAILABLE: ${target.name}.${field.name} is not a reviewed writable field.`,
-      );
+      throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_FIELD_UNAVAILABLE", `ACTION_RULE_EFFECT_FIELD_UNAVAILABLE: ${target.name}.${field.name} is not a reviewed writable field.`, { presentation: "reviewed_grammar", phase: "effect" });
     }
     validateModelEffectBounds(field, catalogField.type);
     if (field.values?.includes(null) && !catalogField.nullable) {
-      throw new Error(`ACTION_RULE_EFFECT_NULL_FORBIDDEN: ${target.name}.${field.name} is not nullable and cannot be cleared.`);
+      throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_NULL_FORBIDDEN", `ACTION_RULE_EFFECT_NULL_FORBIDDEN: ${target.name}.${field.name} is not nullable and cannot be cleared.`, { presentation: "reviewed_grammar", phase: "effect" });
     }
     allowedNames.add(field.name);
   }
   const setEntries = Object.entries(input.submission.set);
   if (!setEntries.length) {
-    throw new Error("ACTION_RULE_EFFECT_SET_REQUIRED: a derived effect must set at least one reviewed field.");
+    throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_SET_REQUIRED", "ACTION_RULE_EFFECT_SET_REQUIRED: a derived effect must set at least one reviewed field.", { presentation: "reviewed_grammar", phase: "effect" });
   }
   const verificationBindings = new Map(input.verification.resources.map((resource) =>
     [resource.binding, resource] as const));
   for (const [field, expression] of setEntries) {
     if (!allowedNames.has(field)) {
-      throw new Error(
-        `ACTION_RULE_EFFECT_FIELD_OUTSIDE_ENVELOPE: ${target.name}.${field} is not listed in allowed_fields.`,
-      );
+      throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_FIELD_OUTSIDE_ENVELOPE", `ACTION_RULE_EFFECT_FIELD_OUTSIDE_ENVELOPE: ${target.name}.${field} is not listed in allowed_fields.`, { presentation: "reviewed_grammar", phase: "effect" });
     }
     validateModelEffectExpressionBindings(expression, verificationBindings, `effect.set.${field}`);
   }
 
   if (input.submission.operation === "insert") {
     if (input.submission.target_binding !== undefined) {
-      throw new Error(
-        "ACTION_RULE_INSERT_TARGET_BINDING_FORBIDDEN: INSERT does not accept target_binding; Runner derives its proposal identity and deduplication guard.",
-      );
+      throw new ActionRuleAuthoringError("ACTION_RULE_INSERT_TARGET_BINDING_FORBIDDEN", "ACTION_RULE_INSERT_TARGET_BINDING_FORBIDDEN: INSERT does not accept target_binding; Runner derives its proposal identity and deduplication guard.", { presentation: "reviewed_grammar", phase: "effect" });
     }
     return structuredClone(input.submission);
   }
   if (!target.version_field) {
-    throw new Error(
-      `ACTION_RULE_UPDATE_CONFLICT_GUARD_UNAVAILABLE: ${target.name} has no unambiguous reviewed version field for stale-proposal detection.`,
-    );
+    throw new ActionRuleAuthoringError("ACTION_RULE_UPDATE_CONFLICT_GUARD_UNAVAILABLE", `ACTION_RULE_UPDATE_CONFLICT_GUARD_UNAVAILABLE: ${target.name} has no unambiguous reviewed version field for stale-proposal detection.`, { presentation: "reviewed_grammar", phase: "effect" });
   }
   const verificationResources = input.verification.resources;
   const eligible = verificationResources.filter((resource) =>
     resource.resource === target.name && hasExactActionRowPath(resource, verificationResources, input.builtCatalog.catalog));
   if (input.submission.target_binding !== undefined) {
     if (!eligible.some((resource) => resource.binding === input.submission.target_binding)) {
-      throw new Error([
+      throw new ActionRuleAuthoringError("ACTION_RULE_UPDATE_TARGET_INVALID", [
         `ACTION_RULE_UPDATE_TARGET_INVALID: ${JSON.stringify(input.submission.target_binding)} does not identify one reviewed ${target.name} subject row.`,
         `Eligible one-row subject targets: ${formatEligibleUpdateTargets(eligible)}.`,
         "For UPDATE, target_binding must exactly equal one listed binding for target_resource.",
-      ].join(" "));
+      ].join(" "), { presentation: "reviewed_grammar", phase: "effect" });
     }
     return structuredClone(input.submission);
   }
@@ -1820,16 +1821,16 @@ function validateAndResolveEffectSubmission(input: {
     };
   }
   if (!eligible.length) {
-    throw new Error([
+    throw new ActionRuleAuthoringError("ACTION_RULE_UPDATE_TARGET_UNAVAILABLE", [
       `ACTION_RULE_UPDATE_TARGET_UNAVAILABLE: Runner could not identify which reviewed ${target.name} row the proposed change would update.`,
       `The accepted Verification draft must prove ${target.name} as one exact row, directly from a subject or through a unique reviewed relationship path.`,
-    ].join(" "));
+    ].join(" "), { presentation: "reviewed_grammar", phase: "effect" });
   }
-  throw new Error([
+  throw new ActionRuleAuthoringError("ACTION_RULE_UPDATE_TARGET_AMBIGUOUS", [
     `ACTION_RULE_UPDATE_TARGET_AMBIGUOUS: Runner found multiple reviewed ${target.name} subject rows for this proposed change.`,
     `Eligible one-row subject targets: ${formatEligibleUpdateTargets(eligible)}.`,
     "Select the target that matches the operator's business object; do not ask the operator for an internal binding name.",
-  ].join(" "));
+  ].join(" "), { presentation: "reviewed_grammar", phase: "effect" });
 }
 
 function formatEligibleUpdateTargets(resources: VerificationSubmission["resources"]): string {
@@ -1844,25 +1845,19 @@ function validateModelEffectBounds(
 ): void {
   if ((field.minimum !== undefined || field.maximum !== undefined)
     && type.kind !== "integer" && type.kind !== "money_minor") {
-    throw new Error(
-      `ACTION_RULE_EFFECT_BOUND_TYPE_INVALID: numeric bounds are not valid for ${field.name} (${type.kind}).`,
-    );
+    throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_BOUND_TYPE_INVALID", `ACTION_RULE_EFFECT_BOUND_TYPE_INVALID: numeric bounds are not valid for ${field.name} (${type.kind}).`, { presentation: "reviewed_grammar", phase: "effect" });
   }
   if (field.minimum !== undefined && field.maximum !== undefined && field.minimum > field.maximum) {
-    throw new Error(`ACTION_RULE_EFFECT_BOUNDS_REVERSED: ${field.name} has a minimum above its maximum.`);
+    throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_BOUNDS_REVERSED", `ACTION_RULE_EFFECT_BOUNDS_REVERSED: ${field.name} has a minimum above its maximum.`, { presentation: "reviewed_grammar", phase: "effect" });
   }
   if (field.values === undefined) return;
   const nonNullValues = field.values.filter(value => value !== null);
   if (nonNullValues.length && type.kind !== "string" && type.kind !== "boolean") {
-    throw new Error(
-      `ACTION_RULE_EFFECT_VALUE_TYPE_INVALID: exact allowed values are not valid for ${field.name} (${type.kind}).`,
-    );
+    throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_VALUE_TYPE_INVALID", `ACTION_RULE_EFFECT_VALUE_TYPE_INVALID: exact allowed values are not valid for ${field.name} (${type.kind}).`, { presentation: "reviewed_grammar", phase: "effect" });
   }
   if (type.kind === "string" && type.enum
     && nonNullValues.some((value) => typeof value !== "string" || !type.enum!.includes(value))) {
-    throw new Error(
-      `ACTION_RULE_EFFECT_VALUE_UNREVIEWED: ${field.name} contains a value outside its schema-declared allowlist.`,
-    );
+    throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_VALUE_UNREVIEWED", `ACTION_RULE_EFFECT_VALUE_UNREVIEWED: ${field.name} contains a value outside its schema-declared allowlist.`, { presentation: "reviewed_grammar", phase: "effect" });
   }
 }
 
@@ -1879,14 +1874,10 @@ function validateModelEffectExpressionBindings(
   if (value.kind === "field") {
     const binding = typeof value.binding === "string" ? bindings.get(value.binding) : undefined;
     if (!binding) {
-      throw new Error(
-        `ACTION_RULE_EFFECT_BINDING_UNAVAILABLE: ${path} references a binding outside the accepted Verification draft.`,
-      );
+      throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_BINDING_UNAVAILABLE", `ACTION_RULE_EFFECT_BINDING_UNAVAILABLE: ${path} references a binding outside the accepted Verification draft.`, { presentation: "reviewed_grammar", phase: "effect", path });
     }
     if (typeof value.field !== "string" || !binding.fields.includes(value.field)) {
-      throw new Error(
-        `ACTION_RULE_EFFECT_SOURCE_FIELD_UNAVAILABLE: ${path} references a field outside accepted binding ${binding.binding}.`,
-      );
+      throw new ActionRuleAuthoringError("ACTION_RULE_EFFECT_SOURCE_FIELD_UNAVAILABLE", `ACTION_RULE_EFFECT_SOURCE_FIELD_UNAVAILABLE: ${path} references a field outside accepted binding ${binding.binding}.`, { presentation: "reviewed_grammar", phase: "effect", path });
     }
   }
   for (const [name, item] of Object.entries(value)) {
@@ -1942,9 +1933,7 @@ async function runPhaseWithClarification(input: {
       || (input.phase === "approval"
         && isRedundantTrustedScopeLimitQuestion(result.question, input.intent))) {
       if (mechanicalRedirectCount >= MAX_MECHANICAL_REDIRECTS) {
-        throw new Error(
-          "ACTION_RULE_MODEL_MECHANICAL_QUESTION_REPEATED: the model repeatedly asked the operator for database mechanics that Runner resolves from reviewed structure.",
-        );
+        throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_MECHANICAL_QUESTION_REPEATED", "ACTION_RULE_MODEL_MECHANICAL_QUESTION_REPEATED: the model repeatedly asked the operator for database mechanics that Runner resolves from reviewed structure.", { presentation: "terminal" });
       }
       mechanicalRedirectCount += 1;
       correctionUsed = true;
@@ -1955,32 +1944,30 @@ async function runPhaseWithClarification(input: {
       continue;
     }
     if (!input.input.askClarification) {
-      throw new Error(`ACTION_RULE_POLICY_CLARIFICATION_REQUIRED: ${result.question}`);
+      throw new ActionRuleAuthoringError("ACTION_RULE_POLICY_CLARIFICATION_REQUIRED", `ACTION_RULE_POLICY_CLARIFICATION_REQUIRED: ${result.question}`, { presentation: "terminal", phase: input.phase, details: { kind: "operator_clarification", question: result.question } });
     }
     if (operatorClarificationCount >= MAX_OPERATOR_CLARIFICATIONS) break;
     let answer = await input.input.askClarification(result.question);
-    if (answer === undefined) throw new Error("ACTION_RULE_AUTHORING_PAUSED: no Action Rule authority was saved or activated.");
+    if (answer === undefined) throw new ActionRuleAuthoringError("ACTION_RULE_AUTHORING_PAUSED", "ACTION_RULE_AUTHORING_PAUSED: no Action Rule authority was saved or activated.", { presentation: "terminal" });
     if (input.phase === "approval" && requestsLifetimeApprovalCounter(answer)) {
       answer = await input.input.askClarification(
         "Runner 1.8 supports automatic-approval counters only as rolling windows from 60 seconds through 365 days; a lifetime or non-resetting total is not representable and will not be approximated. What rolling window should reset this limit? For example: 24 hours, 15 days, or 365 days.",
       );
       if (answer === undefined) {
-        throw new Error("ACTION_RULE_AUTHORING_PAUSED: no Action Rule authority was saved or activated.");
+        throw new ActionRuleAuthoringError("ACTION_RULE_AUTHORING_PAUSED", "ACTION_RULE_AUTHORING_PAUSED: no Action Rule authority was saved or activated.", { presentation: "terminal" });
       }
       if (requestsLifetimeApprovalCounter(answer)) {
-        throw new Error(
-          "ACTION_RULE_LIFETIME_APPROVAL_LIMIT_UNSUPPORTED: automatic-approval counters require an exact rolling window from 60 seconds through 365 days; no disabled policy was saved.",
-        );
+        throw new ActionRuleAuthoringError("ACTION_RULE_LIFETIME_APPROVAL_LIMIT_UNSUPPORTED", "ACTION_RULE_LIFETIME_APPROVAL_LIMIT_UNSUPPORTED: automatic-approval counters require an exact rolling window from 60 seconds through 365 days; no disabled policy was saved.", { presentation: "terminal" });
       }
     }
     operatorClarifications.push(boundedText(answer, "Action Rule clarification", 2_000));
     runnerGuidance = undefined;
     operatorClarificationCount += 1;
   }
-  throw new Error([
+  throw new ActionRuleAuthoringError("ACTION_RULE_POLICY_CLARIFICATION_UNRESOLVED", [
     "ACTION_RULE_POLICY_CLARIFICATION_UNRESOLVED: the model could not resolve the business rule after two operator answers.",
     ...(lastUnresolvedQuestion ? [`Last unresolved model question: ${lastUnresolvedQuestion}`] : []),
-  ].join(" "));
+  ].join(" "), { presentation: "terminal", phase: input.phase });
 }
 
 async function runFocusedPhase(input: {
@@ -2008,6 +1995,8 @@ async function runFocusedPhase(input: {
   let changedFields: RevisionField[] | undefined;
   let clarificationQuestion: string | undefined;
   let issue = `The model did not submit the ${input.phase} draft.`;
+  let lastFailure: unknown;
+  let hasFailure = false;
   const businessContext = operatorBusinessContext(input.input.builtCatalog.authoring.resources);
   const wording = operatorClarificationGate({ stage: "action", context: businessContext });
   let callCount = 0;
@@ -2051,6 +2040,8 @@ async function runFocusedPhase(input: {
           }
           changedFields = parsed.changed_fields;
         }
+        hasFailure = false;
+        lastFailure = undefined;
         return {
           ok: true,
           value: {
@@ -2060,8 +2051,11 @@ async function runFocusedPhase(input: {
           },
         };
       } catch (error) {
-        issue = error instanceof Error ? error.message : String(error);
-        return phaseRefusal(issue);
+        hasFailure = true;
+        lastFailure = error;
+        const diagnostics = actionRuleDraftDiagnostics(error);
+        issue = diagnostics[0]!.message;
+        return phaseRefusal(issue, diagnostics);
       }
     },
     async close() {},
@@ -2149,6 +2143,7 @@ async function runFocusedPhase(input: {
   const result = await runRequiredAuthoringToolCall({ run, question, toolName: tool.name });
   let correctionUsed = result.correction_used;
   let phaseUsage = result.result.usage;
+  if (hasFailure && actionRuleTrustedFailure(lastFailure)?.presentation !== "reviewed_grammar") throw lastFailure;
   if (!submission && !clarificationQuestion) {
     correctionUsed = true;
     const repaired = await run([
@@ -2162,7 +2157,10 @@ async function runFocusedPhase(input: {
     ].join("\n"));
     phaseUsage = mergeUsage(phaseUsage, repaired.usage);
   }
-  if (!submission && !clarificationQuestion) throw new Error(`ACTION_RULE_MODEL_DRAFT_INVALID: ${issue}`);
+  if (!submission && !clarificationQuestion) {
+    if (hasFailure) throw lastFailure;
+    throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_INVALID", `ACTION_RULE_MODEL_DRAFT_INVALID: ${issue}`, { presentation: "reviewed_grammar", phase: input.phase });
+  }
   return {
     ...(submission
       ? {
@@ -2249,6 +2247,7 @@ export function actionRuleModelDraftJsonSchema(options?: { purpose: "compiled_ch
     return { ...branch, required: (branch.required as string[]).filter((key) => key !== "status"), properties };
   };
   const rule = withoutStatus(drafts("rule")[0]!);
+  const approval = withoutStatus(drafts("approval")[0]!);
   const definitions = Object.assign({}, ...[...schemas.values()].map((schema) => schema.$defs ?? {}));
   const result: Record<string, unknown> = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -2276,7 +2275,9 @@ export function actionRuleModelDraftJsonSchema(options?: { purpose: "compiled_ch
       }),
       verification: withoutStatus(drafts("verification")[0]!),
       effect: { oneOf: drafts("effect").map(withoutStatus) },
-      approval: withoutStatus(drafts("approval")[0]!),
+      // The model may omit an empty collection; normalized public drafts
+      // always carry it after the existing decoder supplies the empty array.
+      approval: { ...approval, required: [...approval.required, "shared_limits"] },
     },
     ...(Object.keys(definitions).length ? { $defs: definitions } : {}),
   };
@@ -2370,7 +2371,7 @@ function phaseTool(
       {
         name: qualifiedNameSchema(), outcome: qualifiedNameSchema(),
         discovery: {
-          type: "object", additionalProperties: false, required: ["title", "summary", "aliases"],
+          type: "object", additionalProperties: false, required: ["title", "summary"],
           description: "Public client catalog wording, reviewed with this rule. Use only established business meaning; never private facts or identity values. Does not grant eligibility.",
           properties: {
             title: { type: "string", minLength: 1, maxLength: 160 },
@@ -2434,13 +2435,13 @@ function phaseTool(
     title: "Draft independent approval policy",
     description: "Bind human or deterministic approval to the exact rule with bounded control-ledger limits. Human review must submit shared_limits as an empty array.",
     input_schema: phaseInputSchema(
-      ["class_name", "mode", "required_role", "required_approvals", "shared_limits"],
+      ["class_name", "mode", "required_role", "required_approvals"],
       {
         class_name: qualifiedNameSchema(), mode: { type: "string", enum: ["human", "policy"] },
         auto_approve_when: compatibleFlatEnvelope
           ? { type: "object" }
           : { $ref: "#/$defs/boolean_expression" },
-        required_role: { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_.:-]{0,159}$",
+        required_role: { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
           description: "Internal label for the operator's business reviewer role. Derive warehouse_manager from warehouse manager; this does not authenticate or authorize a reviewer." },
         required_approvals: { type: "integer", minimum: 1, maximum: 16 },
         shared_limits: {
@@ -2568,7 +2569,9 @@ function effectPhaseInputSchema(
       {
         type: "object",
         additionalProperties: false,
-        required: [...required, "target_binding", "allowed_fields", "set", "writeback"],
+        // An omitted binding is resolved only by the existing current verified-row
+        // validator; absent or multiple row paths remain typed refusals.
+        required: [...required, "allowed_fields", "set", "writeback"],
         properties: {
           status: { const: "draft" },
           ...revisionProperties,
@@ -2782,14 +2785,90 @@ function phaseInstruction(phase: PhaseName): string {
   }
 }
 
+// The model's Effect draft and its local decoder share one declared grammar.
+// This is shape validation only; current catalog/row-path and full compilation
+// still decide semantics. Retained host checkpoints use their richer codec.
+function compileEffectModelSchema(revision: boolean) {
+  return new Ajv2020({ strict: false, allErrors: true }).compile(phaseTool("effect", false, revision).input_schema);
+}
+const effectModelValidators = new Map<boolean, ReturnType<typeof compileEffectModelSchema>>();
+function assertEffectModelDraft(value: Record<string, unknown>, revision: boolean): void {
+  let validate = effectModelValidators.get(revision);
+  if (!validate) { validate = compileEffectModelSchema(revision); effectModelValidators.set(revision, validate); }
+  if (validate(value)) return;
+  const locator = validate.errors?.find(error => error.instancePath !== "")?.instancePath ?? "";
+  throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_INVALID", "The Effect draft does not match its declared model input schema.",
+    { presentation: "reviewed_grammar", phase: "effect", path: `model.effect${locator}` });
+}
+
+// Approval uses the same declared model grammar before semantic compilation.
+// Optional empty limits still normalize below; Runtime owns required breakers.
+function compileApprovalModelSchema(revision: boolean) {
+  return new Ajv2020({ strict: false, allErrors: true }).compile(phaseTool("approval", false, revision).input_schema);
+}
+const approvalModelValidators = new Map<boolean, ReturnType<typeof compileApprovalModelSchema>>();
+function assertApprovalModelDraft(value: Record<string, unknown>, revision: boolean): void {
+  let validate = approvalModelValidators.get(revision);
+  if (!validate) { validate = compileApprovalModelSchema(revision); approvalModelValidators.set(revision, validate); }
+  if (validate(value)) return;
+  const locator = validate.errors?.find(error => error.instancePath !== "")?.instancePath ?? "";
+  throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_INVALID", "The Approval draft does not match its declared model input schema.",
+    { presentation: "reviewed_grammar", phase: "approval", path: `model.approval${locator}` });
+}
+
+// Rule model shape is checked against its declared grammar. Runtime still
+// validates binding availability, expression types, and executable policy.
+function compileRuleModelSchema(revision: boolean) {
+  return new Ajv2020({ strict: false, allErrors: true }).compile(phaseTool("rule", false, revision).input_schema);
+}
+const ruleModelValidators = new Map<boolean, ReturnType<typeof compileRuleModelSchema>>();
+function assertRuleModelDraft(value: Record<string, unknown>, revision: boolean): void {
+  let validate = ruleModelValidators.get(revision);
+  if (!validate) { validate = compileRuleModelSchema(revision); ruleModelValidators.set(revision, validate); }
+  if (validate(value)) return;
+  const locator = validate.errors?.find(error => error.instancePath !== "")?.instancePath ?? "";
+  throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_INVALID", "The Rule draft does not match its declared model input schema.",
+    { presentation: "reviewed_grammar", phase: "rule", path: `model.rule${locator}` });
+}
+
+// Only MODEL clarification envelopes use the declared model grammar here.
+// Verification draft staging and richer retained host origins remain separate.
+function compileModelClarificationSchema(phase: PhaseName, revision: boolean, structured: boolean) {
+  const tool = structured
+    ? conversationalPhaseTool(phase, false, revision, true)
+    : phaseTool(phase, false, revision);
+  return new Ajv2020({ strict: false, allErrors: true }).compile(tool.input_schema);
+}
+const modelClarificationValidators = new Map<PhaseName, Map<string, ReturnType<typeof compileModelClarificationSchema>>>();
+function assertModelClarification(phase: PhaseName, value: Record<string, unknown>, revision: boolean, structured: boolean): void {
+  let revisions = modelClarificationValidators.get(phase);
+  if (!revisions) { revisions = new Map(); modelClarificationValidators.set(phase, revisions); }
+  const grammar = `${revision}:${structured}`;
+  let validate = revisions.get(grammar);
+  if (!validate) { validate = compileModelClarificationSchema(phase, revision, structured); revisions.set(grammar, validate); }
+  if (validate(value)) return;
+  const locator = validate.errors?.find(error => error.instancePath !== "")?.instancePath ?? "";
+  throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_INVALID", "The clarification does not match its declared model input schema.",
+    { presentation: "reviewed_grammar", phase, path: `model.${phase}${locator}` });
+}
+
 function parsePhaseSubmission(
   phase: PhaseName,
   value: Record<string, unknown>,
   revision = false,
   origin: "model" | "host_checkpoint" = "model",
+  structuredClarification = false,
 ): { state: "submitted"; submission: PhaseSubmission; changed_fields?: RevisionField[] }
   | { state: "clarification"; question: string } {
   if (value.status === "clarification") {
+    if (origin === "model") {
+      // A question envelope cannot make retained host-only metadata editable.
+      if (Object.hasOwn(value, "hard_limit")) {
+        throw new ActionRuleAuthoringError("ACTION_RULE_HARD_LIMIT_PHASE_CHANGE_UNSUPPORTED", "ACTION_RULE_HARD_LIMIT_PHASE_CHANGE_UNSUPPORTED: The exact reviewed hard invariant cannot be altered or removed by a phased model submission. Keep it unchanged and use its owning review before requesting a change.", { presentation: "terminal" });
+      }
+      // The owning host selects the grammar; payload keys cannot claim origin.
+      assertModelClarification(phase, value, revision, structuredClarification);
+    }
     return { state: "clarification", question: boundedText(value.question, "model clarification", 500) };
   }
   if (value.status !== "draft") throw new Error("status must be draft or clarification.");
@@ -2797,11 +2876,14 @@ function parsePhaseSubmission(
   // actual host checkpoint restoration may transport it; Runtime still owns
   // complete designation validation when the whole candidate is recompiled.
   if (Object.hasOwn(value, "hard_limit") && (origin !== "host_checkpoint" || phase !== "rule")) {
-    throw new Error("ACTION_RULE_HARD_LIMIT_PHASE_CHANGE_UNSUPPORTED: The exact reviewed hard invariant cannot be altered or removed by a phased model submission. Keep it unchanged and use its owning review before requesting a change.");
+    throw new ActionRuleAuthoringError("ACTION_RULE_HARD_LIMIT_PHASE_CHANGE_UNSUPPORTED", "ACTION_RULE_HARD_LIMIT_PHASE_CHANGE_UNSUPPORTED: The exact reviewed hard invariant cannot be altered or removed by a phased model submission. Keep it unchanged and use its owning review before requesting a change.", { presentation: "terminal" });
   }
   if (Object.hasOwn(value, "hard_limit") && !isRecord(value.hard_limit)) {
-    throw new Error("ACTION_RULE_HARD_LIMIT_CHECKPOINT_INVALID: The retained hard invariant must be an exact typed designation; no removal was inferred.");
+    throw new ActionRuleAuthoringError("ACTION_RULE_HARD_LIMIT_CHECKPOINT_INVALID", "ACTION_RULE_HARD_LIMIT_CHECKPOINT_INVALID: The retained hard invariant must be an exact typed designation; no removal was inferred.", { presentation: "terminal" });
   }
+  if (origin === "model" && phase === "effect") assertEffectModelDraft(value, revision);
+  if (origin === "model" && phase === "approval") assertApprovalModelDraft(value, revision);
+  if (origin === "model" && phase === "rule") assertRuleModelDraft(value, revision);
   const changedFields = revision ? parseRevisionFields(phase, value.changed_fields) : undefined;
   if (phase === "verification") {
     if (!Array.isArray(value.resources)) {
@@ -2872,7 +2954,7 @@ export function actionRuleModelDraftFromCheckpoint(value: ActionRuleAuthoringChe
   const closed = checkpoint.logical_turns?.at(-1)?.completed;
   if (checkpoint.pending_question || checkpoint.pending_version || closed?.kind !== "compiled_draft"
     || closed.material_digest !== actionLogicalTurnMaterialDigest(checkpoint))
-    throw new Error("ACTION_RULE_MODEL_CHECKPOINT_NOT_COMPILED: The saved producer has no exact closed compiled proposal.");
+    throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_CHECKPOINT_NOT_COMPILED", "ACTION_RULE_MODEL_CHECKPOINT_NOT_COMPILED: The saved producer has no exact closed compiled proposal.", { presentation: "terminal" });
   return assembleDraft(structuredClone(checkpoint.components) as Partial<Record<PhaseName, PhaseSubmission>>);
 }
 
@@ -2881,7 +2963,7 @@ function assembleDraft(submissions: Partial<Record<PhaseName, PhaseSubmission>>)
   const effect = submissions.effect as EffectSubmission | undefined;
   const rule = submissions.rule as RuleSubmission | undefined;
   const approval = submissions.approval as ApprovalSubmission | undefined;
-  if (!verification || !effect || !rule || !approval) throw new Error("ACTION_RULE_MODEL_DRAFT_INCOMPLETE");
+  if (!verification || !effect || !rule || !approval) throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_INCOMPLETE", "ACTION_RULE_MODEL_DRAFT_INCOMPLETE", { presentation: "terminal" });
   return {
     schema_version: ACTION_RULE_MODEL_DRAFT_VERSION,
     name: rule.name,
@@ -2964,7 +3046,7 @@ function mergeRevisionSubmission(input: {
   allowPendingSelectorReview?: boolean;
 }): PhaseSubmission {
   if (!input.changedFields) {
-    throw new Error("ACTION_RULE_REVISION_SCOPE_REQUIRED: the model did not declare an exact changed_fields patch scope.");
+    throw new ActionRuleAuthoringError("ACTION_RULE_REVISION_SCOPE_REQUIRED", "ACTION_RULE_REVISION_SCOPE_REQUIRED: the model did not declare an exact changed_fields patch scope.", { presentation: "reviewed_grammar" });
   }
   if (input.phase === "verification") {
     const current = structuredClone(input.current as VerificationSubmission);
@@ -3031,30 +3113,27 @@ function mergeRevisionSubmission(input: {
   return current;
 }
 
-function phaseForDiagnostics(
+export function phaseForDiagnostics(
   diagnostics: ReturnType<typeof actionRuleDraftDiagnostics>,
 ): PhaseName {
+  const phases = new Set(diagnostics.flatMap(d => d.phase ? [d.phase] : []));
+  if (phases.size === 1) return [...phases][0]!;
   if(diagnostics.some(d=>d.code.startsWith("SOURCE_INPUT_"))) return "rule";
   const paths = diagnostics.map((item) => item.path ?? "");
   if (paths.some((path) => /^approval(?:\.|$)/u.test(path))) return "approval";
   if (paths.some((path) => /^(?:rule\.effect|effect_envelope)(?:\.|$)/u.test(path))) return "effect";
   if (paths.some((path) => /^verification_boundary(?:\.|$)/u.test(path))) return "verification";
   if (paths.some((path) => /^rule(?:\.|$)/u.test(path))) return "rule";
-  const joined = diagnostics.map((item) => `${item.path ?? ""} ${item.message}`).join(" ").toLocaleLowerCase("en-US");
-  if (/approval|auto_approve|shared limit/u.test(joined)) return "approval";
-  if (/effect|envelope|write|target|dedup|allowed[_ ]fields?|numeric bounds?|minimum|maximum/u.test(joined)) {
-    return "effect";
-  }
-  if (/verification|binding|scope|relationship|lock/u.test(joined)) return "verification";
   return "rule";
 }
 
-function phaseRefusal(message: string) {
+function phaseRefusal(message: string, diagnostics?: ReturnType<typeof actionRuleDraftDiagnostics>) {
   return {
     ok: false,
     value: {
       error_code: "ACTION_RULE_MODEL_DRAFT_REFUSED",
       message,
+      ...(diagnostics ? { diagnostics: structuredClone(diagnostics) } : {}),
       authority_granted: false,
       source_database_changed: false,
     },

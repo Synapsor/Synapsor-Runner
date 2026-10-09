@@ -1,3 +1,4 @@
+import { ActionRuleAuthoringError, actionRuleTrustedFailure, type ActionRuleTrustedFailure } from "./action-rule-authoring-error.js";
 import { SourceInputFidelityError } from "./authoring-input-policy.js";
 import { actionSubjectCompatibility, type ActionSubjectCompatibility } from "./action-subject-compatibility.js";
 import {
@@ -626,28 +627,28 @@ export function actionRuleDraftDiagnostics(error: unknown, context?: ActionRuleR
   path?: string;
   message: string;
   repair: "model" | "operator";
+  presentation?: ActionRuleTrustedFailure["presentation"];
+  origin?: ActionRuleTrustedFailure["origin"];
+  phase?: ActionRuleTrustedFailure["phase"];
+  details?: ActionRuleTrustedFailure["details"];
 } & Partial<ActionRuleDiagnosticRepair>> {
   if(error instanceof SourceInputFidelityError) return error.findings.map(f=>({code:f.code,path:f.path,message:JSON.stringify(f),repair:f.code==="SOURCE_INPUT_CONSTRAINT_WEAKER"?"model" as const:"operator" as const}));
-  if (error instanceof ActionRuleError) {
+  const failure = actionRuleTrustedFailure(error);
+  if (failure) {
     return [{
-      code: error.code,
-      ...(error.path ? { path: error.path } : {}),
-      message: error.message,
-      repair: actionRuleDiagnosticNeedsOperator(error.code, error.message) ? "operator" : "model",
-      ...actionRuleDiagnosticRepair(error, context),
+      ...failure,
+      repair: actionRuleDiagnosticNeedsOperator(failure.code) ? "operator" : "model",
+      ...actionRuleDiagnosticRepair(failure, context),
     }];
   }
-  const message = error instanceof Error ? error.message : String(error);
-  const code = /^([A-Z][A-Z0-9_]+):/u.exec(message)?.[1] ?? "ACTION_RULE_DRAFT_INVALID";
-  return [{
-    code,
-    message: message.replace(/^[A-Z][A-Z0-9_]+:\s*/u, ""),
-    repair: actionRuleDiagnosticNeedsOperator(code, message) ? "operator" : "model",
-    ...(context ? actionRuleDiagnosticRepair({ code, message }, context) : {}),
-  }];
+  // Unknown failures remain display only. Neither prose nor a wire-shaped error
+  // can supply a diagnostic code, formal locator, or grammar-repair disposition.
+  const ownMessage = error instanceof Error ? Object.getOwnPropertyDescriptor(error, "message")?.value : undefined;
+  const message = typeof ownMessage === "string" ? ownMessage : typeof error === "string" ? error : "Unknown Action authoring failure.";
+  return [{ code: "ACTION_RULE_DRAFT_INVALID", message, repair: "model", presentation: "terminal" }];
 }
 
-function actionRuleDiagnosticNeedsOperator(code: string, _message: string): boolean {
+function actionRuleDiagnosticNeedsOperator(code: string): boolean {
   if (/SCOPE|AMBIGUOUS|UNSUPPORTED|POLICY|CURRENCY|UNIT/u.test(code)) return true;
   // Missing automatic-policy structure is first repairable from the original
   // operator intent. The focused model turn must ask only when that intent does
@@ -913,9 +914,7 @@ function canonicalTimestamp(value?: string): string {
 }
 
 function invalid(message: string): never {
-  throw Object.assign(new Error(`ACTION_RULE_DRAFT_INVALID: ${message}`), {
-    code: "ACTION_RULE_DRAFT_INVALID",
-  });
+  throw new ActionRuleAuthoringError("ACTION_RULE_DRAFT_INVALID", `ACTION_RULE_DRAFT_INVALID: ${message}`, { presentation: "reviewed_grammar" });
 }
 
 export function compactActionRuleAuthoringCatalog(

@@ -106,7 +106,7 @@ describe("guided Action rehearsal target resolution", () => {
 
   it("replaces a trusted-context database type error with an actionable local diagnostic", async () => {
     const readRow: DbRowReader = async () => {
-      throw new Error('invalid input syntax for type uuid: "northstar-mobile"');
+      throw Object.assign(new Error('invalid input syntax for type uuid: "northstar-mobile"'), { code: "22P02" });
     };
 
     await expect(resolveGuidedActionRehearsalTargetWithRuntime({
@@ -120,6 +120,51 @@ describe("guided Action rehearsal target resolution", () => {
     })).rejects.toThrow(
       /GUIDED_ACTION_TRUSTED_SCOPE_VALUE_INVALID: the configured trusted tenant or principal value does not match the database type/,
     );
+  });
+
+  it.each([
+    "invalid input syntax for type uuid: unrelated diagnostic text",
+    "incorrect integer value: unrelated diagnostic text",
+    "truncated incorrect value: unrelated diagnostic text",
+  ])("preserves an unclassified error without inferring scope from its English text: %s", async message => {
+    const failure = new Error(message);
+    const readRow = vi.fn<DbRowReader>(async () => { throw failure; });
+    await expect(resolveGuidedActionRehearsalTargetWithRuntime({ config, capability, context,
+      inspection: inspection(table()), readRow })).rejects.toBe(failure);
+    expect(readRow).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { engine: "postgres", code: "22P02" },
+    { engine: "mysql", code: "ER_TRUNCATED_WRONG_VALUE", errno: 1292 },
+    { engine: "mysql", code: "ER_TRUNCATED_WRONG_VALUE_FOR_FIELD", errno: 1366 },
+  ] as const)("classifies a source-bound driver type code without reading its text: %j", async driver => {
+    const failure = Object.assign(new Error("Localized driver explanation with no classifier words."), driver);
+    const configured = { ...config, sources: { local_postgres: { ...config.sources!.local_postgres!, engine: driver.engine } } } as RuntimeConfig;
+    const readRow = vi.fn<DbRowReader>(async input => {
+      expect(input.args).toEqual({});
+      expect(input.context).toEqual(context);
+      expect(input.transaction_mode).toBe("read_only");
+      throw failure;
+    });
+    await expect(resolveGuidedActionRehearsalTargetWithRuntime({ config: configured, capability, context,
+      inspection: inspection(table()), readRow })).rejects.toThrow(/GUIDED_ACTION_TRUSTED_SCOPE_VALUE_INVALID/);
+    expect(readRow).toHaveBeenCalledOnce();
+  });
+
+  it("does not classify a driver code from a different configured engine", async () => {
+    const failure = Object.assign(new Error("Unclassified driver failure."), { code: "ER_TRUNCATED_WRONG_VALUE", errno: 1292 });
+    const readRow: DbRowReader = async () => { throw failure; };
+    await expect(resolveGuidedActionRehearsalTargetWithRuntime({ config, capability, context,
+      inspection: inspection(table()), readRow })).rejects.toBe(failure);
+  });
+
+  it("does not classify a mismatched MySQL code and errno pair", async () => {
+    const failure = Object.assign(new Error("Unclassified driver failure."), { code: "ER_TRUNCATED_WRONG_VALUE", errno: 1366 });
+    const configured = { ...config, sources: { local_postgres: { ...config.sources!.local_postgres!, engine: "mysql" } } } as RuntimeConfig;
+    const readRow: DbRowReader = async () => { throw failure; };
+    await expect(resolveGuidedActionRehearsalTargetWithRuntime({ config: configured, capability, context,
+      inspection: inspection(table()), readRow })).rejects.toBe(failure);
   });
 
   it("returns a bounded local picker for non-unique scoped resources without displaying identities", async () => {

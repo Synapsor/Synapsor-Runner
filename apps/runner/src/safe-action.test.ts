@@ -165,6 +165,37 @@ describe("Safe Action authoring", () => {
     expect((await safeActionStatus(fixture.root)).draft).toBeUndefined();
   });
 
+  it.each([
+    "Propose one bounded refund for the TODO support queue.",
+    "Propose one bounded refund; reviewer-facing caption TBD.",
+    "Propose one bounded refund; preserve the literal REVIEW_REQUIRED incident label.",
+    "Propose one bounded refund for the todo support queue.",
+  ])("keeps ordinary metadata outside exact reserved review markers: %s", async description => {
+    const fixture = await projectFixture();
+    const configBefore = await fs.readFile(fixture.configPath, "utf8");
+    const contractBefore = await fs.readFile(fixture.contractPath, "utf8");
+    await fs.writeFile(fixture.sourcePath, actionSource("billing.propose_refund_order").replace(
+      "Propose one bounded order refund for human review.", description));
+    const result = await compileSafeActionDraft({ projectRoot: fixture.root, sourcePath: fixture.sourcePath });
+    expect(result.manifest).toMatchObject({ state: "disabled_draft", unresolved_authority: [], validation: { ok: true } });
+    expect(result.manifest.diagnostics.map(item => item.code)).not.toContain("SAFE_ACTION_REVIEW_PLACEHOLDER");
+    expect(result.contract.capabilities.find(item => item.name === "billing.propose_refund_order")).toMatchObject({
+      description, proposal: { conflict_guard: { column: "updated_at" }, approval: { mode: "human", required_role: "billing_reviewer" } },
+    });
+    expect(await fs.readFile(fixture.configPath, "utf8")).toBe(configBefore);
+    expect(await fs.readFile(fixture.contractPath, "utf8")).toBe(contractBefore);
+    await expect(fs.access(path.join(fixture.root, ".synapsor", "active.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("refuses an exact reserved review marker in metadata", async () => {
+    const fixture = await projectFixture();
+    await fs.writeFile(fixture.sourcePath, actionSource("billing.propose_refund_order").replace(
+      "Propose one bounded order refund for human review.", "__REVIEW_DESCRIPTION__"));
+    await expect(compileSafeActionDraft({ projectRoot: fixture.root, sourcePath: fixture.sourcePath }))
+      .rejects.toThrow(/SAFE_ACTION_REVIEW_PLACEHOLDER/);
+    expect((await safeActionStatus(fixture.root)).draft).toBeUndefined();
+  });
+
   it("blocks activation on a newly introduced strict lint warning while preserving inherited warnings", async () => {
     const fixture = await projectFixture();
     await fs.writeFile(fixture.sourcePath, actionSource("billing.propose_refund_order").replace(

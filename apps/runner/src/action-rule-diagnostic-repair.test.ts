@@ -51,3 +51,17 @@ describe("exact Action draft diagnostic repairs", () => {
     expect(result.correction).toBeUndefined();
   });
 });
+
+it.each([
+  "Complete collection holds requires an inverse foreign key from one directly scoped parent and explicit matching child scope.",
+  "complete_locked phantom deterministic ordering conflict guard",
+])("does not derive a repair category from diagnostic narration: %s", message => {
+  expect(actionRuleDiagnosticRepair({ code: "UNCLASSIFIED_PROVIDER_DIAGNOSTIC", message }, context())).toMatchObject({ category: "draft_structure" });
+});
+it("resolves the exact typed collection-scope locator independently of diagnostic wording", () => {
+  const result = actionRuleDiagnosticRepair({ code: "ACTION_RULE_UNBOUNDED",
+    path: "verification_boundary.resources.holds.collection_consistency", message: "Opaque compiler display wording." }, context());
+  expect(result).toMatchObject({ category: "source_evidence" });
+  expect(result.next_action).toContain("private Action source review");
+  expect(result.correction).toBeUndefined();
+});

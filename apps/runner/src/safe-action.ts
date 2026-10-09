@@ -58,7 +58,8 @@ const forbiddenModelArgs = new Set([
   "approved",
   "apply",
 ]);
-const unresolvedPattern = /(?:__REVIEW_[A-Z0-9_]+__|\bTODO\b|\bTBD\b|REVIEW_REQUIRED)/i;
+// Only the declared scaffold sentinel grammar carries unresolved-review state.
+const unresolvedPattern = /__REVIEW_[A-Z0-9_]+__/i;
 
 export type SafeActionDiagnostic = {
   severity: "error" | "warning";
@@ -636,7 +637,7 @@ export function validateSafeActionCapability(
   }
   if (!capability.kept_out_fields?.length) warning("SAFE_ACTION_KEPT_OUT_EMPTY", "No kept-out fields are declared. Review unknown and sensitive columns explicitly before activation.", "kept_out_fields");
   if (capability.evidence?.required !== true) error("SAFE_ACTION_EVIDENCE_REQUIRED", "Safe Actions require bounded evidence so reviewers can inspect why the proposal was created.", "evidence.required");
-  if (containsUnresolved(capability)) error("SAFE_ACTION_REVIEW_PLACEHOLDER", "Resolve every TODO/TBD/__REVIEW_*__ placeholder before compiling the draft.");
+  if (containsUnresolved(capability)) error("SAFE_ACTION_REVIEW_PLACEHOLDER", "Resolve every reserved __REVIEW_*__ placeholder before compiling the draft.");
   const proposal = capability.proposal;
   if (!proposal) {
     error("SAFE_ACTION_PROPOSAL_MISSING", "Proposal authority is required.", "proposal");

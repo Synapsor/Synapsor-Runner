@@ -568,7 +568,7 @@ describe("Safe Action terminal control plane", () => {
     expect(lines).toContain("Approval | 1 x action_reviewer; human review");
   });
 
-  it("prepares one consolidated proposal-only action from unique reviewed intent", async () => {
+  it("prepares one consolidated proposal-only action from exact reviewed selections", async () => {
     const textPrompts: Array<{
       label: string;
       options: Parameters<ActionControlPrompter["text"]>[1];
@@ -583,6 +583,8 @@ describe("Safe Action terminal control plane", () => {
       options,
       prompter,
       "Let support update an order credit_cents within a reviewed limit.",
+      [],
+      { initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] } },
     );
     expect(action).toMatchObject({
       capability_name: "order.propose_update_orders",
@@ -628,6 +630,8 @@ describe("Safe Action terminal control plane", () => {
       options,
       prompter,
       "Delete one public order.",
+      [],
+      { initialDecisions: { resource: orders.id, operation: "delete" } },
     )).resolves.toBeUndefined();
     expect(chosen).toEqual(["CONFIRM HARD-DELETE PROPOSAL AUTHORITY"]);
   });
@@ -643,6 +647,8 @@ describe("Safe Action terminal control plane", () => {
       options,
       prompter,
       "Delete one public order.",
+      [],
+      { initialDecisions: { resource: orders.id, operation: "delete" } },
     )).resolves.toMatchObject({
       resource: "public.orders",
       operation: "delete",
@@ -683,6 +689,7 @@ describe("Safe Action terminal control plane", () => {
       "Let support update an order credit_cents within a reviewed limit.",
       [],
       {
+        initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
         modelInterview: {
           session: { provider: "openai", model: "gpt-5.6-luna" },
           egressAcknowledged: true,
@@ -720,6 +727,25 @@ describe("Safe Action terminal control plane", () => {
     });
   });
 
+  it("interprets a question-shaped replacement only after the exact replacement choice", async () => {
+    const decisionInterpreter = vi.fn<NonNullable<ActionBoundaryInterviewContext["decisionInterpreter"]>>()
+      .mockResolvedValueOnce({ state: "resolved", decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 500 } } },
+        summary: "credit_cents: 0 through 500", correction_used: false, authority_granted: false, source_database_changed: false })
+      .mockResolvedValueOnce({ state: "resolved", decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 900 } } },
+        summary: "credit_cents: 0 through 900", correction_used: false, authority_granted: false, source_database_changed: false });
+    const replacement = "Why not make the reviewed ceiling nine hundred cents?";
+    const prompter = scriptedPrompter({ choices: ["replace", "accept", "human"],
+      texts: ["Use five hundred cents.", replacement], confirms: [] });
+    const result = await collectQuickProposalActionInput(options, prompter, "Propose a bounded order credit.", [], {
+      initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
+      modelInterview: { session: { provider: "openai", model: "offline-component" }, egressAcknowledged: true, decisionInterpreter },
+    });
+    expect(decisionInterpreter).toHaveBeenCalledTimes(2);
+    expect(decisionInterpreter.mock.calls[1]?.[0]).toMatchObject({ answer: replacement });
+    expect(result).toMatchObject({ patches: [{ column: "credit_cents", minimum: 0, maximum: 900 }],
+      authority_posture: "proposal_only", writeback: { mode: "none" } });
+  });
+
   it("reuses an exact bound from the original job instead of asking the operator to repeat it", async () => {
     const textLabels: string[] = [];
     const decisionInterpreter = vi.fn(async (input: { answer: string }) => ({
@@ -745,6 +771,7 @@ describe("Safe Action terminal control plane", () => {
       job,
       [],
       {
+        initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
         modelInterview: {
           session: {
             provider: "openai",
@@ -802,6 +829,7 @@ describe("Safe Action terminal control plane", () => {
       job,
       [],
       {
+        initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
         modelInterview: {
           session: {
             provider: "openai",
@@ -851,6 +879,7 @@ describe("Safe Action terminal control plane", () => {
       job,
       [],
       {
+        initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
         modelInterview: {
           session: {
             provider: "openai",
@@ -895,6 +924,7 @@ describe("Safe Action terminal control plane", () => {
       "Let support update an order credit_cents within a reviewed limit.",
       [],
       {
+        initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
         modelInterview: {
           session: { provider: "openai_compatible", model: "qwen2.5:7b", baseUrl: "http://127.0.0.1:11434/v1" },
           egressAcknowledged: true,
@@ -1132,6 +1162,7 @@ describe("Safe Action terminal control plane", () => {
       "Let support update an order credit_cents within a reviewed limit.",
       [],
       {
+        initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
         modelInterview: {
           session: { provider: "openai", model: "gpt-5.6-luna" },
           egressAcknowledged: true,
@@ -1280,6 +1311,7 @@ describe("Safe Action terminal control plane", () => {
       "Let support update an order credit_cents within a reviewed limit.",
       [],
       {
+        initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
         modelInterview: {
           session: { provider: "openai", model: "gpt-5.6-luna" },
           egressAcknowledged: true,
@@ -1372,6 +1404,7 @@ describe("Safe Action terminal control plane", () => {
       "Let support update an order credit_cents within a reviewed limit.",
       [],
       {
+        initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
         modelInterview: {
           session: { provider: "openai", model: "gpt-5.6-luna" },
           egressAcknowledged: true,
@@ -1454,6 +1487,7 @@ describe("Safe Action terminal control plane", () => {
       "Let support update an order credit_cents within a reviewed limit.",
       [],
       {
+        initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
         modelInterview: {
           session: { provider: "openai", model: "gpt-5.6-luna" },
           egressAcknowledged: true,
@@ -1533,6 +1567,7 @@ describe("Safe Action terminal control plane", () => {
       "Let support update an order credit_cents within a reviewed limit.",
       [],
       {
+        initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
         modelInterview: {
           session: { provider: "openai", model: "gpt-5.6-luna" },
           egressAcknowledged: true,
@@ -1664,6 +1699,7 @@ describe("Safe Action terminal control plane", () => {
       "Let support update an order credit_cents within a reviewed limit.",
       [],
       {
+        initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
         onDeterministicApprovalAccepted(template) {
           acceptedTemplate = template;
         },
@@ -1741,6 +1777,7 @@ describe("Safe Action terminal control plane", () => {
         "Read Boundary: reviewed_staging is fully reviewed and remains disabled.",
         "Agent read authority: unchanged | source database changed: no",
       ],
+      { initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] } },
     );
 
     expect(prompts[0]).toMatchObject({ title: "REVIEW PROPOSAL ACTION" });
@@ -2063,7 +2100,7 @@ describe("Safe Action terminal control plane", () => {
     expect(actionReviewLines(action!, orders).join("\n")).toContain("Source mutation is impossible");
   });
 
-  it("ranks only unique reviewed metadata matches and leaves ambiguous intent unselected", () => {
+  it("preserves exact typed metadata choices and leaves unselected narration pending", () => {
     const shipments: GuidedActionResourceOption = {
       ...orders,
       id: "logistics.shipments",
@@ -2074,7 +2111,7 @@ describe("Safe Action terminal control plane", () => {
       writable_fields: [{ name: "carrier_mode", label: "Carrier mode", data_type: "text", enum_values: ["air", "ground"], nullable: false, required_for_insert: true }],
       structurally_eligible_fields: [{ name: "carrier_mode", label: "Carrier mode", data_type: "text", enum_values: ["air", "ground"], nullable: false, required_for_insert: true }],
     };
-    expect(rankActionIntent([orders, shipments], "Change the carrier mode for one outbound shipment")).toMatchObject({
+    expect(rankActionIntent([orders, shipments], "Change the carrier mode for one outbound shipment", { resource: shipments.id, operation: "update", fields: ["carrier_mode"] })).toMatchObject({
       resource: "logistics.shipments",
       operation: "update",
       fields: ["carrier_mode"],

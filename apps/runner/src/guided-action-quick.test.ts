@@ -51,6 +51,7 @@ describe("quick proposal action preparation", () => {
     const result = prepareQuickProposalAction({
       options,
       intent: "Register one student with a reviewed residency and entry cohort.",
+      decisions: { resource: students.id, operation: "insert", fields: ["entry_cohort", "residency"] },
     });
     expect(result).toMatchObject({
       state: "ready",
@@ -194,6 +195,7 @@ describe("quick proposal action preparation", () => {
     const prepared = prepareQuickProposalAction({
       options,
       intent: "Register one student with a reviewed residency and entry cohort.",
+      decisions: { resource: students.id, operation: "insert", fields: ["entry_cohort", "residency"] },
     });
     const assessment = assessActionSuggestion({
       schema_version: ACTION_SUGGESTION_VERSION,
@@ -243,7 +245,7 @@ describe("quick proposal action preparation", () => {
     const prepared = prepareQuickProposalAction({
       options,
       intent: "Register one student with a reviewed residency and entry cohort.",
-      decisions: { numeric_bounds: { entry_cohort: { minimum: 2022, maximum: 2028 } } },
+      decisions: { resource: students.id, operation: "insert", fields: ["entry_cohort", "residency"], numeric_bounds: { entry_cohort: { minimum: 2022, maximum: 2028 } } },
     });
     const assessment = assessActionSuggestion({
       schema_version: ACTION_SUGGESTION_VERSION,
@@ -288,7 +290,7 @@ describe("quick proposal action preparation", () => {
     const prepared = prepareQuickProposalAction({
       options,
       intent: "Register one student with a reviewed residency and entry cohort.",
-      decisions: { numeric_bounds: { entry_cohort: { minimum: 2022, maximum: 2028 } } },
+      decisions: { resource: students.id, operation: "insert", fields: ["entry_cohort", "residency"], numeric_bounds: { entry_cohort: { minimum: 2022, maximum: 2028 } } },
     });
     const assessment = assessActionSuggestion({
       schema_version: ACTION_SUGGESTION_VERSION,
@@ -311,7 +313,7 @@ describe("quick proposal action preparation", () => {
       .toThrow(/leaves no value inside the reviewed proposal range 2022 through 2028/);
   });
 
-  it("asks for an exact resource when intent ranking is ambiguous", () => {
+  it("asks for an exact resource when a typed target is absent", () => {
     const result = prepareQuickProposalAction({
       options: {
         ...options,
@@ -326,7 +328,7 @@ describe("quick proposal action preparation", () => {
     });
   });
 
-  it("lets multiple reviewed field matches outrank a repeated loose table-token overlap", () => {
+  it("preserves exact typed field selections despite repeated table words", () => {
     const serviceRequests: GuidedActionResourceOption = {
       ...students,
       id: "operations.service_requests",
@@ -370,6 +372,7 @@ describe("quick proposal action preparation", () => {
     const result = prepareQuickProposalAction({
       options: { ...options, resources: [serviceRequests, dispatchSettings] },
       intent: "Update dispatcher alert level and maximum open requests with version conflict protection.",
+      decisions: { resource: dispatchSettings.id, operation: "update", fields: ["alert_level", "max_open_requests"] },
     });
 
     expect(result).toMatchObject({
@@ -404,6 +407,7 @@ describe("quick proposal action preparation", () => {
     const unresolved = prepareQuickProposalAction({
       options: { ...options, resources: [withoutSuggestedBounds] },
       intent: "Register one student with residency and entry cohort.",
+      decisions: { resource: withoutSuggestedBounds.id, operation: "insert", fields: ["entry_cohort", "residency"] },
     });
     expect(unresolved).toMatchObject({
       state: "needs_input",
@@ -412,7 +416,7 @@ describe("quick proposal action preparation", () => {
     const resolved = prepareQuickProposalAction({
       options: { ...options, resources: [withoutSuggestedBounds] },
       intent: "Register one student with residency and entry cohort.",
-      decisions: { numeric_bounds: { entry_cohort: { minimum: 2022, maximum: 2028 } } },
+      decisions: { resource: students.id, operation: "insert", fields: ["entry_cohort", "residency"], numeric_bounds: { entry_cohort: { minimum: 2022, maximum: 2028 } } },
     });
     expect(resolved).toMatchObject({
       state: "ready",
@@ -424,6 +428,7 @@ describe("quick proposal action preparation", () => {
     const unresolved = prepareQuickProposalAction({
       options,
       intent: "Delete one student.",
+      decisions: { resource: students.id, operation: "delete" },
     });
     expect(unresolved).toMatchObject({
       state: "needs_input",
@@ -432,7 +437,7 @@ describe("quick proposal action preparation", () => {
     const ready = prepareQuickProposalAction({
       options,
       intent: "Delete one student.",
-      decisions: { delete_confirmation: "DELETE institutional_research.students" },
+      decisions: { resource: students.id, operation: "delete", delete_confirmation: "DELETE institutional_research.students" },
     });
     expect(ready).toMatchObject({
       state: "ready",
@@ -448,7 +453,7 @@ describe("quick proposal action preparation", () => {
     expect(ready.deterministic_approval_template).toBeUndefined();
   });
 
-  it("treats explicitly forbidden create/delete wording as exclusions and keeps the requested update", () => {
+  it("preserves explicit typed exclusions while retaining create/delete narration", () => {
     const preferences: GuidedActionResourceOption = {
       ...students,
       id: "fleet_ops.operator_preferences",
@@ -522,7 +527,7 @@ describe("quick proposal action preparation", () => {
     };
     const intent = "Let the dispatcher propose changing their own alert threshold and notification level. Do not create or delete work orders.";
 
-    expect(rankActionIntent([workOrders, preferences], intent)).toMatchObject({
+    expect(rankActionIntent([workOrders, preferences], intent, { resource: preferences.id, operation: "update", fields: ["alert_threshold_minutes", "notification_level"], excluded_operations: ["delete", "insert"] })).toMatchObject({
       resource: "fleet_ops.operator_preferences",
       operation: "update",
       excluded_operations: ["delete", "insert"],
@@ -531,6 +536,7 @@ describe("quick proposal action preparation", () => {
     expect(prepareQuickProposalAction({
       options: { ...options, resources: [workOrders, preferences] },
       intent,
+      decisions: { resource: preferences.id, operation: "update", fields: ["alert_threshold_minutes", "notification_level"], excluded_operations: ["delete", "insert"] },
     })).toMatchObject({
       state: "ready",
       action: {
@@ -542,11 +548,11 @@ describe("quick proposal action preparation", () => {
     expect(() => prepareQuickProposalAction({
       options: { ...options, resources: [workOrders, preferences] },
       intent,
-      decisions: { operation: "delete" },
+      decisions: { resource: preferences.id, operation: "delete", excluded_operations: ["delete", "insert"] },
     })).toThrow(/DELETE contradicts the stated job/);
   });
 
-  it("ranks the positive Action clause instead of broad Read vocabulary in a mixed warehouse job", () => {
+  it("uses explicit typed Action choices in a mixed warehouse narration", () => {
     const shipments: GuidedActionResourceOption = {
       ...students,
       id: "warehouse_qual.shipments",
@@ -585,7 +591,7 @@ describe("quick proposal action preparation", () => {
     };
     const intent = "Help an authenticated warehouse coordinator understand only their own shipments, carrier modes, zones, statuses, and shipment event history, and let them propose changing only their own carrier mode and delay threshold. Do not create or delete shipments, approve proposals, or apply source changes.";
 
-    expect(rankActionIntent([shipments, routingPreferences], intent)).toMatchObject({
+    expect(rankActionIntent([shipments, routingPreferences], intent, { resource: routingPreferences.id, operation: "update", fields: ["carrier_mode", "delay_threshold_minutes"], excluded_operations: ["delete", "insert"] })).toMatchObject({
       resource: "warehouse_qual.routing_preferences",
       operation: "update",
       excluded_operations: ["delete", "insert"],
@@ -595,6 +601,7 @@ describe("quick proposal action preparation", () => {
       options: { ...options, resources: [shipments, routingPreferences] },
       intent,
       decisions: {
+        resource: routingPreferences.id, operation: "update", fields: ["carrier_mode", "delay_threshold_minutes"], excluded_operations: ["delete", "insert"],
         numeric_bounds: { delay_threshold_minutes: { minimum: 5, maximum: 180 } },
       },
     })).toMatchObject({
@@ -611,8 +618,8 @@ describe("quick proposal action preparation", () => {
     });
   });
 
-  it("recognizes contracted negative operation wording", () => {
-    const hints = rankActionIntent([students], "Change residency, but don't create or delete students.");
+  it("preserves typed exclusions independent of contracted negative wording", () => {
+    const hints = rankActionIntent([students], "Change residency, but don't create or delete students.", { resource: students.id, operation: "update", fields: ["residency"], excluded_operations: ["delete", "insert"] });
     expect(hints).toMatchObject({
       operation: "update",
       excluded_operations: ["delete", "insert"],
@@ -620,7 +627,7 @@ describe("quick proposal action preparation", () => {
     });
   });
 
-  it("does not treat a no-source-write posture as excluding a requested proposal update", () => {
+  it("preserves a typed UPDATE with no-source-write narration", () => {
     const subscriptions: GuidedActionResourceOption = {
       ...students,
       id: "telecom.subscriptions",
@@ -649,7 +656,7 @@ describe("quick proposal action preparation", () => {
     };
     const intent = "Help the authenticated telecom customer understand their account, subscription, service line, recent usage, invoices, and payments, and let them propose changing their plan code and monthly base price. Do not apply or write any source change.";
 
-    const hints = rankActionIntent([invoices, subscriptions], intent);
+    const hints = rankActionIntent([invoices, subscriptions], intent, { resource: subscriptions.id, operation: "update", fields: ["base_monthly_cents", "plan_code"] });
     expect(hints).toMatchObject({
       resource: "telecom.subscriptions",
       operation: "update",
@@ -658,7 +665,7 @@ describe("quick proposal action preparation", () => {
     expect(hints.excluded_operations ?? []).not.toContain("update");
   });
 
-  it("refuses to infer one ambiguous suffix across multiple reviewed fields", () => {
+  it("keeps an unselected field pending despite an ambiguous suffix", () => {
     const preferences: GuidedActionResourceOption = {
       ...students,
       id: "logistics.preferences",
@@ -675,11 +682,12 @@ describe("quick proposal action preparation", () => {
       conflict_candidates: ["version"],
     };
 
-    const hints = rankActionIntent([preferences], "Update the mode preference.");
+    const hints = rankActionIntent([preferences], "Update the mode preference.", { resource: preferences.id, operation: "update" });
     expect(hints).toMatchObject({ resource: "logistics.preferences", operation: "update", fields: [] });
     expect(prepareQuickProposalAction({
       options: { ...options, resources: [preferences] },
       intent: "Update the mode preference.",
+      decisions: { resource: preferences.id, operation: "update" },
     })).toMatchObject({
       state: "needs_input",
       decision: {
@@ -692,7 +700,7 @@ describe("quick proposal action preparation", () => {
     });
   });
 
-  it("does not use a shared schema name to rank an opaque Action resource", () => {
+  it("preserves an exact typed target independent of shared schema words", () => {
     const named = {
       ...students,
       id: "fleet_ops.work_orders",
@@ -708,7 +716,7 @@ describe("quick proposal action preparation", () => {
       label: undefined,
       description: undefined,
     };
-    expect(rankActionIntent([opaque, named], "Update one fleet work order").resource)
+    expect(rankActionIntent([opaque, named], "Update one fleet work order", { resource: named.id }).resource)
       .toBe("fleet_ops.work_orders");
   });
 
@@ -724,10 +732,11 @@ describe("quick proposal action preparation", () => {
     expect(() => prepareQuickProposalAction({
       options: { ...options, resources: [unavailable] },
       intent: "Create a new student.",
+      decisions: { resource: unavailable.id },
     })).toThrow(/No proposal operation is structurally ready.*Open Readiness/s);
   });
 
-  it("never substitutes DELETE when the stated UPDATE effect is unavailable", () => {
+  it("never substitutes DELETE when the typed UPDATE effect is unavailable", () => {
     const deleteOnly: GuidedActionResourceOption = {
       ...students,
       operation_availability: {
@@ -739,6 +748,7 @@ describe("quick proposal action preparation", () => {
     expect(() => prepareQuickProposalAction({
       options: { ...options, resources: [deleteOnly] },
       intent: "Update one student residency.",
+      decisions: { resource: deleteOnly.id, operation: "update", fields: ["residency"] },
     })).toThrow(/UPDATE.*unavailable.*did not substitute a different write effect/s);
   });
 });

@@ -1,3 +1,7 @@
+import { STRUCTURED_AUTHORING_PROTOCOL_VERSION } from "./authoring-protocol.js";
+import { ActionRuleAuthoringError, actionRuleTrustedFailure } from "./action-rule-authoring-error.js";
+import { ActionRuleError } from "@synapsor-runner/action-rules";
+import { SourceInputFidelityError } from "./authoring-input-policy.js";
 import { createActionSubjectQuestion } from "./authoring-action-subject.js";
 import { actionSubjectOriginDigest } from "./authoring-action-subject-binding.js";
 import { authoringActionCheckpoint } from "./authoring-generation-recovery.js";
@@ -28,8 +32,8 @@ import { describe, expect, it, vi } from "vitest";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { BuiltActionRuleAuthoringCatalogV1 } from "./action-rule-authoring.js";
-import { compileActionRuleModelDraft, type ActionRuleModelDraftV1 } from "./action-rule-draft.js";
-import { actionRuleModelDraftJsonSchema, generateFocusedModelActionRuleDraft as generateModelActionRuleDraft, generateModelActionRuleDraft as converseActionRuleDraft } from "./action-rule-model.js";
+import { actionRuleModelDraftFromAuthority, compileActionRuleModelDraft, type ActionRuleModelDraftV1 } from "./action-rule-draft.js";
+import { actionRuleModelDraftFromUncompiledCheckpoint, actionRuleModelDraftJsonSchema, generateFocusedModelActionRuleDraft as generateModelActionRuleDraft, generateModelActionRuleDraft as converseActionRuleDraft } from "./action-rule-model.js";
 import { AskError, secureAskJsonRequest } from "./model-ask.js";
 import type { AskProviderDependencies } from "./model-ask.js";
 import type { ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
@@ -527,7 +531,7 @@ describe("conversational Action authoring tools", () => {
           return undefined;
         }, assertCurrent: () => { throw Error("Pending subject cannot reach validation"); },
       };
-      await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, authoringProtocol: { version: "synapsor.structured-authoring.v2" }, subjectReview, prepareResources,
+      await expect(f.tracked(() => converseActionRuleDraft({ ...f.input, authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION }, subjectReview, prepareResources,
         onCheckpoint: async (next, metadata) => {
           if (metadata?.subject_question?.completion) {
             const q = metadata.subject_question.question;
@@ -1117,7 +1121,8 @@ describe("conversational Action authoring tools", () => {
         onCheckpoint: async value => { checkpoint = structuredClone(value); }, askClarification }); }
       catch (error) { failure = error; }
       expect(requestJson).not.toHaveBeenCalled();
-      expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
+      expect(askClarification).toHaveBeenCalledTimes(1);
+    expect(askClarification).toHaveBeenCalledWith(question);
       expect(String(failure)).toContain("CANCELLED");
       expect(checkpoint).toEqual(before);
     });
@@ -1137,7 +1142,8 @@ describe("conversational Action authoring tools", () => {
         onCheckpoint: async value => { checkpoint = structuredClone(value); }, askClarification,
       })).rejects.toThrow(); // The B32 adapter safely masks unclassified dependency failures.
       expect(answersAtNextRequest).toEqual([answer]);
-      expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
+      expect(askClarification).toHaveBeenCalledTimes(1);
+    expect(askClarification).toHaveBeenCalledWith(question);
       expect(checkpoint?.operator_messages).toEqual([answer]);
       expect(checkpoint?.components).toEqual({});
       expect(sends).toBe(2);
@@ -1173,7 +1179,8 @@ describe("conversational Action authoring tools", () => {
       const requestJson=vi.fn(),askClarification=vi.fn(async()=>undefined),resumed=requestInput(requestJson);
       await expect(converseActionRuleDraft({...resumed,checkpoint,
         session:{...resumed.session,conversation:{turns:[],policySources:newPolicySourceSession()}},askClarification})).rejects.toThrow("CANCELLED");
-      expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);expect(requestJson).not.toHaveBeenCalled();
+      expect(askClarification).toHaveBeenCalledTimes(1);
+    expect(askClarification).toHaveBeenCalledWith(question);expect(requestJson).not.toHaveBeenCalled();
     });
 
     it("a failed answer save cannot enter a later generation", async () => {
@@ -1695,7 +1702,7 @@ describe("conversational Action authoring tools", () => {
       requests.push(JSON.stringify(request.body));
       if (!steps.length) throw new Error("R2_B64_UNDECLARED_ADDITIONAL_MODEL_REQUEST");
       return steps.shift()!;
-    }), askClarification, authoringProtocol: { version: "synapsor.structured-authoring.v2" } } as Parameters<typeof converseActionRuleDraft>[0]);
+    }), askClarification, authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION } } as Parameters<typeof converseActionRuleDraft>[0]);
     expect(askClarification).not.toHaveBeenCalled();
     expect(result.state).toBe("ready");
     expect(result.clarification_count).toBe(0);
@@ -1730,23 +1737,60 @@ describe("conversational Action authoring tools", () => {
     });
     const askClarification = vi.fn(async received => { expect(received).toBe(question); return undefined; });
     await expect(converseActionRuleDraft({ ...requestInput(requestJson),
-      authoringProtocol: { version: "synapsor.structured-authoring.v2" },
+      authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION },
       onCheckpoint: async value => { checkpoint = structuredClone(value); }, askClarification,
     })).rejects.toThrow("CANCELLED");
     expect(requestJson).toHaveBeenCalledOnce();
-    expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
+    expect(askClarification).toHaveBeenCalledTimes(1);
+    expect(askClarification).toHaveBeenCalledWith(question);
     expect(checkpoint?.pending_question?.question).toBe(question);
     expect(checkpoint?.components).toEqual({});
     expect(checkpoint?.operator_messages ?? []).toEqual([]);
     const before = structuredClone(checkpoint);
     const resumedProvider = vi.fn(async () => { throw new Error("B64_SAVED_QUESTION_MUST_NOT_REPLAY"); });
     await expect(converseActionRuleDraft({ ...requestInput(resumedProvider), checkpoint,
-      authoringProtocol: { version: "synapsor.structured-authoring.v2" },
+      authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION },
       askClarification: async received => { expect(received).toBe(question); return undefined; },
       onCheckpoint: async () => { throw new Error("B64_REDISPLAY_MUST_NOT_REWRITE"); },
     })).rejects.toThrow("CANCELLED");
     expect(resumedProvider).not.toHaveBeenCalled();
     expect(checkpoint).toEqual(before);
+  });
+
+  it.each([false, true])("B64 structured Rule clarification uses actual conversational grammar (bare first: %s)", async bareFirst => {
+    const question = "Which reviewed business threshold applies?";
+    const saved: ActionRuleAuthoringCheckpoint[] = [], observed: string[] = [];
+    let requests = 0;
+    const strings = (value: unknown): string[] => typeof value === "string" ? [value]
+      : Array.isArray(value) ? value.flatMap(strings)
+      : value && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
+    const requestJson = vi.fn<NonNullable<AskProviderDependencies["requestJson"]>>(async request => {
+      observed.push(JSON.stringify(request.body));
+      if (++requests > (bareFirst ? 2 : 1)) throw new Error("B64_UNDECLARED_STRUCTURED_CLARIFICATION_REQUEST");
+      const body = request.body as { tools: Array<{ name?: string; input_schema?: object; parameters?: object; function?: { name?: string; parameters?: object } }> };
+      const tool = body.tools.find(t => (t.function?.name ?? t.name)?.replaceAll("__", ".") === "runner.submit_action_rule_draft")!;
+      const validate = new Ajv2020({ strict: false }).compile(tool.function?.parameters ?? tool.parameters ?? tool.input_schema!);
+      const line = strings(request.body).flatMap(value => value.split("\n")).find(value => value.startsWith("Current disabled draft: "))!;
+      const context = JSON.parse(line.slice("Current disabled draft: ".length)).clarification_context;
+      const args = bareFirst && requests === 1 ? { status: "clarification", question }
+        : { status: "clarification", question, context_digest: context.context_digest,
+          target: { kind: "action_component", phase: "rule" } };
+      expect(validate(args), JSON.stringify(validate.errors)).toBe(!(bareFirst && requests === 1));
+      return call("runner.submit_action_rule_draft", args);
+    });
+    const askClarification = vi.fn(async () => undefined);
+    await expect(converseActionRuleDraft({ ...requestInput(requestJson),
+      authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION },
+      askClarification, onCheckpoint: async value => { saved.push(structuredClone(value)); },
+    })).rejects.toThrow("CANCELLED");
+    expect(requestJson).toHaveBeenCalledTimes(bareFirst ? 2 : 1);
+    expect(askClarification).toHaveBeenCalledTimes(1);
+    expect(askClarification).toHaveBeenCalledWith(question);
+    expect(saved.filter(value => value.pending_question)).toHaveLength(1);
+    expect(saved.at(-1)?.pending_question?.question).toBe(question);
+    expect(saved.at(-1)?.components).toEqual({});
+    expect(saved.at(-1)?.operator_messages ?? []).toEqual([]);
+    if (bareFirst) expect(observed[1]).toContain("ASK_TOOL_ARGUMENTS_INVALID");
   });
 
   it.each(["stale_context", "foreign_phase", "authority"])("B64 clarification rejects %s before handing off the exact next question", async fault => {
@@ -1773,11 +1817,12 @@ describe("conversational Action authoring tools", () => {
     const askClarification = vi.fn(async () => undefined);
     const saved: ActionRuleAuthoringCheckpoint[] = [];
     await expect(converseActionRuleDraft({ ...requestInput(requestJson),
-      authoringProtocol: { version: "synapsor.structured-authoring.v2" },
+      authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION },
       onCheckpoint: async value => { saved.push(structuredClone(value)); }, askClarification,
     })).rejects.toThrow("CANCELLED");
     expect(requestJson).toHaveBeenCalledTimes(2);
-    expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
+    expect(askClarification).toHaveBeenCalledTimes(1);
+    expect(askClarification).toHaveBeenCalledWith(question);
     expect(observed[1]).toContain(fault === "stale_context" ? "ACTION_CLARIFICATION_CONTEXT_CHANGED" : "ASK_TOOL_ARGUMENTS_INVALID");
     expect(saved.filter(value => value.pending_question)).toHaveLength(1);
     expect(saved.at(-1)?.operator_messages ?? []).toEqual([]);
@@ -1798,9 +1843,10 @@ describe("conversational Action authoring tools", () => {
       ]}};
     });
     const askClarification=vi.fn(async()=>undefined);
-    await expect(converseActionRuleDraft({...requestInput(requestJson),authoringProtocol:{version:"synapsor.structured-authoring.v2"},
+    await expect(converseActionRuleDraft({...requestInput(requestJson),authoringProtocol:{version:STRUCTURED_AUTHORING_PROTOCOL_VERSION},
       onCheckpoint:async value=>{checkpoint=structuredClone(value);},askClarification})).rejects.toThrow("CANCELLED");
-    expect(requestJson).toHaveBeenCalledOnce();expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
+    expect(requestJson).toHaveBeenCalledOnce();expect(askClarification).toHaveBeenCalledTimes(1);
+    expect(askClarification).toHaveBeenCalledWith(question);
     expect(checkpoint?.components).toEqual({});expect(checkpoint?.pending_question?.question).toBe(question);
   });
 
@@ -1814,7 +1860,7 @@ describe("conversational Action authoring tools", () => {
       requests.push(JSON.stringify(request.body));
       if (!steps.length) throw new Error("UNDECLARED_REQUEST");
       return steps.shift()!;
-    }), authoringProtocol: { version: "synapsor.structured-authoring.v2" } } as Parameters<typeof converseActionRuleDraft>[0]);
+    }), authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION } } as Parameters<typeof converseActionRuleDraft>[0]);
     expect(requests.join("\n")).toContain("ASK_TOOL_ARGUMENTS_INVALID");
     expect(result.authority_granted).toBe(false);
     expect(result.compiled.draft).not.toHaveProperty("actor");
@@ -1829,7 +1875,8 @@ describe("conversational Action authoring tools", () => {
     let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
     await expect(converseActionRuleDraft({ ...requestInput(async () => steps.shift()!),
       askClarification, onCheckpoint: async (value) => { checkpoint = value; } })).rejects.toThrow("CANCELLED");
-    expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
+    expect(askClarification).toHaveBeenCalledTimes(1);
+    expect(askClarification).toHaveBeenCalledWith(question);
     expect(checkpoint!.components.verification).toBeDefined();
     expect(checkpoint!.components.approval).toBeUndefined();
     expect(steps).toEqual([]);
@@ -2170,7 +2217,7 @@ describe("conversational Action authoring tools", () => {
     });
     const askClarification = vi.fn(async () => { throw new Error("No business fact is missing"); });
     const result = await converseActionRuleDraft({ ...requestInput(requestJson), existingDraft: baseline, intent,
-      authoringProtocol: { version: "synapsor.structured-authoring.v2" }, askClarification });
+      authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION }, askClarification });
     expect(result.compiled.draft).toEqual(expected);
     expect(result.revision).toEqual({ outcome: baseline.outcome, changed_phases: ["approval"] });
     expect(requestJson).toHaveBeenCalledTimes(2);
@@ -3288,7 +3335,7 @@ describe("model-guided Action Rule authoring", () => {
     });
 
     const result = await converseActionRuleDraft({
-      authoringProtocol: { version: "synapsor.structured-authoring.v2" },
+      authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION },
       session: {
         provider: "openai",
         model: "gpt-5.6-terra",
@@ -4630,9 +4677,496 @@ it("FS actual target producer retains its exact diagnostic with no inferred para
  try {await generateModelActionRuleDraft({session:{provider:"openai",model:"gpt-5.6-terra",dependencies:{requestJson}},intent:"Let an eligible account request a temporary pause, but require human review.",builtCatalog:builtCatalog(),readBoundary:boundary(),readBoundaryDigest:readDigest,egressAcknowledged:true,env:{OPENAI_API_KEY:"provider-test-key"}});}catch(error){refusal=error;}
  expect(refusal).toBeInstanceOf(Error);
  expect((refusal as Error).message).toContain("ACTION_RULE_UPDATE_TARGET_UNAVAILABLE:");
- const exact=(refusal as Error).message.replace(/^(?:(?:ACTION_RULE_[A-Z0-9_]+):\s*)+/iu,"");
+ const exact=(refusal as Error).message;
  const {actionRuleDraftFailureView}=await import("./action-rule-diagnostic-view.js");
  expect(actionRuleDraftFailureView(refusal)).toEqual({kind:"reviewed_grammar",blockers:[exact]});
  expect(calls.filter(name=>name.endsWith("submit_action_rule_draft"))).toHaveLength(0);
  expect(calls.filter(name=>name.endsWith("submit_approval_policy_draft"))).toHaveLength(0);
+});
+function modelHardLimitFixture() {
+  const proposed = modelDraft(), built = modelHardLimitRelatedCatalog();
+  const amountType = { kind: "integer", unit: "credits" } as const;
+  const account = built.catalog.resources[0]!, policies = built.catalog.resources[1]!;
+  const limit = { name: "credit_limit", type: amountType, nullable: false };
+  const amount = { name: "amount", type: amountType, nullable: false };
+  const accountId = { name: "account_id", type: stringId, nullable: false };
+  account.fields.push(limit); built.authoring.resources[0]!.fields.push({ ...limit, role: "runner_verification_only", writable: false });
+  policies.fields.push(amount, accountId);
+  built.authoring.resources[1]!.fields.push({ ...amount, role: "runner_verification_only", writable: false }, { ...accountId, role: "guard", writable: false });
+  const relation = { name: "policies_account_fk", from_resource: policies.name, to_resource: account.name,
+    field_pairs: ["tenant_id", "principal_id", "account_id"].map(field => ({ local_field: field, target_field: field })),
+    cardinality: "many_to_one" as const, nullable: false, target_unique: true };
+  built.catalog.relationships = [relation]; built.authoring.relationships = [structuredClone(relation)];
+  proposed.verification.resources[0]!.fields.push("credit_limit");
+  proposed.verification.resources.push({ binding: "policies", resource: policies.name,
+    source: { kind: "relationship", from_binding: "account", relationship: relation.name, direction: "inverse" },
+    fields: ["amount", "allow_pause"], max_rows: 10, overflow: "unsupported", collection_consistency: "complete_locked",
+    deterministic_order: [{ field: "policy_id", direction: "asc" }] });
+  const designation: import("@synapsor-runner/action-rules").HardLimitDesignationV1 = {
+    kind: "hard_invariant", scope: { tenant_field: "tenant_id", principal_field: "principal_id" },
+    population: { binding: "policies", field: "amount", where: { kind: "compare", operator: "eq",
+      left: { kind: "field", binding: "policies", field: "allow_pause" }, right: { kind: "literal", value: true, value_type: { kind: "boolean" } } } },
+    limit: { binding: "account", field: "credit_limit" }, time: "current_state", external_writers: "participating_only",
+  };
+  return { proposed: Object.assign(proposed, { hard_limit: designation }), built, designation };
+}
+
+function modelHardLimitRelatedCatalog(): BuiltActionRuleAuthoringCatalogV1 {
+  const built = builtCatalog();
+  const accountCatalog = built.catalog.resources[0]!;
+  const accountAuthoring = built.authoring.resources[0]!;
+  accountCatalog.fields.push({ name: "policy_id", type: stringId, nullable: false });
+  accountAuthoring.fields.push({
+    name: "policy_id",
+    type: stringId,
+    nullable: false,
+    role: "guard",
+    writable: false,
+  });
+  const policyCatalog: ActionRuleCatalogV1["resources"][number] = {
+    name: "billing.account_policies",
+    source: "local_postgres",
+    engine: "postgres",
+    schema: "billing",
+    table: "account_policies",
+    primary_key: "policy_id",
+    tenant_key: "tenant_id",
+    principal_scope_key: "principal_id",
+    version_field: "version",
+    fields: [
+      { name: "policy_id", type: stringId, nullable: false },
+      { name: "tenant_id", type: stringId, nullable: false },
+      { name: "principal_id", type: stringId, nullable: false },
+      { name: "allow_pause", type: { kind: "boolean" }, nullable: false },
+      { name: "version", type: { kind: "integer" }, nullable: false },
+    ],
+  };
+  built.catalog.resources.push(policyCatalog);
+  built.catalog.relationships.push({
+    name: "accounts_policy_fk",
+    from_resource: "billing.accounts",
+    to_resource: "billing.account_policies",
+    local_field: "policy_id",
+    target_field: "policy_id",
+    cardinality: "many_to_one",
+    nullable: false,
+    target_unique: true,
+  });
+  built.authoring.resources.push({
+    name: policyCatalog.name,
+    primary_key: policyCatalog.primary_key,
+    tenant_scope: "direct",
+    tenant_key: policyCatalog.tenant_key,
+    principal_scope: "direct",
+    principal_key: policyCatalog.principal_scope_key,
+    version_candidates: ["version"],
+    selected_version_field: "version",
+    operations: { update: false, insert: false },
+    fields: policyCatalog.fields.map((field) => ({
+      ...field,
+      role: field.name === "allow_pause" ? "runner_verification_only" as const : "guard" as const,
+      writable: false,
+    })),
+  });
+  built.authoring.relationships.push(structuredClone(built.catalog.relationships[0]!));
+  return built;
+}
+
+
+describe("typed Action producer catch chain", () => {
+  const input = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>) => ({
+    session: { provider: "openai" as const, model: "synthetic-unit", dependencies: { requestJson } },
+    intent: "Propose only the paused state for an eligible account, with one human reviewer.",
+    builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest,
+    egressAcknowledged: true, env: { OPENAI_API_KEY: "provider-test-key" },
+  });
+
+  it("preserves an actual focused effect producer failure and its phase after the one payload correction", async () => {
+    const calls: string[] = [];
+    const result = generateModelActionRuleDraft(input(phaseResponder(calls, name => name.endsWith("submit_effect_envelope_draft")
+      ? { ...payloadFor(name), set: { status: { kind: "field", binding: "unaccepted", field: "status" } } } : undefined)));
+    const error = await result.catch(error => error);
+    expect(actionRuleTrustedFailure(error)).toMatchObject({ origin: "authoring", presentation: "reviewed_grammar",
+      code: "ACTION_RULE_EFFECT_BINDING_UNAVAILABLE", phase: "effect", path: "effect.set.status" });
+    expect(calls.filter(name => name.endsWith("submit_effect_envelope_draft"))).toHaveLength(2);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("retains the genuine compiler error and formal path across bounded final repair", async () => {
+    const calls: string[] = [];
+    const error = await generateModelActionRuleDraft(input(phaseResponder(calls, name => name.endsWith("submit_action_rule_draft")
+      ? rulePayload({ kind: "compare", operator: "eq", left: { kind: "field", binding: "account", field: "not_reviewed" }, right: statusLiteral("active") }) : undefined))).catch(error => error);
+    expect(error).toBeInstanceOf(ActionRuleError);
+    expect(actionRuleTrustedFailure(error)).toMatchObject({ origin: "runtime", presentation: "reviewed_grammar", code: error.code, path: error.path });
+    expect(typeof error.path).toBe("string");
+    expect(error.path.length).toBeGreaterThan(0);
+    expect(calls.filter(name => name.endsWith("submit_action_rule_draft"))).toHaveLength(3);
+  });
+
+  it("routes a genuine reviewed-grammar host diagnostic to its declared phase", async () => {
+    const calls: string[] = [], bodies: string[] = [];
+    const failure = new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_INCOMPLETE", "Opaque reviewed display.",
+      { presentation: "reviewed_grammar", phase: "approval" });
+    let assessments = 0;
+    const result = await generateModelActionRuleDraft({ ...input(phaseResponder(calls, undefined, bodies)),
+      assessInputFidelity: async () => { if (assessments++ === 0) throw failure; return []; } });
+    expect(calls.filter(name => name.endsWith("submit_approval_policy_draft"))).toHaveLength(2);
+    expect(calls.filter(name => name.endsWith("submit_action_rule_draft"))).toHaveLength(1);
+    expect(bodies.at(-1)).toContain("Opaque reviewed display.");
+    expect(bodies.at(-1)).toContain("reviewed_grammar");
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+  });
+
+  it("does not grant the same code a repair call when its actual host disposition is terminal", async () => {
+    const calls: string[] = [];
+    const failure = new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_INCOMPLETE", "Opaque terminal display.");
+    const error = await generateModelActionRuleDraft({ ...input(phaseResponder(calls)), assessInputFidelity: async () => { throw failure; } }).catch(error => error);
+    expect(error).toBe(failure);
+    expect(calls).toHaveLength(4);
+  });
+
+  it.each([
+    ["ordinary code prose", new Error("ACTION_RULE_DRAFT_INVALID: Opaque unknown display.")],
+    ["plain code object", { code: "ACTION_RULE_DRAFT_INVALID", message: "Opaque unknown display." }],
+    ["JSON named Runtime imitation", JSON.parse(JSON.stringify({ name: "ActionRuleError", code: "ACTION_RULE_DRAFT_INVALID", path: "rule.require", message: "Opaque unknown display." }))],
+  ])("does not turn %s from an actual assessment catch into grammar repair", async (_name, failure) => {
+    const calls: string[] = [];
+    const error = await generateModelActionRuleDraft({ ...input(phaseResponder(calls)), assessInputFidelity: async () => { throw failure; } }).catch(error => error);
+    expect(error).toBe(failure);
+    expect(actionRuleTrustedFailure(error)).toBeUndefined();
+    expect(calls).toHaveLength(4);
+  });
+
+  it("retains an actual infrastructure failure without model correction", async () => {
+    const calls: string[] = [];
+    const failure = new Error("Opaque checkpoint infrastructure failure.");
+    const error = await converseActionRuleDraft({ ...input(phaseResponder(calls)), onCheckpoint: async () => { throw failure; } }).catch(error => error);
+    expect(error).toBe(failure);
+    expect(calls.length).toBeLessThanOrEqual(1);
+  });
+
+  it("retains the distinct typed Source pending gate without model repair", async () => {
+    const calls: string[] = [];
+    const failure = new SourceInputFidelityError([{ code: "SOURCE_INPUT_REQUIREMENT_PENDING", path: "draft.inputs",
+      outcome: "billing.pause_account", input: "", source_digest: readDigest, repair: "Keep the actual required interpretation pending." }]);
+    const error = await generateModelActionRuleDraft({ ...input(phaseResponder(calls)), assessInputFidelity: async () => { throw failure; } }).catch(error => error);
+    expect(error).toBe(failure);
+    expect(calls).toHaveLength(4);
+  });
+  it.each(["terminal_host", "unknown_prose", "typed_source_pending"] as const)("preserves the original %s through the actual conversational validation tool boundary", async kind => {
+    const failure = kind === "terminal_host"
+      ? new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_INCOMPLETE", "Opaque conversational terminal display.")
+      : kind === "unknown_prose" ? new Error("ACTION_RULE_MODEL_DRAFT_INVALID: Opaque conversational unknown display.")
+      : new SourceInputFidelityError([{ code: "SOURCE_INPUT_REQUIREMENT_PENDING", path: "draft.inputs",
+        outcome: "billing.pause_account", input: "", source_digest: readDigest, repair: "Preserve the actual pending Source interpretation." }]);
+    const steps = ["runner.submit_verification_boundary_draft", "runner.submit_effect_envelope_draft",
+      "runner.submit_action_rule_draft", "runner.submit_approval_policy_draft", "runner.validate_action_draft"];
+    const requestJson = vi.fn(async () => {
+      const name = steps.shift();
+      if (!name) throw new Error("Unexpected provider dispatch after non-repairable validation failure.");
+      return { status: 200, body: { output: [{ type: "function_call", call_id: `typed_${name}`,
+        name: name.replaceAll(".", "__"), arguments: JSON.stringify(name.endsWith("validate_action_draft") ? {} : payloadFor(name)) }] } };
+    });
+    const error = await converseActionRuleDraft({ ...input(requestJson), assessInputFidelity: async () => { throw failure; } }).catch(error => error);
+    expect(error).toBe(failure);
+    expect(requestJson).toHaveBeenCalledTimes(5);
+    expect(steps).toEqual([]);
+  });
+
+  it.each(["INVALID", "UNAVAILABLE", "AMBIGUOUS"] as const)("retains the actual array-joined UPDATE target %s diagnostic", async kind => {
+    const calls: string[] = [];
+    const requestJson = phaseResponder(calls, name => {
+      if (name.endsWith("submit_verification_boundary_draft") && kind !== "INVALID") {
+        const original = payloadFor(name);
+        return { ...original, resources: kind === "UNAVAILABLE" ? [] : [
+          { binding: "account", resource: "billing.accounts", source: { kind: "subject_ref" }, fields: ["status", "risk_hold"] },
+          { binding: "other_account", resource: "billing.accounts", source: { kind: "subject_ref" }, fields: ["status", "risk_hold"] },
+        ] };
+      }
+      if (name.endsWith("submit_effect_envelope_draft")) {
+        const effect = { ...payloadFor(name) };
+        if (kind === "INVALID") effect.target_binding = "not_a_verified_row";
+        else delete effect.target_binding;
+        return effect;
+      }
+      return undefined;
+    });
+    const error = await generateModelActionRuleDraft(input(requestJson)).catch(error => error);
+    expect(actionRuleTrustedFailure(error)).toMatchObject({ origin: "authoring", presentation: "reviewed_grammar",
+      code: `ACTION_RULE_UPDATE_TARGET_${kind}`, phase: "effect" });
+    expect(calls.filter(name => name.endsWith("submit_effect_envelope_draft"))).toHaveLength(2);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("retains the terminal actual array-joined policy clarification exhaustion", async () => {
+    const calls: string[] = [];
+    const askClarification = vi.fn(async () => "Require the account's active status and no risk hold.");
+    const error = await generateModelActionRuleDraft({ ...input(phaseResponder(calls, name => name.endsWith("submit_action_rule_draft")
+      ? { status: "clarification", question: "Which business condition should make an account eligible for this pause?" } : undefined)), askClarification }).catch(error => error);
+    expect(actionRuleTrustedFailure(error)).toMatchObject({ origin: "authoring", presentation: "terminal",
+      code: "ACTION_RULE_POLICY_CLARIFICATION_UNRESOLVED" });
+    expect(askClarification).toHaveBeenCalledTimes(2);
+    expect(calls.filter(name => name.endsWith("submit_action_rule_draft"))).toHaveLength(3);
+  });
+
+});
+
+
+describe("single Effect model schema decoder contract", () => {
+  const input = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>) => ({
+    session: { provider: "openai" as const, model: "synthetic-unit", dependencies: { requestJson } },
+    intent: "Propose only the paused state for an eligible account, with one human reviewer.",
+    builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest,
+    egressAcknowledged: true, env: { OPENAI_API_KEY: "provider-test-key" },
+  });
+  it("accepts the four existing phase payloads through the actual gateway and full compiler", async () => {
+    const calls: string[] = [];
+    const result = await generateModelActionRuleDraft(input(phaseResponder(calls)));
+    expect(calls).toHaveLength(4);
+    expect(result.compiled.draft.effect).toEqual(modelDraft().effect);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+  });
+  it("resolves an omitted UPDATE binding only from the actual unique verified row", async () => {
+    const calls: string[] = [];
+    const result = await generateModelActionRuleDraft(input(phaseResponder(calls, name => {
+      if (!name.endsWith("submit_effect_envelope_draft")) return undefined;
+      const effect = { ...payloadFor(name) }; delete effect.target_binding; return effect;
+    })));
+    expect(result.compiled.draft.effect.target_binding).toBe("account");
+    expect(calls).toHaveLength(4);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+  });
+  it.each(["missing_allowed_name", "extra_allowed_key", "missing_literal_type", "extra_literal_key"] as const)("refuses %s as a typed model grammar failure at the actual Effect decoder", async kind => {
+    const calls: string[] = [];
+    const error = await generateModelActionRuleDraft(input(phaseResponder(calls, name => {
+      if (!name.endsWith("submit_effect_envelope_draft")) return undefined;
+      const effect = { ...payloadFor(name) };
+      if (kind === "missing_allowed_name") effect.allowed_fields = [{ values: ["paused"] }];
+      if (kind === "extra_allowed_key") effect.allowed_fields = [{ name: "status", values: ["paused"], grants_apply: true }];
+      if (kind === "missing_literal_type") effect.set = { status: { kind: "literal", value: "paused" } };
+      if (kind === "extra_literal_key") effect.set = { status: { ...statusLiteral("paused"), grants_apply: true } };
+      return effect;
+    }))).catch(error => error);
+    expect(actionRuleTrustedFailure(error)).toMatchObject({ origin: "authoring", presentation: "reviewed_grammar",
+      code: "ACTION_RULE_MODEL_DRAFT_INVALID", phase: "effect" });
+    expect(actionRuleTrustedFailure(error)?.path).toMatch(/^model\.effect(?:\/|$)/u);
+    expect(calls.filter(name => name.endsWith("submit_effect_envelope_draft"))).toHaveLength(2);
+    expect(calls).toHaveLength(3);
+  });
+  it("preserves richer host hard-limit and initializer-reference transport as uncompiled data only", () => {
+    const { proposed } = modelHardLimitFixture();
+    const { schema_version: _version, verification, effect, approval, ...rule } = proposed;
+    const checkpoint = actionRuleAuthoringCheckpoint({ intent_digest: lock, context_digest: readDigest,
+      authoring_protocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION },
+      components: { verification, effect, rule, approval },
+      logical_turns: [{ id: randomUUID(), origin_context_digest: readDigest, iterations_used: 4, tool_calls_used: 4 }],
+      insert_initializer_question: { id: randomUUID(), revision: 1, question_digest: lock } });
+    const before = structuredClone(checkpoint);
+    const restored = actionRuleModelDraftFromUncompiledCheckpoint(checkpoint);
+    expect(restored).toEqual(proposed);
+    expect(checkpoint).toEqual(before);
+    expect(checkpoint.logical_turns?.at(-1)?.completed).toBeUndefined();
+    expect(checkpoint.insert_initializer_question).toEqual(before.insert_initializer_question);
+  });
+  it("keeps model-injected hard-limit metadata a terminal refusal before any schema repair", async () => {
+    const calls: string[] = [];
+    const error = await generateModelActionRuleDraft(input(phaseResponder(calls, name => name.endsWith("submit_effect_envelope_draft")
+      ? { ...payloadFor(name), hard_limit: modelHardLimitFixture().designation } : undefined))).catch(error => error);
+    expect(actionRuleTrustedFailure(error)).toMatchObject({ origin: "authoring", presentation: "terminal",
+      code: "ACTION_RULE_HARD_LIMIT_PHASE_CHANGE_UNSUPPORTED" });
+    expect(calls).toHaveLength(2);
+  });
+});
+
+
+describe("single Approval model schema decoder contract", () => {
+  const input = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>) => ({
+    session: { provider: "openai" as const, model: "synthetic-unit", dependencies: { requestJson } },
+    intent: "Propose only the paused state for an eligible account, with one human reviewer.",
+    builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest,
+    egressAcknowledged: true, env: { OPENAI_API_KEY: "provider-test-key" },
+  });
+  it("accepts the standard Approval and retains normalized full-draft collection grammar", async () => {
+    const calls: string[] = [];
+    const result = await generateModelActionRuleDraft(input(phaseResponder(calls)));
+    const validate = new Ajv2020({ strict: false }).compile(actionRuleModelDraftJsonSchema());
+    expect(validate(result.compiled.draft)).toBe(true);
+    const missing = structuredClone(result.compiled.draft) as Record<string, unknown>;
+    delete (missing.approval as Record<string, unknown>).shared_limits;
+    expect(validate(missing)).toBe(false);
+    expect(calls).toHaveLength(4);
+    expect(result.authority_granted).toBe(false);
+  });
+  it("preserves intentional human omission as an empty normalized shared-limit collection", async () => {
+    const calls: string[] = [];
+    const result = await generateModelActionRuleDraft(input(phaseResponder(calls, name => {
+      if (!name.endsWith("submit_approval_policy_draft")) return undefined;
+      const approval = { ...payloadFor(name) }; delete approval.shared_limits; return approval;
+    })));
+    expect(result.compiled.draft.approval.shared_limits).toEqual([]);
+    expect(result.compiled.approval_class.shared_limits).toEqual([]);
+    expect(calls).toHaveLength(4);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+  });
+  it("accepts the actual existing 128-character role label bound", async () => {
+    const calls: string[] = [], role = "r".repeat(128);
+    const result = await generateModelActionRuleDraft(input(phaseResponder(calls, name => name.endsWith("submit_approval_policy_draft")
+      ? { ...payloadFor(name), required_role: role } : undefined)));
+    expect(result.compiled.draft.approval.required_role).toBe(role);
+    expect(calls).toHaveLength(4);
+    expect(result.authority_granted).toBe(false);
+  });
+  it.each(["role129", "missing_quota_window", "extra_quota_key", "missing_predicate_operand", "extra_predicate_key"] as const)("refuses %s as typed model grammar before semantic approval compilation", async kind => {
+    const calls: string[] = [];
+    const error = await generateModelActionRuleDraft(input(phaseResponder(calls, name => {
+      if (!name.endsWith("submit_approval_policy_draft")) return undefined;
+      const approval = { ...payloadFor(name) };
+      if (kind === "role129") approval.required_role = "r".repeat(129);
+      if (kind === "missing_quota_window") approval.shared_limits = [{ id: "pause_day", kind: "count", scope: "capability", maximum: 1 }];
+      if (kind === "extra_quota_key") approval.shared_limits = [{ id: "pause_day", kind: "count", scope: "capability", maximum: 1, window_seconds: 86400, grants_apply: true }];
+      if (kind === "missing_predicate_operand") approval.auto_approve_when = { kind: "compare", operator: "eq", left: { kind: "field", binding: "account", field: "status" } };
+      if (kind === "extra_predicate_key") approval.auto_approve_when = { ...eligiblePredicate(), grants_apply: true };
+      return approval;
+    }))).catch(error => error);
+    expect(actionRuleTrustedFailure(error)).toMatchObject({ origin: "authoring", presentation: "reviewed_grammar",
+      code: "ACTION_RULE_MODEL_DRAFT_INVALID", phase: "approval" });
+    expect(actionRuleTrustedFailure(error)?.path).toMatch(/^model\.approval(?:\/|$)/u);
+    expect(calls.filter(name => name.endsWith("submit_approval_policy_draft"))).toHaveLength(2);
+    expect(calls).toHaveLength(5);
+  });
+});
+
+
+describe("single Rule model schema decoder contract", () => {
+  const input = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>) => ({
+    session: { provider: "openai" as const, model: "synthetic-unit", dependencies: { requestJson } },
+    intent: "Propose only the paused state for an eligible account, with one human reviewer.",
+    builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest,
+    egressAcknowledged: true, env: { OPENAI_API_KEY: "provider-test-key" },
+  });
+  it("accepts the current nested boolean and scalar literal grammar through the actual Rule gateway", async () => {
+    const calls: string[] = [];
+    const result = await generateModelActionRuleDraft(input(phaseResponder(calls)));
+    expect(result.compiled.draft.require).toEqual(eligiblePredicate());
+    expect(calls).toHaveLength(4);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+  });
+  it("preserves omitted discovery aliases through compiler, reverse projection and public draft schema", async () => {
+    const calls: string[] = [], discovery = { title: "Pause account", summary: "Propose a pause with human review." };
+    const result = await generateModelActionRuleDraft(input(phaseResponder(calls, name => name.endsWith("submit_action_rule_draft")
+      ? { ...payloadFor(name), discovery } : undefined)));
+    expect(result.compiled.draft.discovery).toEqual(discovery);
+    expect(result.compiled.rule["x-runner-discovery"]).toEqual(discovery);
+    expect(result.compiled.draft.discovery).not.toHaveProperty("aliases");
+    expect(actionRuleModelDraftFromAuthority({ authority: result.compiled.loaded.authority,
+      outcome: result.compiled.draft.outcome, review: result.compiled.draft.review }).discovery).toEqual(discovery);
+    const validate = new Ajv2020({ strict: false }).compile(actionRuleModelDraftJsonSchema());
+    expect(validate(result.compiled.draft), JSON.stringify(validate.errors)).toBe(true);
+    expect(calls).toHaveLength(4);
+    expect(result.authority_granted).toBe(false);
+  });
+  it("retains explicit aliases and a typed scalar derivation without changing policy", async () => {
+    const calls: string[] = [], discovery = { title: "Pause account", summary: "Propose a pause with human review.", aliases: ["pause billing"] };
+    const derive = { paused_status: statusLiteral("paused") };
+    const result = await generateModelActionRuleDraft(input(phaseResponder(calls, name => name.endsWith("submit_action_rule_draft")
+      ? { ...payloadFor(name), discovery, derive } : undefined)));
+    expect(result.compiled.draft.discovery).toEqual(discovery);
+    expect(result.compiled.draft.derive).toEqual(derive);
+    expect(result.compiled.draft.require).toEqual(eligiblePredicate());
+    expect(calls).toHaveLength(4);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+  });
+  it.each(["extra_discovery_key", "missing_compare_operand", "extra_predicate_key", "missing_literal_type", "missing_example_result"] as const)("refuses %s as typed model grammar before Rule semantic compilation", async kind => {
+    const calls: string[] = [];
+    const error = await generateModelActionRuleDraft(input(phaseResponder(calls, name => {
+      if (!name.endsWith("submit_action_rule_draft")) return undefined;
+      const rule = { ...payloadFor(name) };
+      if (kind === "extra_discovery_key") rule.discovery = { title: "Pause", summary: "Pause with review", aliases: [], grants_apply: true };
+      if (kind === "missing_compare_operand") rule.require = { kind: "compare", operator: "eq", left: { kind: "field", binding: "account", field: "status" } };
+      if (kind === "extra_predicate_key") rule.require = { ...eligiblePredicate(), grants_apply: true };
+      if (kind === "missing_literal_type") rule.derive = { paused_status: { kind: "literal", value: "paused" } };
+      if (kind === "missing_example_result") rule.review = { ...(rule.review as object), examples: [
+        { kind: "eligible", scenario: "Active account" }, { kind: "ineligible", scenario: "Risk hold", result: "Refuse" }] };
+      return rule;
+    }))).catch(error => error);
+    expect(actionRuleTrustedFailure(error)).toMatchObject({ origin: "authoring", presentation: "reviewed_grammar",
+      code: "ACTION_RULE_MODEL_DRAFT_INVALID", phase: "rule" });
+    expect(actionRuleTrustedFailure(error)?.path).toMatch(/^model\.rule(?:\/|$)/u);
+    expect(calls.filter(name => name.endsWith("submit_action_rule_draft"))).toHaveLength(2);
+    expect(calls).toHaveLength(4);
+  });
+  it("leaves a shape-valid unreviewed binding to the genuine Runtime semantic refusal", async () => {
+    const calls: string[] = [];
+    const error = await generateModelActionRuleDraft(input(phaseResponder(calls, name => name.endsWith("submit_action_rule_draft")
+      ? rulePayload(eligiblePredicate("unreviewed_account")) : undefined))).catch(error => error);
+    expect(error).toBeInstanceOf(ActionRuleError);
+    expect(actionRuleTrustedFailure(error)).toMatchObject({ origin: "runtime", code: "ACTION_RULE_INVALID" });
+    expect(actionRuleTrustedFailure(error)?.path).toContain("require");
+    expect(calls.filter(name => name.endsWith("submit_action_rule_draft"))).toHaveLength(3);
+  });
+});
+
+
+describe("single model clarification schema decoder contract", () => {
+  const phases = ["verification", "effect", "rule", "approval"] as const;
+  const toolSuffix = { verification: "submit_verification_boundary_draft", effect: "submit_effect_envelope_draft",
+    rule: "submit_action_rule_draft", approval: "submit_approval_policy_draft" };
+  const question = "Which business condition should make an account eligible for this pause?";
+  const input = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>) => ({
+    session: { provider: "openai" as const, model: "synthetic-unit", dependencies: { requestJson } },
+    intent: "Propose only the paused state for an eligible account, with one human reviewer.",
+    builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest,
+    egressAcknowledged: true, env: { OPENAI_API_KEY: "provider-test-key" },
+  });
+  it.each(phases)("preserves a genuine business question and same-phase continuation for %s", async phase => {
+    const calls: string[] = []; let sent = false;
+    const askClarification = vi.fn(async () => "An active account without a risk hold.");
+    const result = await generateModelActionRuleDraft({ ...input(phaseResponder(calls, name => {
+      if (!name.endsWith(toolSuffix[phase]) || sent) return undefined;
+      sent = true; return { status: "clarification", question };
+    })), askClarification });
+    expect(askClarification).toHaveBeenCalledTimes(1);
+    expect(askClarification).toHaveBeenCalledWith(question);
+    expect(calls.filter(name => name.endsWith(toolSuffix[phase]))).toHaveLength(2);
+    expect(calls).toHaveLength(5);
+    expect(result.clarification_count).toBe(1);
+    expect(result.compiled.draft.require).toEqual(eligiblePredicate());
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+  });
+  it.each(phases)("refuses an extra clarification key as typed model grammar for %s", async phase => {
+    const calls: string[] = [], askClarification = vi.fn(async () => "An active account without a risk hold.");
+    const error = await generateModelActionRuleDraft({ ...input(phaseResponder(calls, name => name.endsWith(toolSuffix[phase])
+      ? { status: "clarification", question, grants_apply: true } : undefined)), askClarification }).catch(error => error);
+    expect(actionRuleTrustedFailure(error)).toMatchObject({ origin: "authoring", presentation: "reviewed_grammar",
+      code: "ACTION_RULE_MODEL_DRAFT_INVALID", phase });
+    expect(actionRuleTrustedFailure(error)?.path).toMatch(new RegExp(`^model\\.${phase}(?:/|$)`, "u"));
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(calls.filter(name => name.endsWith(toolSuffix[phase]))).toHaveLength(2);
+  });
+  it.each(["missing", "nonstring", "overlong"] as const)("refuses a %s question with a genuine local schema locator", async kind => {
+    const calls: string[] = [], askClarification = vi.fn(async () => "No answer should be requested.");
+    const error = await generateModelActionRuleDraft({ ...input(phaseResponder(calls, name => name.endsWith(toolSuffix.rule)
+      ? { status: "clarification", ...(kind === "missing" ? {} : { question: kind === "nonstring" ? 7 : "q".repeat(501) }) } : undefined)), askClarification }).catch(error => error);
+    expect(actionRuleTrustedFailure(error)).toMatchObject({ origin: "authoring", presentation: "reviewed_grammar",
+      code: "ACTION_RULE_MODEL_DRAFT_INVALID", phase: "rule" });
+    expect(actionRuleTrustedFailure(error)?.path).toMatch(/^model\.rule(?:\/|$)/u);
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(calls.filter(name => name.endsWith(toolSuffix.rule))).toHaveLength(2);
+  });
+  it("keeps model hard-limit injection terminal even in a clarification envelope", async () => {
+    const calls: string[] = [], askClarification = vi.fn(async () => "No answer should be requested.");
+    const error = await generateModelActionRuleDraft({ ...input(phaseResponder(calls, name => name.endsWith(toolSuffix.rule)
+      ? { status: "clarification", question, hard_limit: modelHardLimitFixture().designation } : undefined)), askClarification }).catch(error => error);
+    expect(actionRuleTrustedFailure(error)).toMatchObject({ origin: "authoring", presentation: "terminal",
+      code: "ACTION_RULE_HARD_LIMIT_PHASE_CHANGE_UNSUPPORTED" });
+    expect(askClarification).not.toHaveBeenCalled();
+    expect(calls.filter(name => name.endsWith(toolSuffix.rule))).toHaveLength(1);
+  });
 });

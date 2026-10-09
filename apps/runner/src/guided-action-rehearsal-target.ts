@@ -134,8 +134,16 @@ export async function resolveGuidedActionRehearsalTargetWithRuntime(input: {
       transaction_mode: "read_only",
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (/invalid input syntax for type|incorrect .* value|truncated incorrect/i.test(message)) {
+    const driver = error !== null && typeof error === "object"
+      ? error as { code?: unknown; errno?: unknown }
+      : undefined;
+    const invalidScopeType = source.engine === "postgres"
+      ? driver?.code === "22P02"
+      : source.engine === "mysql" && (
+        driver?.code === "ER_TRUNCATED_WRONG_VALUE" && driver.errno === 1292
+        || driver?.code === "ER_TRUNCATED_WRONG_VALUE_FOR_FIELD" && driver.errno === 1366
+      );
+    if (invalidScopeType) {
       throw new Error(
         "GUIDED_ACTION_TRUSTED_SCOPE_VALUE_INVALID: the configured trusted tenant or principal value does not match the database type required by this action. Check the trusted-context environment variables; no rehearsal or source write ran.",
       );
