@@ -1,4 +1,5 @@
 import { assertActionSubjectsObtainable } from "./action-subject-compatibility.js";
+import { assertHardLimitAuthorityWriterAdmission } from "./hard-limit-authority-admission.js";
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
@@ -649,6 +650,7 @@ export async function activateActionRuleAuthority(input: {
   confirmation: string;
   actor: string;
   now?: string;
+  env?: NodeJS.ProcessEnv;
   mutationPermit?: ProjectAuthorityMutationPermit;
   /** Selected by the fixed-tool deployment host, never a model option. Other hosts can issue their own reviewed subjects. */
   clientContract?: "four_tool";
@@ -667,6 +669,8 @@ async function activateActionRuleAuthorityUnlocked(input: Parameters<typeof acti
     const draft = revision ? parseStoredActionDraft(revision) : undefined;
     const activation = await reviewedActionActivation(input, draft, () => loadActivatedExplorationBoundaries(projectRoot, binding));
     attachWithdrawal(activation, draft!, current.active[0] ? parseStoredActionActivation(current.active[0]).activation : undefined, input.withdrawal);
+    if (!activation.publication) await assertHardLimitAuthorityWriterAdmission({ projectRoot, registry: parseActionRuleAuthority(draft!.authority, draft!.digest).registry,
+      publication: input.runtimePublication, binding, env: input.env });
     const active = storedActionRecord(activation);
     const change: Omit<ControlPolicyCommit, "deployment_id"> = { expected_epoch: current.epoch, revisions: [active],
       active: [...current.active.filter((entry) => entry.name !== active.name).map((entry) => ({ ...actionKey(entry.name), revision_id: null })), actionPointer(active)],
@@ -681,6 +685,8 @@ async function activateActionRuleAuthorityUnlocked(input: Parameters<typeof acti
   const draft = await readActionRuleAuthorityDraft(projectRoot, input.name);
   const activation = await reviewedActionActivation(input, draft, () => loadActivatedExplorationBoundaries(projectRoot));
   attachWithdrawal(activation, draft!, await readActionRuleAuthorityActivation(projectRoot), input.withdrawal);
+  if (!activation.publication) await assertHardLimitAuthorityWriterAdmission({ projectRoot, registry: parseActionRuleAuthority(draft!.authority, draft!.digest).registry,
+    env: input.env });
   const active = activePath(projectRoot);
   const revision = revisionPath(projectRoot, activation.digest);
   const previousActive = await readOptionalText(active);

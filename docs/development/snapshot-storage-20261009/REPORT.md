@@ -1,6 +1,6 @@
 # Prospective review snapshot correction
 
-Owner requested no docs/non-test copies in future review/test snapshots. Historical snapshots, frozen candidates, protected containers and sessions remain untouched; no cleanup is authorized or performed.
+Owner requested no docs/non-test copies in future review/test snapshots. The later explicit cleanup approval was applied only to the 38 finished, sealed copied-doc directories described below. Frozen candidates, protected containers, sessions, source code, and active runs remain untouched.
 
 | Lane | Method | Measured logical bytes | Allocated bytes |
 | --- | --- | ---: | ---: |
@@ -22,4 +22,8 @@ These are measured prebuild copies, not complete postbuild/database evidence siz
 
 Required test assets must be explicit and exact-pin hashed; no assertion may be removed or skipped because an asset was excluded. Documentation/package gates need their actual declared asset set and cannot silently use the compact component profile. The alleged missing root Vitest config was corrected: none exists at the inspected current pins; future actual configs are included.
 
-Storage audit `ba6d04c8`: reviewer root 25.938 GiB; 58 copied qualification-evidence trees occupy 21.177 GiB (81.64%). Logs/results/manifests total 0.098 GiB. Metadata birth times are not a reliable historical net-growth measurement. Existing source/docs cleanup remains unapproved; freed-by-deletion = 0 bytes.
+Storage audit `ba6d04c8`: reviewer root 25.938 GiB; 58 copied qualification-evidence trees occupy 21.177 GiB (81.64%). Logs/results/manifests total 0.098 GiB. Metadata birth times are not a reliable historical net-growth measurement.
+
+Approved cleanup completed at 2026-10-09T02:12:40Z: exactly 38 `source/docs` directories removed, reducing their allocated footprint by **15,241,277,440 bytes = 15.241 GB = 14.195 GiB**. All 226 top-level evidence files retain their original hashes; all source siblings retain their identities/modes. Eligibility was independently confirmed by R2 against finished timestamps, sealed results, exact pinned doc blobs, and no current use. The fixed cutoff was 2026-10-08T23:01:53Z, over three hours before removal.
+
+The [exact cleanup report](/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b64-visibility-retirement/docs/development/storage-cleanup-20261009-reviewer2/REPORT.txt), approval, inventory, executor, and per-path verification are privately pushed as `27f3e087`. Filesystem available space increased to 68,176,551,936 bytes; only the per-path allocated reduction is attributed to cleanup, since other lanes write concurrently. No further deletion is performed or authorized by this checkpoint.

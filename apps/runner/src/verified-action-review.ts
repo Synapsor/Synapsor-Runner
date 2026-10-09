@@ -2,6 +2,8 @@ import { assessActionWithdrawal, type ActionWithdrawalReview } from "./action-ru
 import { actionRuleEffectLines, actionRuleEffectInventory } from "@synapsor-runner/action-rules";
 import { AUTHORING_PROGRAM_CAPACITY, authoringReviewPage } from "./authoring-program-capacity.js";
 import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
+import { reviewHardLimitActionWriter } from "./hard-limit-action-review.js";
+import { hardLimitWriterSetupLines } from "./hard-limit-writer-setup.js";
 import { executionActivationView, proposalActivationView } from "./authoring-activation-view.js";
 import process from "node:process";
 import { assessWorkerLaunch, workerLaunchLines } from "./worker-launch.js";
@@ -33,6 +35,7 @@ import { revalidateSavedActionReadDependencies, savedActionReadReviewState } fro
 import { inspectReviewerGrantRemovalImpact, reviewerGrantImpactLines } from "./reviewer-grant-impact.js";
 import {
   verifySemanticExecutionReadPosture,
+  inspectSemanticActionActivationWriterSetup,
   activateSemanticActionRuntime,
   disableSemanticSupervisedExecution,
   enableSemanticSupervisedExecution,
@@ -66,10 +69,15 @@ export function verifiedActionActivationChoiceCopy(input: {
   subjectConcern: boolean;
   canRecheckRead: boolean;
   boundaryName: string;
+  writerReviewPending?: boolean;
 }) {
   if (input.draftReady) return {
     label: "Activate this exact proposal authority",
     detail: "Agents may nominate these outcomes; approval and apply remain separate.",
+  };
+  if (input.writerReviewPending) return {
+    label: "Prepare the dedicated writer first",
+    detail: "The hard-limit Action stays disabled until Runner checks the actual writer and its exact privileges.",
   };
   if (input.readReviewPending) return {
     label: "Activate linked Read Boundary first",
@@ -220,6 +228,10 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
       programConcerns.push(error.message);
     }
   }
+  const writerReadback = input.draft && dependenciesReady
+    ? await inspectSemanticActionActivationWriterSetup({ ...input, draft: input.draft }) : undefined;
+  const writerReviewPending = writerReadback?.status === "refused";
+  if (writerReviewPending) draftReady = false;
   let withdrawal: ActionWithdrawalReview | undefined;
   if (dependenciesReady && !needsReadReview && input.active && input.draft) {
     try { withdrawal = await assessActionWithdrawal({ projectRoot: input.projectRoot, draft: input.draft, env: input.env, baseConfigPath: input.baseConfigPath }); }
@@ -240,6 +252,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     ...await removalImpact(),
     ...jobReview.summary,
     ...programConcerns,
+    ...(writerReadback ? hardLimitWriterSetupLines(writerReadback) : []),
     ...(withdrawal ? ["An exact withdrawal is available separately from BUSINESS completion. Original source duties remain pending.",
       `Withdraw: ${withdrawal.removed_outcomes.join(", ")}. Retained Action semantics and current count bindings were checked.`] : []),
     ...subjectLines,
@@ -267,6 +280,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
           ? unavailableOutcomes.size ? "The saved activation is unchanged until you separately confirm this exact replacement."
             : "The active authority remains live until you separately confirm this exact replacement."
           : "Disabled revision is ready for its separate proposal-authority confirmation."
+        : writerReviewPending ? "Configure the dedicated writer and resume this saved hard-limit Action review."
         : programConcerns.length ? "The complete selected program needs current review before publication."
         : subjectConcerns.length ? "This revision is not ready for the four-tool client: review its subject acquisition requirement. Existing authority remains unchanged."
         : input.active
@@ -288,6 +302,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         lines: summary,
       };
     }
+    if (!await reviewHardLimitActionWriter({ ...input, draft: input.draft })) return reviewedNotice(input.draft, false);
     const accepted = await (input.session.confirmActivation ?? input.session.confirm)(
       `Activate verified Action Boundary "${input.draft.authority.action_boundary.name}"?`,
       { activationView: proposalActivationView(),
@@ -328,7 +343,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
               value: "activate",
               ...verifiedActionActivationChoiceCopy({ draftReady, readReviewPending: needsReadReview,
                 programConcern: programConcerns.length > 0,
-                subjectConcern: subjectConcerns.length > 0, canRecheckRead, boundaryName: input.boundaryName }),
+                subjectConcern: subjectConcerns.length > 0, canRecheckRead, boundaryName: input.boundaryName, writerReviewPending }),
               disabled: !draftReady,
             }]
           : []),
@@ -632,6 +647,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
           "Execution bindings require their ordinary separate review before use."] };
     }
     if (choice === "activate" && input.draft && draftReady) {
+      if (!await reviewHardLimitActionWriter({ ...input, draft: input.draft })) return reviewedNotice(input.draft, false);
       const confirmed = await (input.session.confirmActivation ?? input.session.confirm)(
         `Activate verified Action Boundary "${input.draft.authority.action_boundary.name}"?`,
         {
