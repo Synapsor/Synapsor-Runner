@@ -55,6 +55,7 @@ export type AuthoringTransportOperation = {
   action_checkpoint?: { consumer: "action_rule_components"; kind: "version_interpretation" | "compiled_draft" | "subject_proposal";
     material_digest: `sha256:${string}`; response_digest: `sha256:${string}` };
   /** Consumption of this exact native Read adapter result, separate from human consent. */
+  planning_checkpoint?: { consumer: "planning"; kind: "planned_result"; material_digest: `sha256:${string}`; response_digest: `sha256:${string}` };
   read_checkpoint?: { consumer: "read_revision" | "read_scope"; kind: "private_prerequisite" | "prerequisite_mapping" | "scope_proposal";
     material_digest: `sha256:${string}`; response_digest: `sha256:${string}`;
     decision?: { digest: `sha256:${string}`; actor: "local_installation_operator"; recorded_at: string } };
@@ -170,7 +171,7 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
   }
   const seen = new Set<string>();
   for (const op of s.operations) {
-    if (!op || typeof op !== "object" || !exactKeys(op,["id","request_digest","context_digest","deadline","state","episode_id","recovery_of","checkpoint_seen","question_handoff","action_checkpoint","read_checkpoint","producer_input","manual_recovery","attempts"]) || !id(op.id) || seen.has(op.id) || !digest(op.request_digest) || !digest(op.context_digest) || !date(op.deadline)
+    if (!op || typeof op !== "object" || !exactKeys(op,["id","request_digest","context_digest","deadline","state","episode_id","recovery_of","checkpoint_seen","question_handoff","action_checkpoint","read_checkpoint","planning_checkpoint","producer_input","manual_recovery","attempts"]) || !id(op.id) || seen.has(op.id) || !digest(op.request_digest) || !digest(op.context_digest) || !date(op.deadline)
       || !["in_flight","unsent","unknown","partial","received","handled","checkpointed","refused"].includes(op.state)
       || op.checkpoint_seen !== undefined && op.checkpoint_seen !== true
       || !Array.isArray(op.attempts) || !op.attempts.length || op.attempts.length > 3
@@ -183,6 +184,12 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
         || !exactKeys(c, ["consumer", "kind", "material_digest", "response_digest"])
         || c.consumer !== "action_rule_components" || !["version_interpretation", "compiled_draft", "subject_proposal"].includes(c.kind)
         || !digest(c.material_digest) || !digest(c.response_digest)
+        || op.state !== "checkpointed" || op.checkpoint_seen !== true || op.attempts.at(-1)?.outcome !== "response") throw invalid();
+    }
+    if (op.planning_checkpoint !== undefined) {
+      const c = op.planning_checkpoint;
+      if (!c || !exactKeys(c, ["consumer", "kind", "material_digest", "response_digest"])
+        || c.consumer !== "planning" || c.kind !== "planned_result" || !digest(c.material_digest) || !digest(c.response_digest)
         || op.state !== "checkpointed" || op.checkpoint_seen !== true || op.attempts.at(-1)?.outcome !== "response") throw invalid();
     }
     if (op.read_checkpoint !== undefined) {
@@ -698,6 +705,31 @@ export function authoringConsumedTurnCheckpoint(state: AuthoringTransportState |
   }
   validateAuthoringTransportState(next);
   return next;
+}
+
+/** Bind the exact live planned result without replaying or acknowledging a historical tuple. */
+export function authoringPlanningCheckpoint(state: AuthoringTransportState | undefined,
+  completion: AuthoringQuestionCompletion, materialDigest: `sha256:${string}`): AuthoringTransportState {
+  if (!digest(materialDigest)) throw invalid();
+  const next = authoringConsumedTurnCheckpoint(state, completion);
+  const op = next.operations.find(item => item.id === completion.operation_id);
+  if (!op || op.attempts.at(-1)?.outcome !== "response") throw invalid();
+  const checkpoint = { consumer: "planning" as const, kind: "planned_result" as const,
+    material_digest: materialDigest, response_digest: completion.response_digest };
+  if (op.planning_checkpoint && canonicalJsonDigest(op.planning_checkpoint) !== canonicalJsonDigest(checkpoint)) throw invalid();
+  op.planning_checkpoint = checkpoint;
+  validateAuthoringTransportState(next);
+  return next;
+}
+export function assertAuthoringPlanningCheckpoint(state: AuthoringTransportState | undefined,
+  completion: AuthoringQuestionCompletion, materialDigest: `sha256:${string}`): void {
+  if (!state) throw invalid();
+  validateAuthoringTransportState(state);
+  const op = state.operations.find(item => item.id === completion.operation_id);
+  if (!op || disposedOperation(state, op.id) || op.state !== "checkpointed" || op.checkpoint_seen !== true
+    || op.request_digest !== completion.request_digest || op.context_digest !== completion.context_digest
+    || op.attempts.at(-1)?.outcome !== "response" || op.planning_checkpoint?.material_digest !== materialDigest
+    || op.planning_checkpoint.response_digest !== completion.response_digest) throw invalid();
 }
 
 /** A durable producer record may retain a refused semantic result. Its Source

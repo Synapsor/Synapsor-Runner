@@ -1,3 +1,5 @@
+import { createBoundaryPlanningResult, assertBoundaryPlanningResultNative, restoreBoundaryPlanningResult, type BoundaryPlanningInvocation, type BoundaryPlanningResult } from "./authoring-planning-result.js";
+import type { BoundaryJobPlan } from "./boundary-job-model.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { randomUUID } from "node:crypto";
 import { explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft, type GenerationLock } from "./auto-boundary.js";
@@ -5,7 +7,7 @@ import type { BoundaryAuthoringReadRevision, BoundaryAuthoringResumeRead, Bounda
 import type { OperatorQuestion } from "./authoring-operator-question.js";
 import type { AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import type { PolicySourceSession } from "./authoring-policy-source.js";
-import { authoringReadCheckpoint, type AuthoringQuestionCompletion, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringPlanningCheckpoint, authoringReadCheckpoint, type AuthoringQuestionCompletion, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { projectAuthoringReadScopeContext, projectAuthoringReadScopePreview } from "./authoring-read-scope-context.js";
 import { createReadScopeHost, type ReadScopeHostAccess, type ReadScopeInteraction, type ReadScopeInteractionResponse } from "./authoring-read-scope-host.js";
 import { createReadScopeQuestion, proposeReadScopeReview, resolveNativeReadScope } from "./authoring-read-scope-question.js";
@@ -40,6 +42,7 @@ export type NativeReadScopePorts = {
   /** Existing owner alone installs records and acknowledges Resume CAS. The
    * generation patch is the actual consumed completion, never a fake answer. */
   save(input: { questions: OperatorQuestion[]; generation?: AuthoringTransportState;
+    planningResult?: BoundaryPlanningResult;
     pendingReadRevisionState?: BoundaryAuthoringReadRevision;
     read?: BoundaryAuthoringResumeRead;
     completedReadRevision?: { question_id: string };
@@ -227,6 +230,66 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
         stage: state.resume.stage, acknowledgeCompletedTurn: true, subject: options.subject }, options.permit);
     },
   }, interact: input.interact });
+  /** Capture the complete actual planner result before any human wait. The
+   * question has no answer/confirmation, and a requested Read has no analysis. */
+  const recordPlanning = async (plan: Extract<BoundaryJobPlan, { state: "planned" }>) => input.ports.mutate(async permit => {
+    await input.ports.assertCurrent(permit);
+    if (!plan.completion || !plan.read_scope) return unavailable("The actual complete planning result");
+    const state = snapshot(), current = await loadBoundaryReviewContext(input.projectRoot, permit);
+    const inventory = project(current.candidate, current);
+    assertReadScopeProvenance(plan.read_scope, { expectedBinding: inventory.binding, ...inventory });
+    if (assessReadScopeRecordCurrentness({ record: plan.read_scope, expectedBinding: inventory.binding }).status === "stale")
+      return unavailable("The exact current planning scope");
+    const question = createReadScopeQuestion({ id: randomUUID(), revision: 1,
+      scope_digest: input.ports.questionScope(), context_digest: await input.ports.questionContext(permit),
+      read_scope: { mode: "review", record: plan.read_scope, completion: plan.completion } });
+    const planningResult = createBoundaryPlanningResult(plan, question.id);
+    const generation = authoringPlanningCheckpoint(authoringReadCheckpoint(state.generation, plan.completion,
+      readScopeConsumption(question.read_scope!)), plan.completion, planningResult.material_digest);
+    const questions = [...state.questions, question];
+    const expected = canonicalJsonDigest({ questions, generation, planningResult, read: state.read ?? null,
+      pendingRevision: state.resume.pending_read_revision_state ?? null });
+    await input.ports.assertCurrent(permit);
+    if (snapshot().revision !== state.revision) return unavailable("The original planning checkpoint revision");
+    await input.ports.save(structuredClone({ questions, generation, planningResult, stage: "planning" as const,
+      acknowledgeCompletedTurn: false, subject: "The exact completed planning result" }), permit);
+    const acknowledged = snapshot();
+    if (canonicalJsonDigest({ questions: acknowledged.questions, generation: acknowledged.generation,
+      planningResult: acknowledged.resume.planning_result, read: acknowledged.read ?? null,
+      pendingRevision: acknowledged.resume.pending_read_revision_state ?? null }) !== expected)
+      return unavailable("The exact acknowledged planning checkpoint");
+    return structuredClone(planningResult);
+  });
+  const restorePlanning = async (invocation: BoundaryPlanningInvocation, permit?: ProjectAuthorityMutationPermit) => {
+    await input.ports.assertCurrent(permit);
+    const state = snapshot(), result = state.resume.planning_result;
+    if (!result) return unavailable("The saved complete planning result");
+    const plan = restoreBoundaryPlanningResult(result, state.generation, state.questions, invocation);
+    const current = await loadBoundaryReviewContext(input.projectRoot, permit), inventory = project(current.candidate, current);
+    assertReadScopeProvenance(plan.read_scope!, { expectedBinding: inventory.binding, ...inventory });
+    const q = state.questions.find(q => q.id === result.read_scope_question_id)!;
+    if (q.scope_digest !== input.ports.questionScope() || q.context_digest !== await input.ports.questionContext(permit)
+      || q.disposition || state.questions.some(next => next.read_scope?.predecessor_id === q.id))
+      return unavailable("The current planning continuation");
+    await input.ports.assertCurrent(permit);
+    if (snapshot().revision !== state.revision) return unavailable("The coherent planning continuation");
+    return plan;
+  };
+  const pendingPlanning = async (boundary: ExplorationBoundaryDraft, permit?: ProjectAuthorityMutationPermit) => {
+    await input.ports.assertCurrent(permit);
+    const state = snapshot(), result = state.resume.planning_result;
+    if (!result || result.plan.read_scope?.proposal.applicability !== "read_requested") return undefined;
+    assertBoundaryPlanningResultNative(result, state.generation, state.questions);
+    const question = state.questions.find(q => q.id === result.read_scope_question_id)!;
+    if (question.confirmation || question.disposition || state.questions.some(q => q.read_scope?.predecessor_id === question.id)) return undefined;
+    const current = await loadBoundaryReviewContext(input.projectRoot, permit), inventory = project(boundary, current);
+    assertReadScopeProvenance(question.read_scope!.record, { expectedBinding: inventory.binding, ...inventory });
+    if (question.scope_digest !== input.ports.questionScope()
+      || question.context_digest !== await input.ports.questionContext(permit)) return unavailable("The exact pending planning scope");
+    await input.ports.assertCurrent(permit);
+    if (snapshot().revision !== state.revision) return unavailable("The coherent pending planning scope");
+    return { result: structuredClone(result), question: structuredClone(question) };
+  };
   const recordNoRead = async (record: ReadScopeRecord, completion: AuthoringQuestionCompletion) => input.ports.mutate(async permit => {
     await input.ports.assertCurrent(permit);
     const current = await loadBoundaryReviewContext(input.projectRoot, permit), state = snapshot(), inventory = project(current.candidate, current);
@@ -292,5 +355,5 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     }
     return { required, unresolved };
   };
-  return { context, assess, preview, pendingRevision, commitPendingRevisionScope, commitAnalyzedRevisionScope, answerIds, review: host.review, restore, recordNoRead, principalRequirement };
+  return { recordPlanning, restorePlanning, pendingPlanning, context, assess, preview, pendingRevision, commitPendingRevisionScope, commitAnalyzedRevisionScope, answerIds, review: host.review, restore, recordNoRead, principalRequirement };
 }

@@ -1,3 +1,4 @@
+import { assertBoundaryPlanningResultNative, type BoundaryPlanningResult } from "./authoring-planning-result.js";
 import { readRevisionMappingContinuation, type ReadRevisionMappingOwner } from "./read-revision-mapping-continuation.js";
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -39,6 +40,7 @@ export type ReadAssistanceCheckpointAccess = {
   readPreparedRead?(): BoundaryAuthoringResumeRead | undefined;
   /** Exact currently saved revision projection, reloaded under this mutation.
    * The prior Read pointer remains in its own slot until this real new mapping. */
+  readPendingPlanning?(permit: ProjectAuthorityMutationPermit): Promise<{ result: BoundaryPlanningResult; question: OperatorQuestion } | undefined>;
   readPendingRevision?(permit: ProjectAuthorityMutationPermit): Promise<ReadRevisionMappingOwner | undefined>;
   /** Re-resolve from current protected records inside the owning mutation, not
    * a cached display/model inventory. Absence cannot silently use legacy mode. */
@@ -86,7 +88,16 @@ export function createReadAssistanceCheckpointHost({ access }: { access: ReadAss
           if (!completion || !access.scopeInventory) throw access.checkpointFailure("The native typed Read review");
           const inventory = await access.scopeInventory(permit);
           const currentRead = access.readPreparedRead?.();
-          const previousId = accepted.read_scope_predecessor_id ?? currentRead?.scope_question_id;
+          const pendingPlanning = !accepted.read_scope_predecessor_id ? await access.readPendingPlanning?.(permit) : undefined;
+          if (pendingPlanning) {
+            assertBoundaryPlanningResultNative(pendingPlanning.result, access.readRecovery(), access.readQuestions());
+            const currentQuestion = access.readQuestions().find(q => q.id === pendingPlanning.result.read_scope_question_id);
+            if (!currentQuestion || canonicalJsonDigest(currentQuestion) !== canonicalJsonDigest(pendingPlanning.question)
+              || currentQuestion.confirmation || currentQuestion.disposition || currentQuestion.read_scope?.record.analysis_digest
+              || currentQuestion.read_scope?.record.proposal.applicability !== "read_requested")
+              throw access.checkpointFailure("The exact unconfirmed planning predecessor");
+          }
+          const previousId = accepted.read_scope_predecessor_id ?? pendingPlanning?.question.id ?? currentRead?.scope_question_id;
           const pendingRevision = accepted.read_scope_predecessor_id ? await access.readPendingRevision?.(permit) : undefined;
           let revisionPredecessor: OperatorQuestion | undefined;
           if (pendingRevision) {
@@ -100,7 +111,7 @@ export function createReadAssistanceCheckpointHost({ access }: { access: ReadAss
           }
           const previous = previousId ? access.readQuestions().find(q => q.id === previousId
             && q.kind === "read_scope" && q.read_scope?.mode === "review" && q.scope_digest === access.scopeDigest()) : undefined;
-          if (previousId && (!previous || !revisionPredecessor && currentRead?.scope_question_id !== previousId
+          if (previousId && (!previous || !revisionPredecessor && !pendingPlanning && currentRead?.scope_question_id !== previousId
             || access.readQuestions().some(q => q.read_scope?.predecessor_id === previousId)))
             throw access.checkpointFailure("The exact current Read proposal predecessor");
           if (accepted.read_scope_predecessor_id && !revisionPredecessor) {

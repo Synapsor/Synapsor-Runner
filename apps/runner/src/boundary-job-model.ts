@@ -1,3 +1,4 @@
+import { registerCompletedBoundaryPlan, parseBoundaryPlanningInvocation, type BoundaryPlanningInvocation, type BoundaryPlanningResult } from "./authoring-planning-result.js";
 import type { ExactReadRequestBinding } from "./boundary-job-read-requests.js";
 import { READ_SCOPE_PROTOCOL, READ_SUBJECT_SCOPE_GUIDANCE, readScopeProposalSchema, resolveReadScopeProposal, assessReadScopeDraft, readScopeDelta,
   type ReadScopeBinding, type ReadScopeReference, type ReadScopeCatalog, type ReadScopeRecord } from "./read-structured-scope.js";
@@ -98,6 +99,7 @@ export type BoundaryJobPlan = {
   summary: string;
   /** Actual completed routing consumer, not model-supplied authority. */
   completion?: AuthoringQuestionCompletion;
+  planning_invocation?: BoundaryPlanningInvocation;
   correction_used: boolean;
   authority_granted: false;
   source_database_changed: false;
@@ -157,7 +159,7 @@ export type StructuredReadPlanningContext = {
  * disabled candidate. The model chooses only a semantic route from a closed
  * state summary; Runner resolves and validates every durable revision.
  */
-export async function planModelBoundaryJob(input: {
+export type BoundaryJobPlanningInput = {
   session: BoundaryJobPlanningSession;
   jobIntent: string;
   workflow?: "program";
@@ -171,35 +173,11 @@ export async function planModelBoundaryJob(input: {
   egressAcknowledged: boolean;
   signal?: AbortSignal;
   onDiagnostic?: (diagnostic: BoundaryJobPlanningDiagnostic) => Promise<void> | void;
-}): Promise<BoundaryJobPlan> {
-  if (!input.structuredScope) throw new Error("READ_SCOPE_PROTOCOL_REQUIRED: Planning requires the pinned structured scope protocol; preserve the saved job without replay.");
-  if (input.structuredScope.protocol !== READ_SCOPE_PROTOCOL) throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED: No legacy scope fallback is available.");
-  const jobIntent = boundedText(
-    input.jobIntent,
-    "Boundary job",
-    MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS,
-  );
-  const clarificationAnswer = input.clarificationAnswer === undefined
-    ? undefined
-    : boundedText(input.clarificationAnswer, "Boundary job clarification", 3_000);
-  const state = normalizeCurrentState(input.currentState);
-  const availableResourceIds = normalizeAvailableResourceIds(input.availableResourceIds ?? []);
-  const structured = input.structuredScope ? structuredClone(await input.structuredScope.current()) : undefined;
-  const structuredView = structured ? { binding: structured.binding, references: structured.references, catalog: structured.catalog,
-    reusable: structured.reusable ? currentStructuredReadEvidence({ ...structured.reusable, expectedBinding: structured.binding,
-      references: structured.references, catalog: structured.catalog }).record.proposal : undefined,
-    resumable: structured.resumable ? currentStructuredReadEvidence({ ...structured.resumable, expectedBinding: structured.binding,
-      references: structured.references, catalog: structured.catalog }).record.proposal : undefined } : undefined;
-  if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL) throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED");
-  const tools: AskToolDefinition[] = [jobPlanToolDefinition(state, input.workflow, !!structured)];
-  const authorityDigest = askToolSurfaceDigest(tools);
-  const configuration = planningConfiguration(
-    input.session,
-    authorityDigest,
-    input.egressAcknowledged,
-    input.env,
-  );
-  const history = structuredClone(modelAuthoringHistory(input.session.conversation, input.session));
+};
+
+export async function planModelBoundaryJob(input: BoundaryJobPlanningInput): Promise<BoundaryJobPlan> {
+  const { jobIntent, clarificationAnswer, state, availableResourceIds, structured, tools, authorityDigest, configuration, history, question, invocation } = await preparePlanningInvocation(input);
+
   const diagnostic: BoundaryJobPlanningDiagnostic = { version: 1, expected_tool: PLAN_BOUNDARY_JOB_TOOL,
     context_digest: canonicalJsonDigest({ state, jobIntent, ...(input.workflow ? { workflow: input.workflow, expected_outcomes: input.expectedActionOutcomes ?? null } : {}), clarificationAnswer: clarificationAnswer ?? null, availableResourceIds, history }),
     ...(activePolicySource(input.session.conversation?.policySources) ? { source_digest: activePolicySource(input.session.conversation?.policySources)!.digest } : {}),
@@ -235,51 +213,6 @@ export async function planModelBoundaryJob(input: {
     },
     async close() {},
   };
-  const question = [
-    "Split one operator job into Read Boundary work and Action Boundary work before any draft changes.",
-    `Operator job: ${JSON.stringify(jobIntent)}`,
-    ...(structured ? [
-      `Pinned Read protocol: ${READ_SCOPE_PROTOCOL}; every planned result needs an explicit read_scope interpretation.`,
-      "Use applicability=no_read_requested with empty requirements only when proposing no Read work. That proposal still needs operator review against the original request. Never infer completion or consent.",
-      "For read_requested preserve include/exclude/unresolved requirements and exact targets. References prove provenance only; catalog labels cannot confirm meaning. Read routing summaries are not scope.",
-      READ_SUBJECT_SCOPE_GUIDANCE,
-      `Host Read context: ${JSON.stringify(structuredView)}`,
-    ] : []),
-    ...(input.workflow === "program" ? ["Operator selected the complete multi-Action program workflow. action_mode=create must include complete action_intents and aligned action_outcomes, never a broad single intent or first subset. Preserve exact requested identities from the source. Missing or ambiguous identities remain a clarification, not invented names.", ...(input.expectedActionOutcomes ? [`Previously reviewed exact inventory: ${JSON.stringify(input.expectedActionOutcomes)}`] : [])] : []),
-    ...(clarificationAnswer
-      ? [`Operator clarification: ${JSON.stringify(clarificationAnswer)}`]
-      : []),
-    `Current reviewed state: ${JSON.stringify(state)}`,
-    ...(availableResourceIds.length
-      ? [`Available reviewed resource IDs: ${JSON.stringify(availableResourceIds)}`]
-      : []),
-    `Call ${PLAN_BOUNDARY_JOB_TOOL} exactly once.`,
-    REVIEW_OPERATION_GUIDANCE,
-    "Review validates the selected current attachment and candidate; it does not draft, activate, or finish an edit. A current attached source is already supplied by the host; do not ask to upload it again. Ask a specific semantic question if its content is ambiguous.",
-    "Use read_mode=resume when the current exact disabled Read mapping already covers the requested reads and resumable_draft_count is positive. Resume preserves that draft and continues its pending review; it does not grant authority.",
-    "Use read_mode=reuse when the requested reads should stay exactly as reviewed and exact_reusable_revision_count is positive.",
-    "Use read_mode=revise when revision_eligible is true (or fully_reviewed for older state) and the operator wants to change existing field visibility, operations, labels, reviewed relationships, privacy or limits. This edits the exact saved candidate, including an incomplete disabled review; it does not remap resources or assert readiness. Keep existing Actions with action_mode=reuse when their business rules should not change; Runner revalidates their Read dependencies. Resource additions or a different workload require create. Do not suggest revise when the tool schema excludes it.",
-    "For read_mode=create or revise, put only the requested read behavior in read_intent. Exclude proposal fields, approval rules, and apply/write instructions.",
-    "Preserve every reviewed resource concept explicitly named in the operator's read request. Do not summarize a requested read area away.",
-    `For read_mode=create, keep read_intent within ${MAX_BOUNDARY_READ_QUESTION_CHARACTERS} characters because it becomes a representative read question. For read_mode=revise, the access-edit instruction may use up to ${MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS} characters; it does not become a read question. Keep action_intent within ${MAX_BOUNDARY_ACTION_INTENT_CHARACTERS} characters. Preserve the full original request and policy; do not copy their complete contents into routing summaries.`,
-    "Use action_mode=create or revise only for requested structured changes. Use reuse only when existing Action authority already represents the requested change and should remain unchanged.",
-    `For a job with multiple new business actions, put each independent business outcome in action_intents (at most ${AUTHORING_PROGRAM_CAPACITY.totalActions} in the complete selected program), preserving its criteria. Keep one operation whose records must change together (for example switch plan AND consume its offer) in one intent, not separate actions; the checked effect supports up to four exact version-guarded UPDATEs in one transaction. Set action_intent to the first entry. Do not silently drop additional requested actions. A revision edits one named outcome; other outcomes remain unchanged. Runner drafts one Action at a time and saves progress in bounded work units; the inventory is the full requested program, never the first subset.`,
-    "Shared automatic-approval limits across the requested actions must remain joint limits in every applicable action_intent. Never rewrite a common allowance into separate per-action allowances. Preserve the overall and trusted-customer maxima, elapsed windows, and human fallback for valid over-limit requests.",
-    "Eligibility, refusal of invalid requests, automatic approval, human fallback for other valid requests or limit overruns, and supervised completion are branches of ONE business action, not separate action_intents. For example, switching a subscription from a selected offer is one outcome even when routine offers auto-approve and exceptions need a reviewer. Only separate independently requested database effects; never create a refusal-only or approval-routing-only action.",
-    "Preserve automatic-completion/execution intent, and any explicit no-write restriction, in each relevant action_intent. Automatically approve AND complete means separately reviewed supervised execution, not proposal-only. Routing and drafting remain disabled; execution activation is always a later operator decision.",
-    "For a rule-derived revision, select the exact existing outcome in action_outcome. If several outcomes are plausible, ask one clarification rather than choosing by similarity.",
-    "Use action_mode=remove only when the operator explicitly requests removal of one existing semantic outcome. Select its exact action_outcome from Current reviewed state. Removal accepts only read_mode=reuse or none, has no action intent, action intents, or strategy, prepares only a disabled replacement, retains every other rule unchanged, and requires separate later activation.",
-    "For every new Action choose action_strategy=rule_derived. This fixed-tool engine supports both values derived from private facts and caller-selected bounded business inputs. Never create a separate MCP tool for a new business behavior. discretionary is compatibility-only when editing an existing legacy capability.",
-    "An Action draft depends on an exact reviewed Read revision. When Action work is requested and an exact reusable Read revision exists, choose read_mode=reuse unless the operator explicitly asked to revise reads.",
-    "Trusted tenant/principal/account association is injected by Runner and may be enforced by reviewed SQL scope or PostgreSQL RLS. Never request a source field merely to recreate trusted scope.",
-    "Approval counts, rolling windows, and aggregate approval limits are evaluated from Runner's proposal ledger. Never request a source table or source field for approval history.",
-    "This step only routes Read versus Action work. Preserve unresolved Action thresholds, bounds, reviewer rules, and rolling limits in action_intent; the focused Action authoring conversation asks those business questions later. Do not ask them here.",
-    "If the operator has already selected a supported client in their job or supplied policy, include intended_client. It is a setup preference, not permission to install files, authenticate anyone or activate authority. Do not infer it from the drafting provider or a merely mentioned alternative. Omit when unspecified or ambiguous; Runner will ask once and preserve the choice through resume.",
-    "When both modes are reuse or none, summarize the existing Read resources and Action capabilities from Current reviewed state. Do not merely repeat the operator request.",
-    "If the job is genuinely ambiguous between Read and Action work, submit one concise clarification question. Do not guess.",
-    "Ask about the missing business distinction, explain why it matters, and offer a tentative interpretation or recommended answer when supported by the supplied policy. Do not ask an unexplained table/column naming question or treat your proposed interpretation as accepted scope. Reuse the operator's existing answers.",
-    "This plan grants no authority and cannot activate, approve, apply, execute SQL, or write source data.",
-  ].join("\n");
   const run = (nextQuestion: string) => runAskProviderTurn({
     configuration,
     question: nextQuestion,
@@ -362,7 +295,108 @@ export async function planModelBoundaryJob(input: {
     ? result.question
     : result.summary;
   rememberModelAuthoringTurn(input.session.conversation, jobIntent, remembered);
+  if (result.state === "planned" && completion) {
+    result.planning_invocation = { ...invocation,
+      continuation_history_digest: canonicalJsonDigest(modelAuthoringHistory(input.session.conversation, input.session)) };
+    registerCompletedBoundaryPlan(result, result.planning_invocation);
+  }
   return result;
+}
+
+/** Pure request preparation shared by dispatch and cold continuation; never sends. */
+async function preparePlanningInvocation(input: BoundaryJobPlanningInput) {
+  if (!input.structuredScope) throw new Error("READ_SCOPE_PROTOCOL_REQUIRED: Planning requires the pinned structured scope protocol; preserve the saved job without replay.");
+  if (input.structuredScope.protocol !== READ_SCOPE_PROTOCOL) throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED: No legacy scope fallback is available.");
+  const jobIntent = boundedText(
+    input.jobIntent,
+    "Boundary job",
+    MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS,
+  );
+  const clarificationAnswer = input.clarificationAnswer === undefined
+    ? undefined
+    : boundedText(input.clarificationAnswer, "Boundary job clarification", 3_000);
+  const state = normalizeCurrentState(input.currentState);
+  const availableResourceIds = normalizeAvailableResourceIds(input.availableResourceIds ?? []);
+  const structured = input.structuredScope ? structuredClone(await input.structuredScope.current()) : undefined;
+  const structuredView = structured ? { binding: structured.binding, references: structured.references, catalog: structured.catalog,
+    reusable: structured.reusable ? currentStructuredReadEvidence({ ...structured.reusable, expectedBinding: structured.binding,
+      references: structured.references, catalog: structured.catalog }).record.proposal : undefined,
+    resumable: structured.resumable ? currentStructuredReadEvidence({ ...structured.resumable, expectedBinding: structured.binding,
+      references: structured.references, catalog: structured.catalog }).record.proposal : undefined } : undefined;
+  if (input.structuredScope && input.structuredScope.protocol !== READ_SCOPE_PROTOCOL) throw new Error("READ_SCOPE_PROTOCOL_UNSUPPORTED");
+  const tools: AskToolDefinition[] = [jobPlanToolDefinition(state, input.workflow, !!structured)];
+  const authorityDigest = askToolSurfaceDigest(tools);
+  const configuration = planningConfiguration(
+    input.session,
+    authorityDigest,
+    input.egressAcknowledged,
+    input.env,
+  );
+  const history = structuredClone(modelAuthoringHistory(input.session.conversation, input.session));
+  const question = [
+    "Split one operator job into Read Boundary work and Action Boundary work before any draft changes.",
+    `Operator job: ${JSON.stringify(jobIntent)}`,
+    ...(structured ? [
+      `Pinned Read protocol: ${READ_SCOPE_PROTOCOL}; every planned result needs an explicit read_scope interpretation.`,
+      "Use applicability=no_read_requested with empty requirements only when proposing no Read work. That proposal still needs operator review against the original request. Never infer completion or consent.",
+      "For read_requested preserve include/exclude/unresolved requirements and exact targets. References prove provenance only; catalog labels cannot confirm meaning. Read routing summaries are not scope.",
+      READ_SUBJECT_SCOPE_GUIDANCE,
+      `Host Read context: ${JSON.stringify(structuredView)}`,
+    ] : []),
+    ...(input.workflow === "program" ? ["Operator selected the complete multi-Action program workflow. action_mode=create must include complete action_intents and aligned action_outcomes, never a broad single intent or first subset. Preserve exact requested identities from the source. Missing or ambiguous identities remain a clarification, not invented names.", ...(input.expectedActionOutcomes ? [`Previously reviewed exact inventory: ${JSON.stringify(input.expectedActionOutcomes)}`] : [])] : []),
+    ...(clarificationAnswer
+      ? [`Operator clarification: ${JSON.stringify(clarificationAnswer)}`]
+      : []),
+    `Current reviewed state: ${JSON.stringify(state)}`,
+    ...(availableResourceIds.length
+      ? [`Available reviewed resource IDs: ${JSON.stringify(availableResourceIds)}`]
+      : []),
+    `Call ${PLAN_BOUNDARY_JOB_TOOL} exactly once.`,
+    REVIEW_OPERATION_GUIDANCE,
+    "Review validates the selected current attachment and candidate; it does not draft, activate, or finish an edit. A current attached source is already supplied by the host; do not ask to upload it again. Ask a specific semantic question if its content is ambiguous.",
+    "Use read_mode=resume when the current exact disabled Read mapping already covers the requested reads and resumable_draft_count is positive. Resume preserves that draft and continues its pending review; it does not grant authority.",
+    "Use read_mode=reuse when the requested reads should stay exactly as reviewed and exact_reusable_revision_count is positive.",
+    "Use read_mode=revise when revision_eligible is true (or fully_reviewed for older state) and the operator wants to change existing field visibility, operations, labels, reviewed relationships, privacy or limits. This edits the exact saved candidate, including an incomplete disabled review; it does not remap resources or assert readiness. Keep existing Actions with action_mode=reuse when their business rules should not change; Runner revalidates their Read dependencies. Resource additions or a different workload require create. Do not suggest revise when the tool schema excludes it.",
+    "For read_mode=create or revise, put only the requested read behavior in read_intent. Exclude proposal fields, approval rules, and apply/write instructions.",
+    "Preserve every reviewed resource concept explicitly named in the operator's read request. Do not summarize a requested read area away.",
+    `For read_mode=create, keep read_intent within ${MAX_BOUNDARY_READ_QUESTION_CHARACTERS} characters because it becomes a representative read question. For read_mode=revise, the access-edit instruction may use up to ${MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS} characters; it does not become a read question. Keep action_intent within ${MAX_BOUNDARY_ACTION_INTENT_CHARACTERS} characters. Preserve the full original request and policy; do not copy their complete contents into routing summaries.`,
+    "Use action_mode=create or revise only for requested structured changes. Use reuse only when existing Action authority already represents the requested change and should remain unchanged.",
+    `For a job with multiple new business actions, put each independent business outcome in action_intents (at most ${AUTHORING_PROGRAM_CAPACITY.totalActions} in the complete selected program), preserving its criteria. Keep one operation whose records must change together (for example switch plan AND consume its offer) in one intent, not separate actions; the checked effect supports up to four exact version-guarded UPDATEs in one transaction. Set action_intent to the first entry. Do not silently drop additional requested actions. A revision edits one named outcome; other outcomes remain unchanged. Runner drafts one Action at a time and saves progress in bounded work units; the inventory is the full requested program, never the first subset.`,
+    "Shared automatic-approval limits across the requested actions must remain joint limits in every applicable action_intent. Never rewrite a common allowance into separate per-action allowances. Preserve the overall and trusted-customer maxima, elapsed windows, and human fallback for valid over-limit requests.",
+    "Eligibility, refusal of invalid requests, automatic approval, human fallback for other valid requests or limit overruns, and supervised completion are branches of ONE business action, not separate action_intents. For example, switching a subscription from a selected offer is one outcome even when routine offers auto-approve and exceptions need a reviewer. Only separate independently requested database effects; never create a refusal-only or approval-routing-only action.",
+    "Preserve automatic-completion/execution intent, and any explicit no-write restriction, in each relevant action_intent. Automatically approve AND complete means separately reviewed supervised execution, not proposal-only. Routing and drafting remain disabled; execution activation is always a later operator decision.",
+    "For a rule-derived revision, select the exact existing outcome in action_outcome. If several outcomes are plausible, ask one clarification rather than choosing by similarity.",
+    "Use action_mode=remove only when the operator explicitly requests removal of one existing semantic outcome. Select its exact action_outcome from Current reviewed state. Removal accepts only read_mode=reuse or none, has no action intent, action intents, or strategy, prepares only a disabled replacement, retains every other rule unchanged, and requires separate later activation.",
+    "For every new Action choose action_strategy=rule_derived. This fixed-tool engine supports both values derived from private facts and caller-selected bounded business inputs. Never create a separate MCP tool for a new business behavior. discretionary is compatibility-only when editing an existing legacy capability.",
+    "An Action draft depends on an exact reviewed Read revision. When Action work is requested and an exact reusable Read revision exists, choose read_mode=reuse unless the operator explicitly asked to revise reads.",
+    "Trusted tenant/principal/account association is injected by Runner and may be enforced by reviewed SQL scope or PostgreSQL RLS. Never request a source field merely to recreate trusted scope.",
+    "Approval counts, rolling windows, and aggregate approval limits are evaluated from Runner's proposal ledger. Never request a source table or source field for approval history.",
+    "This step only routes Read versus Action work. Preserve unresolved Action thresholds, bounds, reviewer rules, and rolling limits in action_intent; the focused Action authoring conversation asks those business questions later. Do not ask them here.",
+    "If the operator has already selected a supported client in their job or supplied policy, include intended_client. It is a setup preference, not permission to install files, authenticate anyone or activate authority. Do not infer it from the drafting provider or a merely mentioned alternative. Omit when unspecified or ambiguous; Runner will ask once and preserve the choice through resume.",
+    "When both modes are reuse or none, summarize the existing Read resources and Action capabilities from Current reviewed state. Do not merely repeat the operator request.",
+    "If the job is genuinely ambiguous between Read and Action work, submit one concise clarification question. Do not guess.",
+    "Ask about the missing business distinction, explain why it matters, and offer a tentative interpretation or recommended answer when supported by the supplied policy. Do not ask an unexplained table/column naming question or treat your proposed interpretation as accepted scope. Reuse the operator's existing answers.",
+    "This plan grants no authority and cannot activate, approve, apply, execute SQL, or write source data.",
+  ].join("\n");
+  const invocation = parseBoundaryPlanningInvocation({ version: "synapsor.authoring-planning-invocation.v1",
+    provider: configuration.provider, model: configuration.model, destination_digest: canonicalJsonDigest(configuration.endpoint.href),
+    options_digest: canonicalJsonDigest({ request_timeout_seconds: configuration.request_timeout_seconds,
+      session_token_budget: configuration.session_token_budget, max_output_tokens: configuration.max_output_tokens ?? null }),
+    tool_digest: authorityDigest, input_digest: canonicalJsonDigest({ state, jobIntent, workflow: input.workflow ?? null,
+      expectedActionOutcomes: input.expectedActionOutcomes ?? null, clarificationAnswer: clarificationAnswer ?? null, availableResourceIds }),
+    scope_digest: currentReadScopeContextDigest(structured), prompt_digest: canonicalJsonDigest(question),
+    history_digest: canonicalJsonDigest(history), continuation_history_digest: canonicalJsonDigest(history) });
+  return { jobIntent, clarificationAnswer, state, availableResourceIds, structured, tools, authorityDigest, configuration, history, question, invocation };
+}
+/** Validate the complete current request, retaining only the producer's own known audit append. */
+export async function prepareBoundaryJobPlanningInvocation(input: BoundaryJobPlanningInput,
+  completed?: BoundaryPlanningResult): Promise<BoundaryPlanningInvocation> {
+  const { invocation } = await preparePlanningInvocation(input);
+  if (!completed) return invocation;
+  if (invocation.history_digest !== completed.invocation.continuation_history_digest)
+    throw new Error("AUTHORING_PLANNING_RESULT_STALE: The current conversation differs from the acknowledged planning continuation.");
+  return { ...invocation, history_digest: completed.invocation.history_digest,
+    continuation_history_digest: completed.invocation.continuation_history_digest };
 }
 
 /** Exact modes advertised from native state; this is guidance, not a route

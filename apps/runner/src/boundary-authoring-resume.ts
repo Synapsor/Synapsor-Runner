@@ -1,3 +1,4 @@
+import { parseBoundaryPlanningResult, assertBoundaryPlanningResultNative, type BoundaryPlanningResult } from "./authoring-planning-result.js";
 import { readStoredReadWorkloadAnalysis } from "./read-workloads.js";
 import { OLDER_AUTHORING_SETUP_MESSAGE, assertCurrentAuthoringEnvelope, STRUCTURED_AUTHORING_PROTOCOL_VERSION, STRUCTURED_AUTHORING_RESUME_VERSION, parseStructuredAuthoringProtocol, assertAuthoringProtocolUnchanged, type StructuredAuthoringProtocol } from "./authoring-protocol.js";
 import { assertAuthoringReadDecision, assertAuthoringReadCheckpoint, assertAuthoringTransportAdvance, assertAuthoringQuestionHandoff, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
@@ -224,6 +225,8 @@ export type BoundaryAuthoringResumeState = {
   };
   conversation: AskHistoryTurn[];
   generation_recovery?: AuthoringTransportState;
+  /** Exact consumed plan; retained as audit after its separately reviewed work proceeds. */
+  planning_result?: BoundaryPlanningResult;
   owner_handoffs?: AuthoringOwnerHandoff[];
   /** Typed mediation staging, beside immutable B33/B35 handoff evidence. */
   operator_questions?: OperatorQuestion[];
@@ -308,6 +311,7 @@ export function buildBoundaryAuthoringResumeState(input: {
   model: string;
   conversation?: readonly AskHistoryTurn[];
   generationRecovery?: AuthoringTransportState;
+  planningResult?: BoundaryPlanningResult;
   ownerHandoffs?: AuthoringOwnerHandoff[];
   operatorQuestions?: OperatorQuestion[];
   /** Omission retains the same job's checkpoint; null explicitly completes it. */
@@ -391,6 +395,7 @@ export function buildBoundaryAuthoringResumeState(input: {
       structural_metadata_egress_acknowledged: true as const,
     },
     conversation,
+    ...((input.planningResult ?? input.previous?.planning_result) ? { planning_result: parseBoundaryPlanningResult(input.planningResult ?? input.previous!.planning_result) } : {}),
     ...((input.generationRecovery ?? input.previous?.generation_recovery) ? { generation_recovery: structuredClone(input.generationRecovery ?? input.previous!.generation_recovery!) } : {}),
     ...((input.ownerHandoffs ?? input.previous?.owner_handoffs) ? { owner_handoffs: parseOwnerHandoffs(input.ownerHandoffs ?? input.previous!.owner_handoffs!) } : {}),
     ...((input.operatorQuestions ?? input.previous?.operator_questions) ? { operator_questions: parseOperatorQuestions(
@@ -777,6 +782,11 @@ export function assertBoundaryAuthoringResumeState(
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Typed questions require the pinned structured authoring protocol.");
   if (value.operator_questions !== undefined) parseOperatorQuestions(value.operator_questions, parseOwnerHandoffs(value.owner_handoffs ?? []),
     value.generation_recovery as AuthoringTransportState | undefined);
+  if (value.planning_result !== undefined) {
+    const planned = parseBoundaryPlanningResult(value.planning_result);
+    assertBoundaryPlanningResultNative(planned, value.generation_recovery as AuthoringTransportState | undefined,
+      (value.operator_questions ?? []) as OperatorQuestion[]);
+  }
   const scopedRead = value.read as BoundaryAuthoringResumeRead | undefined;
   if (scopedRead?.scope_question_id) {
     const q = (value.operator_questions as OperatorQuestion[] | undefined)?.find(q => q.id === scopedRead.scope_question_id);

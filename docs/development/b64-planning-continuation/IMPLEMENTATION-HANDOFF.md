@@ -1,0 +1,13 @@
+# Prospective planning implementation WIP
+- Base9f8fe16f; branch codex/b64-planning-continuation-20261009; original629/cards branch preserved.
+- Owner approved bounded prospective v4 Resume/v3 protocol; old jobs refused without migration/log adoption.
+- New authoring-planning-result codec + genuine producer registration + planning consumption sidecar are WIP, NOT independently accepted.
+- Planner prepareBoundaryJobPlanningInvocation(input, completed?) uses actual normalized request/resolved endpoint/options/tool/prompt/structured evidence/history.
+- Original history and exact post-remember history distinguished; changed clarification or actual Source remains stale.
+- Native recordPlanning(plan) saves material/question/generation together; restorePlanning(binding) is read-only and pendingPlanning supports exact mapping predecessor.
+- Main hooks: ports.save planningResult→buildBoundaryAuthoringResumeState; no boundary-commands edits here.
+- Read requested remains pending/no analysis or confirmation; separate native review unchanged.
+- First source typecheck: completed with external errors; no touched product diagnostic found. Not whole-type PASS.
+- Next: finite genuine producer/native CAS controls, compatibility refusal, immutable ACK mutation and cold restore; then R1 preseal review0a1ac221.
+- No fresh MySQL job until accepted; held job untouched, paid CLOSED, no Source effects/provider calls.
+- Slot4 used only finite offline checks; no copies/new worktree; keep all storage/evidence.
