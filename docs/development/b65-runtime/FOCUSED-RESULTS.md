@@ -1,0 +1,1 @@
+Writer Source identity binding: before 0P8F (36 filtered), after44P0F0S; product59f5ef99/test71cfcba8; raw /var/tmp/synapsor-b65-writer-source-identity-owned/RESULT.json SHA256 d2b314fe7c659b7f11d9149e47b3e5aefdbbb56908935664afc880830e0a4484; controlled setup only, independent/Main pending, public arithmetic/races NOT_RUN, paid CLOSED.

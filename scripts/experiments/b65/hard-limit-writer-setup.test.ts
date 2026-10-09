@@ -3,9 +3,9 @@ import { createActionRuleAuthority, ActionRuleError } from '@synapsor-runner/act
 import type { HardLimitDesignationV1 } from '@synapsor-runner/action-rules';
 import type { RuntimeConfig } from '@synapsor-runner/mcp-server';
 import { invariantFixture } from './writer-setup-fixture.js';
-const native = vi.hoisted(() => ({ maintain: true, global: false, qualifier: vi.fn(), pool: vi.fn(), query: vi.fn(), release: vi.fn(), end: vi.fn(), inspect: vi.fn(), posture: vi.fn(), selection: vi.fn(), identity: { database: "fixture", database_oid: "1234", server_address: "127.0.0.1", server_port: 5432 }, schemaFingerprint: "a" }));
+const native = vi.hoisted(() => ({ maintain: true, global: false, qualifier: vi.fn(), pool: vi.fn(), query: vi.fn(), release: vi.fn(), end: vi.fn(), inspect: vi.fn(), posture: vi.fn(), selection: vi.fn(), identity: { database: "fixture", database_oid: "1234", server_address: "127.0.0.1", server_port: 5432, server_version: 170000, system_identifier: "123456789", postmaster_start_us: "1791500000000000", in_recovery: false }, inspectionIdentity: undefined as Record<string, unknown> | undefined, inspectionQuery: vi.fn(), inspectWithConnection: vi.fn(), firstTransactionOpen: false, schemaFingerprint: "a" }));
 vi.mock('@synapsor-runner/postgres', () => ({ createPostgresPool: native.pool, assertPostgresHardLimitSource: native.qualifier }));
-vi.mock('@synapsor-runner/schema-inspector', () => ({ inspectDatabase: native.inspect, rolePostureFingerprint: () => `sha256:${'a'.repeat(64)}`, schemaFingerprintForInspection: () => `sha256:${native.schemaFingerprint.repeat(64)}` }));
+vi.mock('@synapsor-runner/schema-inspector', () => ({ inspectDatabase: native.inspect, inspectDatabaseWithConnection: native.inspectWithConnection, rolePostureFingerprint: () => `sha256:${'a'.repeat(64)}`, schemaFingerprintForInspection: () => `sha256:${native.schemaFingerprint.repeat(64)}` }));
 vi.mock('../../../apps/runner/src/worker-policy.js', () => ({ assessSemanticSupervisedWriterPosture: native.posture }));
 vi.mock('../../../apps/runner/src/semantic-receipt-setup.js', () => ({ inspectSemanticReceiptSetup: native.selection, selectedSemanticReceipts: (setup: any, writer: string) => { if (!setup.selection_current || setup.selection.write_url_env !== writer) throw new Error('stale selection'); return setup.selection.receipts; } }));
 import { projectHardLimitActivationWriterSelections } from '../../../apps/runner/src/hard-limit-writer-selection.js';
@@ -25,12 +25,27 @@ function fixture(hard = true, multiple = false) {
 }
 beforeEach(() => {
   vi.clearAllMocks(); native.selection.mockReset().mockResolvedValue(undefined); native.maintain = true; native.global = false; native.schemaFingerprint = "a";
-  native.identity = { database: "fixture", database_oid: "1234", server_address: "127.0.0.1", server_port: 5432 };
+  native.identity = { database: "fixture", database_oid: "1234", server_address: "127.0.0.1", server_port: 5432, server_version: 170000, system_identifier: "123456789", postmaster_start_us: "1791500000000000", in_recovery: false };
+  native.inspectionIdentity = undefined; native.firstTransactionOpen = false;
   native.qualifier.mockReset().mockResolvedValue(undefined);
-  native.query.mockReset().mockImplementation(async (sql: string) => ({ rows: sql.startsWith("SELECT pg_catalog.current_setting('server_version_num')") ? [{ version: 170000 }] : sql.startsWith('SELECT current_user') ? [{ role: 'dedicated_writer', maintain: native.maintain, global_maintain: native.global, catalog_dml: false }] : sql.startsWith('SELECT pg_catalog.current_database()') ? [native.identity] : [], rowCount: 0 }));
+  native.query.mockReset().mockImplementation(async (sql: string) => {
+    if (sql.startsWith('BEGIN')) native.firstTransactionOpen = true;
+    if (sql === 'ROLLBACK') native.firstTransactionOpen = false;
+    return { rows: sql.startsWith("SELECT pg_catalog.current_setting('server_version_num')") ? [{ version: 170000 }] : sql.startsWith('SELECT current_user') ? [{ role: 'dedicated_writer', maintain: native.maintain, global_maintain: native.global, catalog_dml: false }] : sql.startsWith('SELECT pg_catalog.current_database()') ? [native.identity] : [], rowCount: 0 }; });
   native.end.mockResolvedValue(undefined); native.release.mockReset();
-  native.pool.mockReturnValue({ connect: async () => ({ query: native.query, release: native.release }), end: native.end });
-  native.inspect.mockResolvedValue({ engine: 'postgres', current_user: 'dedicated_writer', tables: [] });
+  native.inspectionQuery.mockReset().mockImplementation(async (sql: string) => ({
+    rows: sql.startsWith('SELECT pg_catalog.current_database()') ? [native.inspectionIdentity ?? native.identity] : [], rowCount: 0 }));
+  let connections = 0;
+  native.pool.mockImplementation(() => { connections = 0; return {
+    connect: async () => ({ query: connections++ === 0 ? native.query : native.inspectionQuery, release: native.release }), end: native.end }; });
+  native.inspect.mockReset().mockResolvedValue({ engine: 'postgres', current_user: 'dedicated_writer', tables: [] });
+  native.inspectWithConnection.mockReset().mockImplementation(async (options, borrowed) => {
+    await borrowed.connection.query('BEGIN READ ONLY');
+    await borrowed.connection.query('SELECT COMPONENT_METADATA');
+    const result = await native.inspect(options);
+    await borrowed.connection.query('COMMIT');
+    return result;
+  });
   native.posture.mockReturnValue({ ok: true, reasons: [] });
 });
 it('unmarked and legacy registries require no Source connection', async () => {
@@ -210,4 +225,61 @@ it('ordinary unmarked authority has no binding or native inspection', async () =
   const shown = await inspectReviewedHardLimitWriterSetup(reviewFixture(false));
   expect(shown.status).toBe('not_required'); expect(shown.writerReviewBinding).toBeUndefined();
   expect(native.pool).not.toHaveBeenCalled();
+});
+
+// Controlled production-setup connection binding only. Real compiler authority,
+// simulated driver/catalog responses; no native qualification or public proof.
+it.each(['database', 'endpoint', 'postmaster'])('source binding refuses same-role metadata from another %s', async changed => {
+  native.inspectionIdentity = { ...native.identity,
+    ...(changed === 'database' ? { database: 'other', database_oid: '7777' } : changed === 'endpoint' ? { server_address: '127.0.0.2' } : { system_identifier: '987654321' }) };
+  const observe = vi.fn();
+  const result = await inspectHardLimitWriterSetup({ ...fixture(), observeNativeAssessment: observe });
+  expect(result.status).toBe('refused');
+  expect(native.posture).not.toHaveBeenCalled(); expect(observe).not.toHaveBeenCalled();
+  expect(native.query).toHaveBeenCalledWith('ROLLBACK');
+  if (changed === 'postmaster') {
+    // A physical clone retains the system identifier but has another postmaster.
+    native.inspectionIdentity = { ...native.identity, postmaster_start_us: '1791500000000001' };
+    expect((await inspectHardLimitWriterSetup({ ...fixture(), observeNativeAssessment: observe })).status).toBe('refused');
+    expect(native.posture).not.toHaveBeenCalled(); expect(observe).not.toHaveBeenCalled();
+  }
+});
+it('source binding refuses an unobserved native postmaster identity', async () => {
+  native.inspectionIdentity = { ...native.identity, system_identifier: undefined };
+  const result = await inspectHardLimitWriterSetup(fixture());
+  expect(result.status).toBe('refused'); expect(native.posture).not.toHaveBeenCalled();
+});
+it('source binding accepts the actual matching metadata transaction without releasing qualification locks', async () => {
+  Object.assign(native.identity, { server_address: null, server_port: null });
+  native.inspectionQuery.mockImplementation(async (sql: string) => {
+    if (sql === 'COMMIT') expect(native.firstTransactionOpen).toBe(true);
+    return { rows: sql.startsWith('SELECT pg_catalog.current_database()') ? [native.identity] : [], rowCount: 0 };
+  });
+  const observe = vi.fn();
+  expect((await inspectHardLimitWriterSetup({ ...fixture(), observeNativeAssessment: observe })).status).toBe('ready');
+  expect(native.inspectionQuery.mock.calls.map(call => call[0])).toEqual([
+    'BEGIN READ ONLY', expect.stringContaining('SELECT pg_catalog.current_database()'), 'SELECT COMPONENT_METADATA', 'COMMIT']);
+  expect(native.query.mock.calls.some(call => call[0] === 'COMMIT')).toBe(false);
+  expect(native.firstTransactionOpen).toBe(false); expect(observe).toHaveBeenCalledOnce();
+});
+it('source binding refuses cached metadata without a native inspection transaction', async () => {
+  native.inspectWithConnection.mockImplementation(async options => native.inspect(options));
+  expect((await inspectHardLimitWriterSetup(fixture())).status).toBe('refused');
+  expect(native.posture).not.toHaveBeenCalled();
+});
+it('source binding refuses a failed native identity query without observing ready', async () => {
+  native.inspectionQuery.mockImplementation(async (sql: string) => {
+    if (sql.startsWith('SELECT pg_catalog.current_database()')) throw new Error('private metadata connection failure');
+    return { rows: [], rowCount: 0 };
+  });
+  const observe = vi.fn(); const result = await inspectHardLimitWriterSetup({ ...fixture(), observeNativeAssessment: observe });
+  expect(result.status).toBe('refused'); expect(observe).not.toHaveBeenCalled();
+  expect(JSON.stringify(result)).not.toContain('private');
+});
+it('source binding refuses missing first native identity even without a review observer', async () => {
+  native.query.mockImplementation(async (sql: string) => ({ rows:
+    sql.startsWith("SELECT pg_catalog.current_setting('server_version_num')") ? [{ version: 170000 }]
+      : sql.startsWith('SELECT current_user') ? [{ role: 'dedicated_writer', maintain: true, global_maintain: false, catalog_dml: false }] : [], rowCount: 0 }));
+  expect((await inspectHardLimitWriterSetup(fixture())).status).toBe('refused');
+  expect(native.inspect).not.toHaveBeenCalled();
 });

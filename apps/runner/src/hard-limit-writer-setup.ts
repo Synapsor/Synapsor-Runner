@@ -3,7 +3,7 @@ import type { PoolClient } from 'pg';
 import { ActionRuleError, type RuntimeActionRuleRegistryV1 } from '@synapsor-runner/action-rules';
 import { resolveSemanticSupervisedWriterSource, type RuntimeConfig, type RuntimeSupervisedWorkerOutcomePolicy } from '@synapsor-runner/mcp-server';
 import { assertPostgresHardLimitSource, createPostgresPool } from '@synapsor-runner/postgres';
-import { inspectDatabase, rolePostureFingerprint, schemaFingerprintForInspection } from '@synapsor-runner/schema-inspector';
+import { inspectDatabaseWithConnection, rolePostureFingerprint, schemaFingerprintForInspection } from '@synapsor-runner/schema-inspector';
 import { assessSemanticSupervisedWriterPosture } from './worker-policy.js';
 
 export type HardLimitWriterSetupInput = {
@@ -17,7 +17,7 @@ export type HardLimitWriterSetupInput = {
 export type HardLimitWriterNativeAssessment = {
   source: string; outcome: string; writer_env: string; writer_role: string;
   writer_posture_fingerprint: string; source_schema_fingerprint: string;
-  native_source: { database: string; database_oid: string; server_address: string | null; server_port: number | null; server_version: number };
+  native_source: { database: string; database_oid: string; server_address: string | null; server_port: number | null; server_version: number; system_identifier: string; postmaster_start_us: string };
   namespace_privilege: 'exact_maintain_no_global_maintain_or_catalog_dml';
 };
 export type HardLimitWriterSetupReadback = {
@@ -77,10 +77,11 @@ export async function inspectHardLimitWriterSetup(input: HardLimitWriterSetupInp
     if (source.database_scope?.mode !== 'postgres_rls' || !source.database_scope.principal_setting || source.receipts?.provisioning === 'auto_migrate') { refuse('hard_limit_source_profile_unsupported'); continue; }
     let pool: ReturnType<typeof createPostgresPool> | undefined;
     let client: PoolClient | undefined;
+    let inspectionClient: PoolClient | undefined;
     let began = false;
     let nativeAssessment: HardLimitWriterNativeAssessment | undefined;
     try {
-      pool = createPostgresPool(url, { max: 1, connectionTimeoutMillis: 5_000, statement_timeout: 5_000, idleTimeoutMillis: 5_000 });
+      pool = createPostgresPool(url, { max: 2, connectionTimeoutMillis: 5_000, statement_timeout: 5_000, idleTimeoutMillis: 5_000 });
       client = await pool.connect();
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED'); began = true;
       await client.query("SET LOCAL statement_timeout = '5s'");
@@ -95,7 +96,34 @@ export async function inspectHardLimitWriterSetup(input: HardLimitWriterSetupInp
         await assertPostgresHardLimitSource(client, compiled, { tenantSetting: source.database_scope.tenant_setting, principalSetting: source.database_scope.principal_setting }, receipt);
         // Existing metadata posture checks supply the ordinary business/receipt
         // privilege and RLS envelope. The connection is the selected writer.
-        const inspection = await inspectDatabase({ engine: 'postgres', databaseUrlEnv: source.write_url_env, statementTimeoutMs: 5_000, env });
+        const nativeSource = await inspectNativeWriterSource(client);
+        if (!nativeSource) { refuse('writer_source_identity_unproven'); continue; }
+        inspectionClient = await pool.connect();
+        let inspectionBound = false;
+        // The metadata inspector owns a read-only transaction on this second
+        // native connection. Observe its identity inside that transaction;
+        // never commit or release the first connection's qualification locks.
+        const boundInspectionClient = new Proxy(inspectionClient, {
+          get(target, property, receiver) {
+            if (property !== 'query') return Reflect.get(target, property, receiver);
+            return async (text: string, values?: unknown[]) => {
+              const result = await target.query(text, values);
+              if (text === 'BEGIN READ ONLY') {
+                const observed = await inspectNativeWriterSource(target);
+                if (!observed || !sameNativeWriterSource(nativeSource, observed)) {
+                  throw new ActionRuleError('ACTION_RULE_SCOPE_UNPROVEN',
+                    'Native Source effects cannot be inspected with the supported guarantees.',
+                    'source.hard_limit.writer_source_identity');
+                }
+                inspectionBound = true;
+              }
+              return result;
+            };
+          },
+        });
+        const inspection = await inspectDatabaseWithConnection({ engine: 'postgres', databaseUrlEnv: source.write_url_env,
+          statementTimeoutMs: 5_000, env }, { engine: 'postgres', connection: boundInspectionClient });
+        if (!inspectionBound) { refuse('writer_source_identity_unproven'); continue; }
         if (inspection.current_user !== check.writer_role) { refuse('writer_role_changed'); continue; }
         const writerPostureFingerprint = rolePostureFingerprint(inspection);
         const policies: RuntimeSupervisedWorkerOutcomePolicy[] = input.registry.rules.filter(entry => {
@@ -111,20 +139,10 @@ export async function inspectHardLimitWriterSetup(input: HardLimitWriterSetupInp
           if (!assessment.ok) refuse('writer_posture_unproven');
           else {
             if (input.observeNativeAssessment) {
-              const identity = await client.query(`SELECT pg_catalog.current_database() AS database,
-                (SELECT d.oid::pg_catalog.text FROM pg_catalog.pg_database d WHERE d.datname=pg_catalog.current_database()) AS database_oid,
-                pg_catalog.inet_server_addr()::pg_catalog.text AS server_address,pg_catalog.inet_server_port() AS server_port`);
-              const value = identity.rows[0];
-              if (identity.rows.length !== 1 || typeof value?.database !== 'string' || typeof value.database_oid !== 'string'
-                || !/^\d+$/u.test(value.database_oid) || !(value.server_address === null || typeof value.server_address === 'string')
-                || !(value.server_port === null || Number.isInteger(value.server_port))) {
-                refuse('writer_source_identity_unproven'); continue;
-              }
               nativeAssessment = { source: compiled.source, outcome: compiled.outcome, writer_env: source.write_url_env,
                 writer_role: inspection.current_user, writer_posture_fingerprint: writerPostureFingerprint,
                 source_schema_fingerprint: schemaFingerprintForInspection(inspection),
-                native_source: { database: value.database, database_oid: value.database_oid,
-                  server_address: value.server_address, server_port: value.server_port, server_version: Number(engine.rows[0].version) },
+                native_source: nativeSource,
                 namespace_privilege: 'exact_maintain_no_global_maintain_or_catalog_dml' };
             }
             check.status = 'ready';
@@ -135,6 +153,7 @@ export async function inspectHardLimitWriterSetup(input: HardLimitWriterSetupInp
       refuse('native_source_uninspectable');
       if (error instanceof ActionRuleError && typeof error.path === 'string' && /^source\.(hard_limit|receipt_read)\.[a-z_]+$/u.test(error.path)) check.native_path = error.path;
     } finally {
+      inspectionClient?.release(true);
       if (client) {
         if (began) { try { await client.query('ROLLBACK'); } catch { check.status = 'refused'; refuse('setup_rollback_unproven'); } }
         client.release(true);
@@ -145,6 +164,40 @@ export async function inspectHardLimitWriterSetup(input: HardLimitWriterSetupInp
     if (check.status === 'ready' && nativeAssessment) input.observeNativeAssessment?.(nativeAssessment);
   }
   return readback;
+}
+
+type NativeWriterSource = HardLimitWriterNativeAssessment['native_source'];
+async function inspectNativeWriterSource(client: PoolClient): Promise<NativeWriterSource | undefined> {
+  const identity = await client.query(`SELECT pg_catalog.current_database() AS database,
+    (SELECT d.oid::pg_catalog.text FROM pg_catalog.pg_database d WHERE d.datname=pg_catalog.current_database()) AS database_oid,
+    pg_catalog.inet_server_addr()::pg_catalog.text AS server_address,pg_catalog.inet_server_port() AS server_port,
+    pg_catalog.current_setting('server_version_num')::pg_catalog.int4 AS server_version,
+    (SELECT system_identifier::pg_catalog.text FROM pg_catalog.pg_control_system()) AS system_identifier,
+    (extract(epoch FROM pg_catalog.pg_postmaster_start_time())*1000000)::pg_catalog.int8::pg_catalog.text AS postmaster_start_us,
+    pg_catalog.pg_is_in_recovery() AS in_recovery`);
+  const value = identity.rows[0];
+  // Observe the actual postmaster/database, including physical clones and
+  // recovery routing. A URL/env name, role or reused endpoint is insufficient.
+  if (identity.rows.length !== 1 || typeof value?.database !== 'string' || !value.database
+    || typeof value.database_oid !== 'string' || !/^\d+$/u.test(value.database_oid)
+    || !(value.server_address === null || (typeof value.server_address === 'string' && value.server_address.length > 0))
+    || !(value.server_port === null || (Number.isInteger(value.server_port) && value.server_port >= 1 && value.server_port <= 65535))
+    || !Number.isInteger(value.server_version) || value.server_version < 170000 || value.server_version >= 180000
+    || !nativeInt64Identity(value.system_identifier) || !nativeInt64Identity(value.postmaster_start_us)
+    || value.in_recovery !== false) return undefined;
+  return { database: value.database, database_oid: value.database_oid,
+    server_address: value.server_address, server_port: value.server_port, server_version: value.server_version,
+    system_identifier: value.system_identifier, postmaster_start_us: value.postmaster_start_us };
+}
+function nativeInt64Identity(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^-?[1-9][0-9]{0,18}$/u.test(value)) return false;
+  const integer = BigInt(value);
+  return integer >= -(1n << 63n) && integer <= (1n << 63n) - 1n;
+}
+function sameNativeWriterSource(a: NativeWriterSource, b: NativeWriterSource): boolean {
+  return a.database === b.database && a.database_oid === b.database_oid && a.server_address === b.server_address
+    && a.server_port === b.server_port && a.server_version === b.server_version
+    && a.system_identifier === b.system_identifier && a.postmaster_start_us === b.postmaster_start_us;
 }
 const quote = (value: string) => '"' + value.replaceAll('"', '""') + '"';
 /** Reopen every writer and repeat inspection at each publication. */
