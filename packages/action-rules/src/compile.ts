@@ -727,7 +727,7 @@ function compileAgainstCatalog(
       || source.direction !== "inverse" || !binding.relationship?.target_unique
       || !parent || parent.verification.cardinality !== "one"
       || parent.verification.scope.mode !== "columns" || binding.verification.scope.mode !== "columns") {
-      fail("ACTION_RULE_UNBOUNDED", `Complete collection ${binding.binding} requires an inverse foreign key from one directly scoped parent and explicit matching child scope.`);
+      fail("ACTION_RULE_UNBOUNDED", `Complete collection ${binding.binding} requires an inverse foreign key from one directly scoped parent and explicit matching child scope.`, `verification_boundary.resources.${binding.binding}.collection_consistency`);
     }
     const parentScope = parent.verification.scope;
     const childScope = binding.verification.scope;
