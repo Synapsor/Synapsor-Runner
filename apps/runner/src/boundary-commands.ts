@@ -8,6 +8,8 @@ import { selectUnplannedActionIntents } from "./authoring-action-entry.js";
 import { reviewRequiredPrincipalScopes } from "./authoring-principal-scope-host.js";
 import { enterSavedAuthoringSetup, savedSetupEntryNotice } from "./authoring-saved-setup-entry.js";
 import { createNativeReadScope } from "./authoring-read-scope-native.js";
+import { boundaryJobPlanningFailureReason, retainedPlanningForEntry, runPlanningEntry } from "./authoring-planning-entry.js";
+import type { BoundaryPlanningResult } from "./authoring-planning-result.js";
 import { createSavedReadActivationAssessment } from "./authoring-read-activation-route.js";
 import { ownerQuestionScopeDigest, ownerQuestionContextDigest, type AuthoringOwnerQuestionContextInput } from "./authoring-owner-question-binding.js";
 import { READ_SCOPE_PROTOCOL } from "./read-structured-scope.js";
@@ -263,6 +265,7 @@ import {
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import {
   planModelBoundaryJob,
+  type BoundaryJobPlanningInput,
   type BoundaryJobCurrentState,
   type BoundaryJobPlan,
 } from "./boundary-job-model.js";
@@ -3497,20 +3500,6 @@ async function promptRunnerGuidedModelFallback(input: {
   return accepted ? "runner" : "back";
 }
 
-function boundaryJobPlanningFailureReason(error: unknown): string {
-  if (error instanceof BoundaryJobPlanningError) return planningDiagnosticLines(error.diagnostic).join("\n");
-  if (error instanceof AskError && error.code === "ASK_REQUIRED_TOOL_NOT_CALLED") {
-    return "The model did not submit the required typed Read/Action job plan.";
-  }
-  if (error instanceof Error && /^BOUNDARY_JOB_PLAN_INVALID:/iu.test(error.message)) {
-    return "The model response did not match Runner's typed Read/Action planning contract.";
-  }
-  if (error instanceof Error) {
-    return `Runner could not finish the planning step: ${redactCliErrorMessage(error.message).slice(0, 700)}`;
-  }
-  return "Runner could not finish the planning step. No new draft was saved.";
-}
-
 async function promptBoundaryJobPlanningFallback(input: {
   session: BoundaryReviewInteractiveSession;
   model: ActionModelSuggestionSession;
@@ -3878,6 +3867,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let semanticActionAuthorityDraft: ActionRuleAuthorityDraftV1 | undefined;
   let activeResume = availableResume;
   let generationRecovery = availableResume?.generation_recovery;
+  let planningResult: BoundaryPlanningResult | undefined = availableResume?.planning_result;
   let ownerHandoffs = structuredClone(availableResume?.owner_handoffs ?? []);
   let operatorQuestions = structuredClone(availableResume?.operator_questions ?? []);
   let readAssistanceCheckpoint = availableResume?.read_assistance;
@@ -4038,6 +4028,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           : acknowledgeGeneration ? authoringTransportCheckpoint(generationRecovery) : generationRecovery,
         ownerHandoffs,
         operatorQuestions,
+        ...(planningResult ? { planningResult } : {}),
         readAssistanceCheckpoint: readAssistanceCheckpoint ?? null,
         ...(intendedClient ? { intendedClient } : {}),
         ...(authoringConversation?.policySources?.snapshots.length ? { policySourceSession: authoringConversation.policySources.id } : {}),
@@ -4063,6 +4054,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       assertRunning();
       await writeBoundaryAuthoringResumeState(input.projectRoot, nextResume, { expectedRevisionDigest, permit });
       activeResume = nextResume;
+      planningResult = nextResume.planning_result;
       generationRecovery = nextResume.generation_recovery;
       savedResumeRevision = nextResume.revision_digest;
       resumePersistenceBlocked = false;
@@ -4137,6 +4129,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     // answer must not masquerade as an acknowledged saved decision.
     const beforeHandoffs = structuredClone(ownerHandoffs);
     const beforeQuestions = structuredClone(operatorQuestions);
+    const beforePlanningResult = planningResult && structuredClone(planningResult);
     const beforeRecovery = generationRecovery && structuredClone(generationRecovery);
     const beforeReadAssistance = readAssistanceCheckpoint && structuredClone(readAssistanceCheckpoint);
     const beforeRead = resumeRead && structuredClone(resumeRead);
@@ -4148,6 +4141,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     catch (error) {
       ownerHandoffs = beforeHandoffs;
       operatorQuestions = beforeQuestions;
+      planningResult = beforePlanningResult;
       generationRecovery = beforeRecovery;
       readAssistanceCheckpoint = beforeReadAssistance;
       resumeRead = beforeRead;
@@ -4166,6 +4160,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     questionContext: permit => ownerQuestionContext(permit), questionScope: ownerQuestionScope, mutate: mutateOwnerHandoff, failure: checkpointSaveFailure,
     save: async (next, permit) => {
       operatorQuestions = next.questions;
+      if (next.planningResult) planningResult = next.planningResult;
       if (next.generation) generationRecovery = next.generation;
       await persistAuthoringResume(next.stage, permit, next.acknowledgeCompletedTurn);
       if (resumePersistenceBlocked) throw checkpointSaveFailure(next.subject);
@@ -4746,6 +4741,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       editingSavedJob = Boolean(availableResume.pending_job_revision);
       intendedClient = availableResume.intended_client;
       activeResume = availableResume;
+      planningResult = activeResume.planning_result;
       resumeRead = availableResume.read;
       resumeReadIntent = availableResume.read_intent;
       readAssistanceCheckpoint = availableResume.read_assistance;
@@ -4759,6 +4755,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       if (editingSavedJob) intendedClient = availableResume!.intended_client;
       canonicalJobIntent = editingSavedJob ? availableResume!.job_intent : undefined;
       activeResume = editingSavedJob ? availableResume : undefined;
+      planningResult = activeResume?.planning_result;
       resumeRead = editingSavedJob ? availableResume!.read : undefined;
       resumeReadIntent = editingSavedJob ? availableResume!.read_intent : undefined;
       if (!editingSavedJob) { pendingReadRelationship = undefined; readAssistanceCheckpoint = undefined; }
@@ -5564,9 +5561,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               authority_granted: false, source_database_changed: false };
           } else {
           const planningAnswerIds = acknowledgedReadAnswerIds();
-          jobPlan = await runWithProgress(
-            clarificationTranscript.length ? "Updating the Boundary plan" : "Planning Read and Action work",
-            () => (input.modelBoundaryJobPlanner ?? planModelBoundaryJob)({
+          const planningInput: BoundaryJobPlanningInput = {
               session: planningSession,
               jobIntent: jobIntent!.trim(),
               structuredScope: { protocol: READ_SCOPE_PROTOCOL,
@@ -5584,17 +5579,16 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                 : {}),
               env: process.env,
               egressAcknowledged: true,
-            }),
-          );
+            };
+          const entry = await runPlanningEntry({ request: planningInput,
+            retained: retainedPlanningForEntry({ resume: activeResume, continuing: resumeSelected, editing: editingSavedJob }),
+            scope: readScopeReview, produce: () => runWithProgress(
+              clarificationTranscript.length ? "Updating the Boundary plan" : "Planning Read and Action work",
+              () => (input.modelBoundaryJobPlanner ?? planModelBoundaryJob)(planningInput)) });
+          jobPlan = entry.plan;
           if (jobPlan.state === "clarification") handoff = await persistOwnerQuestion(jobPlan.question, "planning", jobPlan.completion);
-          else if (jobPlan.completion && jobPlan.read_scope?.proposal.applicability === "no_read_requested") {
-            const questionId = await readScopeReview.recordNoRead(jobPlan.read_scope, jobPlan.completion);
-            if (!questionId || (await readScopeReview.review(questionId)).state !== "confirmed")
-              return boundaryAssistResult(boundaryAssistBackNotice("The proposed no-Read interpretation remains pending; no Action or activation was inferred."));
-          } else if (jobPlan.completion) {
-            await persistAuthoringResume("planning", undefined, jobPlan.completion);
-            if (resumePersistenceBlocked) throw checkpointSaveFailure("The completed planning turn");
-          }
+          if (entry.readReviewPending)
+            return boundaryAssistResult(boundaryAssistBackNotice("The proposed no-Read interpretation remains pending; no Action or activation was inferred."));
           }
           if (jobPlan.state === "clarification" && modelTurn >= 2) {
             return boundaryAssistResult({ tone: "warning", title: "Planning clarification limit reached.",
@@ -6869,6 +6863,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         return { ...scope, questions: operatorQuestions, handoffs: ownerHandoffs, generation: generationRecovery };
       },
       readQuestions: () => operatorQuestions, readRecovery: () => generationRecovery, readPreparedRead: () => resumeRead,
+      readPendingPlanning: permit => readScopeReview.pendingPlanning(mappingBoundary, permit),
       readConversation: () => authoringConversation, readReviewedRelationshipAnswer: () => reviewedRelationshipAnswer,
       install: update => {
         if (Object.prototype.hasOwnProperty.call(update, "checkpoint")) readAssistanceCheckpoint = update.checkpoint;
