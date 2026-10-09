@@ -9181,14 +9181,12 @@ describe("boundary operator-plane CLI", () => {
         "back",
       ]]);
       expect(semanticRecoveryContexts[0]?.join("\n")).toContain(
-        "Runner could not identify one exact reviewed row for the proposed change. No Action draft was saved.",
+        "Why: Derived UPDATE requires one exact subject target binding.",
       );
-      expect(semanticRecoveryContexts[0]?.join("\n")).not.toMatch(/target_binding|subject target binding/iu);
       expect(rememberFailureDetails).toHaveBeenCalledWith(
         "ACTION BOUNDARY MODEL DRAFT FAILED",
         expect.arrayContaining([
-          "Runner could not identify one exact reviewed row for the proposed change. No Action draft was saved.",
-          "Exact local validation: Derived UPDATE requires one exact subject target binding.",
+          "Why: Derived UPDATE requires one exact subject target binding.",
           "The rejected draft was not saved or executed. No model output became authority and no source query or write ran.",
         ]),
       );

@@ -1295,9 +1295,9 @@
     },
     "main": {
       "pin": "7e0760fe",
-      "typed": 30,
+      "typed": 34,
       "delete": 0,
-      "source": "Original30typed/0delete +five audit sites remain. I02087/I02100 accepted e52adbf1 owner126PASS/types0; I02097 accepted13292688 independent10PASS before1P9F, owner96PASS/types0. No English error/message or singular/plural query inference.",
+      "source": "I03527 deleted host target/prose classification fbeb9440; R1 4036ff74 unchanged10PASS from5PASS5FAIL. Existing broadpublic fixture NOT_REACHED; historical display-only expectations ported by independent contract, no counts/authority guards changed.",
       "reclassified_provisional": [],
       "audit_reclassified_ids": [
         "I02087",
@@ -1310,7 +1310,7 @@
         "I03594"
       ],
       "with_reclassifications": {
-        "typed": 35,
+        "typed": 34,
         "delete": 0
       },
       "audit_closed_ids": [
@@ -1385,7 +1385,7 @@
       "delete": 5
     },
     "main": {
-      "typed": 35,
+      "typed": 34,
       "delete": 0
     },
     "read": {

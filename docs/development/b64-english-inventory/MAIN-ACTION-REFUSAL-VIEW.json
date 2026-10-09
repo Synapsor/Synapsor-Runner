@@ -1,0 +1,22 @@
+{
+  "site": "I03527",
+  "product": "fbeb9440",
+  "unchanged_extraction": "62a418d2",
+  "reviewer": "R1 4036ff74",
+  "test_fixture": "f31f1972",
+  "before": {
+    "pass": 5,
+    "fail": 5
+  },
+  "after": {
+    "pass": 10,
+    "fail": 0
+  },
+  "public": "NOT_REACHED: original broad proposal_only Action calls0, no full public acceptance",
+  "old_assertion_port": "Exact raw diagnostic in existing Why context/details; obsolete inferred target summary and prose suppression removed only. Original no-save/no-effects/authority/recovery choices/counts unchanged. Port itself not runtime-qualified.",
+  "no_new_authority": "No provider, routing, retry, save or protected writer changes. Formal error-code classification retained; diagnostic prose never supplies a target/cause interpretation.",
+  "remaining_Main": {
+    "typed": 34,
+    "delete": 0
+  }
+}
