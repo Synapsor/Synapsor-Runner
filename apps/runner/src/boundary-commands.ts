@@ -7,6 +7,7 @@ import { selectUnplannedActionIntents } from "./authoring-action-entry.js";
 import { reviewRequiredPrincipalScopes } from "./authoring-principal-scope-host.js";
 import { enterSavedAuthoringSetup, savedSetupEntryNotice } from "./authoring-saved-setup-entry.js";
 import { createNativeReadScope } from "./authoring-read-scope-native.js";
+import { ownerQuestionScopeDigest, ownerQuestionContextDigest, type AuthoringOwnerQuestionContextInput } from "./authoring-owner-question-binding.js";
 import { READ_SCOPE_PROTOCOL } from "./read-structured-scope.js";
 import { currentBoundaryJobReadRequests } from './boundary-job-read-requests.js';
 import { reviewPolicyWithPendingDecision, policyReviewNextStep, policyDecisionAllowsSavedReview, resumePolicyDecision, resolvePolicyDecision, reviewPolicyWithDecision } from './authoring-policy-decision-route.js';
@@ -4120,18 +4121,14 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       ]);
     }
   };
-  const ownerQuestionScope = () => canonicalJsonDigest({ job: (canonicalJobIntent ?? jobIntent)?.trim(),
-    request: pendingJobRevision ?? null, read_revision: pendingReadRevision ?? null,
-    read_revision_request: pendingReadRevisionState ? { instruction: pendingReadRevisionState.instruction,
-      provenance: pendingReadRevisionState.provenance, privacy_only: pendingReadRevisionState.privacy_only,
-      vocabulary_only: pendingReadRevisionState.vocabulary_only ?? null,
-      interpretation_instruction: pendingReadRevisionState.interpretation_instruction ?? null } : null,
+  const ownerQuestionScope = () => ownerQuestionScopeDigest({ job: jobIntent, canonicalJob: canonicalJobIntent,
+    pendingJobRevision, pendingReadRevision, readRevision: pendingReadRevisionState,
     model: selectedResumeModel && { provider: selectedResumeModel.provider, model: selectedResumeModel.model,
       destination: authoringDestination(selectedResumeModel) } });
   const ownerQuestionContext = async (permit?: ProjectAuthorityMutationPermit,
     consumer?: AuthoringOwnerHandoff["consumer"], sourceContext?:PolicySourceSession, savedSourceContext?:PolicySourceSession) => {
     await assertAuthoringResumeCurrent(undefined, false, permit);
-    const current = await loadBoundaryReviewContext(input.projectRoot);
+    const current = await loadBoundaryReviewContext(input.projectRoot, permit);
     const sources = authoringConversation?.policySources;
     if (sources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, sources.id) !== canonicalJsonDigest(savedSourceContext??sources)) {
       throw new PolicySourceChangedError();
@@ -4144,7 +4141,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     // Policy clarification is bound to the complete saved program and freshly
     // inspected reader/Action posture. An old coverage result is not current
     // Source meaning after an Action, role or attachment change.
-    let policyContext: unknown;
+    let policyContext: AuthoringOwnerQuestionContextInput["policy"];
     if (consumer === "policy_clarification" || consumer?.startsWith("read_revision_")) {
       await reloadReadReviewForModelRevision(input.projectRoot, current, semanticActionAuthorityDraft);
       // Resume may reuse a completed Action without rebuilding its in-memory
@@ -4157,11 +4154,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         action_schema: action ? schemaFingerprintForInspection(action) : null,
         action_role: action ? rolePostureFingerprint(action) : null };
     }
-    return canonicalJsonDigest({ scope: ownerQuestionScope(), binding: boundaryAuthoringResumeBinding(current.bundle),
-      candidate: current.candidate, source: sources?.snapshots.length ? sourceContext??sources : null,
-      reader_schema: schemaFingerprintForInspection(reader.inspection), reader_role: rolePostureFingerprint(reader.inspection),
-      ...(inputActions ? { input_actions: inputActions } : {}),
-      ...(policyContext ? { policy: policyContext } : {}) });
+    return ownerQuestionContextDigest({ scope: ownerQuestionScope(), binding: boundaryAuthoringResumeBinding(current.bundle),
+      candidate: current.candidate, sources, sourceContext, readerSchema: schemaFingerprintForInspection(reader.inspection),
+      readerRole: rolePostureFingerprint(reader.inspection), inputActions, policy: policyContext });
   };
   const mutateOwnerHandoff = async <T,>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>,parentPermit?:ProjectAuthorityMutationPermit): Promise<T> => {
     // Never retain this exclusion while a human or provider is outstanding.
