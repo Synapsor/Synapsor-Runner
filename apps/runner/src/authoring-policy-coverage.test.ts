@@ -43,7 +43,7 @@ describe("private Action field policy evidence", () => {
   };
   function fixture() {
     const read: ExplorationBoundaryDraft = {
-      schema_version: "synapsor.exploration-boundary.v1", activation: "disabled_unreviewed", deployment_profile: "staging",
+      schema_version: "synapsor.exploration-boundary.v2", activation: "disabled_unreviewed", deployment_profile: "staging",
       source: "local_postgres", compiler_version: "1.8.0", spec_version: "1.11.0", reporting_timezone: "UTC",
       trusted_context: { provider: "environment", tenant_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL" },
       generation_lock_fingerprint: `sha256:${"a".repeat(64)}`, role_posture_fingerprint: `sha256:${"b".repeat(64)}`,
@@ -573,7 +573,7 @@ describe("application obligation correction diagnostics", () => {
 describe("Runner client connection is a later unverified handoff", () => {
   it("supplies current installation evidence without implying a configured client or reviewed customer scope", () => {
     const read: ExplorationBoundaryDraft = {
-      schema_version: "synapsor.exploration-boundary.v1", activation: "disabled_unreviewed", deployment_profile: "staging",
+      schema_version: "synapsor.exploration-boundary.v2", activation: "disabled_unreviewed", deployment_profile: "staging",
       source: "local_postgres", compiler_version: "1.8.0", spec_version: "1.11.0", reporting_timezone: "UTC",
       trusted_context: { provider: "environment", tenant_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL" },
       generation_lock_fingerprint: `sha256:${"a".repeat(64)}`, role_posture_fingerprint: `sha256:${"b".repeat(64)}`,

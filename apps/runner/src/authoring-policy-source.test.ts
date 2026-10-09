@@ -12,6 +12,7 @@ import { parsePolicyCoverage, policyCoverageSection, policyCoverageSummary, revi
 import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { BoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { AnalyticsShellIo } from "./analytics-shell.js";
+import { ReviewResolutionError } from "./authoring-review-resolution.js";
 import { derivedScopedResponse } from "./test-fixtures/coverage-derived.js";
 import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
@@ -341,9 +342,18 @@ describe("complete operator-selected policy text", () => {
       }] } };
     });
     const draft = { limit: null };
-    await expect(reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
-      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } }))
-      .rejects.toThrow("COVERAGE_SCOPED_CORRECTION_REFUSED");
+    // No complete typed parent exists: the current owner stops validation
+    // before it can nominate scoped correction. Preserve that refusal and the
+    // one-request/unchanged-draft assertions, not the retired classifier text.
+    const refused = await reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
+      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } }).catch(error => error);
+    expect(refused).toBeInstanceOf(ReviewResolutionError);
+    expect(refused).toMatchObject({ code: "POLICY_COVERAGE_INVALID", plan: {
+      complete_validation: false, result: "stopped", recommended: null,
+      findings: [expect.objectContaining({ code: "COVERAGE_VALIDATION_INCOMPLETE", component: "/" })],
+      unevaluated: ["/passages"],
+    } });
+    expect(conversation.policySources.coverage).toBeUndefined();
     expect(requestJson).toHaveBeenCalledTimes(1);
     expect(draft).toEqual({ limit: null });
   });
@@ -358,6 +368,7 @@ describe("complete operator-selected policy text", () => {
     const chat = createBoundaryAuthoringChat({ io, color: false });
     const guide = vi.fn(); chat.setPermissionGuide!(guide);
     const conversation = createModelAuthoringConversation(); conversation.policySources = newPolicySourceSession();
+    await bindOwnedSession(root, conversation.policySources);
     installPolicySourceCommands({ root, chat, conversation, destination: () => destination, onChange: async () => undefined });
     expect(await chat.readOperator!("yes")).toContain("Operator instruction: Use these rules for enrollment");
     expect(guide).not.toHaveBeenCalled(); // Unapproved text is never narrated remotely.
@@ -376,6 +387,7 @@ describe("complete operator-selected policy text", () => {
     const chat = createBoundaryAuthoringChat({ color: false, io: { read: async () => reads.shift(), readConversation: async () => reads.shift(),
       write: (text) => output.push(text), choose: async () => "send", columns: () => 60, onInterrupt: () => () => undefined, close() {}, isTerminal: () => false } });
     const conversation = createModelAuthoringConversation(); conversation.policySources = newPolicySourceSession();
+    await bindOwnedSession(root, conversation.policySources);
     installPolicySourceCommands({ root, chat, conversation, destination: () => destination, onChange: async () => undefined, hasDraft: () => false });
     expect(await chat.readOperator!()).toBe("Help students enroll using these rules.");
     const text = output.join(" ").replace(/\s+/gu, " ");
@@ -518,9 +530,18 @@ describe("complete operator-selected policy text", () => {
           { start: 1, end: 1, disposition: "implemented", interpretation: "Three approvals per account.", draft_paths: ["/limit"] },
         ] }) }] } };
     });
-    await expect(reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
-      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } }))
-      .rejects.toThrow("COVERAGE_SCOPED_CORRECTION_REFUSED");
+    // No complete typed parent exists: the current owner stops validation
+    // before it can nominate scoped correction. Preserve that refusal and the
+    // one-request/unchanged-draft assertions, not the retired classifier text.
+    const refused = await reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
+      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } }).catch(error => error);
+    expect(refused).toBeInstanceOf(ReviewResolutionError);
+    expect(refused).toMatchObject({ code: "POLICY_COVERAGE_INVALID", plan: {
+      complete_validation: false, result: "stopped", recommended: null,
+      findings: [expect.objectContaining({ code: "COVERAGE_VALIDATION_INCOMPLETE", component: "/" })],
+      unevaluated: ["/passages"],
+    } });
+    expect(conversation.policySources.coverage).toBeUndefined();
     expect(requests).toHaveLength(1);
     expect(draft).toEqual({ limit: 3 });
   });

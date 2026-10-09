@@ -34,7 +34,38 @@ import {createModelAuthoringConversation} from './model-authoring-conversation.j
 import {policyReviewReadiness} from './authoring-review-readiness.js';
 import {savePolicySources,loadPolicySources} from './authoring-policy-source.js';
 import {ensurePreparedPolicyCoverage} from './authoring-prepared-policy-review.js';
+import {buildBoundaryAuthoringResumeState,writeBoundaryAuthoringResumeState,
+ assertBoundaryAuthoringResumeCurrent,assertBoundaryAuthoringResumeCurrentHeld} from './boundary-authoring-resume.js';
+import {withHeldProjectAuthorityAccess,type ProjectAuthorityMutationPermit} from './project-authority-mutation.js';
+import {loadRuntimeConfigFromFile} from '@synapsor-runner/mcp-server';
+// Current native job ownership for these prepared Source-review fixtures. No
+// model completion, reviewed meaning, active authority or source effect is made.
+async function bindPhaseJob(root:string,f:ReturnType<typeof fixture>){
+ await fs.chmod(root,0o700);await fs.mkdir(path.join(root,'.git'),{recursive:true});
+ const config=path.join(root,'synapsor.runner.json');
+ await fs.writeFile(config,JSON.stringify({version:1,mode:'read_only',capabilities:[],
+  sources:{app:{engine:'postgres',read_url_env:'UNUSED_PHASE_FIXTURE_DB'}},
+  trusted_context:{provider:'static_dev',values:{tenant_id:'fixture-private-org',principal:'fixture-private-person'}}}),{mode:0o600});
+ loadRuntimeConfigFromFile(config);
+ const resume=buildBoundaryAuthoringResumeState({binding:{boundary_name:f.draft.read.pack.name,
+  generation_lock_fingerprint:f.draft.read.generation_lock_fingerprint,
+  schema_fingerprint:canonicalJsonDigest('declared phase-review inspection'),role_posture_fingerprint:f.draft.read.role_posture_fingerprint},
+  stage:'authority_review',jobIntent:'Review this exact retained Source and its current prepared evidence.',
+  provider:'openai',model:'offline-not-called',policySourceSession:f.sources.id});
+ await writeBoundaryAuthoringResumeState(root,resume,{expectedRevisionDigest:null});
+ return {assertCurrent:()=>assertBoundaryAuthoringResumeCurrent(root,resume),
+  assertCurrentHeld:(permit:ProjectAuthorityMutationPermit)=>assertBoundaryAuthoringResumeCurrentHeld(root,resume,permit)};
+}
+
 import * as receiptConfiguration from './authoring-receipt-configuration.js';
+// The receipt configuration remains an explicit typed fixture, but its owner
+// seam now requires and validates the real current project's live Held access.
+function receiptFixture(configuration:any){
+ let current=configuration;
+ const reader=vi.spyOn(receiptConfiguration,'authoringReceiptConfigurationHeld')
+  .mockImplementation((root,_sources,permit)=>withHeldProjectAuthorityAccess(root,permit,async()=>structuredClone(current)));
+ return {reader,change:(next:any)=>{current=next;}};
+}
 const RECEIPT='/runner_evidence/runtime_contract/receipts';
 const READ_EXCLUSION='/runner_evidence/runtime_contract/receipt_read_exclusion';
 function correctedA(f:any) {
@@ -75,12 +106,13 @@ describe('full replacement composed A review',()=>{
  it('accepts a complete DERIVED first submission, preserving historical failed episodes, then saves/reopens BUSINESS review',async()=>{
   const f=fixture('A'),root=await fs.mkdtemp(path.join(os.tmpdir(),'source-phase-A-'));
   const t=transport(f,[correctedA(f)]),before=structuredClone(f.sources.coverage_episodes);
-  vi.spyOn(receiptConfiguration,'authoringReceiptConfiguration').mockResolvedValue(f.draft.runner_evidence.runtime_contract.receipt_configuration);
+  receiptFixture(f.draft.runner_evidence.runtime_contract.receipt_configuration);
   try {
    await savePolicySources(root,f.sources);
+   const native=await bindPhaseJob(root,f);
    const chooseOption=vi.fn(async()=> 'assign'),confirm=vi.fn(async()=>true);
    const input={projectRoot:root,sources:f.sources,modelSession:t.session,operatorSession:{chooseOption,confirm} as any,
-    currentDraft:()=>f.draft,authorityDigest:f.sources.coverage_authority_digest,clarifications:[],assertCurrent:async()=>{},state:{}};
+    currentDraft:()=>f.draft,authorityDigest:f.sources.coverage_authority_digest,clarifications:[],...native,state:{}};
    const result=await ensurePreparedPolicyCoverage(input);expect(result.activity).toBe('provider');
    const saved=await loadPolicySources(root,f.sources.id);
    expect(saved.coverage_episodes?.slice(0,before.length)).toEqual(before);
@@ -179,11 +211,12 @@ describe('exact B complete review with separately proven receipt Read exclusion'
   const f=preparedB(),root=await fs.mkdtemp(path.join(os.tmpdir(),'source-phase-B-'));
   const t=transport(f,[f.arguments,correctedB(f)],provider),before=structuredClone(f.sources.coverage_episodes);
   const originalCoverage=structuredClone(f.sources.coverage),originalAssignments=structuredClone(f.sources.application_assignments);
-  vi.spyOn(receiptConfiguration,'authoringReceiptConfiguration').mockResolvedValue(f.draft.runner_evidence.runtime_contract.receipt_configuration);
+  receiptFixture(f.draft.runner_evidence.runtime_contract.receipt_configuration);
   try {
    await savePolicySources(root,f.sources);
+   const native=await bindPhaseJob(root,f);
    const input={projectRoot:root,sources:f.sources,modelSession:t.session,operatorSession:{chooseOption:async()=> 'assign',confirm:async()=>true} as any,
-    currentDraft:()=>f.draft,authorityDigest:f.sources.coverage_authority_digest,clarifications:[],assertCurrent:async()=>{},state:{}};
+    currentDraft:()=>f.draft,authorityDigest:f.sources.coverage_authority_digest,clarifications:[],...native,state:{}};
    await expect(ensurePreparedPolicyCoverage(input)).rejects.toThrow('SOURCE_TRANSACTION_REVIEW_PENDING');
    expect(t.requests).toHaveLength(0);
    const saved=await loadPolicySources(root,f.sources.id);
@@ -250,9 +283,10 @@ describe('saved replacement freshness and cleanup',()=>{
  });
  it.each(['configuration','competing_save'])('a %s after production saves no new coverage or ownership',async failure=>{
   const f=fixture('A'),root=await fs.mkdtemp(path.join(os.tmpdir(),'source-phase-failure-')),t=transport(f,[correctedA(f)]);
-  const mock=vi.spyOn(receiptConfiguration,'authoringReceiptConfiguration').mockResolvedValue(f.draft.runner_evidence.runtime_contract.receipt_configuration);
+  const mock=receiptFixture(f.draft.runner_evidence.runtime_contract.receipt_configuration);
   try {
    await savePolicySources(root,f.sources);
+   const native=await bindPhaseJob(root,f);
    const oldCoverage=structuredClone(f.sources.coverage),oldOwnership=structuredClone(f.sources.application_assignments);
    if(failure==='competing_save') {
     const request=t.session.dependencies.requestJson;
@@ -265,9 +299,10 @@ describe('saved replacement freshness and cleanup',()=>{
     });
    }
    const input={projectRoot:root,sources:f.sources,modelSession:t.session,operatorSession:{chooseOption:async()=> 'assign',confirm:async()=>true} as any,
-    currentDraft:()=>f.draft,authorityDigest:f.sources.coverage_authority_digest,clarifications:[],state:{},assertCurrent:async()=>{
+    currentDraft:()=>f.draft,authorityDigest:f.sources.coverage_authority_digest,clarifications:[],state:{},assertCurrentHeld:native.assertCurrentHeld,assertCurrent:async()=>{
+     await native.assertCurrent();
      if(t.requests.length){
-      if(failure==='configuration')mock.mockResolvedValue({...f.draft.runner_evidence.runtime_contract.receipt_configuration,digest:canonicalJsonDigest('changed')});
+      if(failure==='configuration')mock.change({...f.draft.runner_evidence.runtime_contract.receipt_configuration,digest:canonicalJsonDigest('changed')});
      }
     }};
    await expect(ensurePreparedPolicyCoverage(input)).rejects.toThrow(failure==='configuration'?'OBLIGATION_CONFIGURATION_CHANGED':'POLICY_SOURCE_CHANGED');
