@@ -1,7 +1,7 @@
 {
-  "updated": "2026-10-09T03:24:28Z",
+  "updated": "2026-10-09T04:07:28.575493+00:00",
   "accepted_Main": "0ea9c097 (product7544b339)",
-  "B2_composition": "46edf54d scoped native/public ACCEPT4bf30bdc; successor cd2911b0 explicit disabled-state guard awaiting scoped check",
+  "B2_composition": "203c58ad: accepted46edf writer binding + independently scoped cd291 disabled-state guard + R2-source-accepted exact typed Read caller repair; actual public after pending",
   "windows": {
     "B64": [
       "2026-10-08T06:32:23Z",
@@ -16,7 +16,7 @@
   "rows": [
     {
       "id": "1",
-      "deliverable": "B64 English decision sites →0",
+      "deliverable": "B64 English decision sites \u21920",
       "owner": "Main/B66",
       "status": "OPEN: Main30 typed/0 delete and Action28 typed/5 delete; other Read/Ask/Chat/Privacy owned-source counts0/0. No remaining-site retirement editing underway.",
       "active_work": false
@@ -32,7 +32,7 @@
       "id": "3",
       "deliverable": "B64 /details full per-operation history",
       "owner": "Main/B66 presentation",
-      "status": "ACTIVE history helper/R2: isolated operation-details worktree from46ed; existing pager+durable records reused, three characterization controls prepared. Minimal chat callback/closed exact historical refs/current authorized restoration presealed DH01-10/DR01-03. Actual protected Main resolver/currentness and real route proofs open.",
+      "status": "ACTIVE history helper/Main/R2: DR01\u201303 and DH01\u201310 presealed; focused unchanged9 before controls in Slot4, protected current-record resolver and real CLI binding Main-owned/open. No historical authority or generation association invented.",
       "active_work": true
     },
     {
@@ -53,7 +53,7 @@
       "id": "6",
       "deliverable": "B65 public arithmetic55refused/50/40/45/55refused + races",
       "owner": "Tester/B66/Main",
-      "status": "ACTIVE Tester dedicatedSlot1 D01 UPDATE25: scoped Owner every-writer version fact confirmed for b65_s04/credits only. Source baseline30/50 retained, ordinary fresh setup begun, no effects yet. Existing46ed build exit2/inherited type diagnostics retained; one new writer type site fixed in cd2911, scoped review pending. INSERT initializer/native hooks still open; all five arithmetic verdicts remain not established.",
+      "status": "ACTIVE Tester Slot1 D01 successor203c58ad; genuine prior public refusal preserved3529f3ea (obsolete confirmedDecisions field), exact current bindings/resolvedOrigins caller repaired with R2 source-only verdict. Same b65_s04/credits scoped Owner counter assertion and unchanged30/50 Source. No arithmetic effect PASS yet; INSERT initializer/Main native hooks open.",
       "active_work": true
     },
     {
@@ -65,14 +65,14 @@
     },
     {
       "id": "8",
-      "deliverable": "B65 portable schema identity PG14–16",
+      "deliverable": "B65 portable schema identity PG14\u201316",
       "owner": "Tester/Runtime",
       "status": "PROTOTYPE REPORT COMPLETE: PG14.23/15.18/16.14/17.11 main80 + supplemental4 native cases sealed e57abace. One original PG14 OID-type checker failure retained; independent full post-state80 verified without effect replay. Portable replacement not established; schema/function-body/statement-trigger gaps reported; strict strategy retained. No active further prototype implementation.",
       "active_work": false
     },
     {
       "id": "9",
-      "deliverable": "B65 T01–T10 cross-resource verdicts",
+      "deliverable": "B65 T01\u2013T10 cross-resource verdicts",
       "owner": "Tester",
       "status": "QUEUED Tester: T01-T10 current native cross-resource verdicts after coherent PG public proof/slot; prior matrix retained. MySQL14 separate cannot transfer PG results.",
       "active_work": false
@@ -101,22 +101,22 @@
     {
       "id": "13",
       "deliverable": "source_db recommendation readback",
-      "owner": "Main/Read helper",
-      "status": "ACTIVE Runtime/R2: isolated receipt readback branch from46ed, conditional source_db recommendation only for NEW supported writes; actual setup capability not_verified_here until existing execution writer/receipt probe. Keep prior/default/explicitNo/selection digests and ledger unknown-COMMIT truth unchanged. Before old typedRead fixture failure retained; narrow UIcomponent reproduction/projection under preseal12RP, Main passthrough open.",
+      "owner": "Runtime/Main/R2",
+      "status": "IN REVIEW Runtime1f36ce08: pure informational receipt presentation + narrow setup wiring, actual handler-component/pure controls16PASS; current/stale prior/defaultNo/selection digests unchanged. R2 presealed; independent after verdict and Main JSON/execution display ports pending. No native capability verification claimed at setup.",
       "active_work": true
     },
     {
       "id": "14",
       "deliverable": "MySQL full B65 race matrix plus post-change hard-limit cases after PG6",
       "owner": "R1 independent MySQL native tester",
-      "status": "ACTIVE dedicatedSlot2, fresh isolatedMySQL/worktree exact46ed: existing ready native rows first, then full absence/membership move/limit change/duplicate+stale worker/unknown COMMIT/time boundary/stricter rule after approval/deadlock+timeout/scope negatives. PG-specific script porting remains; independent outcomes, no PG transfer. Hard-limit arithmetic only after PG6 passes; never delay PG1/D01.",
+      "status": "ACTIVE dedicated MySQL Slot2 on accepted successor203c58ad: 19 scoped native/component controls PASS on original46edf (actual deadlock1213, timeout1205, tenant/principal refusals). Full public worker matrix NOT_REACHED on old caller; same owned Source/bundle continues with fresh fixed-source custody, no replay/reset. Absence/membership/limit/rule/time/duplicate-stale/unknown COMMIT/public scopes open; hard-limit arithmetic after PG6, no PG transfer.",
       "active_work": true
     },
     {
       "id": "15",
       "deliverable": "Specific typed deadlock/lock-timeout reasons instead of generic retry",
       "owner": "B66 implementer/R1 independent native reviewer",
-      "status": "ASSIGNED offline failing-before/native code diagnosis. Exact SQLSTATE/driver typed codes only, no English parsing; distinguish deadlock and timeout with audience-safe typed reason, preserve retryable/contention, whole rollback, unknown outcome/idempotency/receipt fences. No product edits accepted yet.",
+      "status": "ACTIVE B66: scoped exact SQLSTATE/driver mapping plus worker retryable/recovery reason; proposed SOURCE_DEADLOCK, SOURCE_LOCK_UNAVAILABLE(PG55P03), SOURCE_LOCK_TIMEOUT(MySQL1205). PG query cancellation not guessed as timeout; acknowledged rollback and unknown COMMIT precedence intact. Independent native review/accepted integration pending.",
       "active_work": true
     }
   ],
@@ -131,7 +131,7 @@
     "11",
     "12"
   ],
-  "next": "D01/PG public arithmetic priority; Main typed initializer/native card/history hooks; isolated2cards/3history/13receipt and14MySQL concurrently; B66 specifictyped contention15; cross-resource9 on free native slot. Paid CLOSED.",
+  "next": "D01 PG Slot1 and MySQL Slot2 continue on203c58ad independently; B66 typed contention15; Main initializer/card/history protected hooks; receipt13 independent review before integration. Paid CLOSED.",
   "limits": "4heavy/max8workers perrun/0700 isolatedHOME_TMP_DB/8GiB free memory+disk/privatebackup only; no automaticwindow reset",
   "not_actively_worked_open_items": [
     "1",
