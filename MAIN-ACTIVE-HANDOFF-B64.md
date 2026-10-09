@@ -8,7 +8,7 @@ Read next remaining typed fixture/native-history/cold old-reader qualification; 
 I03537 raw-text privacy/compatibility decision pending Owner; source-only12620da3; no English exemption or invented complete identity set.
 Action receipt96e14201 R2 ACCEPT/Main197PASS; four IDs retired; [record](docs/development/b64-english-inventory/MAIN-RECEIPT-IDENTITY-INTEGRATION.json); approved initializer implementation B66/Action child.
 B65 hard-limit/import/renderer IN MAIN; original publicfive787 sealed: all ScopeUnproven, Source30/0effects; arithmetic NOT ESTABLISHED.
-D01 fresh public UPDATE25 RELEASED Tester exact7b13; then allfive after initializer. Runtime parallel fresh admission identified namespace_acl refusal, no writes; no grant expansion.
-Future all-lane snapshots exclude docs/non-test material and hash included files/configs/assets; no deletion. R2 audit25.94GiB includes21.18GiB copiedqualification evidence.
+D01 exact7b13 stops at Read visible-field projection before job/worker; helper diagnosing. Types293 incl27production remain OPEN. Runtime clone namespace_acl refusal separate; no grants expanded.
+All-lane snapshots filtered/hashmanifested; R2 16.2MB, Ask14.8MB, B66 36.9MB, Tester72.2MB incltar; Main/Read/R1 reuse0copy. [Storage report](docs/development/snapshot-storage-20261009/REPORT.md); no deletion.
 Slots1TesterD01/2R2snapshot/3initializer available/4free;4heavy,max8workers/run,0700isolation,8GiBfreeRAM/disk; no usagepause.
 Commit/privatepush checkpoints; Luna35total/remain19.72936875 inclholds paid CLOSED; next finish initializer binding, report exact public deciding checks.
