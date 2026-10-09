@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { createActionRuleAuthority, ActionRuleError } from '@synapsor-runner/action-rules';
 import type { HardLimitDesignationV1 } from '@synapsor-runner/action-rules';
 import type { RuntimeConfig } from '@synapsor-runner/mcp-server';
-import { invariantFixture } from './invariant-fixture.js';
+import { invariantFixture } from './writer-setup-fixture.js';
 const native = vi.hoisted(() => ({ maintain: true, global: false, qualifier: vi.fn(), pool: vi.fn(), query: vi.fn(), release: vi.fn(), end: vi.fn(), inspect: vi.fn(), posture: vi.fn(), selection: vi.fn() }));
 vi.mock('@synapsor-runner/postgres', () => ({ createPostgresPool: native.pool, assertPostgresHardLimitSource: native.qualifier }));
 vi.mock('@synapsor-runner/schema-inspector', () => ({ inspectDatabase: native.inspect, rolePostureFingerprint: () => `sha256:${'a'.repeat(64)}` }));

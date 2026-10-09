@@ -1,0 +1,35 @@
+{
+  "schema_version": "b65.writer-setup.fixture-custody.v1",
+  "source_pin_before_asset": "b4b3218e",
+  "classification": "MAIN379_REVIEW_TEST_IMPORT_ASSET_GAP_REPAIRED",
+  "asset": [
+    {
+      "path": "scripts/experiments/b65/hard-limit-writer-setup.test.ts",
+      "bytes": 14520,
+      "sha256": "23d672881204ad7355480dd7f0613e14423d6ffb6bdc7249571abd746ec3c962"
+    },
+    {
+      "path": "scripts/experiments/b65/writer-setup-fixture.ts",
+      "bytes": 3197,
+      "sha256": "2c2c40b789ee6fb222b343fb2961c34f357e4721981862c6fa122e987033509a"
+    },
+    {
+      "path": "packages/action-rules/src/testing/complete-collection-fixture.ts",
+      "bytes": 5332,
+      "sha256": "0d9e8984b54025f20436a7b46938e6c2e5111b3e5f351f50ccab35fbcc930b20"
+    }
+  ],
+  "copy_provenance": {
+    "original_tracked_owner_asset": "scripts/experiments/b65/invariant-fixture.ts",
+    "original_sha256": "2c2c40b789ee6fb222b343fb2961c34f357e4721981862c6fa122e987033509a",
+    "new_asset_byte_identical": true,
+    "original_asset_unchanged": true
+  },
+  "import_closure": {
+    "new_test": "./writer-setup-fixture.js resolves tracked .ts in Vitest",
+    "new_fixture": "../../../packages/action-rules/src/testing/complete-collection-fixture.js resolves tracked .ts",
+    "complete_collection_fixture": "only type imports ../types.js and @synapsor/spec; both already tracked Main",
+    "Main_complete_collection_fixture_byte_identical": true
+  },
+  "scope": "Asset inclusion and one import reference only. No authority fixtures, private oracles, effect/assertion meanings, product logic or runtime guard changed. Existing66PASS/type0 retained; no new native or heavy run inferred."
+}
