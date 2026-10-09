@@ -11,7 +11,8 @@
     "native_tester": "01a117fd-4600-76a3-baf7-e404eb16d0d3 independent native/public evidence and SUPPORT-MATRIX",
     "fixture_helper": "existing /root/b59_regression_fix in own worktree; CASE-MANIFEST + independent pure reference states; no product/native changes",
     "Main": "integration and B64 typed contract, exact cross-lane handoffs",
-    "reviewer": "existing R2 source/native acceptance; no implementer selfapproval"
+    "reviewer": "existing R2 source/native acceptance; no implementer selfapproval",
+    "integration": "B66 task01a11d25-18fd-7b12-aff5-adec1c9679c6 owns W/b57-fixture-prep/b65-action-compose; Main Read only"
   },
   "first": "Sequential total30/limit50: freshINSERT25 refuses,20 reaches50,10 reaches40; includedexisting10 UPDATEto25 gives45valid/to35 gives55refused. Record actualcheck, stale is not invariant proof. Ordinary open\u2192close eligibility stays precondition.",
   "priority": [
@@ -52,7 +53,7 @@
     "term/scope dropping, humanapproval fallback, altered amounts",
     "replay/unknown capacity release"
   ],
-  "current_boundary": "Current narrow PG writer hard capability remains unsupported until Source execution-lifetime proven under its actual posture; prior unsafe namespace COMMIT55 preserved. Existingprivileged native4PASS is separate, completedreceiptDU01 repair ongoing. No publicpositive transfer.",
+  "current_boundary": "Ordinary PRE01 public execution passes both engines. Designated hard-limit narrow PG writer remains unsupported without proven Source execution-lifetime posture; special privileged native fixture positives do not transfer. Original failures retained.",
   "reuse": "Keep completed B65 G3/G4/G5, B66, B61 evidence; run only uncovered exact contracts. Compact DEV group records, no per-case freeze/archive ceremony.",
   "manifest": "Helper owns one CASE-MANIFEST.json; Main/Tester import exact pin rather than duplicate manifest.",
   "counts": "B64 counts/owners unchanged by new characterizationpack; B64 work continues.",
@@ -75,7 +76,7 @@
     ],
     "review_evidence": "../b65-oracle-independent/SOURCE-VERDICT.json"
   },
-  "literal_insert_boundary": "Existing fe885 compiler admission refuses designated single INSERT (PG and MySQL); keep literal25/20/10 and T09 INSERT shapes. Runtime is inspecting whether the already authorized single-INSERT upper-SUM contract can be supported without new authority; unsupported is not ENFORCED. Historical unused-row UPDATE is not INSERT evidence.",
+  "literal_insert_boundary": "Historical fe885 designated INSERT refusal retained. Reviewed ce523 successor supports authorized single-INSERT upper SUM natively (d8236PASS, R2 scoped acceptance); actual public/narrow-role qualification remains separate.",
   "first_native_checkpoint": {
     "evidence_pin": "8734998b66c288a9346b7c1d50799b42375f6558",
     "runtime_pin": "fe885b08",
@@ -98,5 +99,36 @@
     "native_after_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b65-e44-c6a4-historical-replay-native-after-independent-v1.json",
     "native_after_report_sha256": "bee25851f518b186f7ee76f517ea4ef1f74721072ffa5bbdb2872b3b38077490",
     "limits": "Completed SourceDb receipt replay only; fresh narrow role refuses before DML. No new public, hard-limit positive, unknown-COMMIT or general B61 closure."
+  },
+  "ordinary_precondition_public": {
+    "evidence_pin": "e5a8ae94",
+    "report": "PRE01-REPORT.txt",
+    "results": "PRE01-RESULTS.json",
+    "matrix": "SUPPORT-MATRIX-PRE01.json",
+    "outcomes": {
+      "ENFORCED": 2,
+      "UNSUPPORTED_REFUSED": 54
+    },
+    "scope": "Only ordinary open\u2192closed precondition public review/four tools/approval/worker/one matched receipt, PG+MySQL. No hard-invariant positive transfer; original matrix untouched."
+  },
+  "runtime_insert_checkpoint": {
+    "source": "ce52358f",
+    "evidence": "d8233229",
+    "R2_report_sha256": "8cfa121aeb4a0048cb8509a0f98b354b5d6b51ed8e0e869cd8e7efaccaf8955d",
+    "results": "6 native PASS with special fixture posture; fresh25 limit rollback,20\u219250,10\u219240, narrow/hidden-trigger refusal. Receipt claim INSERT rolls back on refusal; not zero all DML.",
+    "original_UPDATE_regression": "ed86b7dd / timing868b85ac4PASS, R2 scoped owner artifact accept; actual overlap recorded, not an exclusive-slot claim.",
+    "IN04": "a19e5213\u2192e6a9c680 exact existing10\u219225=45applied and10\u219235=55ownedlimitrefusal; R2 scopednative2PASS SHA8ffee2b932d729053072656311c965e256bdd356cadef95ec45e8ff320f05c00. Native specialposture only."
+  },
+  "action_composition": {
+    "branch": "codex/b65-action-compose-20261008",
+    "pin": "d0114b70",
+    "base": "f4f691bc",
+    "runtime_pair": [
+      "e24521c7",
+      "ed0f2645"
+    ],
+    "lifetime_independent": "39c458396 unchanged controls0PASS6FAILbefore\u21926PASSafter/fulltypes0; component only",
+    "renderer": "B66 scopedindependent69PASS/types0 including hardlimit not overridablebyhumanapproval",
+    "public_route": "Tester allfive publicdryruninprogress; first exactclosedimport omits hard_limit\u2192STRUCTURED_DRAFT_VALIDATION_FAILED. B66owns generalfix; version/Source namespace not yet reached. No grants/shape substitution."
   }
 }

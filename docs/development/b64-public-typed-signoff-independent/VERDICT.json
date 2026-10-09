@@ -1,0 +1,41 @@
+{
+  "reviewer": "R1",
+  "verdict": "ACCEPT_SCOPED_PUBLIC_GROUPED_SIGNOFF",
+  "product_pin": "c361a4a036be20283fc0d0509072a9a57a4aee01",
+  "fixture_pin": "f5e92694",
+  "results": {
+    "pass": 7,
+    "fail": 0,
+    "skip": 0,
+    "duration_seconds": 25.97
+  },
+  "cases": {
+    "GS01": "Actual public group defaults false; all No keeps exact native state",
+    "GS02": "Later cancellation discards earlier accepted groups in same episode",
+    "GS03": "Only selected exact work.items group saves; work.items_archive remains pending; immutable writer origins resolve",
+    "GS04": "Shared domain rejects duplicate/foreign IDs and mutated input digest",
+    "GS05": "Actual protected native amendment during confirm await survives; old public save refuses POLICY_AUTHORING_REVIEW_CHANGED",
+    "GS06": "Reload derives exact confirmations from native resolved origins; field permission without its origin is inapplicable",
+    "GS07": "Completed public --confirm --output reentry does not prompt or advance native state; candidate disabled",
+    "GS08": "Typed accessor/submission exact resource identity independent of prose; full focused-resource menu source reviewed, not independently executed"
+  },
+  "source_review": {
+    "typed_public_adapters": 2,
+    "typed_context_projection": 1,
+    "fresh_initializer": 1,
+    "notes": [
+      "Both grouped and focused adapters choose current exact decision IDs, pass validated typed submission to same protected writer, and default No. No English selection or parser.",
+      "Shared createBoundaryReviewProgress retains applicable prior confirmations; loader recomputes applicability using resolved origins.",
+      "Fresh initialization creates unconfirmed current-protocol record; no migration of old saved setup, no confirmation fabricated.",
+      "Fixture preparation uses actual initialized native records and ordinary prepared/committed explicit resource mutation. Selected label visibility is a declared fact."
+    ]
+  },
+  "before": "Main f82e541c actual protocol refusal plus earlier exposure prerequisite and native bootstrap failures preserved in Main PUBLIC-TYPED-SIGNOFF.json; independent tests were sealed before first run and not altered.",
+  "limits": [
+    "Actual production CLI handler in process; cold record reread is not fresh OS proof",
+    "Focused resource menu only source/domain proof",
+    "No activation, Source rows, model/provider calls or authority increase",
+    "No global types/full suite/SC04 active or old-reader qualification",
+    "Historical canonical inventory counts are not recomputed or invented by these four scoped source changes"
+  ]
+}

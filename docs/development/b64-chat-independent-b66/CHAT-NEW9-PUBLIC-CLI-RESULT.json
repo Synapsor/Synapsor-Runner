@@ -1,0 +1,63 @@
+{
+  "schema": "B64-CHAT-NEW9-PUBLIC-CLI-RESULT-v1",
+  "Main_integration_pin": "2eb7531a6c4c4e23994d0e73a430d4fbafa5acf2",
+  "before_hook_pin": "3b09fa669518e7bfc1bf0ac0821332af900bd7ed",
+  "independent_preseal": "e342da11",
+  "independent_composition": "e2c91437",
+  "verdict": "SCOPED_PUBLIC_I03556_HOOK_ACCEPTED; MainNEW9integration accepted in reviewed source and finitecaller scope",
+  "tests": "Exact5 cli-recovery-binding controls unchanged fromMain3b09",
+  "before": {
+    "pass": 4,
+    "fail": 1,
+    "outside_selected": 0,
+    "failure": "retains original typed TLS error at public hint boundary"
+  },
+  "after": {
+    "pass": 5,
+    "fail": 0,
+    "outside_selected": 0
+  },
+  "types": {
+    "exit": 0,
+    "diagnostics": 0
+  },
+  "proof": [
+    "runCliProcess passes exact original Error to formatCliErrorHint; CERT_HAS_EXPIRED yields fixed certificate inspection guidance with verification retained.",
+    "Uncoded self-signed/verification prose does not invent TLS cause or hint.",
+    "Typed operation recovery facts preserved when prose claims opposite; unknown no-write/preservation facts remain unverified.",
+    "Public diagnostic/recovery fields redact private fixture tokens; no no-verify advice.",
+    "CLI andeightNEW9productfiles byte-equalMain2eb; both question_to_plan_checked:false projections retained."
+  ],
+  "canonical": {
+    "new9_scoped_source_independent_accepted": 9,
+    "new9_Main_source_integrated": 9,
+    "I03556_public_caller_accepted": true,
+    "remaining_new9_Main_hook_in_this_scope": 0,
+    "wholepublic_provider_native_Source_claim": false
+  },
+  "overlap": "Prior40focusedNEW9source/provenance checks and current5publicCLI checks have related behavior; reportseparately, do notsum as45. Main80affected not repeated.",
+  "raw": [
+    {
+      "path": "/var/tmp/synapsor-b64-chat-independent-b66-20261008/evidence/new9-cli/before.json",
+      "sha256": "08943d15e4f1c24d421c3d0d17d0a8e8d4f1075ee14e234f8d987b6deac66783"
+    },
+    {
+      "path": "/var/tmp/synapsor-b64-chat-independent-b66-20261008/evidence/new9-cli/before.txt",
+      "sha256": "455bab23919700f47d01ead9245af36bc751f3f506c3af8b0d24136835f80b79"
+    },
+    {
+      "path": "/var/tmp/synapsor-b64-chat-independent-b66-20261008/evidence/new9-cli/after.json",
+      "sha256": "25fb60e36966f391d1edae12f5847d4897f0ce109fe1ad0c208d473bcb04ae34"
+    },
+    {
+      "path": "/var/tmp/synapsor-b64-chat-independent-b66-20261008/evidence/new9-cli/after.txt",
+      "sha256": "8d902e701d66c71380bb880cf317475ad671a79bf92731c207b1c95ffdef940c"
+    },
+    {
+      "path": "/var/tmp/synapsor-b64-chat-independent-b66-20261008/evidence/new9-cli/types.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "execution": "Mainauthorizedslot4,max1; offlinebwrap sequentialbefore/after/incrementaltypes; boundedSTART/END recorded, slot4RETURNED, noheavyparent. No74/80/332broadrepeat, paid/provider/Source/Docker calls orActionselfreview.",
+  "storage": "Allrawandstores retainedlocally; no rawlogs committed/published. Exactsource/docs/tests privatebackup only."
+}

@@ -1,0 +1,28 @@
+{
+  "reviewer": "R1",
+  "status": "ACCEPT_SCOPED_PURE_CODEC",
+  "product_pin": "c88339f3ab0b5f0875e9ff82132a81ebe608648f",
+  "codec_blob": "ecb8ca271ea9a8322b4fdb6e81aa96dbec619205",
+  "composition_pin": "60f932ea",
+  "independent_fixture_pin": "a724deb7",
+  "unchanged_independent_tests": {
+    "before_passed": 10,
+    "before_failed": 1,
+    "after_passed": 11,
+    "after_failed": 0
+  },
+  "affected_owner_tests_rerun": {
+    "passed": 44,
+    "failed": 0,
+    "skipped": 0
+  },
+  "source_verdict": "Exact two-line correction changes native Promise brand detection to node:util types.isPromise. Intrinsic then observes rejected native promises across realms without awaiting or executing arbitrary thenable hooks. Every non-undefined assertion result still refuses synchronously. Strict envelope gates, detached payload comparison and separate returned snapshot remain unchanged. No runtime auto-boundary import, filesystem, store, provider, retry or digest owner.",
+  "proof": "Exact c88339f3 codec blob matched git hash; independent fixture diff against a724deb7 empty. Before and after logs committed.",
+  "types": "No independent global typecheck: unrelated Read composition errors outside scope; Main reports exact codec correction typed. Runtime suite imports/transpiles exact source.",
+  "limits": [
+    "Prospective pure codec only; synthetic format fixtures are not active authority",
+    "Production file/native/active/bundle wiring and R2 cold/public SC04 remain open",
+    "No old record migration, resave, activation or Source effect",
+    "No acceptance of unrelated Main Read composition"
+  ]
+}

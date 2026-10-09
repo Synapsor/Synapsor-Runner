@@ -1,0 +1,1796 @@
+{
+  "schema": "B65_INDEPENDENT_SUPPORT_MATRIX_V1",
+  "pin": "fe885b08b762307ceaf8b3eebc45d9c84f745b14",
+  "manifest_import": {
+    "pin": "7544e7f5a6f59bf9b81d415fb0e74b689be7bffa",
+    "helper_workspace": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b57-fixture-prep",
+    "files": [
+      {
+        "file": "CASE-MANIFEST.json",
+        "sha256": "d3483b47cf7bf74b82830a30a734b8f7b16c9788ea1c946a4f26de2bf3d999d1"
+      },
+      {
+        "file": "fixtures/SCENARIOS.json",
+        "sha256": "316ed7187af9f5ea22b92bcf0f9a0b74c756772059ea3a56944317244d989599"
+      },
+      {
+        "file": "fixtures/OPERATOR-FACTS.json",
+        "sha256": "4a89664d2f90a4374419f010566da1e8421d609c830033072e9eacb7ab08dea2"
+      }
+    ],
+    "unchanged_import": true,
+    "helper_handoff_not_imported": true,
+    "native_verdicts_not_adopted": true,
+    "private_oracle_import": {
+      "pin": "f50cbff39e9eb251f746458fc954c32c85cbaa62",
+      "files": [
+        {
+          "file": "private-oracle/reference-state.mjs",
+          "sha256": "a5bcfe9b4fe7b6ff6f62dbb07f27972c180b6dac776b472760f731f32bd45f0f"
+        },
+        {
+          "file": "private-oracle/reference-state.test.mjs",
+          "sha256": "ac452f52d9f20971da26a04077a9577d448ca16aac4c979f3a2883da133f7fae"
+        },
+        {
+          "file": "private-oracle/README.md",
+          "sha256": "145aa1e047112d6bd521667764adeef55968cca99f61b19116fb25b378209cc4"
+        },
+        {
+          "file": "private-oracle/CONTROL-RESULT.json",
+          "sha256": "81d89628d746978fbe3b81a727fa54c90999e02cfdbe826561b4d4d2602e2419"
+        }
+      ],
+      "helper_Handoff_excluded": true,
+      "Runner_poststate_evaluator_not_used": true
+    }
+  },
+  "current_native_verdicts": 2,
+  "no_engine_transfer": true,
+  "rows": [
+    {
+      "case": "S01",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Literal INSERTs unsupported on existing compiler; exact amount controls predeclared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_UPDATE_only_or_PG_engine_contract"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Literal INSERT amount admitted by ordinary effect compiler but rejected with designated invariant; no useful continuation or concurrency proof.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "S01",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Literal INSERTs unsupported on existing compiler; exact amount controls predeclared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_UPDATE_only_or_PG_engine_contract"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Literal INSERT amount admitted by ordinary effect compiler but rejected with designated invariant; no useful continuation or concurrency proof.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "S02",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Literal INSERTs unsupported on existing compiler; exact amount controls predeclared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_UPDATE_only_or_PG_engine_contract"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Literal INSERT amount admitted by ordinary effect compiler but rejected with designated invariant; no useful continuation or concurrency proof.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "S02",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Literal INSERTs unsupported on existing compiler; exact amount controls predeclared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_UPDATE_only_or_PG_engine_contract"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Literal INSERT amount admitted by ordinary effect compiler but rejected with designated invariant; no useful continuation or concurrency proof.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "S03",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Literal INSERTs unsupported on existing compiler; exact amount controls predeclared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_UPDATE_only_or_PG_engine_contract"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Literal INSERT amount admitted by ordinary effect compiler but rejected with designated invariant; no useful continuation or concurrency proof.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "S03",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Literal INSERTs unsupported on existing compiler; exact amount controls predeclared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_UPDATE_only_or_PG_engine_contract"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Literal INSERT amount admitted by ordinary effect compiler but rejected with designated invariant; no useful continuation or concurrency proof.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "S04",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "NATIVE_SOURCE_ADMISSION_REFUSED",
+      "support_characterization": "PG UPDATE sum shape candidate; narrow native admission prepared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "protectPostgresHardLimitNames namespace privilege check (false)"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact compiled sum/update shape admitted; current narrow native role cannot qualify Source. Complete independent snapshots unchanged. No poststate evaluator/progress/race/public/receipt acceptance.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "S04",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_engine_profile"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "MySQL engine rejects hard designation before shape/effect use. Atomic shape itself not separately MySQL-qualified.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "S05",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "NATIVE_SOURCE_ADMISSION_REFUSED",
+      "support_characterization": "PG UPDATE sum shape candidate; narrow native admission prepared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "protectPostgresHardLimitNames namespace privilege check (false)"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact compiled sum/update shape admitted; current narrow native role cannot qualify Source. Complete independent snapshots unchanged. No poststate evaluator/progress/race/public/receipt acceptance.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "S05",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_engine_profile"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "MySQL engine rejects hard designation before shape/effect use. Atomic shape itself not separately MySQL-qualified.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "PRE01",
+      "engine": "postgres",
+      "verdict": "ENFORCED",
+      "public": "ACTUAL_PUBLIC_NATIVE_PASS_ORDINARY_PRECONDITION_ONLY",
+      "component": "NOT_REQUIRED",
+      "support_characterization": "Ordinary prestate eligibility remains eligible before changing open to closed; no hard invariant designated.",
+      "deciding_check": {
+        "stage": "Native worker current eligibility and approval re-check before DML",
+        "result": "eligible/open before; effect closed/version2 committed once; original predicate false after"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "Exact selected closed/version2 and other three full rows unchanged",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "One fresh genuine public request applied and matching Source/Runner receipt",
+      "scope": "Ordinary PRE01 only; no designated hard-limit positive, race, general privacy or recovery acceptance.",
+      "races": "NOT_RUN",
+      "evidence": "PRE01-RESULTS.json#postgres"
+    },
+    {
+      "case": "PRE01",
+      "engine": "mysql",
+      "verdict": "ENFORCED",
+      "public": "ACTUAL_PUBLIC_NATIVE_PASS_ORDINARY_PRECONDITION_ONLY",
+      "component": "NOT_REQUIRED",
+      "support_characterization": "Ordinary prestate eligibility remains eligible before changing open to closed; no hard invariant designated.",
+      "deciding_check": {
+        "stage": "Native worker current eligibility and approval re-check before DML",
+        "result": "eligible/open before; effect closed/version2 committed once; original predicate false after"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "Exact selected closed/version2 and other three full rows unchanged",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "One fresh genuine public request applied and matching Source/Runner receipt",
+      "scope": "Ordinary PRE01 only; no designated hard-limit positive, race, general privacy or recovery acceptance.",
+      "races": "NOT_RUN",
+      "evidence": "PRE01-RESULTS.json#mysql"
+    },
+    {
+      "case": "T01",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T01",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T02",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T02",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T02-three",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T02-three",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T02-teams",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T02-teams",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T03",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T03",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T03-principals",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T03-principals",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T03-teams",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T03-teams",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T04",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T04",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T04-below-usage",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T04-below-usage",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T05",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T05",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T05-activate",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T05-activate",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T05-campaigns",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T05-campaigns",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T06",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T06",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T06-same-customer",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T06-same-customer",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T06-complete",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T06-complete",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T07",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T07",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T08",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "NATIVE_SOURCE_ADMISSION_REFUSED",
+      "support_characterization": "PG UPDATE sum shape candidate; narrow native admission prepared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "protectPostgresHardLimitNames namespace privilege check (false)"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact compiled sum/update shape admitted; current narrow native role cannot qualify Source. Complete independent snapshots unchanged. No poststate evaluator/progress/race/public/receipt acceptance.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T08",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_engine_profile"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "MySQL engine rejects hard designation before shape/effect use. Atomic shape itself not separately MySQL-qualified.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T08-transfer",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "NATIVE_SOURCE_ADMISSION_REFUSED",
+      "support_characterization": "PG UPDATE sum shape candidate; narrow native admission prepared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "protectPostgresHardLimitNames namespace privilege check (false)"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact compiled sum/update shape admitted; current narrow native role cannot qualify Source. Complete independent snapshots unchanged. No poststate evaluator/progress/race/public/receipt acceptance.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T08-transfer",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_engine_profile"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "MySQL engine rejects hard designation before shape/effect use. Atomic shape itself not separately MySQL-qualified.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T08-transfer-reversed",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "NATIVE_SOURCE_ADMISSION_REFUSED",
+      "support_characterization": "PG UPDATE sum shape candidate; narrow native admission prepared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "protectPostgresHardLimitNames namespace privilege check (false)"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact compiled sum/update shape admitted; current narrow native role cannot qualify Source. Complete independent snapshots unchanged. No poststate evaluator/progress/race/public/receipt acceptance.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T08-transfer-reversed",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_engine_profile"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "MySQL engine rejects hard designation before shape/effect use. Atomic shape itself not separately MySQL-qualified.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T08-race",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "NATIVE_SOURCE_ADMISSION_REFUSED",
+      "support_characterization": "PG UPDATE sum shape candidate; narrow native admission prepared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "protectPostgresHardLimitNames namespace privilege check (false)"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact compiled sum/update shape admitted; current narrow native role cannot qualify Source. Complete independent snapshots unchanged. No poststate evaluator/progress/race/public/receipt acceptance.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T08-race",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_engine_profile"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "MySQL engine rejects hard designation before shape/effect use. Atomic shape itself not separately MySQL-qualified.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T09",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Literal INSERTs unsupported on existing compiler; exact amount controls predeclared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_UPDATE_only_or_PG_engine_contract"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Literal INSERT amount admitted by ordinary effect compiler but rejected with designated invariant; no useful continuation or concurrency proof.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T09",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Literal INSERTs unsupported on existing compiler; exact amount controls predeclared",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "hard_designation_UPDATE_only_or_PG_engine_contract"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Literal INSERT amount admitted by ordinary effect compiler but rejected with designated invariant; no useful continuation or concurrency proof.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T10",
+      "engine": "postgres",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    },
+    {
+      "case": "T10",
+      "engine": "mysql",
+      "verdict": "UNSUPPORTED_REFUSED",
+      "public": "NOT_RUN",
+      "component": "COMPILER_UNSUPPORTED_REFUSED",
+      "support_characterization": "Current typed designation grammar/engine cannot establish exact owner meaning; precise unsupported characterization remains",
+      "deciding_check": {
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "stage": "closed_hard_designation_interface"
+      },
+      "locking": "NOT_ESTABLISHED",
+      "poststate": "NOT_ESTABLISHED",
+      "privacy": "NOT_ESTABLISHED",
+      "recovery": "NOT_ESTABLISHED",
+      "progress": "NOT_ESTABLISHED",
+      "scope": "Exact condition/effects preserved in proposed unsupported extension. Current grammar has no way to declare this meaning; no new language/API implemented, unrelated sum-only fallback not accepted.",
+      "races": "NOT_RUN: designation/Source admission boundary precedes race"
+    }
+  ],
+  "initial_component_group": {
+    "product_pin": "fe885b08b762307ceaf8b3eebc45d9c84f745b14",
+    "route": "direct compiler component",
+    "activated": false,
+    "DBs": 0,
+    "results": [
+      {
+        "engine": "postgres",
+        "kind": "update",
+        "stage": "designation",
+        "status": "COMPILER_ADMITTED_COMPONENT_ONLY",
+        "digest": "sha256:a9f6ca9aa6352dac939815e034fbeb4f2ca839f87b997beef89afd182870b900"
+      },
+      {
+        "engine": "postgres",
+        "kind": "insert",
+        "stage": "designation",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "message": "This change cannot be checked with the supported Source guarantees."
+      },
+      {
+        "engine": "postgres",
+        "caseId": "T01",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "postgres",
+        "caseId": "T02",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "postgres",
+        "caseId": "T03",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "postgres",
+        "caseId": "T04",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "postgres",
+        "caseId": "T05",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "postgres",
+        "caseId": "T06",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "postgres",
+        "caseId": "T07",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "postgres",
+        "caseId": "T10",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "mysql",
+        "kind": "update",
+        "stage": "designation",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "message": "This change cannot be checked with the supported Source guarantees."
+      },
+      {
+        "engine": "mysql",
+        "kind": "insert",
+        "stage": "designation",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "message": "This change cannot be checked with the supported Source guarantees."
+      },
+      {
+        "engine": "mysql",
+        "caseId": "T01",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "mysql",
+        "caseId": "T02",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "mysql",
+        "caseId": "T03",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "mysql",
+        "caseId": "T04",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "mysql",
+        "caseId": "T05",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "mysql",
+        "caseId": "T06",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "mysql",
+        "caseId": "T07",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      },
+      {
+        "engine": "mysql",
+        "caseId": "T10",
+        "stage": "closed-designation-grammar",
+        "status": "UNSUPPORTED_REFUSED",
+        "code": "ACTION_RULE_SCOPE_UNPROVEN",
+        "intent_retained": true,
+        "qualification": "Closed unsupported declaration-shape boundary only; case AST/public caller/native race not exercised."
+      }
+    ]
+  },
+  "limitations": [
+    "Compiler admitted baseline UPDATE and INSERT before designation, so refusal comes from hard-limit designation contract, not missing baseline effect compiler.",
+    "Closed extra postcondition grammar controls are not full case/native/public proof; exact case verdicts remain unset.",
+    "Narrow Source admission group for6PG UPDATE scenarios presealed, not yet executed; short slot1 loan to helper pending return.",
+    "Two zod import failures are preserved as NOT_REACHED_HARNESS; corrected v3 group completed.",
+    "No fresh20/10 usefulprogress established from INSERT refusal."
+  ],
+  "raw_hashes": [
+    {
+      "path": "evidence/SOURCE-SNAPSHOT.json",
+      "sha256": "8de3bc9e9622172c4913934c3e56957c1a9e8d3fbb72d461c865e9f30720e861"
+    },
+    {
+      "path": "evidence/compiler-results.json",
+      "sha256": "e84333fb6904c8d74bd71e0f81c64ff4129fbbea89b8e69ea8dd98af8c25a497"
+    },
+    {
+      "path": "evidence/compiler-stderr.txt",
+      "sha256": "86072a6eeac489c7193415114a081eef5153ee6f47bb6c4c385ab0d59d57b06f"
+    },
+    {
+      "path": "evidence/compiler-stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/compiler-v2-stderr.txt",
+      "sha256": "86072a6eeac489c7193415114a081eef5153ee6f47bb6c4c385ab0d59d57b06f"
+    },
+    {
+      "path": "evidence/compiler-v2-stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/compiler-v3-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/compiler-v3-stdout.txt",
+      "sha256": "0fc9a64cb097bd402417c29423d68cb822095fd3bedd99afd9427a488820091b"
+    },
+    {
+      "path": "evidence/native-admission-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/native-admission-stdout.txt",
+      "sha256": "9c40c5353180a2ce7874bb90321386b6071e59ba237cd73ed8b8074ebb54979b"
+    },
+    {
+      "path": "evidence/remaining-compiler-and-oracle-results.json",
+      "sha256": "df55ecf1cc79db52af7d15265aecf6db44121c67a6d717f56a160c7d6d93edd9"
+    },
+    {
+      "path": "evidence/remaining-compiler-oracle-stderr.txt",
+      "sha256": "1015a74c915882970383db731176c7780b6bc9ca80edd0195d8405ccfb162e12"
+    },
+    {
+      "path": "evidence/remaining-compiler-oracle-stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/remaining-compiler-oracle-v2-stderr.txt",
+      "sha256": "2e1f9fc05684d53eb2b2a49d23e9f5cad6eb25b9a5d7195e9dfd6a8465a298c2"
+    },
+    {
+      "path": "evidence/remaining-compiler-oracle-v2-stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/remaining-compiler-oracle-v3-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/remaining-compiler-oracle-v3-stdout.txt",
+      "sha256": "18d621da9c3f80e7fc9b5a9d2e42319487c88cf307d11e756be8b47266f7d944"
+    },
+    {
+      "path": "evidence/sequential-compiler-results.json",
+      "sha256": "6335361dcdb87855a89c44f4b3f6fa8a388ed77a30ac6cb1d14b2a49b9bf83db"
+    },
+    {
+      "path": "evidence/sequential-compiler-stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/sequential-compiler-stdout.txt",
+      "sha256": "8a99eaf53192f1a993555ecf892e8bf84b2d58a223a2d198ca520f0c11c296ae"
+    },
+    {
+      "path": "native-admission-v1/RESULTS.json",
+      "sha256": "6c687c4aa845fdd337113bd6affa6a122dc9d79b3dcf8aa9a599f93fa0b661a8"
+    }
+  ],
+  "stage": "PRE01_TWO_ENGINE_ORDINARY_PUBLIC_NATIVE_SUCCESSOR",
+  "current_native_component_cases": 6,
+  "native_admission_attempts": 7,
+  "native_databases": 6,
+  "new_container_retained_stopped": {
+    "Status": "exited",
+    "Running": false,
+    "Paused": false,
+    "Restarting": false,
+    "OOMKilled": false,
+    "Dead": false,
+    "Pid": 0,
+    "ExitCode": 0,
+    "Error": "",
+    "StartedAt": "2026-10-08T23:17:50.913488334Z",
+    "FinishedAt": "2026-10-08T23:17:55.92614192Z"
+  },
+  "classifications": {
+    "UNSUPPORTED_REFUSED": 54,
+    "ENFORCED": 2
+  },
+  "native_record": "native-admission-v1/RESULTS.json",
+  "independent_poststate_oracles": [
+    {
+      "id": "S04",
+      "independent_initial_match": true,
+      "independent_complete_after_match": true,
+      "all_technical_columns_checked": true,
+      "unchanged_receipt_status": "Source admission component wrote no receipts/business DML; no public proposal/receipt acceptance claimed",
+      "actual_committed_effects": [],
+      "declared_individual_outcomes": {
+        "A": {
+          "valid": true,
+          "measures": {
+            "total_cents": "4500",
+            "limit_cents": "5000"
+          }
+        }
+      },
+      "complete_proposed": {
+        "valid": true,
+        "measures": {
+          "total_cents": "4500",
+          "limit_cents": "5000"
+        }
+      },
+      "Runner_evaluator_used": false
+    },
+    {
+      "id": "S05",
+      "independent_initial_match": true,
+      "independent_complete_after_match": true,
+      "all_technical_columns_checked": true,
+      "unchanged_receipt_status": "Source admission component wrote no receipts/business DML; no public proposal/receipt acceptance claimed",
+      "actual_committed_effects": [],
+      "declared_individual_outcomes": {
+        "A": {
+          "valid": false,
+          "measures": {
+            "total_cents": "5500",
+            "limit_cents": "5000"
+          }
+        }
+      },
+      "complete_proposed": {
+        "valid": false,
+        "measures": {
+          "total_cents": "5500",
+          "limit_cents": "5000"
+        }
+      },
+      "Runner_evaluator_used": false
+    },
+    {
+      "id": "T08",
+      "independent_initial_match": true,
+      "independent_complete_after_match": true,
+      "all_technical_columns_checked": true,
+      "unchanged_receipt_status": "Source admission component wrote no receipts/business DML; no public proposal/receipt acceptance claimed",
+      "actual_committed_effects": [],
+      "declared_individual_outcomes": {
+        "A": {
+          "valid": false,
+          "measures": {
+            "total_cents": "11000",
+            "limit_cents": "10000"
+          }
+        }
+      },
+      "complete_proposed": {
+        "valid": false,
+        "measures": {
+          "total_cents": "11000",
+          "limit_cents": "10000"
+        }
+      },
+      "Runner_evaluator_used": false
+    },
+    {
+      "id": "T08-transfer",
+      "independent_initial_match": true,
+      "independent_complete_after_match": true,
+      "all_technical_columns_checked": true,
+      "unchanged_receipt_status": "Source admission component wrote no receipts/business DML; no public proposal/receipt acceptance claimed",
+      "actual_committed_effects": [],
+      "declared_individual_outcomes": {
+        "A": {
+          "valid": true,
+          "measures": {
+            "total_cents": "9000",
+            "limit_cents": "10000"
+          }
+        }
+      },
+      "complete_proposed": {
+        "valid": true,
+        "measures": {
+          "total_cents": "9000",
+          "limit_cents": "10000"
+        }
+      },
+      "Runner_evaluator_used": false
+    },
+    {
+      "id": "T08-transfer-reversed",
+      "independent_initial_match": true,
+      "independent_complete_after_match": true,
+      "all_technical_columns_checked": true,
+      "unchanged_receipt_status": "Source admission component wrote no receipts/business DML; no public proposal/receipt acceptance claimed",
+      "actual_committed_effects": [],
+      "declared_individual_outcomes": {
+        "A": {
+          "valid": true,
+          "measures": {
+            "total_cents": "9000",
+            "limit_cents": "10000"
+          }
+        }
+      },
+      "complete_proposed": {
+        "valid": true,
+        "measures": {
+          "total_cents": "9000",
+          "limit_cents": "10000"
+        }
+      },
+      "Runner_evaluator_used": false
+    },
+    {
+      "id": "T08-race",
+      "independent_initial_match": true,
+      "independent_complete_after_match": true,
+      "all_technical_columns_checked": true,
+      "unchanged_receipt_status": "Source admission component wrote no receipts/business DML; no public proposal/receipt acceptance claimed",
+      "actual_committed_effects": [],
+      "declared_individual_outcomes": {
+        "A": {
+          "valid": true,
+          "measures": {
+            "total_cents": "10000",
+            "limit_cents": "10000"
+          }
+        },
+        "B": {
+          "valid": true,
+          "measures": {
+            "total_cents": "9000",
+            "limit_cents": "10000"
+          }
+        }
+      },
+      "complete_proposed": {
+        "valid": false,
+        "measures": {
+          "total_cents": "12000",
+          "limit_cents": "10000"
+        }
+      },
+      "Runner_evaluator_used": false
+    }
+  ],
+  "sequential": {
+    "pin": "fe885b08b762307ceaf8b3eebc45d9c84f745b14",
+    "route": "compiler_component",
+    "results": [
+      {
+        "engine": "postgres",
+        "id": "S01",
+        "amount": 25,
+        "operation": "INSERT",
+        "intent": "Exact literal owner amount unchanged, no unused-row UPDATE substitution",
+        "baseline_compiler": "admitted",
+        "classification": "UNSUPPORTED_REFUSED",
+        "deciding": {
+          "code": "ACTION_RULE_SCOPE_UNPROVEN",
+          "message": "This change cannot be checked with the supported Source guarantees."
+        },
+        "public": "NOT_RUN",
+        "effects": 0,
+        "poststate_evaluator_reached": false,
+        "useful_progress": "NOT_ESTABLISHED"
+      },
+      {
+        "engine": "postgres",
+        "id": "S02",
+        "amount": 20,
+        "operation": "INSERT",
+        "intent": "Exact literal owner amount unchanged, no unused-row UPDATE substitution",
+        "baseline_compiler": "admitted",
+        "classification": "UNSUPPORTED_REFUSED",
+        "deciding": {
+          "code": "ACTION_RULE_SCOPE_UNPROVEN",
+          "message": "This change cannot be checked with the supported Source guarantees."
+        },
+        "public": "NOT_RUN",
+        "effects": 0,
+        "poststate_evaluator_reached": false,
+        "useful_progress": "NOT_ESTABLISHED"
+      },
+      {
+        "engine": "postgres",
+        "id": "S03",
+        "amount": 10,
+        "operation": "INSERT",
+        "intent": "Exact literal owner amount unchanged, no unused-row UPDATE substitution",
+        "baseline_compiler": "admitted",
+        "classification": "UNSUPPORTED_REFUSED",
+        "deciding": {
+          "code": "ACTION_RULE_SCOPE_UNPROVEN",
+          "message": "This change cannot be checked with the supported Source guarantees."
+        },
+        "public": "NOT_RUN",
+        "effects": 0,
+        "poststate_evaluator_reached": false,
+        "useful_progress": "NOT_ESTABLISHED"
+      },
+      {
+        "engine": "postgres",
+        "id": "T09-A",
+        "amount": 40,
+        "operation": "INSERT",
+        "intent": "Exact literal owner amount unchanged, no unused-row UPDATE substitution",
+        "baseline_compiler": "admitted",
+        "classification": "UNSUPPORTED_REFUSED",
+        "deciding": {
+          "code": "ACTION_RULE_SCOPE_UNPROVEN",
+          "message": "This change cannot be checked with the supported Source guarantees."
+        },
+        "public": "NOT_RUN",
+        "effects": 0,
+        "poststate_evaluator_reached": false,
+        "useful_progress": "NOT_ESTABLISHED"
+      },
+      {
+        "engine": "postgres",
+        "id": "T09-B",
+        "amount": 35,
+        "operation": "INSERT",
+        "intent": "Exact literal owner amount unchanged, no unused-row UPDATE substitution",
+        "baseline_compiler": "admitted",
+        "classification": "UNSUPPORTED_REFUSED",
+        "deciding": {
+          "code": "ACTION_RULE_SCOPE_UNPROVEN",
+          "message": "This change cannot be checked with the supported Source guarantees."
+        },
+        "public": "NOT_RUN",
+        "effects": 0,
+        "poststate_evaluator_reached": false,
+        "useful_progress": "NOT_ESTABLISHED"
+      },
+      {
+        "engine": "postgres",
+        "id": "T09-C",
+        "amount": 30,
+        "operation": "INSERT",
+        "intent": "Exact literal owner amount unchanged, no unused-row UPDATE substitution",
+        "baseline_compiler": "admitted",
+        "classification": "UNSUPPORTED_REFUSED",
+        "deciding": {
+          "code": "ACTION_RULE_SCOPE_UNPROVEN",
+          "message": "This change cannot be checked with the supported Source guarantees."
+        },
+        "public": "NOT_RUN",
+        "effects": 0,
+        "poststate_evaluator_reached": false,
+        "useful_progress": "NOT_ESTABLISHED"
+      },
+      {
+        "engine": "mysql",
+        "id": "S01",
+        "amount": 25,
+        "operation": "INSERT",
+        "intent": "Exact literal owner amount unchanged, no unused-row UPDATE substitution",
+        "baseline_compiler": "admitted",
+        "classification": "UNSUPPORTED_REFUSED",
+        "deciding": {
+          "code": "ACTION_RULE_SCOPE_UNPROVEN",
+          "message": "This change cannot be checked with the supported Source guarantees."
+        },
+        "public": "NOT_RUN",
+        "effects": 0,
+        "poststate_evaluator_reached": false,
+        "useful_progress": "NOT_ESTABLISHED"
+      },
+      {
+        "engine": "mysql",
+        "id": "S02",
+        "amount": 20,
+        "operation": "INSERT",
+        "intent": "Exact literal owner amount unchanged, no unused-row UPDATE substitution",
+        "baseline_compiler": "admitted",
+        "classification": "UNSUPPORTED_REFUSED",
+        "deciding": {
+          "code": "ACTION_RULE_SCOPE_UNPROVEN",
+          "message": "This change cannot be checked with the supported Source guarantees."
+        },
+        "public": "NOT_RUN",
+        "effects": 0,
+        "poststate_evaluator_reached": false,
+        "useful_progress": "NOT_ESTABLISHED"
+      },
+      {
+        "engine": "mysql",
+        "id": "S03",
+        "amount": 10,
+        "operation": "INSERT",
+        "intent": "Exact literal owner amount unchanged, no unused-row UPDATE substitution",
+        "baseline_compiler": "admitted",
+        "classification": "UNSUPPORTED_REFUSED",
+        "deciding": {
+          "code": "ACTION_RULE_SCOPE_UNPROVEN",
+          "message": "This change cannot be checked with the supported Source guarantees."
+        },
+        "public": "NOT_RUN",
+        "effects": 0,
+        "poststate_evaluator_reached": false,
+        "useful_progress": "NOT_ESTABLISHED"
+      },
+      {
+        "engine": "mysql",
+        "id": "T09-A",
+        "amount": 40,
+        "operation": "INSERT",
+        "intent": "Exact literal owner amount unchanged, no unused-row UPDATE substitution",
+        "baseline_compiler": "admitted",
+        "classification": "UNSUPPORTED_REFUSED",
+        "deciding": {
+          "code": "ACTION_RULE_SCOPE_UNPROVEN",
+          "message": "This change cannot be checked with the supported Source guarantees."
+        },
+        "public": "NOT_RUN",
+        "effects": 0,
+        "poststate_evaluator_reached": false,
+        "useful_progress": "NOT_ESTABLISHED"
+      },
+      {
+        "engine": "mysql",
+        "id": "T09-B",
+        "amount": 35,
+        "operation": "INSERT",
+        "intent": "Exact literal owner amount unchanged, no unused-row UPDATE substitution",
+        "baseline_compiler": "admitted",
+        "classification": "UNSUPPORTED_REFUSED",
+        "deciding": {
+          "code": "ACTION_RULE_SCOPE_UNPROVEN",
+          "message": "This change cannot be checked with the supported Source guarantees."
+        },
+        "public": "NOT_RUN",
+        "effects": 0,
+        "poststate_evaluator_reached": false,
+        "useful_progress": "NOT_ESTABLISHED"
+      },
+      {
+        "engine": "mysql",
+        "id": "T09-C",
+        "amount": 30,
+        "operation": "INSERT",
+        "intent": "Exact literal owner amount unchanged, no unused-row UPDATE substitution",
+        "baseline_compiler": "admitted",
+        "classification": "UNSUPPORTED_REFUSED",
+        "deciding": {
+          "code": "ACTION_RULE_SCOPE_UNPROVEN",
+          "message": "This change cannot be checked with the supported Source guarantees."
+        },
+        "public": "NOT_RUN",
+        "effects": 0,
+        "poststate_evaluator_reached": false,
+        "useful_progress": "NOT_ESTABLISHED"
+      }
+    ]
+  },
+  "T09_note": "All six orders remain predeclared, none executed as concurrent Source workers. Exact literal INSERT40/35/30 designation refused before activation on both engines; no UPDATE substitution.",
+  "fixture_failures_preserved": [
+    "First2bundle launches missingzod:NOT_REACHED_HARNESS; exactmodulealias corrected, no product edit.",
+    "Remainingcompiler first fixture range50 rejected55 before target; retained, authorizedsyntheticdeclaredrange100 corrected without amount change.",
+    "Remainingcompiler v2 wrong wrapper field lookup TypeError retained; corrected .f fixture reference. Native execution never repeated."
+  ],
+  "slot1": "PRE01 no workers; reserved for finite Action lifetime after exact candidate pin",
+  "predecessor_immutable_checkpoint": "8734998b66c288a9346b7c1d50799b42375f6558",
+  "PRE01_report": "PRE01-RESULTS.json",
+  "original_case_rows_other_than_PRE01_unchanged": true,
+  "PRE01_no_hard_limit_positive": true
+}

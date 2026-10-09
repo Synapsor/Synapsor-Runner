@@ -1,14 +1,14 @@
-ACTIVE B64 — zero English decision sites required; paid CLOSED. Main preview codex/b64-read-compose-20261008 from6fe8e789 (accepted branch preserved); private backup only.
-T0 2026-10-08T06:32:23Z; end 2026-10-13T06:32:23Z unchanged. Frozen candidate3/history/holds untouched; boundary-commands19147 lines.
-Independent audit of141:101legitimate,25typed reclassifications,15already retired; [per-ID evidence](docs/development/b64-legitimate-independent/VERDICT.json).
-Remaining lane decision sites typed/delete: Ask0/0,Read0/0,Chat0/0,Privacy23/2,Action43/5,Main35/0; [exact status](docs/development/b64-english-inventory/LANES.json). Branch closure differs from Main/public integration.
-Ask original49+new3 integrated; independent24PASS and Main13PASS/types0; no English plan engine callers. Main I02087/I02100 +I02097 independently accepted;126/96affectedPASS/types0; object10independentPASS.
-Chat new9 accepted d91140PASS/types0, integrated80PASS/types0; Main CLI original-error hook2eb after5PASS awaits B66 independent check; old CP05/06/08 preserved.
-CI guard wired permanently; core/formal/stale controls accepted, Main26PASS;363exact allowances. Repository practical coverage remains OPEN (36441unmatched syntax candidates, not decision counts).
-Read accepted a174 last6 +932 persistence +47native assess await coherent Main integration; successor16f native ACK6PASS source-scoped R2accepted; [ordered plan](../b57-fixture-prep/docs/development/b64-read-integration-plan.json).
-NEXT Main: [WIP Read composition](docs/development/b64-english-inventory/READ-COMPOSITION.json) sourced2fb/16f; wire actual typed ports + SC04 fences. Codec0c8 passes44/types0 pendingR1. No Main composition test/pass yet.
-Privacy23/2:374nativev2 refusal source/artifact R2accepted; fullinventory binding SC01–07 pending. R1file/active SC04 map: strict outerwrap + registryversion, no native-first/mixed fallback; Mainimplementation next.
-Action43/5: successor5e lifetime before/fix, Main label8cb supplied/types pending; independent lifetime + Main compiled renderer/Source hooks pending.
-B65 [pack/matrix](docs/development/b65-cross-resource/PLAN.json):28scenarios/41purePASS/R1accepted;873 fixedfe885:54unsupported/2PRE01notreached/0enforced. SevenPGadmissions noDML; no race/progress proof. PRE01→newINSERTcandidate next.
-Slots1B65Tester/2Runtime/3Privacy-R2/4Action;4heavy max8workers/run,8GiB free floors,isolated0700 resources; keepallstorage/revisitbelow30GB. Main36→35 accepted; public Read integration NEXT.
-Luna35total/liabilities15.27063125 inclhold1.2693125/remain19.72936875; no paid/model calls. Commit+private-push every checkpoint; no freeze or overall B64 PASS.
+ACTIVE B64 — Main Read only; B65 integration delegated to B66. Paid CLOSED; private backup only.
+B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z; B65 T0Oct8 16:56:15Z/endOct12 sameUTC; frozen candidate3/history untouched.
+Main branch codex/b64-read-compose-20261008 @c361a4a0; original accepted6fe8e789 preserved; [composition](docs/development/b64-english-inventory/READ-COMPOSITION.json).
+Remaining decision sites typed/delete: Privacy23/2,Action43/5,Main35/0; Ask/Read/Chat0/0 source retirement; integration distinct. [Lane ledger](docs/development/b64-english-inventory/LANES.json).
+Read publicgroup/focused typedrefs/nativeACK wired; freshinitializer currentformat. Main1PASS, independentR1GS7PASS aa28; focusedmenu sourceonly, noactivation/freshOS claim.
+MainNEXT: actual native Read assessment/activation ports and strict draft/active/bundle readers; current types323diagnostics/81files (was330); boundary-commands19150.
+Privacy @4452: typedsubject+heldpermit26PASS; R2review active. Next nativevocabfixture uses genuine project/producer; no manualdigest or foreigncandidate.
+Helper owns boundary-library typedports/prospectivev2/ACK in b56 worktree, failingbefore inprogress; Main owns otherpublic save/read ports.
+Pure artifactcodec c883 independently55PASS ed6a; only component acceptance. SC04actual file/native/cold controls still open; [record](docs/development/b64-artifact-codec-independent/VERDICT.json).
+Action existingowner resumed viaB66; I04457 owner4controlsPASS/241affectedPASS with1retainedReadfailure/1skip, types0; independentretirement acceptance pending.
+B65 integrationownerB66 owns b57 branchd011: acceptedAction+Runtime-minimal+renderer69PASS/types0. Testerpublicfive now; closedimporthard_limitblock actualfinding, B66fixing. [pack/matrix](docs/development/b65-cross-resource/PLAN.json).
+Nativefive sequential R2accepted specialposture only:25refused/20→50/10→40/10→25=45/10→35refused. PRE01ordinarypublic PG+MySQLPASS; narrow-role/public hardpositive not claimed.
+Slots1Tester/2library/3R2Privacy/4B65integration; 4heavy,max8workers/run,free8GiB floors,0700resources. Keepallstorage/revisitbelow30GB; no usagepause.
+Commit/privatepush eachcheckpoint. Luna35total/remain19.72936875 includingholds; no paidoperation/newgrant/frozenpatch; no overallB64/B65 PASS.

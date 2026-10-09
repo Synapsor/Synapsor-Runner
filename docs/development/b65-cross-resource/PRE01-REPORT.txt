@@ -1,0 +1,10 @@
+PRE01 ordinary eligibility on PostgreSQL and MySQL: PASS through actual public/native route.
+Pinned product fe885b08, immutable isolated build/types exit0. No product changes, paid runs, hard-limit designation or extra database grants.
+
+One fresh selected request per engine was open/version1. Actual public review, opaque scoped subject reference, genuine automatic approval and normal worker changed it once to closed/version2. The independent whole-row oracle checked all four request rows; other customer/principal/tenant rows remained unchanged. One applied Source receipt and one matching Runner receipt per engine; immutable proposal/approval records, approval-set and receipt-core digests, current rule re-verification, one attempt and no lease checked.
+
+The deciding check was ordinary eligibility before applying the change. Status=open was true before and false after; the approved change still completed. No business invariant was designated or inferred. These two ordinary PRE01 rows are ENFORCED only at that scope. Original checkpoint873 and its 54 unsupported hard-designation component/Source rows remain immutable; the successor matrix changes only PRE01.
+
+Preserved harness corrections: receipt DDL extraction/final-server readiness fixed before any DB started. Initial read-only oracle assumed PG durable completion evidence and a MySQL local intent; those expectations failed and are retained. The corrected read-only oracle preserves every frozen business-row/eligibility/approval/applied-receipt assertion; neither request was executed again. PG completion_evidence_json was null; MySQL lacks that column and local intent row. No durable completion recovery or replay claim.
+
+Both fresh owned containers exited0 and are retained with raw captures, ledgers and keys locally private. Private backup contains compact reports, hash manifests and helpers only. No hard-limit public positive, concurrent race, wider privacy or recovery acceptance follows from PRE01. Action designation lifetime review remains separate and awaits exact reviewer candidate/public-renderer hook.
