@@ -1,7 +1,7 @@
 {
-  "updated": "2026-10-09T04:07:28.575493+00:00",
+  "updated": "2026-10-09T04:23:06.656545+00:00",
   "accepted_Main": "0ea9c097 (product7544b339)",
-  "B2_composition": "203c58ad: accepted46edf writer binding + independently scoped cd291 disabled-state guard + R2-source-accepted exact typed Read caller repair; actual public after pending",
+  "B2_composition": "02d59251: accepted203typed caller + receipt13 informational source/RP12thinport scopedaccept + independently accepted Read held-permit class closure. Native PG/MySQL full public arithmetic/races pending.",
   "windows": {
     "B64": [
       "2026-10-08T06:32:23Z",
@@ -53,7 +53,7 @@
       "id": "6",
       "deliverable": "B65 public arithmetic55refused/50/40/45/55refused + races",
       "owner": "Tester/B66/Main",
-      "status": "ACTIVE Tester Slot1 D01 successor203c58ad; genuine prior public refusal preserved3529f3ea (obsolete confirmedDecisions field), exact current bindings/resolvedOrigins caller repaired with R2 source-only verdict. Same b65_s04/credits scoped Owner counter assertion and unchanged30/50 Source. No arithmetic effect PASS yet; INSERT initializer/Main native hooks open.",
+      "status": "ACTIVE Tester/Main: actual PG203 counter confirmation +disabled save PASS, native Read meaning correctlypending on structured-onlyflow; no effects/arithmetic verdict. R1 prepared ordinary sameproject actual-request program saves realplanning but droppedpermit beforemapping; accepted02d class closure now lets same checkpoint Resume. PG prepared-program port pending. Scoped b65_s04 Owner counter fact retained; INSERTinitializer open.",
       "active_work": true
     },
     {
@@ -102,21 +102,21 @@
       "id": "13",
       "deliverable": "source_db recommendation readback",
       "owner": "Runtime/Main/R2",
-      "status": "IN REVIEW Runtime1f36ce08: pure informational receipt presentation + narrow setup wiring, actual handler-component/pure controls16PASS; current/stale prior/defaultNo/selection digests unchanged. R2 presealed; independent after verdict and Main JSON/execution display ports pending. No native capability verification claimed at setup.",
+      "status": "SCOPED SOURCE INTEGRATION02d: exact owner1f36 informational module/setup16controls +Main2c92 JSON/executionpureview ports independentlysourceaccepted. Native currentKeep/priorstale/wholepublicsetup remainOPEN, no mode/default/token/save change and no actualsetupcapability claim.",
       "active_work": true
     },
     {
       "id": "14",
       "deliverable": "MySQL full B65 race matrix plus post-change hard-limit cases after PG6",
       "owner": "R1 independent MySQL native tester",
-      "status": "ACTIVE dedicated MySQL Slot2 on accepted successor203c58ad: 19 scoped native/component controls PASS on original46edf (actual deadlock1213, timeout1205, tenant/principal refusals). Full public worker matrix NOT_REACHED on old caller; same owned Source/bundle continues with fresh fixed-source custody, no replay/reset. Absence/membership/limit/rule/time/duplicate-stale/unknown COMMIT/public scopes open; hard-limit arithmetic after PG6, no PG transfer.",
+      "status": "ACTIVE R1 Slot2: 19 scoped MySQLnative controls PASS; publiccounter/disabledsave +12typedstructural decisions PASS on203. Native Readscope correctlypending on structured-onlyflow; ordinary scripted publichandler/B48 flow saved genuine planning1call then droppedpermit blocked; zero-call supportedResume reproduced. Accepted02d shared classclosure now supplied for same savedcheckpoint continuation. Fullpublicmatrix NOT_REACHED yet; noPGtransfer, hard-limit casesafterPG6.",
       "active_work": true
     },
     {
       "id": "15",
       "deliverable": "Specific typed deadlock/lock-timeout reasons instead of generic retry",
       "owner": "B66 implementer/R1 independent native reviewer",
-      "status": "ACTIVE B66: scoped exact SQLSTATE/driver mapping plus worker retryable/recovery reason; proposed SOURCE_DEADLOCK, SOURCE_LOCK_UNAVAILABLE(PG55P03), SOURCE_LOCK_TIMEOUT(MySQL1205). PG query cancellation not guessed as timeout; acknowledged rollback and unknown COMMIT precedence intact. Independent native review/accepted integration pending.",
+      "status": "ACTIVE B66/R1: owner79d affected240PASS0skip and PG/MySQL/scopedworker types pass, wholetypesnotgreen. Independent19P1F +nativeMySQL2PASS; code-objectcoercion counterexample CHANGES_REQUIRED9a4543d6. Narrow primitive-only newmapping repair underway; no accepted contentionintegration yet. UnknownCOMMIT/rollback precedence preserved.",
       "active_work": true
     }
   ],
@@ -131,7 +131,7 @@
     "11",
     "12"
   ],
-  "next": "D01 PG Slot1 and MySQL Slot2 continue on203c58ad independently; B66 typed contention15; Main initializer/card/history protected hooks; receipt13 independent review before integration. Paid CLOSED.",
+  "next": "R1 MySQLsamegenuinecheckpointResume on02d, PGpreparedrequest-program port; B66 primitivecontentionrepair\u2192unchangedindependentcontrols\u2192integration. Main initializer/card/history protectedhooks; no paid runs.",
   "limits": "4heavy/max8workers perrun/0700 isolatedHOME_TMP_DB/8GiB free memory+disk/privatebackup only; no automaticwindow reset",
   "not_actively_worked_open_items": [
     "1",

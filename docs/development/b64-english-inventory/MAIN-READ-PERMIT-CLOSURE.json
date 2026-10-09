@@ -1,0 +1,16 @@
+{
+  "source": "02d59251cb0d13062773b8851249ddc1ea850922",
+  "cause": "Read producer native candidate readers dropped held authority permit and reacquired a lease.",
+  "repair": "Both initial/revision host interfaces plus all3 internalcalls reuse actual heldpermit; Main3loadBoundaryReviewContext callbacks forward it. No lease across waiting, no latest/fallback/guard/CAS changes. Boundary19121 linesunchanged.",
+  "before": [
+    "R1actualMySQLordinaryplanning1genuinecall then POLICY_MUTATION_BUSY; same savedResume0modelcalls repeats",
+    "Ownerd245 actualheldnative loader2FAIL"
+  ],
+  "after": "Owner3nativecontrolsPASS includingstalecandidatefence; R2source/artifactACCEPT, actualR1publiccontinuation pending.",
+  "affected_existing": "6PASS19pre-hostfixtureFAIL retained, originalassertionsunchanged;9exposurefixture+10missingtypedScope. Not overallPASS.",
+  "reviewer": "R2source/artifact classclosure02d immediateACK; formalrecord pending.",
+  "preserved_public": "/var/tmp/synapsor-r1-b65-mysql-matrix-owned/public/g5-forward-owned/a/evidence/ordinary-read-2026-10-09T04-12-57-289Z/result.json",
+  "owner_result": "../b64-real-readback-cards/docs/development/b64-read-checkpoint-permit/RESULT.json",
+  "paid": "CLOSED/0provider",
+  "remaining": "Actual source-backed native scope/activation and full B65 public matrix +initializer arithmetic stillopen."
+}
