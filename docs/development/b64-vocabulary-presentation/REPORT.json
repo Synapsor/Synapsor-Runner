@@ -1,0 +1,83 @@
+{
+  "base": "871a5ee429a3799c6bc804f803ba6746e948b32d",
+  "before_pin": "5d33bf00",
+  "product_pin": "c758b9e4",
+  "ownership": "Main explicitly transferred only local-ui.ts and boundary-workbench.ts vocabulary presentation consumers and matching tests",
+  "behavior": "Current saved candidate provides vocabulary_metadata_profiles using existing exploreVocabularyMetadataProfile. Frontend reads same key and counts optional labels/descriptions without ready/review_required/review_advised/opaque/coded classifications, blocking, or gap-based auto-selection. Relationship pending choice and native/server authority owners unchanged.",
+  "before": {
+    "failed": 4,
+    "passed": 0,
+    "cases": [
+      "Opaque unlabelled field incorrectly made metadata a blocker",
+      "Descriptive unlabelled field incorrectly made metadata a blocker",
+      "Metadata blocker hid actual unmatched-relationship choice",
+      "Actual native saved review GET /api/boundary returned500 from retired profile export"
+    ]
+  },
+  "after": {
+    "same_4_controls_passed": 4,
+    "failed": 0,
+    "actual_native_route": "fresh same-project native initializer, explicit exact reviewed field, real saved review/CAS; no forged actor/native assessment, no activation or source query"
+  },
+  "existing_renderer": {
+    "first_run": {
+      "passed": 15,
+      "failed": 2,
+      "failure": "obsolete vocabulary readiness prose/expectations only"
+    },
+    "affected_repeat": {
+      "passed": 2,
+      "skipped": 15,
+      "failed": 0
+    },
+    "reporting": "15 original passes plus2 corrected affected passes; not a fictional single17PASS run"
+  },
+  "ports": "Existing renderer vocabulary case keeps original opaque/labelled/enum populations, updates presentation-only expectations. Existing local-ui instant path only profile key/shape assertion ported; that broader activation test was not run in this bounded packet.",
+  "limits": {
+    "network": "bwrap --unshare-net",
+    "workers": 1,
+    "minimum_MemAvailable_bytes": 20726685696,
+    "minimum_available_disk_bytes": 58538983424,
+    "types": "no new global typecheck claim",
+    "native_meaning": "separate ae226/R2 accepted component; UI never derives readiness from metadata",
+    "independent_R2": "pending",
+    "Main_integration": "pending"
+  },
+  "counts_remaining": {
+    "owned_source_implementation": {
+      "typed": 0,
+      "delete": 0
+    },
+    "independent_source_component_scope": {
+      "typed": 15,
+      "delete": 0
+    },
+    "coherent_Main_consumers_before_this_packet": {
+      "typed": 21,
+      "delete": 2
+    }
+  },
+  "remaining_Main_hooks": [
+    "boundary-commands removed export import and automatic label repair at10312",
+    "boundary-commands activation vocabulary gate around14438; exact native meaning/missing delta owns eligibility",
+    "auto-boundary15/fullscope/native integration qualifications as detailed prior423 packet"
+  ],
+  "evidence": [
+    {
+      "path": "/var/tmp/b64-privacy-evidence/workbench-vocabulary-before.log",
+      "sha256": "ebe9b6446b503a23d2797548a01ab47da3ebf5c9ec2b81763527cda1c624a6a6"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/workbench-vocabulary-after.log",
+      "sha256": "51860c84910857de9e83ba436f4416f414206a101ccbfc967de1e18730e9f644"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/workbench-existing-before-port.log",
+      "sha256": "5bb70d3912dc409b91d7cf465239ea3cdd5cefbb72c576d9457b7c7c71901f9c"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/workbench-existing-affected-after.log",
+      "sha256": "b9608bc6e1b9b8418d55252df2d3f881b2143bce4819e6e61b743acfde5e48d7"
+    }
+  ]
+}

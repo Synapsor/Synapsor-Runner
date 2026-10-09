@@ -258,7 +258,7 @@ describe("Auto Boundary Workbench renderer", () => {
       ["field tiers and sensitive widening", ["Model + Runner", "Withheld from model", "Kept out", "Changing a tier opens a recorded human review"]],
       ["reviewed enum allowlists", ["Allowed values", "Save allowed values", "Removed values are refused even if guessed"]],
       ["reviewed labels and descriptions", ["Reviewed label", "Reviewed description", "Save reviewed metadata", "plans still use the exact id"]],
-      ["model vocabulary coverage", ["Reviewed model vocabulary required before activation", "Reviewed model vocabulary advised", "Model vocabulary ready", "coded value fields", "Exact database IDs remain the plan authority"]],
+      ["model vocabulary coverage", ["Optional display metadata", "optional presentation metadata", "Labels and descriptions do not establish business meaning or change access"]],
       ["direct and relationship-carried tenant scope", ["tenant_scope_path", "mandatory proven relationship path"]],
       ["direct, relationship-carried, and PostgreSQL RLS principal scope", ["principal_scope_path", "principal_rls_setting", "PostgreSQL RLS setting", "user/owner limit"]],
       ["shared-reference scope", ["Shared reference - same rows for every tenant", "I confirm this table has no per-tenant rows"]],
@@ -288,7 +288,7 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).not.toMatch(/execute_sql|model can activate|model can approve|model can apply/i);
   });
 
-  it("blocks opaque Workbench authority until the reviewed vocabulary panels are completed", () => {
+  it("treats opaque and coded Workbench names as optional metadata without readiness", () => {
     const html = renderBoundaryWorkbench("test-csrf");
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? "";
     const vocabularyStart = script.indexOf("const modelFacingFieldIds");
@@ -322,16 +322,18 @@ describe("Auto Boundary Workbench renderer", () => {
     };
     const context: Record<string, unknown> = {
       candidate,
-      vocabularyStructuralProfiles: {
+      vocabularyMetadataProfiles: {
         "legacy.t_0031": {
-          resource_identifier_opaque: true,
-          field_semantic_status: { val_1: "opaque_identifier" },
+          resource_vocabulary: "unspecified",
+          field_vocabulary: { val_1: "unspecified" },
         },
       },
     };
     const evaluated = vm.createContext(context);
     vm.runInContext(`${functions}; result=focusedBoundaryBlocker();`, evaluated);
-    expect(context.result).toMatch(/legacy\.t_0031.*table name.*val_1/is);
+    expect(context.result).toBe("");
+    expect(vm.runInContext("modelVocabularyCoverage(candidate.pack.resources[0])", evaluated)).not.toHaveProperty("status");
+    expect(vm.runInContext("modelVocabularySummary(candidate.pack.resources[0])", evaluated)).toContain("0/1 field labels");
 
     candidate.pack.resources[0]!.label = "Transit routes";
     candidate.pack.resources[0]!.field_metadata = { val_1: { label: "Service class" } };
@@ -350,15 +352,15 @@ describe("Auto Boundary Workbench renderer", () => {
       kept_out_fields: [],
       relationships: [],
     };
-    context.vocabularyStructuralProfiles = {
+    context.vocabularyMetadataProfiles = {
       "public.sites": {
-        resource_identifier_opaque: false,
-        field_semantic_status: { ph_code: "coded_values" },
+        resource_vocabulary: "unspecified",
+        field_vocabulary: { ph_code: "unspecified" },
       },
     };
-    vm.runInContext("vocabularyStructuralProfiles=globalThis.vocabularyStructuralProfiles; result=focusedBoundaryBlocker(); summary=modelVocabularySummary(candidate.pack.resources[0]);", evaluated);
+    vm.runInContext("vocabularyMetadataProfiles=globalThis.vocabularyMetadataProfiles; result=focusedBoundaryBlocker(); summary=modelVocabularySummary(candidate.pack.resources[0]);", evaluated);
     expect(context.result).toBe("");
-    expect(context.summary).toMatch(/reviewed vocabulary advised.*ph_code.*activation remains available/is);
+    expect(context.summary).toBe("0/1 field labels; 0/1 field descriptions; optional presentation metadata");
   });
 
   it("blocks a Workbench table removal when another table derives scope through it", () => {

@@ -2170,10 +2170,10 @@ export default defineCapability({
     };
     try {
       const boundary = await getJson(`http://${server.host}:${server.port}/api/boundary`, headers);
-      expect(boundary.vocabulary_structural_profiles).toMatchObject({
+      expect(boundary.vocabulary_metadata_profiles).toMatchObject({
         "public.members": {
-          resource_identifier_opaque: false,
-          field_semantic_status: expect.any(Object),
+          resource_vocabulary: "unspecified",
+          field_vocabulary: expect.any(Object),
         },
       });
       expect(boundary.instant_onboarding).toMatchObject({
