@@ -4,6 +4,7 @@ import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { BOUNDARY_REVIEW_SUBMISSION_VERSION, boundaryReviewDecisionRefs, explorationBoundaryCandidateDigest,
+  generationLockSharedFactsDigest, loadGenerationLockSnapshot,
   reviewExplorationBoundaryCandidate, type ExplorationBoundaryDraft, type BoundaryReviewSubmission } from "./auto-boundary.js";
 import { createBoundaryReviewProgress, normalizeStoredBoundaryReviewProgress, type BoundaryReviewProgress } from "./boundary-review-domain.js";
 import { parseStoredReadReviewProgress } from "./control-policy-read-authoring.js";
@@ -37,6 +38,16 @@ async function readBoundaryReviewProgressUnlocked(projectRoot: string, draft: Ex
   const progress = parseStoredReadReviewProgress(raw);
   if (progress.draft_digest !== explorationBoundaryCandidateDigest(draft)) {
     throw Object.assign(new Error("The exact saved draft changed. Reopen its review."), { code: "POLICY_AUTHORING_BASELINE_MISMATCH" });
+  }
+  if (progress.candidate.generation_lock_fingerprint !== draft.generation_lock_fingerprint) {
+    const [candidateLock, draftLock] = await Promise.all([
+      loadGenerationLockSnapshot(projectRoot, progress.candidate.generation_lock_fingerprint),
+      loadGenerationLockSnapshot(projectRoot, draft.generation_lock_fingerprint),
+    ]);
+    if (generationLockSharedFactsDigest(candidateLock) !== generationLockSharedFactsDigest(draftLock)) {
+      throw Object.assign(new Error("Saved boundary-review progress is bound to different schema or role facts; rescan that boundary before editing it."),
+        { code: "POLICY_AUTHORING_BASELINE_MISMATCH" });
+    }
   }
   const origins = [];
   for (const confirmation of progress.confirmations) {

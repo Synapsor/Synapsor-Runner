@@ -2,7 +2,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildAutoBoundary, writeAutoBoundaryArtifacts } from "./auto-boundary.js";
+import { buildAutoBoundary, generationLockSharedFactsDigest, writeAutoBoundaryArtifacts } from "./auto-boundary.js";
+import { createBoundaryReviewProgress } from "./boundary-review-domain.js";
+import { readBoundaryReviewProgress, saveBoundaryReviewProgress } from "./boundary-review-persistence.js";
 import { resolveAskDeploymentProfile } from "./ask-authority.js";
 import { resolveAskAccessGuidance } from "./ask-access-summary.js";
 import { prepareBoundaryRescan } from "./boundary-rescan.js";
@@ -19,6 +21,33 @@ async function fixture() {
 }
 
 describe("strict Read artifact direct consumers",()=>{
+  it("restores a pending policy-only candidate from distinct locks with the same inspected facts", async () => {
+    const f = await fixture();
+    const overrides = structuredClone(f.build.overrides);
+    overrides.resources["studio.parcels"] = { fields: { label: { exposure: "allow_reviewed_use",
+      actor: "declared test operator", reason: "Review the parcel label without changing inspected facts.",
+      decided_at: "2026-10-09T12:00:00.000Z" } } };
+    const next = buildAutoBoundary({ inspection: ownedProgramInspection(), sourceEnv: "DATABASE_URL",
+      inspectedSchema: "studio", deploymentProfile: "development", overrides,
+      project: { root: f.root, package_manager: "npm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] } });
+    expect(next.exploration_boundary.generation_lock_fingerprint).not.toBe(f.build.exploration_boundary.generation_lock_fingerprint);
+    expect(generationLockSharedFactsDigest(next.lock)).toBe(generationLockSharedFactsDigest(f.build.lock));
+    await writeAutoBoundaryArtifacts({ projectRoot: f.root, build: next, force: true, preserveReviewProgress: true });
+    const progress = createBoundaryReviewProgress({ draft: f.build.exploration_boundary, candidate: next.exploration_boundary,
+      actor: "declared test operator", revision: 1 });
+    await saveBoundaryReviewProgress(f.root, progress);
+    const file = path.join(f.root, ".synapsor/boundary-review-progress.json");
+    const before = await fs.readFile(file, "utf8");
+    const restored = await readBoundaryReviewProgress(f.root, f.build.exploration_boundary);
+    expect(restored?.candidate).toEqual(next.exploration_boundary);
+    expect(restored?.confirmed_decisions).toEqual([]);
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+    const originalLock = path.join(f.root, ".synapsor/exploration-locks",
+      `${f.build.exploration_boundary.generation_lock_fingerprint.slice("sha256:".length)}.json`);
+    await fs.rename(originalLock, `${originalLock}.preserved`);
+    await expect(readBoundaryReviewProgress(f.root, f.build.exploration_boundary)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await fs.readFile(file, "utf8")).toBe(before);
+  });
   it("resolves the ordinary writer's wrapped deployment profile",async()=>{
     const f=await fixture();
     expect(await resolveAskDeploymentProfile(f.root)).toBe("development");
