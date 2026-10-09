@@ -37,7 +37,7 @@ async function fixture(variant: Variant) {
       ? (variant === "source-private" ? [] : ["join_key"])
       : (variant === "target-private" ? [] : ["parcel_id"]))];
     const preview = await prepareBoundaryResourceReviewMutation(root, { resource_id: `studio.${table.name}`, include: true,
-      tenant_key: "tenant_id", principal_key: "principal_id", selectable_fields: ["label"], allow_reviewed_fields: fields,
+      tenant_key: "tenant_id", principal_key: "principal_id", selectable_fields: fields, allow_reviewed_fields: fields,
       actor, reason }, async () => inspection);
     await commitBoundaryResourceReviewMutation(root, preview);
   }
