@@ -158,19 +158,22 @@ export type AskTurnResult = {
   source_database_changed: boolean;
 };
 
-const questionCompletions = new WeakMap<AskTurnResult, AuthoringQuestionCompletion>();
+const questionCompletions = new WeakMap<AskTurnResult, {
+  completion: AuthoringQuestionCompletion;
+  authorityDigest: `sha256:${string}`;
+}>();
 /** Available only for a successfully decoded real authoring turn. The typed
  * Action consumer decides whether this result is an owner-question boundary. */
 export function completedAuthoringQuestion(result: AskTurnResult): AuthoringQuestionCompletion | undefined {
   const value = questionCompletions.get(result);
-  return value && structuredClone(value);
+  return value && structuredClone(value.completion);
 }
 
 /** One producer may consume several complete turns before asking a question.
  * Only the original successful result objects can establish that association;
  * reconstructed JSON and stored records cannot acknowledge a prior response. */
 export function completedAuthoringQuestionSequence(results: readonly AskTurnResult[]): AuthoringQuestionCompletion | undefined {
-  const completions = results.map(result => questionCompletions.get(result));
+  const completions = results.map(result => questionCompletions.get(result)?.completion);
   if (completions.every(value => value === undefined)) return undefined;
   if (completions.some(value => value === undefined)) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION",
     "The bounded question sequence includes a result without a current decoded consumer.", 409);
@@ -218,6 +221,20 @@ type ProviderHistoryEntry = {
 };
 
 const providerHistoryByResult = new WeakMap<AskTurnResult, string>();
+
+/** Reuse the producer's bounded provider-visible feedback at a live drafting
+ * pause. Public traces/prose and reconstructed results cannot create it. */
+export function completedAuthoringBatchHistory(result: AskTurnResult,
+  expected: { authority_digest: `sha256:${string}`; context_digest: `sha256:${string}` },
+): Pick<AskHistoryTurn, "runner_context"> | undefined {
+  const completed = questionCompletions.get(result);
+  if (!completed || completed.authorityDigest !== expected.authority_digest
+    || completed.completion.context_digest !== expected.context_digest) return undefined;
+  const context = providerHistoryByResult.get(result);
+  return context && context.length <= MAX_HISTORY_TOOL_CONTEXT_CHARS
+    ? { runner_context: context } : undefined;
+}
+
 
 export type AskProviderDependencies = {
   /** Trusted caller lifetime, independent of each provider turn's own signal. */
@@ -572,6 +589,9 @@ export async function runAskProviderTurn(input: {
    * batch; the caller gates later batch mutations and performs UI after return. */
   stopAfterAuthoringToolBatch?: () => boolean;
 }): Promise<AskTurnResult> {
+  // Capture the actual producer binding before any transport/callback wait;
+  // the public result remains mutable and is not binding evidence.
+  const producerAuthorityDigest = input.authorityDigest;
   if (input.stopAfterAuthoringToolBatch && (input.gateway.mode !== "authoring"
     || input.tools.some(tool => !tool.name.startsWith("runner.")))) {
     throw new AskError("ASK_AUTHORING_SURFACE_INVALID", "An authoring batch decision boundary requires an operator-only tool surface.", 400);
@@ -724,7 +744,7 @@ export async function runAskProviderTurn(input: {
   if (input.gateway.mode === "authoring") {
     await authoringGenerationHandled(generationResults);
     const completion = authoringQuestionCompletion(generationResults);
-    if (completion) questionCompletions.set(result, completion);
+    if (completion) questionCompletions.set(result, { completion, authorityDigest: producerAuthorityDigest });
   }
   return result;
   } finally { hostEpisode?.release(); restoreEpisode?.(); }
