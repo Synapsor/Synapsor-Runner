@@ -54,11 +54,12 @@ describe("project-local authority mutation exclusion", () => {
     const root = await project();
     let finished = false;
     let pending!: ReturnType<typeof deactivateExplorationBoundary>;
-    await withProjectAuthorityMutation(root, async () => {
-      pending = deactivateExplorationBoundary(root).then((result) => { finished = true; return result; });
-      await delay(150);
-      expect(finished).toBe(false);
-    });
+    const entered = deferred(), release = deferred();
+    const holder = withProjectAuthorityMutation(root, async () => { entered.resolve(); await release.promise; });
+    await entered.promise;
+    pending = deactivateExplorationBoundary(root).then((result) => { finished = true; return result; });
+    try { await delay(150); expect(finished).toBe(false); }
+    finally { release.resolve(); await holder; }
     await expect(pending).resolves.toEqual({ disabled: [], remaining: [] });
   });
 
@@ -93,12 +94,15 @@ describe("project-local authority mutation exclusion", () => {
 
   it("never steals an old live lock, and times out without running the callback", async () => {
     const root = await project();
-    await withProjectAuthorityMutation(root, async () => {
+    const entered = deferred(), release = deferred();
+    const holder = withProjectAuthorityMutation(root, async () => { entered.resolve(); await release.promise; });
+    await entered.promise;
+    try {
       await fs.utimes(mutex(root), new Date(0), new Date(0));
       const callback = vi.fn(async () => undefined);
       await expect(withProjectAuthorityMutation(root, callback, { waitMs: 60 })).rejects.toMatchObject({ code: "POLICY_MUTATION_BUSY" });
       expect(callback).not.toHaveBeenCalled();
-    });
+    } finally { release.resolve(); await holder; }
     await expect(withProjectAuthorityMutation(root, async () => "released")).resolves.toBe("released");
   });
 
@@ -149,7 +153,7 @@ describe("project-local authority mutation exclusion", () => {
     await fs.symlink(root, alias, "dir");
     await expect(withProjectAuthorityMutation(root, async (permit) => {
       await withProjectAuthorityMutation(alias, async () => undefined, { permit });
-      await expect(withProjectAuthorityMutation(alias, async () => undefined, { waitMs: 0 })).rejects.toMatchObject({ code: "POLICY_MUTATION_BUSY" });
+      await expect(withProjectAuthorityMutation(alias, async () => undefined, { waitMs: 0 })).rejects.toMatchObject({ code: "POLICY_MUTATION_PERMIT_REQUIRED" });
       throw new Error("original failure");
     })).rejects.toThrow("original failure");
     await expect(withProjectAuthorityMutation(alias, async () => "recovered")).resolves.toBe("recovered");
@@ -157,13 +161,16 @@ describe("project-local authority mutation exclusion", () => {
 
   it("cancels a waiting writer without cancelling the in-progress owner's work", async () => {
     const root = await project(), controller = new AbortController();
-    await withProjectAuthorityMutation(root, async () => {
+    const entered = deferred(), release = deferred();
+    const holder = withProjectAuthorityMutation(root, async () => { entered.resolve(); await release.promise; });
+    await entered.promise;
+    try {
       const callback = vi.fn(async () => undefined);
       const result = withProjectAuthorityMutation(root, callback, { signal: controller.signal });
       const assertion = expect(result).rejects.toMatchObject({ code: "POLICY_MUTATION_CANCELLED" });
       await delay(30); controller.abort(); await assertion;
       expect(callback).not.toHaveBeenCalled();
-    });
+    } finally { release.resolve(); await holder; }
     await expect(withProjectAuthorityMutation(root, async () => "still available")).resolves.toBe("still available");
   });
 

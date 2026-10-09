@@ -2,21 +2,26 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { BOUNDARY_REVIEW_SUBMISSION_VERSION, boundaryReviewDecisionRefs, explorationBoundaryCandidateDigest,
   reviewExplorationBoundaryCandidate, type ExplorationBoundaryDraft, type BoundaryReviewSubmission } from "./auto-boundary.js";
 import { createBoundaryReviewProgress, normalizeStoredBoundaryReviewProgress, type BoundaryReviewProgress } from "./boundary-review-domain.js";
 import { parseStoredReadReviewProgress } from "./control-policy-read-authoring.js";
-import { resolveReadReviewOrigin } from "./read-review-origin.js";
-import { assertReadAuthoringBindings, readProjectReadAuthoring, saveProjectReadProgress,
+import { resolveReadReviewOriginHeld } from "./read-review-origin.js";
+import { assertReadAuthoringBindings, readProjectReadAuthoringHeld, saveProjectReadProgress,
   type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 
-export async function readBoundaryReviewProgress(
-  projectRoot: string,
-  draft: ExplorationBoundaryDraft,
-  permit?: ProjectAuthorityMutationPermit,
-): Promise<BoundaryReviewProgress | undefined> {
-  const stored = await readProjectReadAuthoring(projectRoot, undefined, permit);
+export async function readBoundaryReviewProgress(projectRoot: string,
+  draft: ExplorationBoundaryDraft): Promise<BoundaryReviewProgress | undefined> {
+  return withProjectAuthorityMutation(projectRoot, held => readBoundaryReviewProgressUnlocked(held.projectRoot, draft, held));
+}
+export async function readBoundaryReviewProgressHeld(projectRoot: string, draft: ExplorationBoundaryDraft,
+  permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewProgress | undefined> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => readBoundaryReviewProgressUnlocked(held.projectRoot, draft, held));
+}
+async function readBoundaryReviewProgressUnlocked(projectRoot: string, draft: ExplorationBoundaryDraft,
+  permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewProgress | undefined> {
+  const stored = await readProjectReadAuthoringHeld(projectRoot, permit);
   if (stored) {
     if (!stored.selected) return undefined;
     if (stored.selected.progress.draft_digest !== explorationBoundaryCandidateDigest(draft)) {
@@ -35,7 +40,7 @@ export async function readBoundaryReviewProgress(
   }
   const origins = [];
   for (const confirmation of progress.confirmations) {
-    if (confirmation.origin) origins.push(await resolveReadReviewOrigin(projectRoot, confirmation.origin, permit));
+    if (confirmation.origin) origins.push(await resolveReadReviewOriginHeld(projectRoot, confirmation.origin, permit));
   }
   return normalizeStoredBoundaryReviewProgress(progress as unknown as Record<string, unknown>, progress.candidate, origins);
 }
@@ -89,7 +94,7 @@ async function saveInstantBoundaryBaseline(input: InstantBoundaryBaselineInput, 
 
 async function saveInstantBoundaryBaselineUnlocked(input: InstantBoundaryBaselineInput, accepted: boolean,
   permit: ProjectAuthorityMutationPermit): Promise<{ progress: BoundaryReviewProgress; authoring: ReadAuthoringBindings | undefined }> {
-  const stored = await readProjectReadAuthoring(input.projectRoot, undefined, permit);
+  const stored = await readProjectReadAuthoringHeld(input.projectRoot, permit);
   let previous: BoundaryReviewProgress | undefined;
   if (stored) {
     assertReadAuthoringBindings(input.expectedAuthoring, stored.bindings);
@@ -102,7 +107,7 @@ async function saveInstantBoundaryBaselineUnlocked(input: InstantBoundaryBaselin
   } else {
     const lock = await readOptionalJson(path.join(input.projectRoot, ".synapsor/generation-lock.json"));
     if (canonicalJsonDigest(lock) !== input.draft.generation_lock_fingerprint
-      || canonicalJsonDigest(await readBoundaryReviewProgress(input.projectRoot, input.draft, permit) ?? null)
+      || canonicalJsonDigest(await readBoundaryReviewProgressHeld(input.projectRoot, input.draft, permit) ?? null)
         !== canonicalJsonDigest(input.expectedLegacyProgress ?? null)) {
       throw Object.assign(new Error("The Boundary review changed after Quick Start opened. Resume the saved review; no Quick Start decision was saved."),
         { code: "POLICY_AUTHORING_REVIEW_CHANGED" });

@@ -5,7 +5,7 @@ import { explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft } fro
 import { decodeOperatorAuthority } from "./control-policy-authority-codec.js";
 import { OPERATOR_READ_AUTHORING_KEY } from "./control-policy-record.js";
 import { openBoundProjectControlPolicies } from "./control-policy-store.js";
-import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
 export type ReadReviewOrigin = z.infer<typeof readReviewOriginSchema>;
 
@@ -18,10 +18,16 @@ const unavailable = (): never => {
  * The native writer binds this reference to its actual pre-confirmation
  * revision. Later rescans retain that reference instead of minting a new Yes.
  * No latest-revision lookup, text reconstruction or exported-file fallback. */
-export async function resolveReadReviewOrigin(projectRoot: string, rawOrigin: unknown,
-  permit?: ProjectAuthorityMutationPermit): Promise<{ reference: ReadReviewOrigin; candidate: ExplorationBoundaryDraft }> {
+type ResolvedReadReviewOrigin = { reference: ReadReviewOrigin; candidate: ExplorationBoundaryDraft };
+export async function resolveReadReviewOrigin(projectRoot: string, rawOrigin: unknown): Promise<ResolvedReadReviewOrigin> {
+  return withProjectAuthorityMutation(projectRoot, held => resolveReadReviewOriginUnlocked(held, rawOrigin));
+}
+export async function resolveReadReviewOriginHeld(projectRoot: string, rawOrigin: unknown,
+  permit: ProjectAuthorityMutationPermit): Promise<ResolvedReadReviewOrigin> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => resolveReadReviewOriginUnlocked(held, rawOrigin));
+}
+async function resolveReadReviewOriginUnlocked(held: ProjectAuthorityMutationPermit, rawOrigin: unknown): Promise<ResolvedReadReviewOrigin> {
   const reference = readReviewOriginSchema.parse(rawOrigin);
-  return withProjectAuthorityMutation(projectRoot, async held => {
     const binding = await openBoundProjectControlPolicies(held.projectRoot);
     if (!binding) return unavailable();
     try {
@@ -34,5 +40,4 @@ export async function resolveReadReviewOrigin(projectRoot: string, rawOrigin: un
         || explorationBoundaryCandidateDigest(entry.progress.candidate) !== reference.candidate_digest) return unavailable();
       return { reference: structuredClone(reference), candidate: structuredClone(entry.progress.candidate) };
     } finally { await binding.close(); }
-  }, { permit });
 }

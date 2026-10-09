@@ -1,14 +1,14 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { explorationBoundaryCandidateDigest, parseBoundaryReviewDecisionRef, validateBoundaryReviewSubmission,
   type BoundaryReviewSubmission, type ResolvedBoundaryReviewOrigin } from "./auto-boundary.js";
-import { resolveReadReviewOrigin } from "./read-review-origin.js";
+import { resolveReadReviewOriginHeld } from "./read-review-origin.js";
 import { openBoundProjectControlPolicies, type BoundProjectPolicyStore } from "./control-policy-store.js";
 import { OperatorAuthorityRepository, type OperatorAuthorityState } from "./control-policy-operator-repository.js";
 import { parseStoredReadReviewProgress, type StoredReadAuthoring, type PreparedReadEntry } from "./control-policy-read-authoring.js";
 import { normalizeStoredBoundaryReviewProgress, type BoundaryReviewProgress } from "./boundary-review-domain.js";
 import { OPERATOR_READ_AUTHORING_KEY, assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
 import type { GovernedReadEditDecision } from "./control-policy-read-edit.js";
-import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 export { assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
 
 export type ProjectReadAuthoring = {
@@ -21,8 +21,15 @@ export type ProjectReadAuthoring = {
 
 /** No file fallback or normalization once the project is governed. The token
  * belongs to this original read and must travel with the operator's preview. */
-export async function readProjectReadAuthoring(projectRoot: string, env?: NodeJS.ProcessEnv,
-  permit?: ProjectAuthorityMutationPermit): Promise<ProjectReadAuthoring | undefined> {
+export async function readProjectReadAuthoring(projectRoot: string, env?: NodeJS.ProcessEnv): Promise<ProjectReadAuthoring | undefined> {
+  return withProjectAuthorityMutation(projectRoot, held => readProjectReadAuthoringUnlocked(held.projectRoot, held, env));
+}
+export async function readProjectReadAuthoringHeld(projectRoot: string, permit: ProjectAuthorityMutationPermit,
+  env?: NodeJS.ProcessEnv): Promise<ProjectReadAuthoring | undefined> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => readProjectReadAuthoringUnlocked(held.projectRoot, held, env));
+}
+async function readProjectReadAuthoringUnlocked(projectRoot: string, permit: ProjectAuthorityMutationPermit,
+  env?: NodeJS.ProcessEnv): Promise<ProjectReadAuthoring | undefined> {
   const binding = await openBoundProjectControlPolicies(projectRoot, env);
   if (!binding) return undefined;
   try {
@@ -80,7 +87,7 @@ export async function saveProjectReadProgress(input: {
 async function saveProjectReadProgressUnlocked(input: Parameters<typeof saveProjectReadProgress>[0],
   permit: ProjectAuthorityMutationPermit): Promise<false | ReadAuthoringBindings> {
   const frozen = input;
-  const current = await readProjectReadAuthoring(input.projectRoot, undefined, permit);
+  const current = await readProjectReadAuthoringHeld(input.projectRoot, permit);
   if (!current) {
     if (input.expected || input.verifiedDecision) fail("POLICY_AUTHORING_STORE_CHANGED", "The governed Read review repository is unavailable.");
     return false;
@@ -114,16 +121,16 @@ function authoringState(binding: BoundProjectPolicyStore, state: OperatorAuthori
 }
 
 async function resolveProgressOrigins(projectRoot: string, progress: BoundaryReviewProgress,
-  permit?: ProjectAuthorityMutationPermit): Promise<ResolvedBoundaryReviewOrigin[]> {
+  permit: ProjectAuthorityMutationPermit): Promise<ResolvedBoundaryReviewOrigin[]> {
   const unique = new Map(progress.confirmations.flatMap(item => item.origin
     ? [[canonicalJsonDigest(item.origin), item.origin] as const] : []));
   const result: ResolvedBoundaryReviewOrigin[] = [];
-  for (const reference of unique.values()) result.push(await resolveReadReviewOrigin(projectRoot, reference, permit));
+  for (const reference of unique.values()) result.push(await resolveReadReviewOriginHeld(projectRoot, reference, permit));
   return result;
 }
 
 async function resolveAuthoringState(projectRoot: string, state: ProjectReadAuthoring,
-  permit?: ProjectAuthorityMutationPermit): Promise<ProjectReadAuthoring> {
+  permit: ProjectAuthorityMutationPermit): Promise<ProjectReadAuthoring> {
   const authoring = structuredClone(state.authoring);
   const origins = new Map<string, ResolvedBoundaryReviewOrigin>();
   for (const entry of authoring.entries) {

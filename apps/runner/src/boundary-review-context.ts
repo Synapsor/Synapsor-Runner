@@ -2,12 +2,12 @@ import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { explorationBoundaryCandidateDigest, parseExplorationBoundaryDraftArtifact, type ExplorationBoundaryDraft, type GenerationLock, type ResolvedBoundaryReviewOrigin } from "./auto-boundary.js";
 import { readGuidedOnboardingState } from "./guided-project.js";
-import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { readProjectReadAuthoringHeld, type ProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { readJsonFileWithLocation } from "./cli-files.js";
-import { readBoundaryReviewProgress } from "./boundary-review-persistence.js";
+import { readBoundaryReviewProgressHeld } from "./boundary-review-persistence.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { applicableBoundaryReviewConfirmations, boundaryReviewDecisions } from "./boundary-review-domain.js";
-import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import type { BoundaryReviewMutationBindings } from "./read-authoring-contract-types.js";
 
 export const BOUNDARY_REVIEW_BUNDLE_VERSION = "synapsor.boundary-review-bundle.v2";
@@ -33,22 +33,31 @@ export type BoundaryReviewBundle = {
   candidate: ExplorationBoundaryDraft;
 };
 
-export async function loadBoundaryReviewContext(projectRoot: string, permit?: ProjectAuthorityMutationPermit): Promise<{
+export type BoundaryReviewContext = {
   boundaryRoot: string;
   draft: ExplorationBoundaryDraft;
   candidate: ExplorationBoundaryDraft;
   lock: GenerationLock;
-  progress: Awaited<ReturnType<typeof readBoundaryReviewProgress>>;
+  progress: Awaited<ReturnType<typeof readBoundaryReviewProgressHeld>>;
   bundle: BoundaryReviewBundle;
   resolvedOrigins?: ResolvedBoundaryReviewOrigin[];
-}> {
+};
+export async function loadBoundaryReviewContext(projectRoot: string): Promise<BoundaryReviewContext> {
+  return withProjectAuthorityMutation(projectRoot, held => loadBoundaryReviewContextUnlocked(held.projectRoot, held));
+}
+export async function loadBoundaryReviewContextHeld(projectRoot: string,
+  permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewContext> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => loadBoundaryReviewContextUnlocked(held.projectRoot, held));
+}
+async function loadBoundaryReviewContextUnlocked(projectRoot: string,
+  permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewContext> {
   const journey = await readGuidedOnboardingState(projectRoot);
   const boundaryRoot = path.resolve(projectRoot, journey?.artifacts.boundary_root ?? "synapsor/generated");
   const relative = path.relative(projectRoot, boundaryRoot);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
     throw new Error("Managed boundary root escapes the selected project.");
   }
-  const stored = await readProjectReadAuthoring(projectRoot, undefined, permit);
+  const stored = await readProjectReadAuthoringHeld(projectRoot, permit);
   if (stored && !stored.selected) {
     throw new Error("No saved Read boundary is selected. Create a disabled boundary before opening its review.");
   }
@@ -60,7 +69,16 @@ export async function loadBoundaryReviewContext(projectRoot: string, permit?: Pr
     path.join(boundaryRoot, "exploration-boundary.draft.json"),
     "exploration boundary draft",
   ), lock);
-  const progress = stored?.selected?.progress ?? await readBoundaryReviewProgress(projectRoot, draft, permit);
+  const progress = stored?.selected?.progress ?? await readBoundaryReviewProgressHeld(projectRoot, draft, permit);
+  return projectBoundaryReviewContext({ boundaryRoot, draft, lock, progress, stored });
+}
+/** Pure projection of the exact already-loaded records. No filesystem or
+ * protected access is acquired here, and the result conveys no permission. */
+function projectBoundaryReviewContext(input: {
+  boundaryRoot: string; draft: ExplorationBoundaryDraft; lock: GenerationLock;
+  progress: BoundaryReviewContext["progress"]; stored: ProjectReadAuthoring | undefined;
+}): BoundaryReviewContext {
+  const { boundaryRoot, draft, lock, progress, stored } = input;
   const candidate = progress?.candidate ?? recommendedBoundaryReviewCandidate(draft);
   const applicable = new Set(applicableBoundaryReviewConfirmations(candidate,
     progress?.confirmations ?? [], stored?.resolvedOrigins).map(item => item.current.id));
