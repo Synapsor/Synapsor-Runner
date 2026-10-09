@@ -2267,6 +2267,13 @@ async function handleRequest(input: {
       assertWorkbenchReviewBinding({ authoring_binding: savedReview.authoring }, preview.bindings.authoring);
       committed = await commitBoundaryResourceReviewMutation(projectRoot, preview);
     }
+    const acknowledged = await reloadReadReviewAfterCommit(projectRoot, {
+      candidate_digest: committed.candidate_digest, review_revision: committed.review_revision,
+      authoring_binding: committed.authoring_binding,
+    });
+    const confirmedReviewIds = applicableBoundaryReviewConfirmations(
+      acknowledged.candidate, acknowledged.progress?.confirmations ?? [], acknowledged.resolvedOrigins,
+    ).map(item => item.current.id);
     const build = preview.build;
     const activeBeforeReview = await loadActivatedExplorationBoundary(projectRoot, {
       name: build.exploration_boundary.pack.name,
@@ -2274,7 +2281,7 @@ async function handleRequest(input: {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
     });
-    const progress = committed.progress;
+    const progress = acknowledged.progress;
     const journey = activeBeforeReview
       ? await updateGuidedOnboardingState({
         projectRoot,
@@ -2350,7 +2357,7 @@ async function handleRequest(input: {
         revision: progress?.revision ?? 0,
         invalidated_decisions: progress?.invalidated_decisions ?? [],
         outstanding_decisions: boundaryReviewDecisions(progress?.candidate ?? build.exploration_boundary)
-          .filter((decision) => !(progress?.confirmed_decisions ?? []).includes(decision.id)),
+          .filter((decision) => !confirmedReviewIds.includes(decision.id)),
       },
       active: activeBeforeReview,
       journey,
@@ -2414,8 +2421,15 @@ async function handleRequest(input: {
       throw error;
     });
     const previousActive = activeBoundaryEventMetadata(previousActiveBoundary);
+    const progress = structuredClone(prepared.selectedProgress);
     await commitBoundaryRescan(prepared);
-    const progress = prepared.selectedProgress;
+    const acknowledged = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
+    if (canonicalJsonDigest(acknowledged.progress ?? null) !== canonicalJsonDigest(progress)) {
+      throw new Error("READ_BOUNDARY_REVISION_CHANGED_AFTER_SAVE: The rescan was saved, but the selected review changed before its status could be returned. Reload the current revision. No authority was activated.");
+    }
+    const confirmedReviewIds = applicableBoundaryReviewConfirmations(
+      progress.candidate, progress.confirmations, acknowledged.resolvedOrigins,
+    ).map(item => item.current.id);
     const authorityActive = (await loadActivatedExplorationBoundaries(projectRoot).catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
@@ -2475,7 +2489,7 @@ async function handleRequest(input: {
         revision: progress.revision,
         invalidated_decisions: progress.invalidated_decisions,
         outstanding_decisions: boundaryReviewDecisions(progress.candidate)
-          .filter((decision) => !progress.confirmed_decisions.includes(decision.id)),
+          .filter((decision) => !confirmedReviewIds.includes(decision.id)),
       },
       active: previousActive ?? null,
       source_database_changed: false,

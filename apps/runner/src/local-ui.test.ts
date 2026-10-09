@@ -7579,4 +7579,40 @@ describe("Workbench current typed review routes", () => {
     } finally {await x.server.close();}
   },30000);
 
+  it.each(["regenerate", "rescan"])("retains typed signoff status in the %s response", async route => {
+    const x = await currentReview();
+    const headers = {"content-type":"application/json", "x-synapsor-ui-token":"current-typed-token", "x-synapsor-csrf":"current-typed-csrf"};
+    const request = async (pathname: string, payload?: unknown) => {
+      const response = await fetch(`http://${x.server.host}:${x.server.port}${pathname}`, {
+        method: payload === undefined ? "GET" : "POST", headers,
+        ...(payload === undefined ? {} : {body: JSON.stringify(payload)}),
+      });
+      const body = await response.json();
+      expect(response.status, JSON.stringify(body)).toBe(200);
+      return body;
+    };
+    try {
+      const id = "global.deployment_profile";
+      const signed = await request("/api/boundary/progress", {...x.body,
+        review_submission: boundaryReviewSubmissionForDecisions(x.context.candidate, [id])});
+      expect(signed.confirmed_review_ids).toContain(id);
+      let result;
+      if (route === "regenerate") {
+        result = await request("/api/boundary/regenerate", {kind:"resource_metadata", resource_id:"work.items",
+          label:"Declared display label", actor:"declared Workbench operator", reason:"Display-only update",
+          authoring_binding:signed.authoring_binding});
+      } else {
+        const preview = await request("/api/project/rescan", {});
+        result = await request("/api/project/rescan/apply", {expected_digest:preview.preview_digest,
+          confirmation:`RESCAN ${preview.preview_digest}`});
+      }
+      const reloaded = await request("/api/boundary");
+      expect(reloaded.confirmed_review_ids).toContain(id);
+      expect(result.review_progress.outstanding_decisions.map((item: {id:string}) => item.id)).not.toContain(id);
+      expect(result.review_progress.outstanding_decisions).toEqual(reloaded.review_progress.outstanding_decisions);
+      expect(result.source_database_changed).toBe(false);
+      await expect(loadActivatedExplorationBoundaries(x.f.dir)).rejects.toMatchObject({code:"ENOENT"});
+    } finally { await x.server.close(); }
+  }, 30000);
+
 });
