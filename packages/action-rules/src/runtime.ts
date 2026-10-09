@@ -329,6 +329,10 @@ export type CurrentSemanticActionVerifier = ((request: {
   admitSource(request: { job: NormalizedWritebackJobV5; factLoader: ActionRuleFactLoaderAdapterV1 }): Promise<void>;
 };
 
+function unsupportedHardLimitCapability(path: 'source.hard_limit.effect_capability' | 'source.hard_limit.admission_capability'): never {
+  throw new ActionRuleError("ACTION_RULE_SCOPE_UNPROVEN", "Native Source effects cannot be inspected.", path);
+}
+
 export function createSemanticActionVerifier(input: {
   registry: RuntimeActionRuleRegistryV1 | ((outcome: string) => RuntimeActionRuleRegistryV1 | Promise<RuntimeActionRuleRegistryV1>);
   clock?: () => string;
@@ -364,7 +368,7 @@ export function createSemanticActionVerifier(input: {
       throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The semantic proposal proof has expired.");
     }
     if (verified.activated.compiled.hard_limit) {
-      if (!factLoader.assertHardLimitSource) throw new ActionRuleError("ACTION_RULE_SCOPE_UNPROVEN", "Native Source effects cannot be inspected.");
+      if (!factLoader.assertHardLimitSource) unsupportedHardLimitCapability("source.hard_limit.effect_capability");
       await factLoader.assertHardLimitSource(verified.activated.compiled);
       try { checkHardLimitPostState(verified.activated.compiled, verified.facts, verified.evaluation.effect, verified.inputs); }
       catch (error) {
@@ -384,7 +388,7 @@ export function createSemanticActionVerifier(input: {
     assertHardLimitWriterInventory(registry, activated.compiled);
     // Initial bounded hard-invariant capability excludes delayed/delegated work.
     if (job.delayed_work || job.semantic_authority.proof.delegation || !factLoader.assertHardLimitSource) {
-      throw new ActionRuleError("ACTION_RULE_SCOPE_UNPROVEN", "Native Source effects cannot be inspected.");
+      unsupportedHardLimitCapability("source.hard_limit.admission_capability");
     }
     await factLoader.assertHardLimitSource(activated.compiled);
     const after = typeof input.registry === "function" ? await input.registry(job.semantic_authority.proof.outcome) : input.registry;
