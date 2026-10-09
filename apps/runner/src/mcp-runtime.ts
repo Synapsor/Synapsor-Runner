@@ -1967,8 +1967,8 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
     // Descriptive names and annotations alone do not establish tool authority.
     const declaredToolAuthority = tools.every((tool) => {
       if (tool.annotations.raw_sql_exposed !== false || tool.annotations.approval_or_commit_tool !== false) return false;
-      if (tool.kind === "action_catalog") return tool.name === DESCRIBE_ACTIONS_TOOL;
-      if (tool.kind === "semantic_action") return tool.name === REQUEST_CHANGE_TOOL;
+      if (tool.kind === "action_catalog") return surface === "semantic_actions" && semanticAuthority !== undefined && tool.name === DESCRIBE_ACTIONS_TOOL;
+      if (tool.kind === "semantic_action") return surface === "semantic_actions" && semanticAuthority !== undefined && tool.name === REQUEST_CHANGE_TOOL;
       if (tool.kind !== "read" && tool.kind !== "aggregate_read" && tool.kind !== "proposal") return false;
       return runtime!.config.capabilities?.some((capability) => capability.name === tool.name && capability.kind === tool.kind) === true;
     });
