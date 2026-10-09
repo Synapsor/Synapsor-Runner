@@ -1,7 +1,7 @@
 {
   "updated": "2026-10-09T03:24:28Z",
   "accepted_Main": "0ea9c097 (product7544b339)",
-  "B2_composition": "7723ee4b (affected36PASS; unaccepted whole B2, DP09 open)",
+  "B2_composition": "46edf54d scoped native/public ACCEPT4bf30bdc; successor cd2911b0 explicit disabled-state guard awaiting scoped check",
   "windows": {
     "B64": [
       "2026-10-08T06:32:23Z",
@@ -25,15 +25,15 @@
       "id": "2",
       "deliverable": "B64 Runner cards + editable fields; Enter keeps suggestion, never confirms",
       "owner": "Main/B66 presentation",
-      "status": "QUEUED: existing typed-card/initializer work is partial; real setup/edit editable-field screens and Enter-keeps-never-confirms proof are not being implemented or qualified.",
-      "active_work": false
+      "status": "ACTIVE Read owner: isolated real-readback cards worktree from46ed; existing native parameter adapter/interaction reused, thin composition20 component/native-fixture controlsPASS. Real setup/edit question creation and protected disabled-save hooks are Main-owned/open; independent RC01-12 presealed. Enter keeps never confirms.",
+      "active_work": true
     },
     {
       "id": "3",
       "deliverable": "B64 /details full per-operation history",
       "owner": "Main/B66 presentation",
-      "status": "QUEUED: full per-operation /details history implementation and real-route acceptance are not underway.",
-      "active_work": false
+      "status": "ACTIVE history helper/R2: isolated operation-details worktree from46ed; existing pager+durable records reused, three characterization controls prepared. Minimal chat callback/closed exact historical refs/current authorized restoration presealed DH01-10/DR01-03. Actual protected Main resolver/currentness and real route proofs open.",
+      "active_work": true
     },
     {
       "id": "4",
@@ -53,15 +53,15 @@
       "id": "6",
       "deliverable": "B65 public arithmetic55refused/50/40/45/55refused + races",
       "owner": "Tester/B66/Main",
-      "status": "BLOCKED public execution: truthful every-writer version fact and native initializer/public binding unresolved. B66/Main initializer preparation active; five fresh arithmetic outcomes not established.",
+      "status": "ACTIVE Tester dedicatedSlot1 D01 UPDATE25: scoped Owner every-writer version fact confirmed for b65_s04/credits only. Source baseline30/50 retained, ordinary fresh setup begun, no effects yet. Existing46ed build exit2/inherited type diagnostics retained; one new writer type site fixed in cd2911, scoped review pending. INSERT initializer/native hooks still open; all five arithmetic verdicts remain not established.",
       "active_work": true
     },
     {
       "id": "7",
       "deliverable": "B65 pre-activation actual writer capability integrated",
       "owner": "Main/Runtime/R1",
-      "status": "ACTIVE: native8 and configured-public4 scopedPASS; disabled-selection8 scopedPASS; DP10 lower held-permit after2084 passes with prerequisite2 cases. DP09 accepts an undisplayed changed writer after Yes: reproduced product finding, shared currentness repair active; whole B2 not accepted.",
-      "active_work": true
+      "status": "COMPLETE SCOPED DEV integration46edf: native writer capability/readback and shown writer binding carrythrough independently accepted4bf30bdc. Original race/lower4, stronger typed refusal2, affected nativepublic8PASS (overlapping setup/stronger checks not14unique). Runtime rechecks/permissions intact. No worker/source-effect/full-release acceptance transferred.",
+      "active_work": false
     },
     {
       "id": "8",
@@ -74,7 +74,7 @@
       "id": "9",
       "deliverable": "B65 T01–T10 cross-resource verdicts",
       "owner": "Tester",
-      "status": "QUEUED: prior compiler/support matrix retained. Current T01-T10 native verdicts await reviewed public hard-limit pin; no current execution underway.",
+      "status": "QUEUED Tester: T01-T10 current native cross-resource verdicts after coherent PG public proof/slot; prior matrix retained. MySQL14 separate cannot transfer PG results.",
       "active_work": false
     },
     {
@@ -88,48 +88,64 @@
       "id": "11",
       "deliverable": "Progress-aware continuation B53",
       "owner": "Prompt helper/R2/Main/Action",
-      "status": "ACTIVE independent pure review:6543a448 owns13PASS and scoped2-file TypeScript0; R2 reviewing exact interface. No live producer/persistence/CAS/extension binding; actual controller baseline9639 remains0PASS2FAIL, no minted/reset allowance.",
-      "active_work": true
+      "status": "PARTIAL COMPLETE: pure helper4032/R2 unchanged12PASS independently scoped accepted; own original13+samecopied2=15PASS. Live controller9639 remains0PASS2FAIL; actual validation-provenance/native CAS/finite extension binding queued with Main/Action, no allowance resets.",
+      "active_work": false
     },
     {
       "id": "12",
       "deliverable": "65/128-Action programs B63",
       "owner": "Read helper/R1/Main",
-      "status": "ACTIVE implementation: R1 transient paged design/preseal d46e0bf4 accepted with explicit complete-index/currentness/old-reader-rejection safeguards. Helper implementing within unchanged192/bytes/parts/12changes/8review limits.65 partial;128 before blocker preserved; no complete after qualification.",
-      "active_work": true
+      "status": "PARTIAL, QUEUED: bounded paged productb8a/e413 small13-action native control1PASS, limits192/bytes/parts unchanged; R1design BP01-10 accepted but larger65/128after and independent implementation verdict pending. Read owner prioritized2; no larger native run underway.",
+      "active_work": false
     },
     {
       "id": "13",
       "deliverable": "source_db recommendation readback",
       "owner": "Main/Read helper",
-      "status": "QUEUED: existing receipt test map only; source_db recommendation readback not being implemented or qualified. Keep runner_ledger unknown-COMMIT limitation and existing deployments unchanged.",
-      "active_work": false
+      "status": "ACTIVE Runtime/R2: isolated receipt readback branch from46ed, conditional source_db recommendation only for NEW supported writes; actual setup capability not_verified_here until existing execution writer/receipt probe. Keep prior/default/explicitNo/selection digests and ledger unknown-COMMIT truth unchanged. Before old typedRead fixture failure retained; narrow UIcomponent reproduction/projection under preseal12RP, Main passthrough open.",
+      "active_work": true
+    },
+    {
+      "id": "14",
+      "deliverable": "MySQL full B65 race matrix plus post-change hard-limit cases after PG6",
+      "owner": "R1 independent MySQL native tester",
+      "status": "ACTIVE dedicatedSlot2, fresh isolatedMySQL/worktree exact46ed: existing ready native rows first, then full absence/membership move/limit change/duplicate+stale worker/unknown COMMIT/time boundary/stricter rule after approval/deadlock+timeout/scope negatives. PG-specific script porting remains; independent outcomes, no PG transfer. Hard-limit arithmetic only after PG6 passes; never delay PG1/D01.",
+      "active_work": true
+    },
+    {
+      "id": "15",
+      "deliverable": "Specific typed deadlock/lock-timeout reasons instead of generic retry",
+      "owner": "B66 implementer/R1 independent native reviewer",
+      "status": "ASSIGNED offline failing-before/native code diagnosis. Exact SQLSTATE/driver typed codes only, no English parsing; distinguish deadlock and timeout with audience-safe typed reason, preserve retryable/contention, whole rollback, unknown outcome/idempotency/receipt fences. No product edits accepted yet.",
+      "active_work": true
     }
   ],
   "not_actively_worked": [
     "1",
-    "2",
-    "3",
     "4",
     "5",
+    "7",
     "8",
     "9",
     "10",
-    "13"
+    "11",
+    "12"
   ],
-  "next": "Main writer currentness/native initializer; Runtime Slot1 producer controls; B53 helper Slot2 two pure counterexample repairs/R2 review; Read Slot3 bounded capacity implementation/R1 preseal. Step-owned Read integration36PASS; broader prompt families queued. Paid CLOSED.",
+  "next": "D01/PG public arithmetic priority; Main typed initializer/native card/history hooks; isolated2cards/3history/13receipt and14MySQL concurrently; B66 specifictyped contention15; cross-resource9 on free native slot. Paid CLOSED.",
   "limits": "4heavy/max8workers perrun/0700 isolatedHOME_TMP_DB/8GiB free memory+disk/privatebackup only; no automaticwindow reset",
   "not_actively_worked_open_items": [
     "1",
-    "2",
-    "3",
     "4",
     "5",
     "9",
     "10",
-    "13"
+    "11",
+    "12"
   ],
   "completed_with_reported_boundary": [
-    "8 (prototype report; no replacement guarantee accepted)"
-  ]
+    "7 (scoped native/public DEV integration, not release or effect proof)",
+    "8 (prototype report; portable replacement guarantee unproven)"
+  ],
+  "owner_assertion": "OWNER-B65-COUNTER-ASSERTION.json: b65_s04/b65_public.credits ONLY; counter business blocker closed by direct Owner assertion, not a general/customer claim.",
+  "future_post_B65": "Optional separately reviewed enforcing counter trigger; not current product/fixture change or customer recommendation."
 }
