@@ -7,10 +7,7 @@ import { READ_SCOPE_PROTOCOL, resolveReadScopeProposal, readScopeProposalSchema,
 import { READ_WORKLOAD_ANALYSIS_VERSION, type ReadWorkloadAnalysis } from "../read-workload-assist.js";
 
 import { prepareReviewedReadScope } from "./reviewed-read-scope.js";
-import { projectReadSubjectContext } from "../authoring-read-subject-context.js";
-import { projectReadScopeHostContext } from "../read-current-evidence.js";
-import { readWorkloadCatalog } from "../read-workload-model.js";
-import { explorationBoundaryCandidateDigest } from "../auto-boundary.js";
+import { projectAuthoringReadScopeContext } from "../authoring-read-scope-context.js";
 
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -34,14 +31,14 @@ export async function nativeFixture(noRead = false, withoutAnalysis = false,
     schema_fingerprint:context.lock.schema_fingerprint,role_posture_fingerprint:context.lock.role_posture_fingerprint};
   const input = { binding: nativeBinding, stage: "read_mapping" as const, jobIntent: noRead ? "Prepare the program without any customer data access" : declared?.request ?? "Show the signed-in person their item labels", provider: "openai" as const, model: "controlled" };
   let state = buildBoundaryAuthoringResumeState({ ...input, authoringProtocol: { version: "synapsor.structured-authoring.v2" } });
-  const request={id:`job:${d({created_at:state.created_at,boundary_name:nativeBinding.boundary_name})}`,text:input.jobIntent};
-  const catalog=readWorkloadCatalog(context.candidate);
-  const subjects=projectReadSubjectContext({context,sourceDigest:d(null)});
-  if(!subjects.subject_scopes.length)throw new Error("Actual structural review established no subjects");
-  const projected=projectReadScopeHostContext({request,catalog:{digest:catalog.digest,resources:catalog.resources,
-    relationships:catalog.resources.flatMap(resource=>resource.relationships.map(link=>({id:link.id,from:resource.id,to:link.target_resource}))),
-    subject_scopes:subjects.subject_scopes},binding:{meaning_digest:d({protocol:READ_SCOPE_PROTOCOL,request,source:null}),
-    applicability_digest:d({request,purpose:"original_read_task"}),operation_digest:d({binding:nativeBinding,candidate:explorationBoundaryCandidateDigest(context.candidate)})}});
+  // Use the production context owner, including its protocol/job identities;
+  // a manually hashed approximation would be stale at nativeScope.assess.
+  const projected=projectAuthoringReadScopeContext({ resume: state, boundary: context.candidate,
+    structuralReview: context, records: { questions: state.operator_questions ?? [], handoffs: state.owner_handoffs ?? [],
+      generation: state.generation_recovery }, answerQuestionIds: [] });
+  if(!projected.catalog.subject_scopes?.length)throw new Error("Actual structural review established no subjects");
+  const request=projected.references.find(reference=>reference.kind==="request");
+  if(!request)throw new Error("Actual native context lacks its request reference");
   const {binding}=projected,inventory={references:projected.references,catalog:projected.catalog};
   const analysis=()=>structuredClone(prepared.analysis);
   const scopeDigest=d({request,purpose:"original_read_task"}),contextDigest=d(projected);

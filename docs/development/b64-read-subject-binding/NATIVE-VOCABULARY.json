@@ -1,0 +1,76 @@
+{
+  "scope": "Native vocabulary component proof; no public activation or rescan authorization claim",
+  "before_pin": "f7798943",
+  "before": {
+    "passed": 1,
+    "failed": 2,
+    "failure": "Both actual reviewed positives rejected because old helper approximated the native binding"
+  },
+  "fix": "Use existing projectAuthoringReadScopeContext with the same saved structural candidate and actual Resume records; remove manual meaning/applicability digest approximation",
+  "held_constant": [
+    "actual native initializer from Main c361",
+    "declared resource/field included in intercepted actual provider request",
+    "explicit operator field review for that declared target only",
+    "controlled local provider completion consumed through existing native question/checkpoint/CAS",
+    "actual compiler analysis and displayed default-No operator review"
+  ],
+  "after": {
+    "vocabulary": 3,
+    "existing_scope_host": 9,
+    "existing_scope_question": 8,
+    "passed": 20,
+    "failed": 0
+  },
+  "cases": [
+    "reviewed pretty label without semantic operator decision remains unconfirmed",
+    "descriptive unlabelled declared target becomes confirmed only after real review",
+    "opaque unlabelled declared target becomes confirmed only after real review"
+  ],
+  "limits": {
+    "network": "bwrap --unshare-net",
+    "workers": 1,
+    "minimum_MemAvailable_bytes": 19176038400,
+    "minimum_available_disk_bytes": 61514993664,
+    "paid_calls": 0,
+    "types": "not run in this bounded group",
+    "independent_R2": "pending",
+    "public_activation": "Main typed submission/native assessment hook still pending"
+  },
+  "storage": {
+    "new_native_vocabulary_fixtures": "all six before/after fixture roots preserved",
+    "logs": "preserved",
+    "legacy_affected_fixtures": "Existing scope-host/question tests executed fs.rm cleanup of their own generated roots; discovered and reported to Main. No further run pending keep-all cleanup port."
+  },
+  "privacy_remaining_acceptance": {
+    "typed": 23,
+    "delete": 2,
+    "by_file": {
+      "auto-boundary.ts": {
+        "typed": 15,
+        "delete": 0
+      },
+      "explore-vocabulary.ts": {
+        "typed": 6,
+        "delete": 2
+      },
+      "schema-inspector/src/index.ts": {
+        "typed": 2,
+        "delete": 0
+      },
+      "other_ten_owned_files": {
+        "typed": 0,
+        "delete": 0
+      }
+    }
+  },
+  "evidence": [
+    {
+      "path": "/var/tmp/b64-privacy-evidence/native-vocabulary-before.log",
+      "sha256": "41aa2e1ba497d74c6d07880583258230cb994853cfc8f34f051f0d50dc91fe3a"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/native-vocabulary-after-affected.log",
+      "sha256": "ceb7edd86271aee3222c73c281ec390d05a63d4dd3177ca0d13ff1e65b1c9de2"
+    }
+  ]
+}
