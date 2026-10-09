@@ -15,11 +15,12 @@
     "read": {
       "agent": "/root/b59_regression_fix",
       "workspace": "../b56-owned-dir-remedy",
-      "current_task": "Read-only native activation hydration; shared question binding5689967c in R2 review"
+      "current_task": "SC04 strict draft/active file wrappers; owns auto-boundary.ts and boundary-review-context.ts; Main CLI hooks"
     },
     "privacy_visibility": {
       "agent": "/root/b64_visibility_retirement",
-      "workspace": "../b64-visibility-retirement"
+      "workspace": "../b64-visibility-retirement",
+      "current_task": "Accepted Privacy15/0; retire four Main runtime decision sites plus exact operator disposable-source CLI"
     },
     "chat_presentation": {
       "agent": "B65 Tester /root/b64_chat_resume",
@@ -36,14 +37,14 @@
     "main": {
       "agent": "Main",
       "workspace": ".",
-      "current_task": "Read public activation/native assessment; accepted B65 closure integrated7e0760fe"
+      "current_task": "Read public activation d6 accepted R1 7PASS; boundary decision retirement; SC04 CLI integration"
     }
   },
   "heavy_slots": {
-    "1": "R1 public focused Read signoff variants",
-    "2": "B66 fixed Main7e076 integration focused/types; Action source work parallel",
-    "3": "Privacy local-ui/workbench presentation migration",
-    "4": "R2 pure Read question binding review; hydration helper source only"
+    "1": "Read helper SC04 focused before/fix",
+    "2": "Action Source-answer/typed producers",
+    "3": "R2 independent Runtime6ee diagnostic review",
+    "4": "Privacy Main runtime decision retirement"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -1373,5 +1374,31 @@
     "verdict": "Original21 controls+d322 scoped; formal35337a8d10PASS andstale d71e689e3PASS; Main26PASS",
     "allowlist": "363exact; onlytwo approvedtypeof records removed827fe693",
     "repository_gate": "NOT_PASS; lastscan36804syntaxcandidates/36441unreviewed; no baselineEnglish exemption"
+  },
+  "accepted_remaining_decision_sites": {
+    "privacy_visibility": {
+      "typed": 15,
+      "delete": 0
+    },
+    "action": {
+      "typed": 33,
+      "delete": 5
+    },
+    "main": {
+      "typed": 35,
+      "delete": 0
+    },
+    "read": {
+      "typed": 0,
+      "delete": 0
+    },
+    "chat_presentation": {
+      "typed": 0,
+      "delete": 0
+    },
+    "ask": {
+      "typed": 0,
+      "delete": 0
+    }
   }
 }

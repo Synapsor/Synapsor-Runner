@@ -1,14 +1,14 @@
-ACTIVE B64/B65 — lanes resumed; paid CLOSED; private backup only; frozen candidate3/history untouched.
-B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z; B65 T0Oct8 16:56:15Z/endOct12 sameUTC, unchanged.
-Main codex/b64-read-compose-20261008: latest5bef33ba; Read c361/3eb, activation065, library7e92, B65 e514+7e076, focusedb00 and sharedbinding621 integrated; [lanes](docs/development/b64-english-inventory/LANES.json).
-Remaining coherent Main decision sites typed/delete: Privacy21/2,Action33/5,Main35/0; Ask/Read/Chat0/0 owned-source retirement; not overall acceptance.
-Read protected assessment065 R1ind4PASS; public focusedb00 unchanged2PASS (finish noYes/explicitYes disabled); binding568 R2ind6PASS wired621. NEXT native saved-owner adapter/proof then strict wrappers; positive activation OPEN.
-Read library1fb integrated7e92 R1ind9PASS; typedsubject+permit3eb R2ind11PASS; nativevocabae/549 integrated498/871 owner20+18/R2ind2PASS; globaltypes last323external, no globalPASS.
-Privacy UI97f32 productc758 fourbeforeFAIL→fourPASS+renderer17PASS scoped, R2ind review running; inspector I02080/81 closed423 exactproduct+14PASS; Main owns auto15/commands hooks.
-Read helper b56 branch codex/b64-owner-question-binding-20261008 @568: pure18PASS/R2ind6PASS accepted; implementing/testing readonly native activation adapter; no fake scopes/hashes.
-Action RUNNING viaB66: ten IDs source/artifact R2accepted, Mainc942+4ea integrated50PASS; 33/5 remain. Units/source-question producers assigned; oldReadinventoryfailure/skip retained.
-B65 accepted hard-limit/import/renderer product closure is IN MAIN e514+7e076; B66 fixedsnapshot128scopedPASS; fulltypes302Read diagnostics, notclean; [handoff](/home/sandesh-tiwari/Documents/Codex/2026-10-08/b66-mysql-writer-20261008/outputs/B65-MAIN-PRODUCT-INTEGRATION-HANDOFF.json).
-Tester exact787 publicfive sealedddbd: INSERT25/20/10 compiler ACTION_RULE_SCOPE_UNPROVEN; UPDATE10→25/35 publicapproval then worker samecode beforeverification; Source30 unchanged/receipts0. No hardlimit/publicprogressPASS.
-B65 next owner diagnoses true public initializer/admission gap; no broadergrant/guess/replay. Native arithmetic specialposture PASS and PRE01ordinary PG/MySQLPASS remain separate historical evidence.
-Slots1R1/2B66integration/3Privacy/4R2binding;4heavy,max8workers/run,0700isolatedresources,8GiBfreefloors; keepstorage/revisitbelow30GB. No usagepause.
-Commit/privatepush eachcheckpoint; Luna35total/remain19.72936875 inclholds, paid CLOSED; SC04actualwrappers/coldcontrols and fullqualification remain OPEN.
+ACTIVE B64/B65 — paid CLOSED; private backup only; frozen candidate3/history untouched.
+B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z; B65 T0Oct8 16:56:15Z/endOct12 sameUTC; unchanged.
+Main codex/b64-read-compose-20261008 @d6f0fb8b; [ownership/slots](docs/development/b64-english-inventory/LANES.json).
+Remaining accepted decision-site counts typed/delete: Privacy15/0, Action33/5, Main35/0; Ask/Read/Chat0/0 owned-source only, not overall qualification.
+Read saved native assessment123 + public routed6f accepted: R1 actual7PASS verdict833e996c; R2 native3PASS; no full onboarding/cold-process/installed claim.
+Read helper b56 owns auto-boundary.ts+boundary-review-context.ts SC04 strict file wrappers; before809b479f; preserve authority-set digest domainv1 separate from filev2; Main owns CLI hooks.
+Privacy UI81a/636/5be and inspector e9 accepted; R2 count closure84a748c1. Privacy owner now retires Main runtime4sites+exact operator disposable-source CLI; no fallback.
+Action coveragec942+4ea+inventoryc909 integrated Main50PASS, R2 accepted10IDs. Next Source-answer3e0c76e2 owner132PASS/types0 awaits independent review; units design only.
+Main NEXT retire boundary summary/classifiers with R1 counterexamples, integrate SC04 hooks after review; boundary file19149lines; no competing editor.
+B65 hard-limit/import/renderer IN MAIN e514+7e076; fixedsnapshot128scopedPASS; globaltypes302Read diagnostics at7e, not clean; [integration](../b57-fixture-prep/docs/development/b65-main-integration/FIXED-MAIN-INTEGRATION-RESULT.json).
+Public five on787 sealedddbd: INSERT25/20/10 compiler ScopeUnproven; UPDATE10→25/35 approval then worker samecode; Source30 unchanged/0Source receipts; intended arithmetic NOT ESTABLISHED.
+Runtime6ee private deciding-stage diagnostics owner15+198PASS in R2 review; then B66 mirror→fresh Tester observation. No old replay; initializer typed-review compatibility decision pending Owner.
+Slots1ReadSC04/2Action/3R2Runtime/4Privacy;4heavy,max8workers/run,0700isolation,8GiBfreeRAM/disk; keepstorage/revisit<30GB; no usagepause.
+Commit/privatepush checkpoints; Luna35total/remain19.72936875 inclholds, paid CLOSED; SC04coldcontrols/fullqualification and B65 supported public arithmetic remain OPEN.
