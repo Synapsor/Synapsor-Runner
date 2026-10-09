@@ -1,4 +1,4 @@
-import { ReadScopeReviewError } from "./authoring-read-scope-error.js";
+import { ReadScopeReviewError, nativeReadScopeFailure } from "./authoring-read-scope-error.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { parseOperatorQuestion, parseOperatorQuestions, proposeOperatorAnswer, confirmOperatorAnswer,
   type OperatorQuestion } from "./authoring-operator-question.js";
@@ -67,7 +67,12 @@ export function resolveNativeReadScope(input: { questions: readonly OperatorQues
     && answer.read_scope.review_question_id === q.id);
   const current = assessReadScopeRecordCurrentness({ record, expectedBinding: input.expectedBinding });
   let provenanceCurrent = true;
-  try { assertReadScopeProvenance(record, input); } catch { provenanceCurrent = false; }
+  try { assertReadScopeProvenance(record, input); } catch (error) {
+    const native = nativeReadScopeFailure(error);
+    if (!native || !["READ_SCOPE_PROVENANCE_STALE", "READ_SCOPE_REFERENCE_INVALID", "READ_SCOPE_TARGET_INVALID",
+      "READ_SCOPE_SUBJECT_INVALID", "READ_SCOPE_SUBJECT_STALE"].includes(native.code)) throw error;
+    provenanceCurrent = false;
+  }
   const currentAnswers = record.references.every(ref => ref.kind !== "answer" || (() => {
     const captured = questions.find(item => item.id === ref.question_id)!;
     return !captured.disposition && !questions.some(item => item.read_scope?.predecessor_id === captured.id);

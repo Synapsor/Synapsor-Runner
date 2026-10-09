@@ -16,7 +16,8 @@ export type ReadScopeReviewSnapshot = Parameters<typeof resolveNativeReadScope>[
   /** Exact historical references resolved by native owners, never model claims. */
   historical_inventory?: HistoricalReadScopeInventory;
 };
-export type ReadScopeReviewBinding = { question_id: string; question_revision: number; question_digest: Digest;
+export type ReadScopeReviewBinding = { requested_question_id: string; requested_question_digest: Digest;
+  question_id: string; question_revision: number; question_digest: Digest;
   context_digest: Digest; scope_digest: Digest; current_context_digest: Digest; current_scope_digest: Digest;
   proposal_digest?: Digest; analysis_digest?: Digest; snapshot_digest: Digest };
 type View = AuthoringQuestionInteraction<ReadScopeReviewBinding>;
@@ -33,10 +34,14 @@ export type ReadScopeHostAccess = {
   save(question: OperatorQuestion, options: { permit: ProjectAuthorityMutationPermit; expected: ReadScopeReviewSnapshot; subject: string }): Promise<void>;
 };
 function changed(): never { throw new ReadScopeReviewError("READ_SCOPE_REVIEW_CHANGED", "The displayed scope, analysis or native revision changed. No decision was saved."); }
+function acknowledgementUnknown(cause?: unknown): never { throw new ReadScopeReviewError("READ_SCOPE_REVIEW_ACK_UNKNOWN",
+  "The scope decision may have been saved, but its exact acknowledgement is unavailable. Inspect the saved job before another decision; no retry or replacement is authorized here.",
+  "unknown", { cause }); }
 function checked(snapshot: ReadScopeReviewSnapshot, questionId: string) {
   if (snapshot.question_id !== questionId) changed();
   const resolved = resolveNativeReadScope(snapshot), q = resolved.question;
-  if (q.id !== questionId) changed();
+  const requested = snapshot.questions.find(q => q.id === questionId);
+  if (!requested) changed();
   // Loading historical testimony is separate from admitting a current decision.
   // Missing/forged native provenance is not an ordinary stale proposal.
   const historical = snapshot.historical_inventory ?? { binding: snapshot.expectedBinding,
@@ -45,7 +50,8 @@ function checked(snapshot: ReadScopeReviewSnapshot, questionId: string) {
   assertReadScopeProvenance(resolved.record, { expectedBinding: historical.binding, ...historical });
   const applicability = resolved.status === "stale" || q.context_digest !== snapshot.context_digest
     || q.scope_digest !== snapshot.scope_digest ? "stale_inspectable" : "current";
-  const binding: ReadScopeReviewBinding = { question_id: q.id, question_revision: q.revision, question_digest: q.digest,
+  const binding: ReadScopeReviewBinding = { requested_question_id: requested.id, requested_question_digest: requested.digest,
+    question_id: q.id, question_revision: q.revision, question_digest: q.digest,
     context_digest: q.context_digest, scope_digest: q.scope_digest,
     current_context_digest: snapshot.context_digest, current_scope_digest: snapshot.scope_digest,
     ...(q.proposal ? { proposal_digest: canonicalJsonDigest(q.proposal) } : {}),
@@ -63,15 +69,17 @@ export function createReadScopeHost(input: { access: ReadScopeHostAccess;
     if (canonicalJsonDigest(current.binding) !== canonicalJsonDigest(shown.binding)) changed();
     return current;
   };
-  const assertDisplayed = async (shown: ReturnType<typeof checked>) => assertSame(shown, await load(shown.q.id));
+  const assertDisplayed = async (shown: ReturnType<typeof checked>) => assertSame(shown, await load(shown.binding.requested_question_id));
   const assertDisplayedHeld = async (shown: ReturnType<typeof checked>, permit: ProjectAuthorityMutationPermit) =>
-    assertSame(shown, await loadHeld(shown.q.id, permit));
+    assertSame(shown, await loadHeld(shown.binding.requested_question_id, permit));
   const save = async (shown: ReturnType<typeof checked>, transform: (q: OperatorQuestion, snapshot: ReadScopeReviewSnapshot) => OperatorQuestion,
     subject: string) => input.access.mutate(async permit => {
     const current = await assertDisplayedHeld(shown, permit), next = transform(current.q, current.snapshot);
     await input.access.save(next, { permit, expected: current.snapshot, subject });
-    const acknowledged = await loadHeld(next.id, permit);
-    if (acknowledged.q.digest !== next.digest || acknowledged.q.revision !== next.revision) changed();
+    let acknowledged: ReturnType<typeof checked>;
+    try { acknowledged = await loadHeld(current.binding.requested_question_id, permit); }
+    catch (error) { return acknowledgementUnknown(error); }
+    if (acknowledged.q.digest !== next.digest || acknowledged.q.revision !== next.revision) acknowledgementUnknown();
     return acknowledged;
   });
   const exchange = async (shown: ReturnType<typeof checked>, view: ReadScopeInteraction) => {
@@ -125,7 +133,7 @@ export function createReadScopeHost(input: { access: ReadScopeHostAccess;
     current = await save(current, (q, snapshot) => response.accepted === true
       ? confirmReadScopeReview(q, snapshot.expectedBinding, snapshot.analysis, q.digest, snapshot)
       : leaveOperatorQuestionPending(q, response.accepted === null ? "cancelled" : "declined"), "The exact grouped Read scope decision");
-    if (response.accepted === true && current.resolved.status !== "confirmed") changed();
+    if (response.accepted === true && current.resolved.status !== "confirmed") acknowledgementUnknown();
     return result(response.accepted === true ? "confirmed" : "pending");
   };
   return { review };

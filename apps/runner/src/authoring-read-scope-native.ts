@@ -181,9 +181,12 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
   const loadScopeUnlocked = async (questionId: string, permit: ProjectAuthorityMutationPermit) => {
     await input.ports.assertCurrent(permit);
     const current = await loadBoundaryReviewContextHeld(input.projectRoot, permit), state = snapshot(), scope = project(current.candidate, current);
-    const question = state.questions.find(q => q.id === questionId);
+    const question = resolveNativeReadScope({ questions: state.questions, handoffs: state.handoffs,
+      generation: state.generation, question_id: questionId, expectedBinding: scope.binding,
+      references: scope.references, catalog: scope.catalog }).question;
     if (!question?.read_scope) return unavailable("The exact native Read question");
-    const stored = question.read_scope.record.analysis_digest && state.read?.scope_question_id === questionId
+    const stored = question.read_scope.record.analysis_digest
+      && (state.read?.scope_question_id === questionId || state.read?.scope_question_id === question.id)
       ? await readStoredReadWorkloadAnalysis({ projectRoot: input.projectRoot, analysisId: state.read.analysis_id }) : undefined;
     if (question.read_scope.record.analysis_digest && (!stored || stored.analysis_digest !== state.read?.analysis_digest))
       unavailable("The exact analyzed Read proposal");
@@ -233,12 +236,12 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     save: async (question, options) => {
       const state = snapshot();
       const existing = state.questions.some(q => q.id === question.id);
+      const selected = state.read?.scope_question_id === options.expected.question_id;
       if (!existing && (question.read_scope?.mode !== "review"
-        || question.read_scope.predecessor_id !== options.expected.question_id
-        || state.read?.scope_question_id !== options.expected.question_id))
+        || question.read_scope.predecessor_id !== resolveNativeReadScope(options.expected).question.id || !selected))
         return unavailable("The exact selected Read scope replacement");
       await input.ports.save({ questions: existing ? state.questions.map(q => q.id === question.id ? question : q) : [...state.questions, question],
-        ...(!existing ? { read: { ...state.read!, scope_question_id: question.id } } : {}),
+        ...(selected && state.read!.scope_question_id !== question.id ? { read: { ...state.read!, scope_question_id: question.id } } : {}),
         stage: state.resume.stage, acknowledgeCompletedTurn: true, subject: options.subject }, options.permit);
     },
   }, interact: input.interact });
@@ -339,11 +342,11 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
           await input.ports.assertCurrent(permit);
           const current = snapshot();
           if (current.read?.analysis_digest !== saved.analysis_digest
-            || current.read.scope_question_id !== saved.scope_question_id)
+            || current.read.scope_question_id !== decision.question_id)
             return unavailable("The exact declined Read mapping");
           return { state: "replacement" as const, owner: { read: current.read, questions: current.questions,
             handoffs: current.handoffs, generation: current.generation,
-            question_id: saved.scope_question_id!, analysis: workload.analysis } };
+            question_id: decision.question_id, analysis: workload.analysis } };
         });
       }
       if (decision.state !== "confirmed") return { state: "pending" };

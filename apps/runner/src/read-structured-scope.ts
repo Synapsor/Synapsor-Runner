@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { hasReviewedPrincipalScope, type ExplorationBoundaryDraft } from "./auto-boundary.js";
+import { ReadScopeReviewError, type ReadScopeFailureCode } from "./authoring-read-scope-error.js";
 import type { ReadAuthorityAtom, ReadWorkloadAnalysis } from "./read-workload-assist.js";
 
 export const READ_SCOPE_PROTOCOL = "synapsor.read-scope.v2" as const;
@@ -108,8 +109,8 @@ export type ReadScopeCatalog = { resources: readonly { id: string; fields: reado
   relationships: readonly { id: string; from: string; to: string }[];
   subject_scopes?: readonly ReadSubjectBinding[] };
 
-function invalid(code: string, detail: string): never {
-  throw new Error(`${code}: ${detail} No Read meaning, permission or activation was confirmed.`);
+function invalid(code: ReadScopeFailureCode, detail: string): never {
+  throw new ReadScopeReviewError(code, `${detail} No Read meaning, permission or activation was confirmed.`);
 }
 function unique(values: readonly string[], label: string): void {
   if (new Set(values).size !== values.length) invalid("READ_SCOPE_INVALID", `Duplicate ${label}.`);
