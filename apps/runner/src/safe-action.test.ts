@@ -203,9 +203,10 @@ describe("Safe Action authoring", () => {
       'order_id: { type: "string", required: true },',
     ));
     const draft = (await compileSafeActionDraft({ projectRoot: fixture.root, sourcePath: fixture.sourcePath })).manifest;
-    expect(draft.validation).toMatchObject({ ok: false, blocking_lint_issues: 1 });
+    expect(draft.validation).toMatchObject({ ok: false, blocking_lint_issues: 2 });
     expect(draft.unresolved_authority).toEqual([
       "lint:STRING_ARGUMENT_UNBOUNDED:$.capabilities[2].args.order_id",
+      'lint:SURFACE_GENERIC_ARGUMENT:$.capabilities[name="billing.propose_refund_order"].args.order_id',
     ]);
     expect(draft.diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "STRING_ARGUMENT_UNBOUNDED", source: "Safe Action contract lint" }),
