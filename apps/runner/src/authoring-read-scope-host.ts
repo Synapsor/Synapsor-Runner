@@ -19,7 +19,8 @@ export type ReadScopeInteractionResponse = { kind: "decision"; binding: ReadScop
   | { kind: "pending"; binding: ReadScopeReviewBinding; choice: "keep" | "review" | "replace" };
 export type ReadScopeHostAccess = {
   /** Reload one coherent native revision; never substitute an arbitrary latest question. */
-  load(questionId: string, permit?: ProjectAuthorityMutationPermit): Promise<ReadScopeReviewSnapshot>;
+  load(questionId: string): Promise<ReadScopeReviewSnapshot>;
+  loadHeld(questionId: string, permit: ProjectAuthorityMutationPermit): Promise<ReadScopeReviewSnapshot>;
   mutate<T>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>): Promise<T>;
   /** Existing protected Resume CAS/rollback. No new persistence owner. */
   save(question: OperatorQuestion, options: { permit: ProjectAuthorityMutationPermit; expected: ReadScopeReviewSnapshot; subject: string }): Promise<void>;
@@ -41,17 +42,20 @@ function checked(snapshot: ReadScopeReviewSnapshot, questionId: string) {
  * actual model completion and history; this adapter never drafts or activates. */
 export function createReadScopeHost(input: { access: ReadScopeHostAccess;
   interact(view: ReadScopeInteraction, assertCurrent: () => Promise<void>): Promise<ReadScopeInteractionResponse> }) {
-  const load = async (id: string, permit?: ProjectAuthorityMutationPermit) => checked(await input.access.load(id, permit), id);
-  const assertDisplayed = async (shown: ReturnType<typeof checked>, permit?: ProjectAuthorityMutationPermit) => {
-    const current = await load(shown.q.id, permit);
+  const load = async (id: string) => checked(await input.access.load(id), id);
+  const loadHeld = async (id: string, permit: ProjectAuthorityMutationPermit) => checked(await input.access.loadHeld(id, permit), id);
+  const assertSame = (shown: ReturnType<typeof checked>, current: ReturnType<typeof checked>) => {
     if (canonicalJsonDigest(current.binding) !== canonicalJsonDigest(shown.binding)) changed();
     return current;
   };
+  const assertDisplayed = async (shown: ReturnType<typeof checked>) => assertSame(shown, await load(shown.q.id));
+  const assertDisplayedHeld = async (shown: ReturnType<typeof checked>, permit: ProjectAuthorityMutationPermit) =>
+    assertSame(shown, await loadHeld(shown.q.id, permit));
   const save = async (shown: ReturnType<typeof checked>, transform: (q: OperatorQuestion, snapshot: ReadScopeReviewSnapshot) => OperatorQuestion,
     subject: string) => input.access.mutate(async permit => {
-    const current = await assertDisplayed(shown, permit), next = transform(current.q, current.snapshot);
+    const current = await assertDisplayedHeld(shown, permit), next = transform(current.q, current.snapshot);
     await input.access.save(next, { permit, expected: current.snapshot, subject });
-    const acknowledged = await load(next.id, permit);
+    const acknowledged = await loadHeld(next.id, permit);
     if (acknowledged.q.digest !== next.digest || acknowledged.q.revision !== next.revision) changed();
     return acknowledged;
   });

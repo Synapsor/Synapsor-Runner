@@ -2,12 +2,12 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { rolePostureFingerprint, schemaFingerprintForInspection, type SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { assertBoundaryAuthoringResumeCurrent, readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
-import { loadBoundaryReviewContext } from "./boundary-review-context.js";
+import { loadBoundaryReviewContextHeld } from "./boundary-review-context.js";
 import { boundaryAuthoringResumeBinding } from "./authoring-resume-binding.js";
 import { authoringDestination, loadPolicySources, policySourceSavedDigest, type AuthoringDestination } from "./authoring-policy-source.js";
 import { ownerQuestionContextDigest, ownerQuestionScopeDigest } from "./authoring-owner-question-binding.js";
 import { createNativeReadScope, type NativeReadScopeAssessment } from "./authoring-read-scope-native.js";
-import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
 export type ReadScopeActivationAssessmentInput = {
   projectRoot: string;
@@ -31,8 +31,8 @@ export async function assessReadScopeForActivation(input: ReadScopeActivationAss
   if (!input.permit) throw unavailable("The current activation permit is required.");
   const expected = structuredClone({ candidate: input.candidate, reader: input.readerInspection,
     destination: input.currentDestination });
-  return withProjectAuthorityMutation(input.projectRoot, async permit => {
-    const context = await loadBoundaryReviewContext(input.projectRoot, permit);
+  return withHeldProjectAuthorityAccess(input.projectRoot, input.permit, async permit => {
+    const context = await loadBoundaryReviewContextHeld(input.projectRoot, permit);
     const candidateDigest = explorationBoundaryCandidateDigest(expected.candidate);
     const readerSchema = schemaFingerprintForInspection(expected.reader), readerRole = rolePostureFingerprint(expected.reader);
     if (explorationBoundaryCandidateDigest(context.candidate) !== candidateDigest
@@ -45,12 +45,12 @@ export async function assessReadScopeForActivation(input: ReadScopeActivationAss
     const resume = structuredClone(loaded.value);
     const sources = resume.policy_source_session ? await loadPolicySources(input.projectRoot, resume.policy_source_session) : undefined;
     const sourceDigest = sources ? canonicalJsonDigest(sources) : undefined;
-    const assertCurrent = async (held?: ProjectAuthorityMutationPermit) => {
+    const assertCurrent = async (held: ProjectAuthorityMutationPermit) => {
       if (!held) throw unavailable("The current activation permit is required.");
       await assertBoundaryAuthoringResumeCurrent(input.projectRoot, resume, undefined, { permit: held });
       if (sources && await policySourceSavedDigest(input.projectRoot, sources.id) !== sourceDigest)
         throw unavailable("The exact saved Source changed.");
-      const current = await loadBoundaryReviewContext(input.projectRoot, held);
+      const current = await loadBoundaryReviewContextHeld(input.projectRoot, held);
       if (explorationBoundaryCandidateDigest(current.candidate) !== candidateDigest
         || canonicalJsonDigest(current.bundle.mutation_bindings) !== canonicalJsonDigest(context.bundle.mutation_bindings))
         throw unavailable("The current Read selection or protected binding changed.");
@@ -82,8 +82,8 @@ export async function assessReadScopeForActivation(input: ReadScopeActivationAss
       },
       mutate: async () => readonly(), save: async () => readonly(), failure: unavailable,
     }, interact: async () => readonly() });
-    const result = await owner.assess(expected.candidate, permit);
+    const result = await owner.assessHeld(expected.candidate, permit);
     await assertCurrent(permit);
     return result;
-  }, { permit: input.permit });
+  });
 }
