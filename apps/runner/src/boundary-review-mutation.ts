@@ -894,144 +894,38 @@ export async function prepareBoundaryResourceReviewMutation(
   request: BoundaryResourceReviewRequest,
   schemaInspector: typeof inspectDatabase = inspectDatabase,
 ): Promise<BoundaryReviewMutationPreview> {
-  validateBoundaryResourceRequest(request);
-  const state = await loadBoundaryReviewFiles(projectRoot);
-  const configuredTrustedContext = await configuredTrustedContextForReviewMutation(
-    projectRoot,
-    state,
+  const { preview, partialScopeResolution } = await prepareBoundaryReviewRequests(
+    projectRoot, [request], schemaInspector,
   );
-  const reviewed = state.review.resources.find((resource) => resource.id === request.resource_id);
-  if (!reviewed) {
-    throw new Error(
-      `Boundary review resource ${request.resource_id} was not found in the schema visible to the reviewed read role. `
-      + "Verify the schema-qualified id and the role's schema USAGE and table SELECT grants, then rescan.",
-    );
-  }
-  validateBoundaryRequestAgainstResource(request, reviewed);
-  const resourceRemovalImpact = request.exclude
-    ? boundaryResourceRemovalImpact(state.candidate, request.resource_id, {
-      job_status: await removalJobStatus(projectRoot, state),
-    })
-    : undefined;
-  if (resourceRemovalImpact) assertBoundaryResourceRemovalAllowed(resourceRemovalImpact);
-  const previousBindings = reviewBindings(state);
-  const managedDecisions = managedDecisionsForRequest(request);
-  const inspection = await schemaInspector({
-    engine: state.lock.engine,
-    databaseUrlEnv: state.lock.source_env,
-    schema: state.lock.inspected_schema,
-    env: process.env,
-  });
-  if (request.auto_band && request.auto_band.remove !== true) {
-    assertDatabaseGrammarFeature(inspection, "automatic_numeric_bands");
-  }
-  assertCurrentInspectedResource(inspection, request.resource_id);
-  const project = await detectProjectContext(projectRoot);
-  const evidence = await loadStructuredProjectEvidence(project);
-  const mutationBuild = buildReviewMutationBoundary({
-    inspection,
-    project,
-    evidence,
-    state,
-    configuredTrustedContext,
-  });
-  const cleanBuild = mutationBuild.build;
-  let overrides = pruneAutoBoundaryReviewOverrides(
-    inspection,
-    boundaryReviewOverridesForCandidate({
-      progress: state.progress,
-      baseline: cleanBuild.exploration_boundary,
-      candidate: state.candidate,
-      actor: request.actor,
-      now: request.decided_at,
-    }),
-    {
-      project,
-      parsedEvidence: evidence.parsed,
-      existingContracts: evidence.existingContracts,
-      configuredTrustedContext,
-      previousBoundary: state.candidate,
-    },
-  ).overrides;
-  for (const decision of managedDecisions) {
-    overrides = applyManagedBoundaryReviewDecision(overrides, decision);
-  }
-  const build = buildAutoBoundary({
-    inspection,
-    project,
-    parsedEvidence: evidence.parsed,
-    existingContracts: evidence.existingContracts,
-    sourceEnv: state.lock.source_env,
-    inspectedSchema: state.lock.inspected_schema,
-    overrides,
-    deploymentProfile: state.candidate.deployment_profile,
-    configuredTrustedContext,
-    useConfiguredTrustedContextForInference:
-      mutationBuild.useConfiguredTrustedContextForInference,
-    ...(state.candidate.trusted_context.provider === "http_claims" ? {
-      httpClaims: {
-        tenantClaim: state.candidate.trusted_context.tenant_claim,
-        principalClaim: state.candidate.trusted_context.principal_claim,
-      },
-    } : {}),
-    ...(state.candidate.organization_scope ? {
-      singleOrganization: { organizationId: state.candidate.organization_scope.organization_id },
-    } : {}),
-  });
-  alignGeneratedReviewBudgets(build.exploration_boundary, state.candidate, request);
-
-  const candidate = buildReviewedCandidate({
-    previous: state.candidate,
-    generated: build.exploration_boundary,
-    inspectedResources: build.graph.resources,
-    request,
-  });
-  const partialScopeResolution = request.include === true
-    && canStageIncompleteScopeResolution(request)
-    && !build.exploration_boundary.pack.resources.some(
-      (resource) => resource.id === request.resource_id,
-    );
-  const preview = partialScopeResolution
-    ? {
-      candidate,
-      digest: explorationBoundaryCandidateDigest(candidate),
-    }
-    : reviewExplorationBoundaryCandidate(build.exploration_boundary, candidate);
-  assertRequestedExposureState(request, preview.candidate);
-  const diff = semanticDiff(
-    request.resource_id,
-    state.candidate,
-    preview.candidate,
-    managedDecisions.length > 0,
-  );
+  const diff = preview.semantic_diff[0]!;
   const decisionCore = {
     schema_version: "synapsor.boundary-review-mutation-decision.v1",
-    bindings: previousBindings,
+    bindings: preview.bindings,
     request: canonicalReviewRequest(request),
     next: {
-      generated_contract_digest: build.contract_digest,
-      generation_lock_fingerprint: build.exploration_boundary.generation_lock_fingerprint,
-      schema_fingerprint: build.lock.schema_fingerprint,
-      role_posture_fingerprint: build.lock.role_posture_fingerprint,
-      candidate_digest: preview.digest,
+      generated_contract_digest: preview.build.contract_digest,
+      generation_lock_fingerprint: preview.build.exploration_boundary.generation_lock_fingerprint,
+      schema_fingerprint: preview.build.lock.schema_fingerprint,
+      role_posture_fingerprint: preview.build.lock.role_posture_fingerprint,
+      candidate_digest: preview.candidate_digest,
     },
     semantic_diff: diff,
   };
   return {
     schema_version: "synapsor.boundary-review-mutation-preview.v1",
-    bindings: previousBindings,
+    bindings: preview.bindings,
     request,
     decision_digest: canonicalJsonDigest(decisionCore),
-    candidate_digest: preview.digest,
-    generated_contract_digest: build.contract_digest,
+    candidate_digest: preview.candidate_digest,
+    generated_contract_digest: preview.generated_contract_digest,
     semantic_diff: diff,
     candidate: preview.candidate,
-    build,
-    ...(state.progress ? { previous_progress: state.progress } : {}),
+    build: preview.build,
+    ...(preview.previous_progress ? { previous_progress: preview.previous_progress } : {}),
     partial_scope_resolution: partialScopeResolution,
-    boundary_root: state.boundary_root,
+    boundary_root: preview.boundary_root,
     source_database_changed: false,
-    ...(resourceRemovalImpact ? { resource_removal_impact: resourceRemovalImpact } : {}),
+    ...(preview.resource_removal_impacts?.[0] ? { resource_removal_impact: preview.resource_removal_impacts[0] } : {}),
   };
 }
 
@@ -1042,6 +936,19 @@ export async function prepareBoundaryReviewMutationBatch(
   expectedBindings?: BoundaryReviewMutationBindings,
   privateCondition?: ReviewedReadCurrentStatePrerequisite,
 ): Promise<BoundaryReviewMutationBatchPreview> {
+  return (await prepareBoundaryReviewRequests(
+    projectRoot, requests, schemaInspector, expectedBindings, privateCondition,
+  )).preview;
+}
+
+async function prepareBoundaryReviewRequests(
+  projectRoot: string,
+  requests: BoundaryResourceReviewRequest[],
+  schemaInspector: typeof inspectDatabase,
+  expectedBindings?: BoundaryReviewMutationBindings,
+  privateCondition?: ReviewedReadCurrentStatePrerequisite,
+): Promise<{ preview: BoundaryReviewMutationBatchPreview; partialScopeResolution: boolean }> {
+  requests = structuredClone(requests);
   if (requests.length < 1 || requests.length > 500) {
     throw new Error("Boundary-review decision files must contain 1-500 resource decisions.");
   }
@@ -1152,32 +1059,12 @@ export async function prepareBoundaryReviewMutationBatch(
     state.candidate,
     boundaryWideSettings,
   );
-  let candidate = state.candidate;
-  if (removedResources.length) {
-    // Membership changes are atomic: do not validate a transient dangling path
-    // between two removals that the operator submitted in the same batch.
-    candidate = structuredClone(candidate);
-    candidate.pack.resources = candidate.pack.resources.filter(resource => !removedResources.includes(resource.id));
-    pruneRelationshipsOutsideBoundary(candidate);
-  }
-  for (const request of requests) {
-    // Boundary-wide settings are carried through every resource mutation in
-    // the atomic batch. Otherwise a later resource rebuild can restore the
-    // generated default and strand a deep reviewed path under a shallower
-    // budget than the decision that admitted it.
-    const effectiveRequest = { ...request, ...boundaryWideSettings };
-    const next = buildReviewedCandidate({
-      previous: candidate,
-      generated: build.exploration_boundary,
-      inspectedResources: build.graph.resources,
-      request: effectiveRequest,
-    });
-    assertRequestedExposureState(request, next);
-    candidate = next;
-  }
-  for (const request of requests) {
-    if (request.private_model_fields?.length) restrictPrivateFieldAnalysis(candidate, request.resource_id, request.private_model_fields);
-  }
+  let candidate = buildReviewedCandidate({
+    previous: state.candidate,
+    generated: build.exploration_boundary,
+    inspectedResources: build.graph.resources,
+    requests: requests.map(request => ({ ...request, ...boundaryWideSettings })),
+  });
   if (privateCondition) {
     assertReviewedReadCurrentStatePrerequisite(privateCondition, inspection);
     candidate = { ...candidate, read_prerequisite: structuredClone(privateCondition) };
@@ -1185,10 +1072,13 @@ export async function prepareBoundaryReviewMutationBatch(
   }
   // Identity review can precede resource admission. Retain an empty disabled
   // candidate only for scope-only edits; activation still requires full validation.
+  const partialScopeResolution = requests.some(request => request.include === true
+    && canStageIncompleteScopeResolution(request)
+    && !build.exploration_boundary.pack.resources.some(resource => resource.id === request.resource_id));
   const scopeOnlyPreparation = candidate.pack.resources.length === 0
     && state.candidate.pack.resources.length === 0
     && !privateCondition
-    && requests.every(request => request.include !== true && canStageIncompleteScopeResolution(request));
+    && requests.every(canStageIncompleteScopeResolution);
   if (scopeOnlyPreparation && !state.authoring) {
     throw new Error("Identity-only review requires the saved authoring store. Migrate this legacy file-based review before continuing; nothing was saved.");
   }
@@ -1198,7 +1088,10 @@ export async function prepareBoundaryReviewMutationBatch(
   // Every request must survive later resource rebuilds and final normalization.
   // The generated baseline already includes the whole batch, so intermediate
   // candidates cannot serve as the "before" side of each resource's diff.
-  for (const request of requests) assertRequestedExposureState(request, reviewed.candidate);
+  for (const request of requests) {
+    assertRequestedExposureState(request, reviewed.candidate);
+    assertRequestedRelationshipsRetained(request, build.exploration_boundary, reviewed.candidate, build.graph.resources);
+  }
   const differences = requests.map((request) => semanticDiff(
     request.resource_id,
     state.candidate,
@@ -1219,7 +1112,7 @@ export async function prepareBoundaryReviewMutationBatch(
     },
     semantic_diff: differences,
   };
-  return {
+  return { partialScopeResolution, preview: {
     schema_version: "synapsor.boundary-review-mutation-batch-preview.v1",
     bindings,
     requests,
@@ -1233,7 +1126,7 @@ export async function prepareBoundaryReviewMutationBatch(
     boundary_root: state.boundary_root,
     ...(removalImpacts.length ? { resource_removal_impacts: removalImpacts } : {}),
     source_database_changed: false,
-  };
+  } };
 }
 
 function consistentBoundaryWideReviewSettings(
@@ -1939,119 +1832,94 @@ function managedDecisionsForRequest(
   return decisions;
 }
 
+/** Declarative construction only. Candidate-wide normalization/validation runs
+ * once after all membership and resource edits, against the inspected envelope. */
 function buildReviewedCandidate(input: {
   previous: ExplorationBoundaryDraft;
   generated: ExplorationBoundaryDraft;
   inspectedResources: AutoBoundaryResource[];
-  request: BoundaryResourceReviewRequest;
+  requests: BoundaryResourceReviewRequest[];
 }): ExplorationBoundaryDraft {
   const candidate = structuredClone(input.generated);
   if (input.previous.read_prerequisite) candidate.read_prerequisite = structuredClone(input.previous.read_prerequisite);
   candidate.pack.name = input.previous.pack.name;
   candidate.budgets = preserveReviewedBudgets(input.generated, input.previous);
-  if (input.request.max_ranked_groups !== undefined) {
-    candidate.budgets.max_ranked_groups = input.request.max_ranked_groups;
+  const settings = consistentBoundaryWideReviewSettings(input.requests);
+  for (const key of BOUNDARY_WIDE_REVIEW_REQUEST_KEYS) {
+    const value = settings[key];
+    if (value !== undefined) candidate.budgets[key] = value;
   }
-  if (input.request.max_queries_per_session !== undefined) {
-    candidate.budgets.max_queries_per_session = input.request.max_queries_per_session;
+  const maximum = reviewedAnalysisRelationshipHopLimit(candidate.budgets);
+  for (const resource of candidate.pack.resources) {
+    resource.relationships = resource.relationships.filter(relationship => (relationship.path_depth ?? 1) <= maximum);
   }
-  if (input.request.rate_limit_per_minute !== undefined) {
-    candidate.budgets.rate_limit_per_minute = input.request.rate_limit_per_minute;
-  }
-  for (const key of REVIEWABLE_BUDGET_REQUEST_KEYS) {
-    const value = input.request[key];
-    if (value !== undefined) {
-      (candidate.budgets as unknown as Record<string, number>)[key] = value;
-    }
-  }
-  if (input.request.max_analysis_relationship_hops !== undefined) {
-    const maximum = reviewedAnalysisRelationshipHopLimit(candidate.budgets);
-    for (const resource of candidate.pack.resources) {
-      resource.relationships = resource.relationships.filter(
-        (relationship) => (relationship.path_depth ?? 1) <= maximum,
-      );
-    }
-  }
-  const previousIncluded = new Set(input.previous.pack.resources.map((resource) => resource.id));
-  candidate.pack.resources = candidate.pack.resources.filter((resource) =>
-    previousIncluded.has(resource.id)
-      || (input.request.include === true && resource.id === input.request.resource_id));
-
-  if (input.request.exclude) {
-    candidate.pack.resources = candidate.pack.resources.filter(
-      (resource) => resource.id !== input.request.resource_id,
-    );
-  } else if (input.request.include) {
-    const generated = input.generated.pack.resources.find(
-      (resource) => resource.id === input.request.resource_id,
-    );
-    if (!generated) {
-      if (!canStageIncompleteScopeResolution(input.request)) {
-        throw new Error(
-          `Resource ${input.request.resource_id} remains blocked after the reviewed identity/scope choices and cannot be included.`,
-        );
+  const membership = new Set(input.previous.pack.resources.map(resource => resource.id));
+  const included = new Set<string>();
+  for (const request of input.requests) {
+    if (request.exclude) membership.delete(request.resource_id);
+    if (request.include) {
+      membership.add(request.resource_id);
+      included.add(request.resource_id);
+      if (!input.generated.pack.resources.some(resource => resource.id === request.resource_id)
+        && !canStageIncompleteScopeResolution(request)) {
+        throw new Error(`Resource ${request.resource_id} remains blocked after the reviewed identity/scope choices and cannot be included.`);
       }
-    } else if (!candidate.pack.resources.some((resource) => resource.id === generated.id)) {
-      candidate.pack.resources.push(structuredClone(generated));
     }
   }
-  candidate.pack.resources.sort((left, right) => left.id.localeCompare(right.id));
-  const previousResources = new Map(
-    input.previous.pack.resources.map((resource) => [resource.id, resource]),
-  );
-  for (const generatedResource of candidate.pack.resources) {
-    const previousResource = previousResources.get(generatedResource.id);
-    if (!previousResource) continue;
-    preserveBoundaryResourcePolicy(
-      generatedResource,
-      previousResource,
-      input.request,
-      generatedResource.id === input.request.resource_id,
-    );
+  candidate.pack.resources = candidate.pack.resources.filter(resource => membership.has(resource.id))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const previousResources = new Map(input.previous.pack.resources.map(resource => [resource.id, resource]));
+  const requests = new Map(input.requests.map(request => [request.resource_id, request]));
+  for (const resource of candidate.pack.resources) {
+    const previous = previousResources.get(resource.id);
+    const request = requests.get(resource.id);
+    if (previous) preserveBoundaryResourcePolicy(resource, previous, request ?? input.requests[0]!, Boolean(request), included);
   }
-  const resource = candidate.pack.resources.find(
-    (item) => item.id === input.request.resource_id,
-  );
-  if (!resource) {
-    if (hasAuthorityNarrowing(input.request)) {
-      throw new Error(`Resource ${input.request.resource_id} must be included before its field or relationship authority can be reviewed.`);
+  for (const request of input.requests) {
+    const resource = candidate.pack.resources.find(item => item.id === request.resource_id);
+    if (!resource) {
+      if (hasAuthorityNarrowing(request)) throw new Error(`Resource ${request.resource_id} must be included before its field or relationship authority can be reviewed.`);
+      continue;
     }
-    pruneRelationshipsOutsideBoundary(candidate);
-    if (candidate.pack.resources.length === 0
-      && canStageIncompleteScopeResolution(input.request)) {
-      return candidate;
-    }
-    return reviewExplorationBoundaryCandidate(input.generated, candidate).candidate;
+    applyReviewedResourceRequest(resource, request);
   }
+  pruneRelationshipsOutsideBoundary(candidate);
+  for (const request of input.requests) {
+    if (request.private_model_fields?.length) restrictPrivateFieldAnalysis(candidate, request.resource_id, request.private_model_fields);
+    assertRequestedRelationshipsRetained(request, input.generated, candidate, input.inspectedResources);
+  }
+  return candidate;
+}
 
-  setReviewedList(resource, "selectable_fields", input.request.selectable_fields);
-  setReviewedList(resource, "sortable_fields", input.request.sortable_fields);
-  setReviewedList(resource, "groupable_fields", input.request.groupable_fields);
-  setReviewedList(resource, "aggregate_measures", input.request.aggregate_measures);
-  setReviewedList(resource, "count_distinct_fields", input.request.count_distinct_fields);
-  if (input.request.filterable_fields) {
-    const allowed = new Set(input.request.filterable_fields);
+function applyReviewedResourceRequest(resource: ReviewedBoundaryResource, request: BoundaryResourceReviewRequest): void {
+  setReviewedList(resource, "selectable_fields", request.selectable_fields);
+  setReviewedList(resource, "sortable_fields", request.sortable_fields);
+  setReviewedList(resource, "groupable_fields", request.groupable_fields);
+  setReviewedList(resource, "aggregate_measures", request.aggregate_measures);
+  setReviewedList(resource, "count_distinct_fields", request.count_distinct_fields);
+  if (request.filterable_fields) {
+    const allowed = new Set(request.filterable_fields);
     resource.filterable_fields = Object.fromEntries(
       Object.entries(resource.filterable_fields).filter(([field]) => allowed.has(field)),
     );
   }
-  if (input.request.time_bucket_fields) {
-    const allowed = new Set(input.request.time_bucket_fields);
+  if (request.time_bucket_fields) {
+    const allowed = new Set(request.time_bucket_fields);
     resource.time_bucket_fields = Object.fromEntries(
       Object.entries(resource.time_bucket_fields).filter(([field]) => allowed.has(field)),
     );
   }
-  if (input.request.derived_measure) {
-    const reviewed = input.request.derived_measure;
+  if (request.derived_measure) {
+    const reviewed = request.derived_measure;
     const retained = (resource.derived_measures ?? []).filter((measure) => measure.name !== reviewed.name);
     resource.derived_measures = reviewed.remove
       ? retained
-      : [...retained, normalizedRequestedDerivedMeasure(reviewed, input.request.resource_id)]
+      : [...retained, normalizedRequestedDerivedMeasure(reviewed, request.resource_id)]
         .sort((left, right) => left.name.localeCompare(right.name));
     if (!resource.derived_measures.length) delete resource.derived_measures;
   }
-  if (input.request.numeric_band) {
-    const reviewed = input.request.numeric_band;
+  if (request.numeric_band) {
+    const reviewed = request.numeric_band;
     const retained = (resource.numeric_bands ?? []).filter((band) => band.name !== reviewed.name);
     resource.numeric_bands = reviewed.remove
       ? retained
@@ -2062,48 +1930,42 @@ function buildReviewedCandidate(input: {
         ...(reviewed.relationship ? { relationship: reviewed.relationship } : {}),
         edges: reviewed.edges,
         bucket_labels: reviewed.bucket_labels,
-      }, `${input.request.resource_id}.${reviewed.name} numeric band`)]
+      }, `${request.resource_id}.${reviewed.name} numeric band`)]
         .sort((left, right) => left.name.localeCompare(right.name));
     if (!resource.numeric_bands.length) delete resource.numeric_bands;
   }
-  if (input.request.auto_band) {
-    const reviewed = input.request.auto_band;
+  if (request.auto_band) {
+    const reviewed = request.auto_band;
     const { remove: _remove, ...definition } = reviewed;
     const retained = (resource.auto_bands ?? []).filter((policy) => policy.field !== reviewed.field);
     resource.auto_bands = reviewed.remove
       ? retained
       : [...retained, normalizeExplorationAutoBandPolicy(
         definition,
-        `${input.request.resource_id}.${reviewed.field} auto band`,
+        `${request.resource_id}.${reviewed.field} auto band`,
       )].sort((left, right) => left.field.localeCompare(right.field));
     if (!resource.auto_bands.length) delete resource.auto_bands;
   }
-  if (input.request.relationship_ids) {
-    const allowed = new Set(input.request.relationship_ids);
+  if (request.relationship_ids) {
+    const allowed = new Set(request.relationship_ids);
     resource.relationships = resource.relationships.filter((relationship) => allowed.has(relationship.id));
   }
-  if (input.request.relationship_only) resource.relationship_only = true;
-  if (input.request.nullable_relationship) {
+  if (request.relationship_only) resource.relationship_only = true;
+  if (request.nullable_relationship) {
     const relationship = resource.relationships.find(
-      (item) => item.id === input.request.nullable_relationship!.relationship_id,
+      (item) => item.id === request.nullable_relationship!.relationship_id,
     );
     if (!relationship) {
       throw new Error(
-        `Relationship ${input.request.nullable_relationship.relationship_id} is not in the reviewed resource pack.`,
+        `Relationship ${request.nullable_relationship.relationship_id} is not in the reviewed resource pack.`,
       );
     }
     if (relationship.unmatched_rows !== "review_required"
       && relationship.nullable !== true) {
       throw new Error(`Relationship ${relationship.id} is not nullable and has no unmatched-row decision.`);
     }
-    relationship.unmatched_rows = input.request.nullable_relationship.unmatched_rows;
+    relationship.unmatched_rows = request.nullable_relationship.unmatched_rows;
   }
-  pruneRelationshipsOutsideBoundary(candidate);
-  if (input.request.private_model_fields?.length) {
-    restrictPrivateFieldAnalysis(candidate, input.request.resource_id, input.request.private_model_fields);
-  }
-  assertRequestedRelationshipsRetained(input.request, input.generated, candidate, input.inspectedResources);
-  return reviewExplorationBoundaryCandidate(input.generated, candidate).candidate;
 }
 
 type ReviewedBoundaryResource = ExplorationBoundaryDraft["pack"]["resources"][number];
@@ -2113,6 +1975,7 @@ function preserveBoundaryResourcePolicy(
   previous: ReviewedBoundaryResource,
   request: BoundaryResourceReviewRequest,
   editedResource: boolean,
+  includedResources: ReadonlySet<string>,
 ): void {
   if (previous.relationship_only) generated.relationship_only = true;
   const visibilityChanges = new Set([
@@ -2235,9 +2098,8 @@ function preserveBoundaryResourcePolicy(
     .filter((relationship) =>
       previousRelationships.has(relationship.id)
       || requestedRelationships.has(relationship.id)
-      || (request.include === true
-        && (relationship.path_depth ?? 1) <= 2
-        && relationshipTouchesResource(relationship, request.resource_id)))
+      || ((relationship.path_depth ?? 1) <= 2
+        && [...includedResources].some(resourceId => relationshipTouchesResource(relationship, resourceId))))
     .map((relationship) => {
       const prior = previousRelationships.get(relationship.id);
       if (relationship.unmatched_rows === "review_required"
