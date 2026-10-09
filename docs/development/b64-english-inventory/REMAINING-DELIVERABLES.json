@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-09T06:18:48.912861+00:00",
+  "updated": "2026-10-09T06:23:46.870867+00:00",
   "accepted_Main": "be48873feaff68942d9de9a390d90712fca22272 (scoped DEV integration; whole types/full suite remain open)",
   "B2_composition": "be48873f: accepted02d structured caller/receipt ports/Read held-permit closure + independently accepted exact-code contention fix. Public PG/MySQL arithmetic/races pending; no release acceptance.",
   "windows": {
@@ -186,7 +186,7 @@
       "decision": "Owner approved bounded format repair and ONE fresh $0 MySQL public job AFTER independent acceptance. Resumev4/protocolv3 prospective; existing Resume store; safely refuse older setups; held job/accounting/history untouched; no migration/replay or receipt capability implied."
     }
   ],
-  "working_preview": "a9152e403acbce2d136ff7a8bbf3d64bfa315aa2 on codex/b64-d01-controls-compose-20261009; independently accepted narrow D01 controls composed, Main64+UI6+MR6 PASS separately; whole integration/types/full/public acceptance OPEN.",
+  "working_preview": "6fd1f938dde854daac0825e21aea5f0451b24767 on codex/b64-d01-controls-compose-20261009; scoped D01 composition64+UI6+MR6 separate PASS, acceptedcompiler path+regression Main2PASS. Whole types/full/public integration OPEN.",
   "controlling_addendum": {
     "path": "/home/sandesh-tiwari/.codex/attachments/624dcdf9-3d8f-47d2-a0f2-7f3e595e2ccd/Pasted text.txt",
     "sha256": "92a1073fac2e036874a66d1f15a6475db4c51424a084382c95e349521d1cba7a",
@@ -205,5 +205,6 @@
       "One pin-bound supported setup ready fixture then fresh isolated case copies; private oracle separate.",
       "Existing windows/resources/frozen candidates/paid CLOSED unchanged; no file-count goal/new capability/framework."
     ]
-  }
+  },
+  "compiler_typed_path_integration": "MAIN-I01944-TYPED-PATH-INTEGRATION.json"
 }

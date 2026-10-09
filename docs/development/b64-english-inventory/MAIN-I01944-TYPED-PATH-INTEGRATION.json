@@ -1,0 +1,39 @@
+{
+  "source_pin": "6fd1f938dde854daac0825e21aea5f0451b24767",
+  "product_cherry_pick": "16cc29f7 from273af54d",
+  "test_cherry_pick": "6fd1f938 from718111a2",
+  "source_identity": "Whole compile.ts exact accepted273 donor; sole failure optional path argument, condition/code/message/guards unchanged. Whole regression fixture unchanged718 donor.",
+  "independent_verdict": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/b65-native-review/docs/development/b65-i01944-independent-review/VERDICT.json",
+    "sha256": "ceb2f8d079de39001a87746ec2e72a65eb0e40efbc98a6044b4da078ea65d32e",
+    "scope": "Exact compiler source + owner component artifact ACCEPT; no consumer/native/public/build/whole-English count transfer."
+  },
+  "owner_preserved": "Actual before2 path-only failures; same2+old14 completecollection+19singleton=35PASS in separate owner packetfe061. Not rerun or relabelled here.",
+  "Main": {
+    "pass": 2,
+    "fail": 0,
+    "skip": 0,
+    "proof": "Actual current-source aliases, relative compiler import and genuine compileActionRule/ActionRuleError on declared PG/MySQL fixtures; no DB/provider/compiled dist.",
+    "runtime": "isolated0700 HOME/TMP; bwrap unshare-net; max1; fixed90s outer timeout; memory/disk floors >=8GiB; exit0 all ended",
+    "raw": [
+      {
+        "path": "/var/tmp/synapsor-main-generation-context-owned/evidence/main-compiler-diagnostic.json",
+        "sha256": "4d537ec15be2c85292b971e214be77e40530d7697183ca4d24a8e7df95a6ddc3"
+      },
+      {
+        "path": "/var/tmp/synapsor-main-generation-context-owned/evidence/main-compiler-diagnostic.log",
+        "sha256": "995da600efa52052f78e2f91fce25c79b755b536c65c0971b5ab4e8e2e4ead1e"
+      },
+      {
+        "path": "/var/tmp/synapsor-main-generation-context-owned/evidence/main-compiler-diagnostic-manifest.json",
+        "sha256": "080233eecf06c2e4d5bb8df92a6dd0aeadc41d9e1f3a556add63c5414fe2bf9e"
+      },
+      {
+        "path": "/var/tmp/synapsor-main-generation-context-owned/evidence/main-compiler-diagnostic-exit.txt",
+        "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+      }
+    ]
+  },
+  "open": "Actual typed diagnostic producer/model/decoder/view chain under addendum still open. Helper15 success separate; no count closure; whole types/full suite/delivery OPEN.",
+  "paid": "CLOSED; held/frozen/Source unchanged"
+}
