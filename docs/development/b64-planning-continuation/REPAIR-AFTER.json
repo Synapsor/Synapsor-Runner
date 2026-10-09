@@ -1,0 +1,24 @@
+{
+  "base": "855bf744",
+  "before_test_commit": "ae6668e7",
+  "status": "OWNER_COMPONENT_AFTER_INDEPENDENT_VARIANT_PENDING",
+  "pass": 14,
+  "fail": 0,
+  "evidence": "/var/tmp/synapsor-b64-real-readback-owned/evidence/planning-repair-after.json",
+  "repairs": [
+    "recordPlanning immutable requested stage compared to actual acknowledged Resume stage; wrong persisted state remains preserved/refused",
+    "Existing shared typed Read scope schema and required field advertised by actual Remove tool branch"
+  ],
+  "independent_before": "e44913fb / d068 reviewer evidence preserved; unchanged stage mutation after pending R1",
+  "claims": [
+    "13 original native controls unchanged plus1 actual outgoing-schema control pass",
+    "No actual removal or public fresh-process proof claimed",
+    "No new typecheck for5-line product change; prior whole typecheck remains failing, no whole PASS"
+  ],
+  "source_manifest": {
+    "authoring-read-scope-native.ts": "e2a612f71b24b0da7771a01d77f6378144675564a15b45ba01197053ea0cdeee",
+    "boundary-job-model.ts": "75a79208caa74906cfae60b74f682493e4d3d71989d7903704ea5d519177219e",
+    "boundary-planning-remove-contract.test.ts": "96d3f7c787dd51946c484b37ec37621b3ba99a6986025b14bf661e0752d323b0"
+  },
+  "physical_end": "2026-10-09T05:20:02Z"
+}

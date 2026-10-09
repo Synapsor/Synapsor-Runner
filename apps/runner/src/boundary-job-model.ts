@@ -492,8 +492,9 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState, workflow?: "progr
         ...(semanticOutcomes.length ? [{
           type: "object" as const,
           additionalProperties: false,
-          required: ["status", "read_mode", "action_mode", "action_outcome", "summary"],
+          required: ["status", "read_mode", "action_mode", "action_outcome", "summary", ...(structuredScope ? ["read_scope"] : [])],
           properties: {
+            ...(structuredScope ? { read_scope: readScopeProposalSchema } : {}),
             status: { type: "string", enum: ["planned"] },
             intended_client: { type: "string", enum: authoringClientChoices.map((entry) => entry.value) },
             read_mode: { type: "string", enum: ["none", ...(state.read.exact_reusable_revision_count > 0 ? ["reuse"] : [])] },

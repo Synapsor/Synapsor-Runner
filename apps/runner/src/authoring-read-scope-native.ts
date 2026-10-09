@@ -247,14 +247,14 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     const generation = authoringPlanningCheckpoint(authoringReadCheckpoint(state.generation, plan.completion,
       readScopeConsumption(question.read_scope!)), plan.completion, planningResult.material_digest);
     const questions = [...state.questions, question];
-    const expected = canonicalJsonDigest({ questions, generation, planningResult, planningResults: appendBoundaryPlanningResult(state.resume.planning_results ?? [], planningResult), read: state.read ?? null,
+    const expected = canonicalJsonDigest({ stage: "planning", questions, generation, planningResult, planningResults: appendBoundaryPlanningResult(state.resume.planning_results ?? [], planningResult), read: state.read ?? null,
       pendingRevision: state.resume.pending_read_revision_state ?? null });
     await input.ports.assertCurrent(permit);
     if (snapshot().revision !== state.revision) return unavailable("The original planning checkpoint revision");
     await input.ports.save(structuredClone({ questions, generation, planningResult, stage: "planning" as const,
       acknowledgeCompletedTurn: false, subject: "The exact completed planning result" }), permit);
     const acknowledged = snapshot();
-    if (canonicalJsonDigest({ questions: acknowledged.questions, generation: acknowledged.generation,
+    if (canonicalJsonDigest({ stage: acknowledged.resume.stage, questions: acknowledged.questions, generation: acknowledged.generation,
       planningResult: acknowledged.resume.planning_result, planningResults: acknowledged.resume.planning_results, read: acknowledged.read ?? null,
       pendingRevision: acknowledged.resume.pending_read_revision_state ?? null }) !== expected)
       return unavailable("The exact acknowledged planning checkpoint");

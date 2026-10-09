@@ -1,14 +1,14 @@
 # Prospective planning continuation handoff
 - Base9f8fe16f; branch codex/b64-planning-continuation-20261009; original629/cards history preserved.
-- Product7a9243a3 +73b1a90c + final successor: v4/v3, strict plan/invocation, genuine generation checkpoint, native capture/restore, pending planning predecessor.
-- Owner approved format; this packet remains independently UNACCEPTED, not a public/paid qualification.
-- Exact API/hook contract: API.md; Main sole boundary writer/routing owner.
-- Complete plan/q/generation captured before wait in one CAS; append-only planning_results preserves old audit; current selection exact.
-- Actual dispatch and cold currentness use same request preparation; original/post-own-append history separate, Source/answers/prompt/config exact.
-- NoRead starts unproposed; real explicit Yes/No then cold reload tested; requested Read never invents analysis/confirmation.
-- Evidence: IMPLEMENTATION-RESULT.json with source hashes and all first/results retained;13 distinct native controls across bounded checkpoints.
-- Types:417 diagnostics,0owned;38 old v2 fixture literals. Not whole types PASS; capacity owner must update program envelope predicate.
-- Next: R1 independent preseal0a1ac221 review; Main public interruption/restart tests and one fresh $0 MySQL only after acceptance.
-- Held MySQL old job untouched/unsupported for new transition; no logs adopted, no counter reset, no provider or Source effects.
-- Physical END Slot4: no owned runtime; existing worktree only, no copies/snapshots; private backup, keep all storage.
-- B63e413/cards653+a4 preserved/open as previously; no new lane or frozen changes; paid CLOSED.
+- Core7a9243a3→73b1a90c→855bf744; beforeae6668e7 + final repair successor, private-pushed.
+- Owner approved prospective v4/v3; independent acceptance/public cold continuation remain pending.
+- Exact APIs Main must wire: API.md; no boundary-commands edits by this lane.
+- Complete plan/q/generation captured in one CAS; immutable full history retained; native Read pending is not analysis/consent.
+- R1 before7P1F preserved: wrong acknowledged stage accepted. Fixed expected/actual exact stage tuple; committed wrong state not rolled back.
+- Remove actual outgoing schema before0P1F; existing typed read_scope property/required now advertised, no new semantics.
+- Exact repair after14P0F:13 unchanged native controls +1 outgoing schema; independent unchanged stage variant next.
+- Evidence/source hashes: REPAIR-BEFORE.json, REPAIR-AFTER.json; all older results preserved.
+- Whole types still not PASS: prior417 diagnostics,0owned;38 old v2 fixture pins and capacity envelope predicate require their owners.
+- Next: R1 unchanged8 after + final verdict; Main actual public cold continuation/fresh MySQL only after acceptance.
+- Held old job untouched; no response-log adoption/replay/reset/Source effects; paid CLOSED/candidates untouched.
+- Physical END Slot3; no owned runtime/copies/new worktree. Keep all storage; private backup only.
