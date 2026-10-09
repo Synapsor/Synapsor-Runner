@@ -1,0 +1,56 @@
+{
+  "base": "c361a4a0",
+  "before_fixture_pin": "22b21308",
+  "owned": [
+    "apps/runner/src/boundary-library.ts",
+    "apps/runner/src/boundary-library-typed.test.ts"
+  ],
+  "contract": [
+    "Name/create/select operations never manufacture a typed review submission",
+    "Existing confirmations retain exact native origins and derive current applicability through existing owner",
+    "Origin resolution uses held mutation permit; no nested authority lease",
+    "New identity forks remain unconfirmed; old entry and its history remain saved",
+    "Native write continuation checks complete immutable intended authoring state and exact returned writer binding under same permit",
+    "File library.v2 rejects old.v1 and malformed embedded current progress without migration/resave",
+    "Discard retains current READ_REVIEW_PROTOCOL; no old format initialization"
+  ],
+  "before": {
+    "first": "0PASS/6FAIL: five default5s timeouts and oldfile.v1 incorrectly accepted; preserved, not six distinct product causes",
+    "diagnostic": "Actual fresh/signoff fixture completed. One rename with30s test timeout reached POLICY_MUTATION_BUSY: library dropped held permit before native immutable origin resolution. Runner timeout unchanged.",
+    "evidence": [
+      "/var/tmp/synapsor-b64-read-library-owned/evidence/before.json",
+      "/var/tmp/synapsor-b64-read-library-owned/evidence/before-rename-diagnostic.json",
+      "/var/tmp/synapsor-b64-read-library-owned/tmp/library-fixture-stages.jsonl"
+    ]
+  },
+  "after": {
+    "pass": 6,
+    "fail": 0,
+    "skip": 0,
+    "test_command": "env HOME=/var/tmp/synapsor-b64-read-library-owned/home TMPDIR=/var/tmp/synapsor-b64-read-library-owned/tmp node node_modules/vitest/vitest.mjs run apps/runner/src/boundary-library-typed.test.ts --maxWorkers=1 --minWorkers=1 --testTimeout=30000 --reporter=json --outputFile=/var/tmp/synapsor-b64-read-library-owned/evidence/after1.json",
+    "evidence": "/var/tmp/synapsor-b64-read-library-owned/evidence/after1.json"
+  },
+  "types": {
+    "command": "node node_modules/typescript/bin/tsc -b --pretty false",
+    "whole_build": "FAIL:315 external diagnostics on this integration base",
+    "owned_product": 0,
+    "owned_tests": 0,
+    "first_owned_fixture_errors": "Two literal-widening errors corrected using existing BoundaryReviewSubmission annotation; no runtime/assertion change",
+    "evidence": "/var/tmp/synapsor-b64-read-library-owned/evidence/types-after.log"
+  },
+  "resource_launch": {
+    "slot": 2,
+    "workers": 1,
+    "home_tmp": "owned0700",
+    "memory_available_kib": 20489332,
+    "disk_available_bytes": 62026870784
+  },
+  "independent_verdict": "PENDING R2; no self-acceptance",
+  "remaining_scope": [
+    "Genuine active-name fork/public activation integration not exercised here; new identity must remain unconfirmed",
+    "Main owns existing public context/domain/auto/artifact wrappers; no changes to those files",
+    "Existing native rescan/reconciliation entry integration not newly qualified by these six cases",
+    "Original Read57 decision sites remain previously closed on accepted branches; no global public closure inferred from this port"
+  ],
+  "safety": "No Source DB calls/provider/paid work or activation; fixture uses real fresh native initialization and explicit structural signoff. No generated ledgers/credentials committed."
+}

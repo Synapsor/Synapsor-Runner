@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { AUTO_BOUNDARY_OVERRIDES_VERSION, BOUNDARY_REVIEW_SUBMISSION_VERSION, boundaryReviewDecisionRefs,
-  buildAutoBoundary, explorationBoundaryCandidateDigest, loadActivatedExplorationBoundaries } from "./auto-boundary.js";
+  buildAutoBoundary, loadActivatedExplorationBoundaries, type BoundaryReviewSubmission } from "./auto-boundary.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { createBoundaryReviewProgress } from "./boundary-review-domain.js";
 import { READ_REVIEW_PROTOCOL } from "./control-policy-read-authoring.js";
@@ -39,22 +39,31 @@ async function context(projectRoot: string) {
   return { projectRoot, draft: loaded.draft, currentCandidate: loaded.candidate,
     currentProgress: loaded.progress, expectedAuthoring: loaded.bundle.mutation_bindings.authoring };
 }
+async function stage(projectRoot: string, value: string) {
+  await fs.appendFile(path.join(os.tmpdir(), "library-fixture-stages.jsonl"), `${JSON.stringify({ projectRoot, stage: value })}\n`);
+}
 async function setup() {
   const projectRoot = await root(); const prepared = build(projectRoot);
+  await stage(projectRoot, "before_guided");
   const guided = await initializeGuidedProject({ projectRoot, build: prepared, runnerVersion: "1.8.0", instantOnboarding: true });
+  await stage(projectRoot, "after_guided");
   const config = await readRuntimeConfig(guided.config_path);
   await initializeFreshGovernedAuthoring({ projectRoot, build: prepared, config, storePath: guided.store_path, actor: "declared library operator" });
+  await stage(projectRoot, "after_fresh");
   const before = await loadBoundaryReviewContext(projectRoot);
-  const submission = { schema_version: BOUNDARY_REVIEW_SUBMISSION_VERSION, candidate_digest: before.bundle.candidate_digest,
+  const submission: BoundaryReviewSubmission = { schema_version: BOUNDARY_REVIEW_SUBMISSION_VERSION, candidate_digest: before.bundle.candidate_digest,
     decisions: boundaryReviewDecisionRefs(before.candidate) };
   const reviewed = createBoundaryReviewProgress({ draft: before.draft, candidate: before.candidate, previous: before.progress,
     submission, resolvedOrigins: before.resolvedOrigins, revision: before.progress!.revision + 1, actor: "declared library operator",
     reason: "Explicitly submit the displayed exact structural settings for the library fixture." });
+  await stage(projectRoot, "before_signoff");
   await saveReadReviewSignoff({ projectRoot, context: before, progress: reviewed, submission });
+  await stage(projectRoot, "after_signoff");
   const saved = (await native.readProjectReadAuthoring(projectRoot))!;
   expect(saved.selected!.progress.confirmations.length).toBeGreaterThan(0);
   expect(saved.selected!.progress.confirmations.every(item => item.origin)).toBe(true);
   await expect(loadActivatedExplorationBoundaries(projectRoot)).rejects.toMatchObject({ code: "ENOENT" });
+  await stage(projectRoot, "setup_complete");
   return { projectRoot, prepared, saved };
 }
 
