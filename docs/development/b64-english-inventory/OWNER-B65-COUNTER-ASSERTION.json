@@ -1,0 +1,20 @@
+{
+  "kind": "owner_assertion",
+  "received": "2026-10-08 America/Los_Angeles",
+  "scope": {
+    "environment": "owned disposable local test database ONLY",
+    "database": "b65_s04",
+    "relation": "b65_public.credits"
+  },
+  "assertion": "Every writer (Runner and the participating test scripts; there are no other writers) increments version on every UPDATE.",
+  "asserted_by": "Owner Sandesh, direct user instruction",
+  "source_of_evidence": "operator/source-owner assertion; not schema trigger proof or policy Source citation",
+  "limitations": [
+    "Not a general or customer claim.",
+    "No assertion about any other relation/database/writer.",
+    "No new trigger or grant authorized by this assertion.",
+    "Existing expected-version/currentness/write-count/idempotency/privacy and receipt checks remain."
+  ],
+  "authorized_next": "D01, then all five public arithmetic cases and selected races through ordinary reviewed product flow; record exact deciding checks.",
+  "future_note": "POST-B65: offer optional separately reviewed trigger enforcing counter increment; characterization/design only until separately scoped implementation."
+}
