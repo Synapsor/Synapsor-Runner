@@ -5,6 +5,7 @@ import type { RuntimeActionRuleRegistryV1 } from "@synapsor-runner/action-rules"
 import type { BoundProjectPolicyStore } from "./control-policy-store.js";
 import { executionConfigForReview, SEMANTIC_ACTION_RUNTIME_CONFIG } from "./semantic-execution-state.js";
 import { assertHardLimitWriterSetup } from "./hard-limit-writer-setup.js";
+import { projectHardLimitActivationWriterSelections } from "./hard-limit-writer-selection.js";
 
 /** The authority writer owns publication. This adapter supplies its current
  * governed configuration to the same native prerequisite used by deployment;
@@ -12,6 +13,7 @@ import { assertHardLimitWriterSetup } from "./hard-limit-writer-setup.js";
 export async function assertHardLimitAuthorityWriterAdmission(input: {
   projectRoot: string;
   registry: RuntimeActionRuleRegistryV1;
+  authorityDigest: string;
   publication?: { configPath: string; after: string };
   binding?: BoundProjectPolicyStore;
   env?: NodeJS.ProcessEnv;
@@ -43,8 +45,11 @@ export async function assertHardLimitAuthorityWriterAdmission(input: {
     raw = parsed as Record<string, unknown>;
   }
   const review = await executionConfigForReview(root, configPath, raw, input.binding, input.env);
-  await assertHardLimitWriterSetup({ registry: input.registry,
+  const config = await projectHardLimitActivationWriterSelections({ projectRoot: root, registry: input.registry,
+    authorityDigest: input.authorityDigest,
     config: resolveRuntimeConfig(review.config as RuntimeConfig, path.dirname(configPath)), env: input.env });
+  await assertHardLimitWriterSetup({ registry: input.registry,
+    config, env: input.env });
 }
 
 async function optionalConfig(file: string): Promise<string | undefined> {

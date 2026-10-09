@@ -323,6 +323,7 @@ import {
 } from "./semantic-action-deployment.js";
 import { SemanticWriterPostureError, executionSetupProblem } from "./semantic-execution-setup.js";
 import { writerProvisioningSql } from "./writer-provisioning.js";
+import { reviewHardLimitActionWriter } from "./hard-limit-action-review.js";
 export { reviewVerifiedActionAuthority } from "./verified-action-review.js";
 import {
   reviewSemanticSupervisedExecution,
@@ -437,7 +438,6 @@ import { loadReadPrerequisiteSourceReview } from "./read-prerequisite-source-rev
 import { generateModelReadPrerequisite, validateReadPrerequisiteBusinessAnswer } from "./read-prerequisite-model.js";
 import { type ReadPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
 import { parseReadPrerequisiteBusinessDecisions, type ReadPrerequisiteBusinessDecision } from "./read-prerequisite-decisions.js";
-
 const REVIEWED_SHAPE_LIMIT_FLAGS = [
   ["--max-rows", "max_rows"],
   ["--max-groups", "max_groups"],
@@ -10595,7 +10595,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       : [];
     const reviewedOutcomes = new Set(semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome));
     const retainedOutcomeCount = semanticActionAuthorityDraft.authority.rules.filter((entry) => !reviewedOutcomes.has(entry.rule.outcome)).length;
-    const approveActivation = exactActiveAction || await (input.session.confirmActivation ?? input.session.confirm)(
+    const approveActivation = exactActiveAction || (await reviewHardLimitActionWriter({ projectRoot: input.projectRoot, baseConfigPath: input.baseConfigPath, draft: semanticActionAuthorityDraft, session: input.session }) && await (input.session.confirmActivation ?? input.session.confirm)(
       `Activate verified Action Boundary "${semanticActionAuthorityDraft.authority.action_boundary.name}" for ${semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome).join(", ")}?`,
       {
         activationView: proposalActivationView(),
@@ -10621,7 +10621,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           "/details shows the exact immutable authority and digest.",
         ],
       },
-    );
+    ));
     if (approveActivation) {
       const activated = exactActiveAction ? { activation: exactActiveAction } : await activateSemanticActionRuntime({
         projectRoot: input.projectRoot,
