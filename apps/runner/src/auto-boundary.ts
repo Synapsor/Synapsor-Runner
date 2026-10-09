@@ -1,3 +1,4 @@
+import { decodeReadBoundaryDraftFile, encodeReadBoundaryDraftFile, decodeReadBoundaryActiveFile, encodeReadBoundaryActiveFile } from "./read-boundary-artifact.js";
 import fs from "node:fs/promises";
 import { principalScopeReviewDecision } from "./boundary-principal-review.js";
 import { isReadRelationshipScopePair } from "./read-relationship-scope.js";
@@ -61,7 +62,9 @@ export const CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION =
   "synapsor.configured-trusted-context-authority.v1";
 export const EXPLORATION_BOUNDARY_VERSION = "synapsor.exploration-boundary.v2";
 export const AUTO_BOUNDARY_OVERRIDES_VERSION = "synapsor.auto-boundary-overrides.v1";
+/** Existing authority-set digest domain: a file-envelope bump must not rehash authority. */
 export const ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION = "synapsor.active-exploration-boundaries.v1";
+export const ACTIVE_EXPLORATION_BOUNDARY_SET_FILE_VERSION = "synapsor.active-exploration-boundaries.v2";
 export const AUTO_BOUNDARY_COMPILER_VERSION = "2.0.0";
 export const AUTO_BOUNDARY_SPEC_VERSION = "1.9.0";
 export const SUPPORTED_AUTO_BOUNDARY_SPEC_VERSIONS = new Set(["1.8.0", AUTO_BOUNDARY_SPEC_VERSION]);
@@ -848,7 +851,7 @@ export function hasReviewedPrincipalScope(
 }
 
 export type ActiveExplorationBoundarySet = {
-  schema_version: typeof ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION;
+  schema_version: typeof ACTIVE_EXPLORATION_BOUNDARY_SET_FILE_VERSION;
   selected_name: string;
   boundaries: ActivatedExplorationBoundary[];
   updated_at: string;
@@ -1923,7 +1926,7 @@ async function writeAutoBoundaryArtifactsUnlocked(input: Parameters<typeof write
     await fs.writeFile(path.join(temporary, "domain.synapsor.sql"), contextDsl(input.build.dsl), "utf8");
     await fs.writeFile(path.join(temporary, "read-capabilities.synapsor.sql"), capabilityDsl(input.build.dsl), "utf8");
     await fs.writeFile(path.join(temporary, "synapsor.candidate.contract.json"), json(input.build.contract), "utf8");
-    await fs.writeFile(path.join(temporary, "exploration-boundary.draft.json"), json(input.build.exploration_boundary), "utf8");
+    await fs.writeFile(path.join(temporary, "exploration-boundary.draft.json"), json(encodeExplorationBoundaryDraftArtifact(input.build.exploration_boundary, input.build.lock)), "utf8");
     await fs.writeFile(path.join(temporary, "generation-review.json"), json(input.build.review), "utf8");
     await fs.writeFile(path.join(temporary, "review-overrides.json"), json(input.build.overrides), "utf8");
     await fs.writeFile(path.join(temporary, "contract-tests.json"), json(input.build.tests), "utf8");
@@ -2706,13 +2709,38 @@ export function readDiscoveryCompatibility(
     describeExplorationBoundaryMetadata(boundary, [resource], reviewable)), digest, boundary.pack.name);
 }
 
+/** Strict file serialization only; the existing payload owner still validates its lock. */
+export function parseExplorationBoundaryDraftArtifact(value: unknown, lock: GenerationLock): ExplorationBoundaryDraft {
+  return decodeReadBoundaryDraftFile(value, (boundary): asserts boundary is ExplorationBoundaryDraft => {
+    assertDraftArtifactPayload(boundary, lock);
+  });
+}
+export function encodeExplorationBoundaryDraftArtifact(boundary: ExplorationBoundaryDraft, lock: GenerationLock) {
+  return encodeReadBoundaryDraftFile(boundary, (value): asserts value is ExplorationBoundaryDraft => {
+    assertDraftArtifactPayload(value, lock);
+  });
+}
+function assertDraftArtifactPayload(value: unknown, lock: GenerationLock): asserts value is ExplorationBoundaryDraft {
+  if (!isRecord(value) || !isRecord(value.pack) || !Array.isArray(value.pack.resources))
+    throw new Error("Stored Read draft payload is invalid.");
+  const boundary = value as unknown as ExplorationBoundaryDraft;
+  if (!boundary.pack.resources.length) assertStoredExplorationMetadata(boundary, lock);
+  else assertStoredExplorationPolicy(boundary, lock);
+}
+
 export async function readOptionalExplorationDraft(projectRoot: string): Promise<ExplorationBoundaryDraft | undefined> {
-  try {
-    return JSON.parse(await fs.readFile(path.join(projectRoot, DEFAULT_GENERATED_DIR, "exploration-boundary.draft.json"), "utf8")) as ExplorationBoundaryDraft;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+  let source: string;
+  try { source = await fs.readFile(path.join(projectRoot, DEFAULT_GENERATED_DIR, "exploration-boundary.draft.json"), "utf8"); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; }
+  // A present artifact with a missing/invalid lock is not an absent draft.
+  let lock: GenerationLock;
+  try { lock = JSON.parse(await fs.readFile(path.join(projectRoot, ".synapsor/generation-lock.json"), "utf8")) as GenerationLock; }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT")
+      throw new Error("READ_BOUNDARY_ARTIFACT_INVALID: The present draft has no exact generation lock; no authority was loaded.", { cause: error });
     throw error;
   }
+  return parseExplorationBoundaryDraftArtifact(JSON.parse(source), lock);
 }
 
 async function assertRuntimeReadDiscoveryFits(projectRoot: string, boundaries: ActivatedExplorationBoundary[]): Promise<void> {
@@ -2773,10 +2801,9 @@ export async function activateExplorationBoundary(input: ExplorationBoundaryActi
 async function activateExplorationBoundaryUnlocked(input: ExplorationBoundaryActivationInput,
   permit: ProjectAuthorityMutationPermit): Promise<ActivatedExplorationBoundary> {
   const projectRoot = path.resolve(input.projectRoot);
-  const draftPath = path.join(projectRoot, DEFAULT_GENERATED_DIR, "exploration-boundary.draft.json");
   const lockPath = path.join(projectRoot, ".synapsor/generation-lock.json");
-  const draft = input.reviewDraft
-    ?? JSON.parse(await fs.readFile(draftPath, "utf8")) as ExplorationBoundaryDraft;
+  const draft = input.reviewDraft ?? await readOptionalExplorationDraft(projectRoot);
+  if (!draft) throw new Error("The disabled Read draft is unavailable; no authority was activated.");
   const lock = input.generationLock
     ?? JSON.parse(await fs.readFile(lockPath, "utf8")) as GenerationLock;
   const reviewed = reviewExplorationBoundaryCandidate(draft, input.candidate);
@@ -3238,12 +3265,12 @@ async function deactivateExplorationBoundaryUnlocked(
   } else {
     const selected = remaining.at(-1)!;
     const set: ActiveExplorationBoundarySet = {
-      schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION,
+      schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_FILE_VERSION,
       selected_name: selected.pack.name,
       boundaries: remaining,
       updated_at: new Date().toISOString(),
     };
-    await writePrivateJsonAtomic(legacyPath, selected);
+    await writePrivateJsonAtomic(legacyPath, encodeExplorationBoundaryActiveArtifact(selected));
     try {
       await persistActivatedExplorationBoundarySet(projectRoot, set);
     } catch (error) {
@@ -3258,13 +3285,25 @@ async function readLegacyActivatedExplorationBoundary(
   projectRoot: string,
 ): Promise<ActivatedExplorationBoundary> {
   const resolved = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
-  const active = JSON.parse(await fs.readFile(resolved, "utf8")) as ActivatedExplorationBoundary;
-  return validateActivatedExplorationBoundary(active);
+  return parseExplorationBoundaryActiveArtifact(JSON.parse(await fs.readFile(resolved, "utf8")));
+}
+
+export function parseExplorationBoundaryActiveArtifact(value: unknown): ActivatedExplorationBoundary {
+  return decodeReadBoundaryActiveFile(value, assertActiveArtifactPayload);
+}
+export function encodeExplorationBoundaryActiveArtifact(value: ActivatedExplorationBoundary) {
+  return encodeReadBoundaryActiveFile(value, assertActiveArtifactPayload);
+}
+
+function assertActiveArtifactPayload(value: unknown): asserts value is ActivatedExplorationBoundary {
+  validateActivatedExplorationBoundary(value as ActivatedExplorationBoundary);
 }
 
 function validateActivatedExplorationBoundary(
   active: ActivatedExplorationBoundary,
 ): ActivatedExplorationBoundary {
+  if (!active || active.schema_version !== EXPLORATION_BOUNDARY_VERSION)
+    throw new Error("Activated exploration boundary payload version is unsupported.");
   if (active.activation?.state !== "active") {
     throw Object.assign(new Error("Exploration boundary is not active."), { code: "EXPLORATION_BOUNDARY_INACTIVE" as const });
   }
@@ -3309,7 +3348,8 @@ async function readActivatedExplorationBoundarySet(
     path.join(projectRoot, ".synapsor", ACTIVE_EXPLORATION_BOUNDARY_SET_FILE),
     "utf8",
   )) as ActiveExplorationBoundarySet;
-  if (raw.schema_version !== ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION
+  if (!isRecord(raw) || Object.keys(raw).sort().join(",") !== "boundaries,schema_version,selected_name,updated_at"
+    || raw.schema_version !== ACTIVE_EXPLORATION_BOUNDARY_SET_FILE_VERSION
     || typeof raw.selected_name !== "string"
     || !Array.isArray(raw.boundaries)
     || raw.boundaries.length < 1
@@ -3384,7 +3424,7 @@ async function writeActivatedExplorationBoundarySetUnlocked(
   assertActiveReadSetBindings(boundaries);
   await assertRuntimeReadDiscoveryFits(projectRoot, boundaries);
   const set: ActiveExplorationBoundarySet = {
-    schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_VERSION,
+    schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_FILE_VERSION,
     selected_name: active.pack.name,
     boundaries,
     updated_at: new Date().toISOString(),
@@ -3392,7 +3432,7 @@ async function writeActivatedExplorationBoundarySetUnlocked(
   activatedExplorationBoundarySetDigest(boundaries);
   const legacyPath = path.join(projectRoot, ".synapsor/exploration-boundary.active.json");
   const legacySnapshot = await captureOptionalPrivateFile(legacyPath);
-  await writePrivateJsonAtomic(legacyPath, active);
+  await writePrivateJsonAtomic(legacyPath, encodeExplorationBoundaryActiveArtifact(active));
   try {
     await persistActivatedExplorationBoundarySet(projectRoot, set);
   } catch (error) {

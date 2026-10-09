@@ -1,6 +1,6 @@
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft, type GenerationLock, type ResolvedBoundaryReviewOrigin } from "./auto-boundary.js";
+import { explorationBoundaryCandidateDigest, parseExplorationBoundaryDraftArtifact, type ExplorationBoundaryDraft, type GenerationLock, type ResolvedBoundaryReviewOrigin } from "./auto-boundary.js";
 import { readGuidedOnboardingState } from "./guided-project.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { readJsonFileWithLocation } from "./cli-files.js";
@@ -10,8 +10,9 @@ import { applicableBoundaryReviewConfirmations, boundaryReviewDecisions } from "
 import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import type { BoundaryReviewMutationBindings } from "./read-authoring-contract-types.js";
 
+export const BOUNDARY_REVIEW_BUNDLE_VERSION = "synapsor.boundary-review-bundle.v2";
 export type BoundaryReviewBundle = {
-  schema_version: "synapsor.boundary-review-bundle.v1";
+  schema_version: typeof BOUNDARY_REVIEW_BUNDLE_VERSION;
   candidate_digest: `sha256:${string}`;
   bundle_digest: `sha256:${string}`;
   activation: "disabled_unreviewed";
@@ -51,14 +52,14 @@ export async function loadBoundaryReviewContext(projectRoot: string, permit?: Pr
   if (stored && !stored.selected) {
     throw new Error("No saved Read boundary is selected. Create a disabled boundary before opening its review.");
   }
-  const draft = stored?.selected?.draft ?? await readJsonFileWithLocation<ExplorationBoundaryDraft>(
-    path.join(boundaryRoot, "exploration-boundary.draft.json"),
-    "exploration boundary draft",
-  );
   const lock = stored?.selected?.draft_lock ?? await readJsonFileWithLocation<GenerationLock>(
     path.join(projectRoot, ".synapsor/generation-lock.json"),
     "generation lock",
   );
+  const draft = stored?.selected?.draft ?? parseExplorationBoundaryDraftArtifact(await readJsonFileWithLocation<unknown>(
+    path.join(boundaryRoot, "exploration-boundary.draft.json"),
+    "exploration boundary draft",
+  ), lock);
   const progress = stored?.selected?.progress ?? await readBoundaryReviewProgress(projectRoot, draft, permit);
   const candidate = progress?.candidate ?? recommendedBoundaryReviewCandidate(draft);
   const applicable = new Set(applicableBoundaryReviewConfirmations(candidate,
@@ -69,7 +70,7 @@ export async function loadBoundaryReviewContext(projectRoot: string, permit?: Pr
   }));
   const candidateDigest = explorationBoundaryCandidateDigest(candidate);
   const core = {
-    schema_version: "synapsor.boundary-review-bundle.v1" as const,
+    schema_version: BOUNDARY_REVIEW_BUNDLE_VERSION as typeof BOUNDARY_REVIEW_BUNDLE_VERSION,
     candidate_digest: candidateDigest,
     activation: "disabled_unreviewed" as const,
     authority: {
