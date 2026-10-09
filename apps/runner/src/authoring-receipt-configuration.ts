@@ -1,3 +1,4 @@
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -40,10 +41,19 @@ async function executionReceiptConfiguration(projectRoot: string, sources: reado
 
 
 export async function authoringReceiptConfiguration(projectRoot: string, sources: readonly string[], env?: NodeJS.ProcessEnv) {
+  const captured = [...sources];
+  return withProjectAuthorityMutation(projectRoot, held => receiptConfigurationHeld(held.projectRoot, captured, held, env));
+}
+export async function authoringReceiptConfigurationHeld(projectRoot: string, sources: readonly string[],
+  permit: ProjectAuthorityMutationPermit, env?: NodeJS.ProcessEnv) {
+  const captured = [...sources];
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => receiptConfigurationHeld(held.projectRoot, captured, held, env));
+}
+async function receiptConfigurationHeld(projectRoot: string, sources: readonly string[], permit: ProjectAuthorityMutationPermit, env?: NodeJS.ProcessEnv) {
   const configuration = await executionReceiptConfiguration(projectRoot, sources, env);
-  const { authoringSemanticReceiptIntent } = await import("./semantic-receipt-setup.js");
+  const { authoringSemanticReceiptIntentHeld } = await import("./semantic-receipt-setup.js");
   let intent;
-  try { intent = await authoringSemanticReceiptIntent(projectRoot, sources, env); }
+  try { intent = await authoringSemanticReceiptIntentHeld(projectRoot, sources, permit, env); }
   catch { intent = { phase: "disabled_authoring" as const, status: "unavailable" as const, verified: false as const, outcomes: [] }; }
   return intent ? { ...configuration, digest: canonicalJsonDigest({ configuration: configuration.digest, intent }), reviewed_intent: intent } : configuration;
 }

@@ -1,14 +1,16 @@
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import { OLDER_AUTHORING_SETUP_MESSAGE } from "./authoring-protocol.js";
 import { isPreparedProgramRemoval } from "./authoring-program-completion.js";
-import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
+import { authoringReceiptConfigurationHeld } from "./authoring-receipt-configuration.js";
 import { deferredReviewObligation } from "./authoring-obligation-review.js";
 import { boundaryAuthoringVersionReviews } from "./boundary-authoring-resume.js";
 import { actionRuleModelDraftFromAuthority } from "./action-rule-draft.js";
 import { countingConfigurationDigest, countingSourceRequirements } from "./authoring-counting-requirements.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { listActionRuleAuthorityDrafts } from "./action-rule-authority.js";
-import { readBoundaryAuthoringResumeState, type BoundaryAuthoringResumeBinding } from "./boundary-authoring-resume.js";
-import { activePolicySource, loadPolicySources } from "./authoring-policy-source.js";
+import { readBoundaryAuthoringResumeStateHeld, type BoundaryAuthoringResumeBinding } from "./boundary-authoring-resume.js";
+import { activePolicySource, loadPolicySourcesHeld } from "./authoring-policy-source.js";
 import { policyReviewReadiness } from "./authoring-review-readiness.js";
 import { withCountingOutcomeDomain } from "./authoring-counting-domain.js";
 import { clientDutyInventory } from "./authoring-client-duties.js";
@@ -37,14 +39,24 @@ export function savedAuthoringGenerationGuidance(recovery: AuthoringTransportSta
  * pending review or edit still prevents BUSINESS completion. It grants no right.
  * Rechecks saved policy status against the exact current dependencies. Never
  * replaces guided coverage production, exact authority consent or runtime admission. */
-export async function savedAuthoringPolicyReview(input: {
+export type SavedAuthoringPolicyReviewInput = {
   projectRoot: string; binding: BoundaryAuthoringResumeBinding; readDigest: string;
   exactActionDraft?: import("./action-rule-authority.js").ActionRuleAuthorityDraftV1;
   env?: NodeJS.ProcessEnv;
-  /** Only supplied under an existing runtime-admission -> mutation scope. */
-  permit?: import("./project-authority-mutation.js").ProjectAuthorityMutationPermit;
-}): Promise<(ReturnType<typeof policyReviewReadiness> & { dependencies_current?: true; next_action?: string }) | undefined> {
-  const loaded = await readBoundaryAuthoringResumeState(input.projectRoot, input.binding);
+};
+export async function savedAuthoringPolicyReview(input: SavedAuthoringPolicyReviewInput): Promise<(ReturnType<typeof policyReviewReadiness> & { dependencies_current?: true; next_action?: string }) | undefined> {
+  const captured = structuredClone(input);
+  return withProjectRuntimeAdmission(input.projectRoot, root => withProjectAuthorityMutation(root,
+    held => savedPolicyReviewHeld(captured, held)));
+}
+export async function savedAuthoringPolicyReviewHeld(input: SavedAuthoringPolicyReviewInput,
+  permit: ProjectAuthorityMutationPermit): Promise<(ReturnType<typeof policyReviewReadiness> & { dependencies_current?: true; next_action?: string }) | undefined> {
+  const captured = structuredClone(input);
+  return withHeldProjectAuthorityAccess(input.projectRoot, permit, held => savedPolicyReviewHeld(captured, held));
+}
+async function savedPolicyReviewHeld(input: SavedAuthoringPolicyReviewInput,
+  permit: ProjectAuthorityMutationPermit): Promise<(ReturnType<typeof policyReviewReadiness> & { dependencies_current?: true; next_action?: string }) | undefined> {
+  const loaded = await readBoundaryAuthoringResumeStateHeld(input.projectRoot, input.binding, permit);
   const generation = loaded.status === "ready" || loaded.status === "stale"
     ? savedAuthoringGenerationGuidance(loaded.value.generation_recovery) : undefined;
   const pending = (message: string, nextAction?: string) => ({ ready: false, privacy: false,
@@ -60,7 +72,7 @@ export async function savedAuthoringPolicyReview(input: {
   if (!saved.policy_source_session) return undefined;
   if (loaded.status !== "ready") return pending("The saved policy review belongs to older database or access metadata.");
   try {
-    const session = await loadPolicySources(input.projectRoot, saved.policy_source_session);
+    const session = await loadPolicySourcesHeld(input.projectRoot, saved.policy_source_session, permit);
     const source = activePolicySource(session);
     if (!source) return undefined;
     const drafts = input.exactActionDraft ? [input.exactActionDraft] : await listActionRuleAuthorityDrafts(input.projectRoot);
@@ -101,7 +113,7 @@ export async function savedAuthoringPolicyReview(input: {
     if (domains.length) {
       const matching = drafts.filter(draft => canonicalJsonDigest({ read: input.readDigest, action: draft.digest }) === session.coverage_authority_digest);
       if (matching.length !== 1 || !await withCountingOutcomeDomain(input.projectRoot, matching[0]!, async current =>
-        domains.every(domain => canonicalJsonDigest(domain) === canonicalJsonDigest(current)), input.env, input.permit)) {
+        domains.every(domain => canonicalJsonDigest(domain) === canonicalJsonDigest(current)), input.env, permit)) {
         return pending("The saved counting comparison needs revalidation against current authority and retained history. Its former domain condition is not current review evidence.");
       }
     }
@@ -111,7 +123,7 @@ export async function savedAuthoringPolicyReview(input: {
     }
     const receipts = obligations.filter(p => p.obligation_assessment!.family === "receipt_setup");
     if (receipts.length) {
-      const current = await authoringReceiptConfiguration(input.projectRoot, matchingAuthority?.authority.rules.map(r => r.rule.source) ?? [], input.env);
+      const current = await authoringReceiptConfigurationHeld(input.projectRoot, matchingAuthority?.authority.rules.map(r => r.rule.source) ?? [], permit, input.env);
       if (current.status === "unavailable" || receipts.some(p => p.obligation_assessment!.configuration_digest !== current.digest)) {
         return pending("Receipt configuration changed or is unavailable. Recheck its setup obligation; no receipt or execution was verified.");
       }
@@ -132,7 +144,8 @@ export async function savedAuthoringPolicyReview(input: {
     return { ...review, dependencies_current: true, ...(generation ? { next_action: generation.next_action } : {}), summary: [...review.summary,
       ...(generation?.summary ?? []),
       "This is the saved policy interpretation, not a live check or activation. Exact authority and execution reviews remain separate."] };
-  } catch {
+  } catch (error) {
+    if (["POLICY_MUTATION_PERMIT_REQUIRED", "POLICY_MUTATION_PERMIT_INVALID"].includes((error as { code?: string }).code ?? "")) throw error;
     return pending("The saved policy review is unavailable; the policy and draft have not been changed.");
   }
 }

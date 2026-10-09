@@ -1,12 +1,14 @@
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import { isAuthoringProgramResume } from "./authoring-program-capacity.js";
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { isPreparedProgramRemoval } from "./authoring-program-completion.js";
-import { savedAuthoringPolicyReview } from "./authoring-saved-review.js";
+import { savedAuthoringPolicyReviewHeld } from "./authoring-saved-review.js";
 import type { ActionRuleAuthorityDraftV1, ActionRuleAuthorityActivationV1 } from "./action-rule-authority.js";
 export { readSavedExecutionRequirements } from "./saved-execution-requirements.js";
-import { readBoundaryAuthoringResumeState, type BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
-import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
-import { readStructuredDraftSuccessorInventory } from "./boundary-draft-successor.js";
+import { readBoundaryAuthoringResumeStateHeld, type BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import { readProjectReadAuthoringHeld } from "./control-policy-read-authoring-project.js";
+import { readStructuredDraftSuccessorInventoryHeld } from "./boundary-draft-successor.js";
 
 export type SavedActionJobReview = { summary: string[]; details: string[]; detailsLabel?: string; completeProgram?: { draftsComplete: boolean } };
 
@@ -36,20 +38,32 @@ export function unfinishedActionIntents(resume: BoundaryAuthoringResumeState, cu
   return [...new Set(pending)];
 }
 
-export async function readSavedActionJobReview(input: {
+export type SavedActionJobReviewInput = {
   projectRoot: string; boundaryName: string; currentOutcomes: readonly string[]; env?: NodeJS.ProcessEnv;
   currentDraft?: ActionRuleAuthorityDraftV1;
   currentActivation?: ActionRuleAuthorityActivationV1;
-}): Promise<SavedActionJobReview> {
-  const guided = await readGuidedActionJobReview(input);
-  const successor = await readStructuredDraftSuccessorInventory(input.projectRoot);
+};
+export async function readSavedActionJobReview(input: SavedActionJobReviewInput): Promise<SavedActionJobReview> {
+  const captured = structuredClone(input);
+  return withProjectRuntimeAdmission(input.projectRoot, root => withProjectAuthorityMutation(root,
+    held => savedActionJobReviewHeld(captured, held)));
+}
+export async function readSavedActionJobReviewHeld(input: SavedActionJobReviewInput,
+  permit: ProjectAuthorityMutationPermit): Promise<SavedActionJobReview> {
+  const captured = structuredClone(input);
+  return withHeldProjectAuthorityAccess(input.projectRoot, permit, held => savedActionJobReviewHeld(captured, held));
+}
+async function savedActionJobReviewHeld(input: SavedActionJobReviewInput,
+  permit: ProjectAuthorityMutationPermit): Promise<SavedActionJobReview> {
+  const guided = await readGuidedActionJobReview(input, permit);
+  const successor = await readStructuredDraftSuccessorInventoryHeld(input.projectRoot, permit);
   if (successor.status === "none") return guided;
   if (successor.status === "invalid") return { ...guided, completeProgram: { draftsComplete: false },
     summary: [...guided.summary, "Independent draft successor inventory needs inspection. No complete-program readiness was inferred."],
     details: [...guided.details, successor.reason, "Preserve the original bundle and inspect the exact inventory; do not overwrite it or recover the historical generation."] };
   let draftsComplete = guided.completeProgram?.draftsComplete ?? false;
   if (input.currentDraft) {
-    try { await assertCompleteSelectedActionProgram({ projectRoot: input.projectRoot, draft: input.currentDraft, env: input.env }); draftsComplete = true; }
+    try { await assertCompleteSelectedActionProgramHeld({ projectRoot: input.projectRoot, draft: input.currentDraft, env: input.env }, permit); draftsComplete = true; }
     catch (error) {
       if (!(error instanceof Error) || !error.message.startsWith("AUTHORING_PROGRAM_NOT_READY:")) throw error;
       draftsComplete = false;
@@ -66,14 +80,11 @@ export async function readSavedActionJobReview(input: {
       "Original unknown requests, approvals, publication and transport consent were not imported. Attach and review current Source through normal controls before considering publication."] };
 }
 
-async function readGuidedActionJobReview(input: {
-  projectRoot: string; boundaryName: string; currentOutcomes: readonly string[]; env?: NodeJS.ProcessEnv;
-  currentDraft?: ActionRuleAuthorityDraftV1;
-  currentActivation?: ActionRuleAuthorityActivationV1;
-}): Promise<SavedActionJobReview> {
+async function readGuidedActionJobReview(input: SavedActionJobReviewInput,
+  permit: ProjectAuthorityMutationPermit): Promise<SavedActionJobReview> {
   let selected;
   try {
-    selected = (await readProjectReadAuthoring(input.projectRoot, input.env))?.selected;
+    selected = (await readProjectReadAuthoringHeld(input.projectRoot, permit, input.env))?.selected;
   } catch (error) {
     // Guided history is optional for migrated authority, not a substitute for its validation.
     if (!(error instanceof Error) || !("code" in error) || error.code !== "POLICY_READ_AUTHORING_MISSING") throw error;
@@ -86,12 +97,12 @@ async function readGuidedActionJobReview(input: {
     };
   }
   if (!selected || selected.progress.candidate.pack.name !== input.boundaryName) return { summary: [], details: [] };
-  const saved = await readBoundaryAuthoringResumeState(input.projectRoot, {
+  const saved = await readBoundaryAuthoringResumeStateHeld(input.projectRoot, {
     boundary_name: input.boundaryName,
     generation_lock_fingerprint: selected.progress.candidate.generation_lock_fingerprint,
     schema_fingerprint: selected.draft_lock.schema_fingerprint,
     role_posture_fingerprint: selected.draft_lock.role_posture_fingerprint,
-  });
+  }, permit);
   if (saved.status === "none") return { summary: [], details: [] };
   if (saved.status !== "ready") return {
     summary: ["Saved job status needs review. These prepared outcomes do not establish that the whole job is ready."],
@@ -134,13 +145,20 @@ async function readGuidedActionJobReview(input: {
 /** Current v2 program gate. Runs again under publication's existing mutation lock.
  * Legacy v1 subset reviews keep their semantics; compiled counts alone never
  * establish full-program completion or current policy coverage. */
-export async function assertCompleteSelectedActionProgram(input: {
-  projectRoot: string; draft: ActionRuleAuthorityDraftV1; env?: NodeJS.ProcessEnv;
-  /** Activation supplies its existing admitted mutation permit; UI does not. */
-  permit?: import("./project-authority-mutation.js").ProjectAuthorityMutationPermit;
-}): Promise<void> {
+export type CompleteSelectedActionProgramInput = { projectRoot: string; draft: ActionRuleAuthorityDraftV1; env?: NodeJS.ProcessEnv };
+export async function assertCompleteSelectedActionProgram(input: CompleteSelectedActionProgramInput): Promise<void> {
+  const captured = structuredClone(input);
+  return withProjectRuntimeAdmission(input.projectRoot, root => withProjectAuthorityMutation(root,
+    held => assertCompleteProgramHeld(captured, held)));
+}
+export async function assertCompleteSelectedActionProgramHeld(input: CompleteSelectedActionProgramInput,
+  permit: ProjectAuthorityMutationPermit): Promise<void> {
+  const captured = structuredClone(input);
+  return withHeldProjectAuthorityAccess(input.projectRoot, permit, held => assertCompleteProgramHeld(captured, held));
+}
+async function assertCompleteProgramHeld(input: CompleteSelectedActionProgramInput, permit: ProjectAuthorityMutationPermit): Promise<void> {
   const refuse = (reason: string): never => { throw new Error(`AUTHORING_PROGRAM_NOT_READY: ${reason} Resume the complete saved program. Its drafts and existing authority remain unchanged.`); };
-  const successor = await readStructuredDraftSuccessorInventory(input.projectRoot);
+  const successor = await readStructuredDraftSuccessorInventoryHeld(input.projectRoot, permit);
   if (successor.status === "invalid") refuse("The independent successor inventory integrity or current inspection cannot be established.");
   if (successor.status === "present") {
     const required = successor.pages.flatMap(page => page.outcomes);
@@ -151,7 +169,7 @@ export async function assertCompleteSelectedActionProgram(input: {
     }
   }
   let selected;
-  try { selected = (await readProjectReadAuthoring(input.projectRoot, input.env, input.permit))?.selected; }
+  try { selected = (await readProjectReadAuthoringHeld(input.projectRoot, permit, input.env))?.selected; }
   catch (error) {
     if ((error as { code?: string }).code === "POLICY_READ_AUTHORING_MISSING") {
       if (successor.status === "present") refuse("Fresh Read/Source review for the independent successor is unavailable.");
@@ -167,11 +185,11 @@ export async function assertCompleteSelectedActionProgram(input: {
     generation_lock_fingerprint: selected.progress.candidate.generation_lock_fingerprint,
     schema_fingerprint: selected.draft_lock.schema_fingerprint,
     role_posture_fingerprint: selected.draft_lock.role_posture_fingerprint };
-  const loaded = await readBoundaryAuthoringResumeState(input.projectRoot, binding);
+  const loaded = await readBoundaryAuthoringResumeStateHeld(input.projectRoot, binding, permit);
   if (successor.status === "present" && successor.inventory.sources.length) {
-    const review = await savedAuthoringPolicyReview({ projectRoot: input.projectRoot, binding,
+    const review = await savedAuthoringPolicyReviewHeld({ projectRoot: input.projectRoot, binding,
       readDigest: explorationBoundaryCandidateDigest(selected.progress.candidate), exactActionDraft: input.draft,
-      env: input.env, permit: input.permit });
+      env: input.env }, permit);
     if (!review?.ready) refuse("Fresh current attached Source/private-boundary coverage for the independent successor is pending. Imported Source text is untrusted material, not an accepted review.");
   }
   if (loaded.status === "none") return;
@@ -194,8 +212,8 @@ export async function assertCompleteSelectedActionProgram(input: {
     refuse("An intended outcome does not match the current exact Read revision.");
   }
   if (saved.policy_source_session) {
-    const review = await savedAuthoringPolicyReview({ projectRoot: input.projectRoot, binding, readDigest,
-      exactActionDraft: input.draft, env: input.env, permit: input.permit });
+    const review = await savedAuthoringPolicyReviewHeld({ projectRoot: input.projectRoot, binding, readDigest,
+      exactActionDraft: input.draft, env: input.env }, permit);
     if (!review?.ready) refuse("Full attached source coverage and shared obligations need current validation.");
   }
 }

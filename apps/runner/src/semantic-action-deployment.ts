@@ -3,11 +3,11 @@ import { inspectReviewedHardLimitWriterSetup, assertReviewedHardLimitWriterSetup
 export type { HardLimitWriterReviewBinding } from "./hard-limit-writer-review-binding.js";
 import { projectHardLimitActivationWriterSelections } from "./hard-limit-writer-selection.js";
 import { inspectHardLimitWriterSetup, assertHardLimitWriterSetup, type HardLimitWriterSetupReadback } from "./hard-limit-writer-setup.js";
-import { assessActionWithdrawal } from "./action-rule-withdrawal.js";
+import { assessActionWithdrawal, assessActionWithdrawalHeld } from "./action-rule-withdrawal.js";
 import { SEMANTIC_ACTION_RUNTIME_CONFIG, executionConfigForReview, readSemanticSupervisedExecutionState, type SemanticSupervisedExecutionState } from "./semantic-execution-state.js";
 export { SEMANTIC_ACTION_RUNTIME_CONFIG, readSemanticSupervisedExecutionState, type SemanticSupervisedExecutionState } from "./semantic-execution-state.js";
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
-import { assertCompleteSelectedActionProgram } from "./saved-action-job-review.js";
+import { assertCompleteSelectedActionProgramHeld } from "./saved-action-job-review.js";
 import fs from "node:fs/promises";
 import { inspectSemanticReceiptSetup, selectedSemanticReceipts, type SemanticReceiptMode } from "./semantic-receipt-setup.js";
 import { postgresAdapter } from "@synapsor-runner/postgres";
@@ -322,10 +322,10 @@ export async function activateSemanticActionRuntime(input: {
 async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof activateSemanticActionRuntime>[0],
   permit: ProjectAuthorityMutationPermit): Promise<SemanticActionRuntimeActivation> {
   const projectRoot = path.resolve(input.projectRoot);
-  const withdrawal = input.withdrawalContext ? await assessActionWithdrawal({ projectRoot, draft: input.draft,
+  const withdrawal = input.withdrawalContext ? await assessActionWithdrawalHeld({ projectRoot, draft: input.draft,
     env: input.env, baseConfigPath: input.baseConfigPath, outputConfigPath: input.outputConfigPath,
-    expected_context_digest: input.withdrawalContext, permit }) : undefined;
-  if (!withdrawal) await assertCompleteSelectedActionProgram({ projectRoot, draft: input.draft, env: input.env, permit });
+    expected_context_digest: input.withdrawalContext }, permit) : undefined;
+  if (!withdrawal) await assertCompleteSelectedActionProgramHeld({ projectRoot, draft: input.draft, env: input.env }, permit);
   const outputConfigPath = path.resolve(
     input.outputConfigPath ?? path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG),
   );

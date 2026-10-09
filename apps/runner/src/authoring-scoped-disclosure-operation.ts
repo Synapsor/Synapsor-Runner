@@ -1,5 +1,5 @@
 import {canonicalJsonDigest} from '@synapsor-runner/protocol';
-import {activePolicySource,bindPolicyCoverage,loadPolicySources,policySourceSavedDigest,savePolicySources,type PolicySourceSession} from './authoring-policy-source.js';
+import {activePolicySource,bindPolicyCoverage,loadPolicySources,policySourceSavedDigest,policySourceSavedDigestHeld,savePolicySources,type PolicySourceSession} from './authoring-policy-source.js';
 import {reviewScopedDisclosure,decideScopedDisclosure,scopedDisclosureInventory,type ScopedDisclosureReview} from './authoring-scoped-disclosure.js';
 import {parsePolicyCoverage} from './authoring-policy-coverage.js';
 import {policyReviewReadiness} from './authoring-review-readiness.js';
@@ -11,16 +11,21 @@ import type {ProjectAuthorityMutationPermit} from './project-authority-mutation.
 export async function localScopedDisclosureReview(input:{projectRoot:string;sources:PolicySourceSession;
   session:BoundaryReviewInteractiveSession;actor:string;register:boolean;location:'active'|'draft';
   currentDraft:()=>unknown;authorityDigest:string;clarifications:unknown[];
-  assertCurrent:(permit?:ProjectAuthorityMutationPermit)=>Promise<void>;
+  assertCurrent:()=>Promise<void>;
+  assertCurrentHeld:(permit:ProjectAuthorityMutationPermit)=>Promise<void>;
   onValidated?:(sources:PolicySourceSession,permit:ProjectAuthorityMutationPermit)=>Promise<void>;
   coordinated:(operation:(permit:ProjectAuthorityMutationPermit)=>Promise<void>)=>Promise<void>}) {
   const source=activePolicySource(input.sources)!;
   let expected=await policySourceSavedDigest(input.projectRoot,input.sources.id);
   if(canonicalJsonDigest(await loadPolicySources(input.projectRoot,input.sources.id))!==canonicalJsonDigest(input.sources))
     throw new Error('POLICY_SOURCE_CHANGED: Reopen the current saved source before recording this review.');
-  const assertCurrent=async(permit?:ProjectAuthorityMutationPermit)=>{
-    await input.assertCurrent(permit);
+  const assertCurrent=async()=>{
+    await input.assertCurrent();
     if(await policySourceSavedDigest(input.projectRoot,input.sources.id)!==expected)throw new Error('POLICY_SOURCE_CHANGED: A competing source or decision was saved. No later record was overwritten.');
+  };
+  const assertCurrentHeld=async(permit:ProjectAuthorityMutationPermit)=>{
+    await input.assertCurrentHeld(permit);
+    if(await policySourceSavedDigestHeld(input.projectRoot,input.sources.id,permit)!==expected)throw new Error('POLICY_SOURCE_CHANGED: A competing source or decision was saved. No later record was overwritten.');
   };
   const append=async(record:ScopedDisclosureReview)=>{
     const prepared=canonicalJsonDigest(input.currentDraft());
@@ -31,7 +36,7 @@ export async function localScopedDisclosureReview(input:{projectRoot:string;sour
     if(scopedDisclosureInventory(source,candidate).items.some(f=>f.id===record.id && f.state==='stale'))
       throw new Error('SCOPED_DISCLOSURE_CONTEXT_CHANGED: The selected source/field/reader binding changed before save. No stale decision was saved.');
     await input.coordinated(async permit=>{
-      await assertCurrent(permit);
+      await assertCurrentHeld(permit);
       if(canonicalJsonDigest(input.currentDraft())!==prepared)throw new Error('SCOPED_DISCLOSURE_CONTEXT_CHANGED: No stale decision was saved.');
       await savePolicySources(input.projectRoot,staged,{expectedDigest:expected,permit});
       expected=canonicalJsonDigest(staged);
@@ -62,7 +67,7 @@ export async function localScopedDisclosureReview(input:{projectRoot:string;sour
     staged.coverage_context_digest=canonicalJsonDigest({source:source.digest,draft,messages:staged.operator_messages??[],
       clarifications:input.clarifications,interpretations:staged.read_interpretations??[]});
     await input.coordinated(async permit=>{
-      await assertCurrent(permit);
+      await assertCurrentHeld(permit);
       if(canonicalJsonDigest(input.currentDraft())!==prepared)throw new Error('SCOPED_DISCLOSURE_CONTEXT_CHANGED: Current review was not saved.');
       await savePolicySources(input.projectRoot,staged,{expectedDigest:expected,permit});
       expected=canonicalJsonDigest(staged);

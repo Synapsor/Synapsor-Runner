@@ -1,11 +1,12 @@
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import { actionRuleModelDraftFromAuthority } from "./action-rule-draft.js";
 import { readActionRuleAuthorityDraft, type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
-import { loadBoundaryReviewContext } from "./boundary-review-context.js";
-import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { loadBoundaryReviewContextHeld } from "./boundary-review-context.js";
+import { readProjectReadAuthoringHeld } from "./control-policy-read-authoring-project.js";
 import type { OperatorAuthorityState } from "./control-policy-operator-repository.js";
 import type { ReadAuthoringBindings } from "./control-policy-record.js";
 import { AUTHORING_PROGRAM_CAPACITY as limits } from "./authoring-program-capacity.js";
@@ -87,10 +88,17 @@ export function structuredDraftSuccessorPage(proposal: StructuredDraftSuccessorP
 /** This is inspection of current declarations, never a commit acknowledgement,
  * Source proof, intent interpretation, or publication grant. */
 export async function readStructuredDraftSuccessorInventory(projectRoot: string): Promise<StructuredDraftSuccessorInspection> {
+  return withProjectAuthorityMutation(projectRoot, held => readSuccessorInventoryHeld(held.projectRoot, held));
+}
+export async function readStructuredDraftSuccessorInventoryHeld(projectRoot: string,
+  permit: ProjectAuthorityMutationPermit): Promise<StructuredDraftSuccessorInspection> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => readSuccessorInventoryHeld(held.projectRoot, held));
+}
+async function readSuccessorInventoryHeld(projectRoot: string, permit: ProjectAuthorityMutationPermit): Promise<StructuredDraftSuccessorInspection> {
   try {
     const inventory = await readInventory(projectRoot);
     if (!inventory) return { status: "none" };
-    const context = await loadBoundaryReviewContext(projectRoot), authoring = await readProjectReadAuthoring(projectRoot);
+    const context = await loadBoundaryReviewContextHeld(projectRoot, permit), authoring = await readProjectReadAuthoringHeld(projectRoot, permit);
     const currentBindingMatches = Boolean(authoring && sameStore(inventory.destination, authoring.bindings)
       && inventory.destination.boundary_name === context.candidate.pack.name
       && inventory.destination.schema_fingerprint === context.lock.schema_fingerprint
@@ -111,6 +119,7 @@ export async function readStructuredDraftSuccessorInventory(projectRoot: string)
       pending_intent_indexes: inventory.intents.filter(intent => !intent.proposed_outcome || !matching.has(intent.proposed_outcome)).map(intent => intent.index),
       source_material_state: "untrusted_not_attached", readiness: false };
   } catch (error) {
+    if (["POLICY_MUTATION_PERMIT_REQUIRED", "POLICY_MUTATION_PERMIT_INVALID"].includes((error as { code?: string }).code ?? "")) throw error;
     return { status: "invalid", reason: (error as { code?: string }).code ?? "STRUCTURED_DRAFT_SUCCESSOR_INVALID" };
   }
 }
