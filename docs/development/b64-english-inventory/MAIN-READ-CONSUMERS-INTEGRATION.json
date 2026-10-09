@@ -1,0 +1,22 @@
+{
+  "pin": "7b13d992",
+  "product_sequence": [
+    "569ca974",
+    "12d8ebb1"
+  ],
+  "independent_verdict": "ae1bef7b ACCEPT_SCOPED9d40",
+  "Main_result": {
+    "passed": 21,
+    "failed": 0,
+    "skipped": 0,
+    "result": "/var/tmp/synapsor-main-read-consumers-owned.7rkceia5/result.json",
+    "sha256": "b44f253567031b82824979db087b28cc56e17e74640815ea83dbbcc0a3d5d65e"
+  },
+  "snapshot": {
+    "new_source_bytes": 0,
+    "method": "fixed existing worktree reused",
+    "manifest": "/var/tmp/synapsor-main-read-consumers-owned.7rkceia5/SOURCE-MANIFEST.json"
+  },
+  "limits": "No whole-suite/types/cold old-reader/installed/full public acceptance. Public bundle reaches identity prerequisite only; no activation fabricated.",
+  "next": "Tester D01 fresh UPDATE25 released at exact7b13; keep old jobs/effects untouched."
+}

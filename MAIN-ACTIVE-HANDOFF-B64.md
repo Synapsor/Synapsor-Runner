@@ -1,14 +1,14 @@
 ACTIVE B64/B65 — paid CLOSED; private backup only; frozen candidate3/history untouched.
 B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z; B65 T0Oct8 16:56:15Z/endOct12 sameUTC; unchanged.
-Main codex/b64-read-compose-20261008 @b14c523e; [ownership/counts](docs/development/b64-english-inventory/LANES.json).
-Accepted remaining typed/delete: Privacy15/0, Action32/5, Main30/0; Ask/Read/Chat0/0 owned-source only, not overall qualification.
-Main I03527 fbeb exact diagnostics R1 unchanged10PASS; four runtime sites52cf R2 accepted/Main85PASS; boundary19121lines; [record](docs/development/b64-english-inventory/MAIN-RUNTIME-FOUR-INTEGRATION.json).
-Read native publicd6 R1 7PASS; strict prospective file core95 acceptedR1 ninePASS integrateddc22; bundle hook53 actualbefore2P3F→5P0F reachesidentity prerequisite only (22538245), not signed activation.
-Read consumer605 held: R1 DC08 real mixed-lock config failure; helper repairing coherent pair in slot3. No unchecked latest state; oldtypedRead fixtures/globaltypes remain OPEN.
-Privacy15 qualification remains; I03537 f868 source-only blocked on explicit privacy/compatibility contract for raw text, no blanket English/handoff exemption; all unaffected work continues.
-Action Source I02064 b14 integrated132uniquePASS (106+26,7cold), Testerb87d accepted; Receipt c19 owner197PASS/types0 now R2review, no selfapproval.
-B65 hard-limit/import/renderer IN MAIN e514+7e076; Runtime exact6ee private diagnostics acceptedR2 integratedbd4, no changed enforcement; observer offline calleroutputs unchanged.
-Original publicfive787 sealedddbd: INSERT25/20/10 compiler ScopeUnproven; UPDATE10→25/35 worker samecode, Source30 unchanged/0Source receipts. Arithmetic NOT ESTABLISHED.
-NEXT B65 Tester ONE fresh UPDATE25 at coherent Main consumer pin, normalflow/oneworker/actualqueue+receipt binding; no replay. INSERT initializer typed-review compatibility decision pending Owner.
-Slots1Testerready/2Actionreceipt/3R1consumers/4free;4heavy,max8workers/run,0700isolation,8GiBfreeRAM/disk; keepstorage/revisit<30GB; no usagepause.
-Commit/privatepush checkpoints; Luna35total/remain19.72936875 inclholds, paid CLOSED; SC04cold/public/fullqualification and B65 supported public arithmetic remain OPEN.
+Main codex/b64-read-compose-20261008 @7b13d992; [ownership/counts](docs/development/b64-english-inventory/LANES.json).
+Remaining accepted typed/delete: Privacy0/0, Action32/5, Main30/0; Ask/Read/Chat0/0 owned-source only; qualification still OPEN.
+Main runtime four accepted85PASS; Source I02064 accepted/integrated132uniquePASS; boundary19121lines; exact evidence linked in inventory records.
+Read strict file consumers569ca+coherent pair12d8 independently R1accepted9d40/ae1b; actual Main21PASS at7b13, zero source-copy bytes; [record](docs/development/b64-english-inventory/MAIN-READ-CONSUMERS-INTEGRATION.json).
+Read next remaining typed fixture/native-history/cold old-reader qualification; public bundle5PASS reaches identity prerequisite only, not signed activation; globaltypes/full remain OPEN.
+I03537 raw-text privacy/compatibility decision pending Owner; source-only12620da3; no English exemption or invented complete identity set.
+Action receipt c19 owner197PASS/types0; R2 six controls passing across retained runs, final scoped verdict pending; typed initializer Owner-approved, implementation B66/Action child.
+B65 hard-limit/import/renderer IN MAIN; original publicfive787 sealed: all ScopeUnproven, Source30/0effects; arithmetic NOT ESTABLISHED.
+D01 fresh public UPDATE25 RELEASED Tester exact7b13; then allfive after initializer. Runtime parallel fresh admission identified namespace_acl refusal, no writes; no grant expansion.
+Future all-lane snapshots exclude docs/non-test material and hash included files/configs/assets; no deletion. R2 audit25.94GiB includes21.18GiB copiedqualification evidence.
+Slots1TesterD01/2R2snapshot/3initializer available/4free;4heavy,max8workers/run,0700isolation,8GiBfreeRAM/disk; no usagepause.
+Commit/privatepush checkpoints; Luna35total/remain19.72936875 inclholds paid CLOSED; next integrate reviewed receipt, finish initializer binding, report exact public deciding checks.

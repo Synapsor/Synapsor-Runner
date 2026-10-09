@@ -15,12 +15,12 @@
     "read": {
       "agent": "/root/b59_regression_fix",
       "workspace": "../b56-owned-dir-remedy",
-      "current_task": "SC04 owned13 source candidate; next bounded ordinary file-consumer ports; Main owns CLI bundle version hook"
+      "current_task": "Coherent strict file consumers integrated7b13; Main21PASS. Remaining old typed fixtures/native-history/cold compatibility qualification."
     },
     "privacy_visibility": {
       "agent": "/root/b64_visibility_retirement",
       "workspace": "../b64-visibility-retirement",
-      "current_task": "Accepted Privacy15/0; retire four Main runtime decision sites plus exact operator disposable-source CLI"
+      "current_task": "Owned English decisions0/0 independently accepted; qualification separate. Main I03537 compatibility decision pending."
     },
     "chat_presentation": {
       "agent": "B65 Tester /root/b64_chat_resume",
@@ -41,10 +41,10 @@
     }
   },
   "heavy_slots": {
-    "1": "B65 Tester Source review END; fresh public case held for coherent Main consumer pin",
-    "2": "Action receipt component before/fix",
-    "3": "R1 independent Read consumers",
-    "4": "Main runtime integration85 END; free"
+    "1": "B65 Tester fresh public D01 RELEASED7b13",
+    "2": "R2 receipt review finished, snapshot helper correction",
+    "3": "free after Main21PASS; initializer focused tests available",
+    "4": "Runtime UPDATE diagnosis complete; no effects"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -1207,21 +1207,16 @@
       ]
     },
     "privacy_visibility": {
-      "pin": "6ba8f340",
-      "typed": 15,
+      "pin": "b14c523e",
+      "typed": 0,
       "delete": 0,
-      "source": "R2 exact Main vocabulary6typed+2delete consumer retirement accepted84a748c1; native readiness retained. Remainingauto15 prospective file qualification open; owner now takes Main runtime4sites.",
+      "source": "R2 independent source audit b64-b14-main-privacy-auto15-decision-audit-independent-v1.json SHA0c385aaa27219547319e983cade5deb3fd1f8a66598aa6d2a7b4ccde43fd2fe3 accepts remaining15 decision retirements. Prospective file/native/public/cold-reader qualification remains separate and OPEN.",
       "reclassified_open": {
-        "typed": [
-          "I00371"
-        ],
-        "delete": [
-          "I00054",
-          "I00055"
-        ]
+        "typed": [],
+        "delete": []
       },
       "with_reclassifications": {
-        "typed": 15,
+        "typed": 0,
         "delete": 0
       },
       "audit_reclassified_ids": [
@@ -1230,6 +1225,24 @@
         "I00371"
       ],
       "closed_ids": [
+        "I00054",
+        "I00055",
+        "I00296",
+        "I00297",
+        "I00298",
+        "I00299",
+        "I00300",
+        "I00302",
+        "I00303",
+        "I00304",
+        "I00312",
+        "I00313",
+        "I00314",
+        "I00321",
+        "I00322",
+        "I00323",
+        "I00324",
+        "I00371",
         "I02080",
         "I02081"
       ]
@@ -1384,7 +1397,7 @@
   },
   "accepted_remaining_decision_sites": {
     "privacy_visibility": {
-      "typed": 15,
+      "typed": 0,
       "delete": 0
     },
     "action": {
@@ -1407,5 +1420,6 @@
       "typed": 0,
       "delete": 0
     }
-  }
+  },
+  "snapshot_policy": "Future snapshots exclude docs and unrelated material; included SOURCE-MANIFEST hashes/config/assets required. Prefer fixed worktree reuse. No existing snapshot deletion authorized."
 }
