@@ -1,0 +1,160 @@
+{
+  "updated": "2026-10-09T06:13:46.366389+00:00",
+  "source_pin": "a9152e403acbce2d136ff7a8bbf3d64bfa315aa2",
+  "branch": "codex/b64-d01-controls-compose-20261009",
+  "accepted_base": "be48873feaff68942d9de9a390d90712fca22272",
+  "status": "SCOPED_FIXES_COMPOSED_AND_FOCUSED_TESTED; WHOLE_INTEGRATION_ACCEPTANCE_OPEN",
+  "source_identity": {
+    "apps/runner/src/boundary-cli-picker.ts": {
+      "sha256": "2b7228d8e5869c76593a2096490061d1ab9746f18cff433bd72004a0c0be9561",
+      "whole_file_matches_reviewed_donor": "22091783"
+    },
+    "apps/runner/src/explore-vocabulary-presentation.ts": {
+      "sha256": "89b83ff17b4eda8fe5885ed87d04afc809ee208b42b3f49ec67d7e4876ae4e53",
+      "whole_file_matches_reviewed_donor": "22091783"
+    },
+    "apps/runner/src/runtime-doctor.ts": {
+      "sha256": "3bcbe60456a4cca857b8028d22893237d401d9bac2a15d39acc0ba4c06926a15",
+      "whole_file_matches_reviewed_donor": "22091783"
+    },
+    "apps/runner/src/runtime-doctor.test.ts": {
+      "sha256": "157f1baca9af0f036049df11246a9d4d5a3cdcf25124cce612c89f83f8fd4627",
+      "whole_file_matches_reviewed_donor": "22091783"
+    },
+    "apps/runner/src/boundary-cli-picker.test.ts": {
+      "sha256": "6f1b2da78be06e7f0e6048d1d773a294f63d799eb817292dd1586c0c3ca88ed4",
+      "whole_file_matches_reviewed_donor": "22091783"
+    },
+    "packages/mcp-server/src/analytics-output-schema.ts": {
+      "sha256": "b6bd7731a5c83bb820dc53b8dfab6f11c4b1a206987687578873ae7ed9be457f",
+      "whole_file_matches_reviewed_donor": "a83e8361"
+    },
+    "apps/runner/src/authoring-recovery-host.ts": {
+      "sha256": "8e6a018743f2809249d5819b6094727ffab0372192a53825f80e779956988fc1",
+      "whole_file_matches_reviewed_donor": "595595d6"
+    },
+    "apps/runner/src/writeback-setup.ts": {
+      "sha256": "7a0dfa8c2c814a771364d57803b40e78c32520d9f0c249a20899dc5167837370",
+      "whole_file_matches_reviewed_donor": "ed291002"
+    },
+    "apps/runner/src/mysql-source-completion-refusal.test.ts": {
+      "sha256": "efb67c0031e93640a82fc1291865557d635f00266db55624f14a3e66486631bc",
+      "whole_file_matches_reviewed_donor": "b28968c2"
+    },
+    "apps/runner/src/model-ask.ts": {
+      "sha256": "aaaeed63b66d5cc62e319d5e5367794734295303984f6120b73aaf58e4719ab4",
+      "whole_file_matches_reviewed_donor": "9ae6499f"
+    }
+  },
+  "boundary_commands": {
+    "lines": 19116,
+    "sha256": "91ae4931873541912727bfb42467cc4f11ee3a40f052028a2367802fe6859283",
+    "contract": "Planning prospective record and exact existing held-permit reader supplied by narrow Main hook; no new receipt/recovery engine."
+  },
+  "groups": [
+    {
+      "record": "composed-controls",
+      "passed": 64,
+      "failed": 0,
+      "filtered": 0,
+      "files": [
+        "apps/runner/src/authoring-interrupted-step-review.test.ts",
+        "apps/runner/src/authoring-recovery-unavailable.test.ts",
+        "apps/runner/src/explore-vocabulary-wire.test.ts",
+        "apps/runner/src/model-ask-batch-history.test.ts",
+        "apps/runner/src/model-principal-scope-prompt.test.ts",
+        "apps/runner/src/model-principal-scope-review.test.ts",
+        "apps/runner/src/owner-policy-parent-model.test.ts",
+        "apps/runner/src/owner-policy-parent-prompt.test.ts",
+        "packages/mcp-server/src/analytics-output-schema.test.ts"
+      ],
+      "raw": [
+        {
+          "path": "/var/tmp/synapsor-main-generation-context-owned/evidence/composed-controls.json",
+          "sha256": "0c6e7561d32e7f4cb337ef90ba9124c4b8587224d2cbf730a69df573f07af173"
+        },
+        {
+          "path": "/var/tmp/synapsor-main-generation-context-owned/evidence/composed-controls.log",
+          "sha256": "b870d6957ec8bf11da30147ccdfbff1fa0b90e3959bfe108abc4f43dfbb5c253"
+        }
+      ]
+    },
+    {
+      "record": "composed-vocabulary-ui",
+      "passed": 6,
+      "failed": 0,
+      "filtered": 126,
+      "files": [
+        "apps/runner/src/boundary-cli-picker.test.ts",
+        "apps/runner/src/runtime-doctor.test.ts"
+      ],
+      "raw": [
+        {
+          "path": "/var/tmp/synapsor-main-generation-context-owned/evidence/composed-vocabulary-ui.json",
+          "sha256": "375e69b5397766d9030e841ae5db838f3eed1c6f44f303d5c0f436e696cc63eb"
+        },
+        {
+          "path": "/var/tmp/synapsor-main-generation-context-owned/evidence/composed-vocabulary-ui.log",
+          "sha256": "65c651a6523cdbd82692aebe270a1f0d9fa680b35f0fb2f9c62b5344b1a61192"
+        }
+      ]
+    },
+    {
+      "record": "composed-mysql-refusal",
+      "passed": 6,
+      "failed": 0,
+      "filtered": 0,
+      "files": [
+        "apps/runner/src/mysql-source-completion-refusal.test.ts"
+      ],
+      "raw": [
+        {
+          "path": "/var/tmp/synapsor-main-generation-context-owned/evidence/composed-mysql-refusal.json",
+          "sha256": "b25b5d3afb84d381c6aa001b561b1d6c2ddb07249d76582d5ed207d14bc43e59"
+        },
+        {
+          "path": "/var/tmp/synapsor-main-generation-context-owned/evidence/composed-mysql-refusal.log",
+          "sha256": "9425de4a89c502446b531235576c624e692f895807cce5d2d20c66b6ac1a2bac"
+        }
+      ]
+    }
+  ],
+  "independent_scoped_verdicts": [
+    {
+      "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/vocabulary-wire-50fb-independent-acceptance-v1.json",
+      "sha256": "e6556a3727ca6dc9eefe5faf91a5ac2279c90a31de90704efaaf48a377c76143",
+      "verdict": "SCOPED_STRICT_SCHEMA_SOURCE_OWNER_COMPONENT_AND_R2_INDEPENDENT_COMPONENT_ACCEPT"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/generation-context-909-1d211-independent-source-native-artifact-v1.json",
+      "sha256": "c9c554a4e6de3c01514c189bf9cde4d9a6810f3c025990f8fa3e66b2b85715f9",
+      "verdict": "SCOPED_ONE_LINE_SOURCE_AND_OWNER_NATIVE_CONTEXT_COMPONENT_ARTIFACT_ACCEPT_PUBLIC_SAVED_PG_OPEN"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/recovery-unavailable-941-independent-acceptance-v1.json",
+      "sha256": "f7cc9e5c9c39ec335fb8de5a0d60f549ddaa6731e4a9ac0edf59b3a1c9165592",
+      "verdict": "SCOPED_PRESENTATION_SOURCE_OWNER_COMPONENT_AND_R2_INDEPENDENT_COMPONENT_ACCEPT_NATIVE_PG_SUCCESS_SEPARATE"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/mysql-ed291-independent-disposition-v1.json",
+      "sha256": "4cd3fd95b70b5d8e68e44cc707461a030a1f1b18536f002da95576b2bdc0770c",
+      "verdict": "SCOPED_UNSUPPORTED_DIAGNOSTIC_SOURCE_OWNER6_AND_R2_I01_05_PLUS_REPAIRED_PUBLIC_I06_ACCEPT_NATIVE_MYSQL_BACKEND_UNSUPPORTED"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b53-9ae-d82-completed-batch-history-owner-artifact-addendum-v1.json",
+      "sha256": "7fb138e6e3880fb1fa318793033351c722f614d1873604d626a5573707e2cea6",
+      "verdict": "SCOPED_SOURCE_AND_OWNER_COMPONENT_ARTIFACT_ACCEPT_INDEPENDENT_BF_RUNTIME_NOTRUN_LIVE_CONTROLLER_OPEN"
+    }
+  ],
+  "runtime": "All three Main groups finished exit0; no Main owned runtime remains. Existing isolated HOME/TMP, config outside project tree, network-off bounded max1 profile. Full shell argv/build dependency custody was not separately captured for these composed groups; no independent complete runtime-custody claim. UI126 are explicitly filtered, not unexecuted passes. Raw logs preserved; no docs snapshot.",
+  "D01_actual": "Tester old-format b059: two unfinished steps locally reviewed with explicit default-No confirmations; Continue became visible with one unfinished operation/two remaining attempts. Ordinary Resume then advanced to planning and created a new planning reservation; scripted inspection refused it before any HTTP/provider response. New reservation preserved. No D01 arithmetic or new job claimed. Final packet2a4b1dd2.",
+  "mysql": "Clear MYSQL_SOURCE_DB_RECONCILIATION_UNSUPPORTED before writer URL/Source IO. Independent real public inspect/resolve controls accepted. Backend capability stays OPEN UNSUPPORTED; no replay/mode switch/row adoption/absence-as-rollback.",
+  "open": [
+    "Whole types/full suite/integration and real setup-edit acceptance",
+    "D01 held old-format job needs planning; no additional held/fresh PG attempt inferred",
+    "Prospective planning remaining public acceptance groups before the authorized ONE fresh $0 MySQL job",
+    "MySQL source_db unknown-COMMIT backend remains unsupported",
+    "Native B53 extension compatibility/actor/finite cap design decision; no allowance inflation"
+  ],
+  "paid": "CLOSED; historical holds and frozen candidates unchanged"
+}
