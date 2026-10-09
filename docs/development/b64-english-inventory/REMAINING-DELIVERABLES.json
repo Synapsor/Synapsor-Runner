@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-09T04:52:29.346749+00:00",
+  "updated": "2026-10-09T05:03:17.289600+00:00",
   "accepted_Main": "be48873feaff68942d9de9a390d90712fca22272 (scoped DEV integration; whole types/full suite remain open)",
   "B2_composition": "be48873f: accepted02d structured caller/receipt ports/Read held-permit closure + independently accepted exact-code contention fix. Public PG/MySQL arithmetic/races pending; no release acceptance.",
   "windows": {
@@ -16,10 +16,10 @@
   "rows": [
     {
       "id": "1",
-      "deliverable": "B64 English decision sites →0",
-      "owner": "Main/B66",
-      "status": "OPEN: Main30 typed/0 delete and Action28 typed/5 delete; other Read/Ask/Chat/Privacy owned-source counts0/0. No remaining-site retirement editing underway.",
-      "active_work": false
+      "deliverable": "B64 English decision sites \u21920",
+      "owner": "Main boundary hooks + dedicated non-boundary helper; B66 Action owner",
+      "status": "RESTART DISPATCHED: Main30 typed/0delete; Action28 typed/5delete. B66 existing Action delegate restarted; separate Main non-boundary helper requested in old Tester coordinator. Main-only boundary edits sequenced with Resume repair. Counts unchanged until tested commits.",
+      "active_work": true
     },
     {
       "id": "2",
@@ -33,7 +33,7 @@
       "deliverable": "B64 /details full per-operation history",
       "owner": "Main/B66 presentation",
       "status": "SCOPED SOURCE+OWNER COMPONENT ACCEPT bb8/d4 byR2 formal30c33b: prior18PASS and successor14PASS separate; no new ownedproduct/historytest typeerrors, wholetypesexit2. Main protected loader/nested historicalaccess/currentness/actual setup-edit fullhistory integration OPEN.",
-      "active_work": true
+      "active_work": false
     },
     {
       "id": "4",
@@ -53,7 +53,7 @@
       "id": "6",
       "deliverable": "B65 public arithmetic55refused/50/40/45/55refused + races",
       "owner": "Tester/B66/Main",
-      "status": "ACTIVE PG Tester Slot1: actual-frame responder/facts presealed for same saved disabled Action/noResume project and exact02d runtime; first ordinary B48 Read flow is independent of held MySQL and has no old planner replay. D01/five/races stillNOTRUN; Source30/50 and scoped Ownercounterfact preserved; INSERTinitializerMainOPEN.",
+      "status": "ACTIVE PG Slot1: genuine native principal/boundary reviews saved inactive, Source30/50 untouched. Read-preview obsolete vocabulary consumer crashes; separate helper fixing class22091783 with before0P5F/R2 preseal. Two interrupted steps retained; no unsupported replay/reset. D01/five/races NOTRUN; INSERT initializer Main-open.",
       "active_work": true
     },
     {
@@ -65,14 +65,14 @@
     },
     {
       "id": "8",
-      "deliverable": "B65 portable schema identity PG14–16",
+      "deliverable": "B65 portable schema identity PG14\u201316",
       "owner": "Tester/Runtime",
       "status": "PROTOTYPE REPORT COMPLETE: PG14.23/15.18/16.14/17.11 main80 + supplemental4 native cases sealed e57abace. One original PG14 OID-type checker failure retained; independent full post-state80 verified without effect replay. Portable replacement not established; schema/function-body/statement-trigger gaps reported; strict strategy retained. No active further prototype implementation.",
       "active_work": false
     },
     {
       "id": "9",
-      "deliverable": "B65 T01–T10 cross-resource verdicts",
+      "deliverable": "B65 T01\u2013T10 cross-resource verdicts",
       "owner": "Tester",
       "status": "QUEUED Tester: T01-T10 current native cross-resource verdicts after coherent PG public proof/slot; prior matrix retained. MySQL14 separate cannot transfer PG results.",
       "active_work": false
@@ -81,21 +81,21 @@
       "id": "10",
       "deliverable": "Step-owned prompts B62",
       "owner": "Prompt helper/R2/Main",
-      "status": "PARTIAL COMPLETE: accepted Readcb3 prompt extraction integrated7723 with eight golden controls inside affected36PASS; independent six controls accepted. Remaining step-owned prompt/context/correction families QUEUED with no active worker.",
-      "active_work": false
+      "status": "DISPATCHED B66 separate prompt-family implementer; accepted Readcb3/7723 retained. Byte-preserving remaining step-owned prompt/context/correction extraction; exclude current planning/Read owned files, no English fallback/provider.",
+      "active_work": true
     },
     {
       "id": "11",
       "deliverable": "Progress-aware continuation B53",
       "owner": "Prompt helper/R2/Main/Action",
-      "status": "PARTIAL COMPLETE: pure helper4032/R2 unchanged12PASS independently scoped accepted; own original13+samecopied2=15PASS. Live controller9639 remains0PASS2FAIL; actual validation-provenance/native CAS/finite extension binding queued with Main/Action, no allowance resets.",
-      "active_work": false
+      "status": "DISPATCHED B66 separate live controller implementer; accepted pure4032/independent12 controls retained. Live9639 prior0P2F preserved; finite actual validation-provenance/CAS extension required, no counter/hold reset or minted allowance.",
+      "active_work": true
     },
     {
       "id": "12",
       "deliverable": "65/128-Action programs B63",
       "owner": "Read helper/R1/Main",
-      "status": "PARTIAL, QUEUED: bounded paged productb8a/e413 small13-action native control1PASS, limits192/bytes/parts unchanged; R1design BP01-10 accepted but larger65/128after and independent implementation verdict pending. Read owner prioritized2; no larger native run underway.",
+      "status": "QUEUED owner requested from old Tester coordinator: existing small13-action native PASS/b8a-e413/BP01-10 retained; prepare65/128 actual public/native programs for next free heavy slot. No4096 claim or limits raised.",
       "active_work": false
     },
     {
@@ -109,8 +109,8 @@
       "id": "14",
       "deliverable": "MySQL full B65 race matrix plus post-change hard-limit cases after PG6",
       "owner": "R1 independent MySQL native tester",
-      "status": "PARTIAL native19 loader/lock/scope +2 actual contention-adapter PASS; full public matrix BLOCKED/NOT_REACHED. Reproduced lost typed-planning after completion7581 requires prospective native-format decision; design62934436 pending Owner, held job untouched. Native lostCOMMIT/reconcile control refused MySQL source_db before connection77913b4f, NOT_REACHED_UNSUPPORTED; no effect/mode/grant/replay. Duplicate/stale workers,time boundary,stricter authority and public winner orders unestablished. Hard-limit cases after PG6; noPGtransfer.",
-      "active_work": false
+      "status": "PARTIAL native19+adapter2 PASS; public NOT_REACHED. Owner approved prospective planning Resumev4/protocolv3 repair and ONE fresh $0 MySQL job after acceptance. Read owner working7a9243a3 (native10PASS scoped), Main protected hooks next, R1 PL01\u201308 presealed0a1ac221. Held job/history/accounting preserved. MySQL source_db reconciliation unsupported7791 remains separate; arithmetic afterPG6.",
+      "active_work": true
     },
     {
       "id": "15",
@@ -121,31 +121,25 @@
     }
   ],
   "not_actively_worked": [
-    "1",
+    "3",
     "4",
     "5",
     "7",
     "8",
     "9",
-    "10",
-    "11",
     "12",
     "13",
-    "15",
-    "14"
+    "15"
   ],
-  "next": "PG Tester first ordinary Read flow then D01; Main pending Owner prospective planning format/fresh $0 test decision (62934436), preserve old held MySQL. MySQL source_db reconciliation unsupported gap recorded, no new backend inferred. Main initializer/card/history protectedhooks open; paidCLOSED.",
+  "next": "Read planning owner7a9243a3 native10PASS \u2192 Main thin protected save/restore hooks \u2192 R1 sealed actual cold/public/compatibility proofs \u2192 fresh ONE $0 MySQL after acceptance. Vocabulary helper22091783/R2 class review in parallel, PG supported disposition only. Main/Action retirement + live B53 + remaining B62 restarted; B63 queued. Paid CLOSED.",
   "limits": "4heavy/max8workers perrun/0700 isolatedHOME_TMP_DB/8GiB free memory+disk/privatebackup only; no automaticwindow reset",
   "not_actively_worked_open_items": [
-    "1",
+    "3",
     "4",
     "5",
     "9",
-    "10",
-    "11",
     "12",
-    "13",
-    "14"
+    "13"
   ],
   "completed_with_reported_boundary": [
     "7 (scoped native/public DEV integration, not release or effect proof)",
@@ -154,12 +148,12 @@
   ],
   "owner_assertion": "OWNER-B65-COUNTER-ASSERTION.json: b65_s04/b65_public.credits ONLY; counter business blocker closed by direct Owner assertion, not a general/customer claim.",
   "future_post_B65": "Optional separately reviewed enforcing counter trigger; not current product/fixture change or customer recommendation.",
-  "decisions_pending": [
+  "decisions_pending": [],
+  "owner_decisions": [
     {
       "topic": "Prospective durable planning-result record and compatibility",
       "proposal": "../b64-real-readback-cards/docs/development/b64-planning-continuation/DESIGN.md @62934436",
-      "reason": "Owner foundation instruction requires explicit decision for new evidence-record/digest format. Existing Resumev3 ignores unknownfield; propose future v4 +protocolv3; no held-job migration/replay. Async question pending.",
-      "affected": "MySQL public continuation; PG first ordinary flow remains independent."
+      "decision": "Owner approved bounded format repair and ONE fresh $0 MySQL public job AFTER independent acceptance. Resumev4/protocolv3 prospective; existing Resume store; safely refuse older setups; held job/accounting/history untouched; no migration/replay or receipt capability implied."
     }
   ]
 }
