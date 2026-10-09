@@ -72,7 +72,7 @@ describe("early hard-limit namespace contention", () => {
   });
   it.each(cases)("keeps unknown rollback above %s and does not complete the intent", async (code) => {
     const { result, store } = await applyNamespaceComponent(new NamespaceClient(Object.assign(new Error("private namespace database detail"), { code }), true));
-    expect(result).toMatchObject({ status: "reconciliation_required", error_code: "OUTCOME_UNKNOWN", affected_rows: 0 });
+    expect(result).toMatchObject({ status: "reconciliation_required", error_code: "RECONCILIATION_REQUIRED", affected_rows: 0 });
     expect(store.calls).toEqual(["claim", "applying", "reconciliation"]);
   });
   it.each([{ message: "40P01 deadlock, lock timeout" }, { code: "40P01_private" }, { code: "57014" },
