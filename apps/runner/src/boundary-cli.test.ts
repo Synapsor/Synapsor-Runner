@@ -39,6 +39,7 @@ import {
   activateExplorationBoundary,
   buildAutoBoundary,
   explorationBoundaryCandidateDigest,
+  boundaryReviewDecisionRefs,
   loadActivatedExplorationBoundaries,
   reviewExplorationBoundaryCandidate,
   writeAutoBoundaryArtifacts,
@@ -79,6 +80,7 @@ import type {
 } from "./boundary-cli-picker.js";
 import {
   createBoundaryReviewProgress,
+  boundaryReviewSubmissionForDecisions,
 } from "./boundary-review-domain.js";
 import {
   readBoundaryReviewProgress,
@@ -3341,7 +3343,6 @@ describe("boundary operator-plane CLI", () => {
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({
         draft: build.exploration_boundary,
         candidate: narrowCandidate,
-        confirmedDecisions: [],
         actor: "local-developer",
         revision: 1,
         now: "2026-08-29T00:00:00.000Z",
@@ -7192,7 +7193,7 @@ describe("boundary operator-plane CLI", () => {
         const candidate = structuredClone(context.candidate);
         candidate.budgets.max_rows = 2;
         await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: context.draft, candidate,
-          confirmedDecisions: [], actor: "test-reviewer", revision: 2 }));
+          actor: "test-reviewer", revision: 2 }));
         context = await loadBoundaryReviewContext(root);
       }
       const digest = context.bundle.candidate_digest;
@@ -11459,11 +11460,13 @@ describe("boundary operator-plane CLI", () => {
       httpClaims: { tenantClaim: "tenant_id", principalClaim: "sub" } });
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
-      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const guided = await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.8.0" });
+      await initializeFreshGovernedAuthoring({ projectRoot: root, build,
+        config: loadRuntimeConfigFromFile(guided.config_path), storePath: guided.store_path, actor: "first_operator" });
       const shown = await loadBoundaryReviewContext(root);
-      const first = createBoundaryReviewProgress({ draft: shown.draft, candidate: shown.candidate,
-        confirmedDecisions: [], actor: "first_operator", revision: 1 });
-      await saveBoundaryReviewProgress(root, first);
+      const first = createBoundaryReviewProgress({ draft: shown.draft, candidate: shown.candidate, previous: shown.progress,
+        actor: "first_operator", revision: 1 });
+      await saveBoundaryReviewProgress(root, first, shown.bundle.mutation_bindings.authoring);
       let latest: typeof first | undefined;
       const session: BoundaryReviewInteractiveSession = {
         chooseResource: async () => ({ action: "confirm" }), editFieldTiers: async () => undefined,
@@ -11472,16 +11475,20 @@ describe("boundary operator-plane CLI", () => {
           if (!latest) {
             const candidate = structuredClone(first.candidate);
             if (change === "candidate") candidate.budgets.max_rows = 2;
-            latest = createBoundaryReviewProgress({ draft: shown.draft, candidate, previous: first,
-              confirmedDecisions: [candidate.unresolved_decisions[0]!], actor: "second_operator", revision: 2 });
-            await saveBoundaryReviewProgress(root, latest);
+            const fresh = await loadBoundaryReviewContext(root);
+            const submission = change === "confirmations"
+              ? boundaryReviewSubmissionForDecisions(candidate, [boundaryReviewDecisionRefs(candidate)[0]!.id]) : undefined;
+            const proposed = createBoundaryReviewProgress({ draft: shown.draft, candidate, previous: first,
+              submission, actor: "second_operator", revision: 2 });
+            await saveBoundaryReviewProgress(root, proposed, fresh.bundle.mutation_bindings.authoring, undefined, submission);
+            latest = (await loadBoundaryReviewContext(root)).progress;
           }
           return !prompt.startsWith("Activate ");
         },
       };
       await expect(boundaryReviewCommandInternal(["--project-root", root], async () => inspection, session))
         .rejects.toHaveProperty("code", "POLICY_AUTHORING_REVIEW_CHANGED");
-      expect(JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8"))).toEqual(latest);
+      expect((await loadBoundaryReviewContext(root)).progress).toEqual(latest);
       await expect(loadActivatedExplorationBoundaries(root)).rejects.toHaveProperty("code", "ENOENT");
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
@@ -12983,7 +12990,6 @@ describe("boundary operator-plane CLI", () => {
     const progress = createBoundaryReviewProgress({
       draft: build.exploration_boundary,
       candidate: excluded,
-      confirmedDecisions: [],
       actor: "alice",
       revision: 1,
     });
@@ -13492,7 +13498,6 @@ describe("boundary operator-plane CLI", () => {
     const progress = createBoundaryReviewProgress({
       draft: build.exploration_boundary,
       candidate,
-      confirmedDecisions: [],
       actor: "alice",
       revision: 1,
     });
@@ -14010,7 +14015,6 @@ describe("boundary operator-plane CLI", () => {
     const progress = createBoundaryReviewProgress({
       draft: build.exploration_boundary,
       candidate,
-      confirmedDecisions: [],
       actor: "alice",
       revision: 1,
     });
@@ -15011,7 +15015,6 @@ describe("boundary operator-plane CLI", () => {
       const progress = createBoundaryReviewProgress({
         draft: build.exploration_boundary,
         candidate: build.exploration_boundary,
-        confirmedDecisions: [],
         actor: "legacy-reviewer",
         revision: 1,
       });
@@ -15128,7 +15131,6 @@ describe("boundary operator-plane CLI", () => {
       const invalid = createBoundaryReviewProgress({
         draft: original.exploration_boundary,
         candidate: drifted.exploration_boundary,
-        confirmedDecisions: [],
         actor: "local-boundary-library",
         revision: 1,
       });
