@@ -4617,3 +4617,22 @@ function boundary(): ExplorationBoundaryDraft {
     unresolved_decisions: [],
   };
 }
+
+// R1 independent I03527: actual producer refusal enters the same production view.
+it("FS actual target producer retains its exact diagnostic with no inferred paraphrase",async()=>{
+ const calls:string[]=[];
+ const requestJson=phaseResponder(calls,name=>{
+  if(name.endsWith("submit_verification_boundary_draft"))return {status:"draft",name:"billing.pause_account_verification",resources:[{binding:"supporting_account",resource:"billing.accounts",source:{kind:"relationship",from_binding:"missing_parent",relationship:"missing_relationship",direction:"forward"},fields:["status","risk_hold"]}]};
+  if(!name.endsWith("submit_effect_envelope_draft"))return undefined;
+  const effect=payloadFor(name);delete effect.target_binding;return effect;
+ });
+ let refusal:unknown;
+ try {await generateModelActionRuleDraft({session:{provider:"openai",model:"gpt-5.6-terra",dependencies:{requestJson}},intent:"Let an eligible account request a temporary pause, but require human review.",builtCatalog:builtCatalog(),readBoundary:boundary(),readBoundaryDigest:readDigest,egressAcknowledged:true,env:{OPENAI_API_KEY:"provider-test-key"}});}catch(error){refusal=error;}
+ expect(refusal).toBeInstanceOf(Error);
+ expect((refusal as Error).message).toContain("ACTION_RULE_UPDATE_TARGET_UNAVAILABLE:");
+ const exact=(refusal as Error).message.replace(/^(?:(?:ACTION_RULE_[A-Z0-9_]+):\s*)+/iu,"");
+ const {actionRuleDraftFailureView}=await import("./action-rule-diagnostic-view.js");
+ expect(actionRuleDraftFailureView(refusal)).toEqual({kind:"reviewed_grammar",blockers:[exact]});
+ expect(calls.filter(name=>name.endsWith("submit_action_rule_draft"))).toHaveLength(0);
+ expect(calls.filter(name=>name.endsWith("submit_approval_policy_draft"))).toHaveLength(0);
+});
