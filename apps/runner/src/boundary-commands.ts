@@ -1,7 +1,7 @@
 import { AuthoringResumeMaterialError, AuthoringCheckpointSaveError, rejectedCheckpointMaterial } from "./authoring-checkpoint-save-error.js";
 import { reloadReadReviewForModelRevision, reloadReadReviewForModelRevisionHeld } from "./authoring-read-review-currentness.js";
 export { reloadReadReviewForModelRevision, reloadReadReviewForModelRevisionHeld } from "./authoring-read-review-currentness.js";
-import { actionRuleDraftFailureView } from "./action-rule-diagnostic-view.js";
+import { actionRuleDraftCancelled, actionRuleDraftFailureView } from "./action-rule-diagnostic-view.js";
 import { boundaryAuthoringResumeBinding } from "./authoring-resume-binding.js";
 export { boundaryAuthoringResumeBinding } from "./authoring-resume-binding.js";
 import { authoringPermissionPresentation } from "./authoring-permission-presentation.js";
@@ -3140,7 +3140,7 @@ async function showBoundaryAuthoringFailure(
   const details = [...notice.lines, ...(notice.footer ? [notice.footer] : [])];
   session.rememberDetails?.("SETUP FAILURE DETAILS", details);
   if (error instanceof AskError && error.code === "ASK_CANCELLED"
-    || error instanceof Error && error.message === "ACTION_RULE_MODEL_DRAFT_CANCELLED") {
+    || actionRuleDraftCancelled(error)) {
     session.present?.("Setup paused", ["Your saved work is available when you resume."], "warning");
     return "pause";
   }
@@ -3185,7 +3185,7 @@ function boundaryModelAssistFailureNotice(
         : "Active authority and source data are unchanged.",
     };
   }
-  if (error instanceof Error && error.message === "ACTION_RULE_MODEL_DRAFT_CANCELLED") {
+  if (actionRuleDraftCancelled(error)) {
     return { tone: "warning", title: "Boundary conversation paused.",
       lines: ["Saved disabled components and completed outcomes remain available. Active authority and source data are unchanged."],
       footer: "Open model drafting again and choose Resume the interrupted job." };
@@ -3697,7 +3697,7 @@ type ReadBoundaryReviewOptions = {
 function boundaryAuthoringCancelled(error: unknown, chat?: BoundaryAuthoringChat): boolean {
   return chat?.signal?.aborted === true
     || error instanceof AskError && error.code === "ASK_CANCELLED"
-    || error instanceof Error && error.message === "ACTION_RULE_MODEL_DRAFT_CANCELLED";
+    || actionRuleDraftCancelled(error);
 }
 
 
