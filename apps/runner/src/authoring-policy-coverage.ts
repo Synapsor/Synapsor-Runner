@@ -9,7 +9,7 @@ import { sourceTransactionScopeQuestions, SourceTransactionScopeError } from './
 import { assertRegisteredReviewFinding, planCoverageResolution, planReviewPrerequisite, ReviewResolutionError } from './authoring-review-resolution.js';
 import { receiptConfigurationComponentOnly } from "./authoring-policy-source.js";
 import { CoverageSourceLinesError, missingReviewSourceLines, reviewSourceInventory } from "./authoring-source-coverage.js";
-import { CoverageComponentError, CoverageComponentsError, CoverageCounterSupportError, CoverageCurrentDescriptionError, recordCoverageFeedbackParent, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, permitsSecondScopedCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
+import { CoverageValidationError, CoverageComponentError, CoverageComponentsError, CoverageCounterSupportError, CoverageCurrentDescriptionError, recordCoverageFeedbackParent, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, permitsSecondScopedCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
 import { clientDutyInventory } from "./authoring-client-duties.js";
 import { assessReviewObligation, assessReceiptCouplingCapability, assertRequiredReceiptCoupling, receiptCouplingInterpretation, repairableReceiptCouplingRepresentation, deferredReviewObligation, receiptSelectionComponent } from "./authoring-obligation-review.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -87,7 +87,7 @@ export function needsDeploymentCoverageClassification(passage: PolicyPassage): b
 function draftValue(draft: unknown, pointer: string): unknown {
   let value: unknown = draft;
   for (const key of pointer.slice(1).split("/").map((part) => part.replace(/~1/gu, "/").replace(/~0/gu, "~"))) {
-    if (!value || typeof value !== "object" || !Object.hasOwn(value, key)) throw new Error(`Draft pointer is not present: ${pointer}`);
+    if (!value || typeof value !== "object" || !Object.hasOwn(value, key)) throw new CoverageValidationError("reference_missing", `Draft pointer is not present: ${pointer}`);
     value = (value as Record<string, unknown>)[key];
   }
   return value;
@@ -154,18 +154,18 @@ function fieldPrivacyEvidence(draft: unknown) {
     if (excluded.selected_read_digest !== canonicalJsonDigest(current?.read)
       || excluded.selected_actions_digest !== canonicalJsonDigest(current?.actions)
       || excluded.source_constraints_digest !== canonicalJsonDigest(evidence?.source_constraints)) {
-      throw new Error("Incomplete field privacy evidence: selected Read, Actions or inspected metadata changed. Rebuild the exact selected authoring evidence.");
+      throw new CoverageValidationError("field_evidence_unavailable", "Incomplete field privacy evidence: selected Read, Actions or inspected metadata changed. Rebuild the exact selected authoring evidence.");
     }
     const reviewed = evidenceRecord(evidence?.reviewed_excluded_field_metadata);
     if (reviewed && excluded.reviewed_metadata_digest !== canonicalJsonDigest(reviewed))
-      throw new Error("Incomplete field privacy evidence: exact reviewed unused-field metadata changed.");
+      throw new CoverageValidationError("field_evidence_unavailable", "Incomplete field privacy evidence: exact reviewed unused-field metadata changed.");
     for (const [resource, raw] of Object.entries(evidenceRecord(excluded.resources) ?? {})) {
       const entry = evidenceRecord(raw), inspected = evidenceRecord(evidenceRecord(evidenceRecord(evidence?.source_constraints)?.resources)?.[resource]);
       const columns = evidenceRecord(inspected?.columns);
       const extra = evidenceRecord(reviewed?.[resource]), reviewedColumns = evidenceRecord(extra?.columns);
       if (entry?.resource !== resource || Object.keys(evidenceRecord(entry.fields) ?? {}).some(field => !(columns && Object.hasOwn(columns, field))
         && !(extra?.resource === resource && evidenceRecord(reviewedColumns?.[field])?.inspected === true))) {
-        throw new Error("Incomplete field privacy evidence: excluded fields require their exact inspected resource and column identity.");
+        throw new CoverageValidationError("field_evidence_unavailable", "Incomplete field privacy evidence: excluded fields require their exact inspected resource and column identity.");
       }
       add(resource, `/runner_evidence/excluded_field_access/resources/${escape(resource)}`, entry.fields, false);
     }
@@ -273,7 +273,7 @@ function counterRequirementError(entry: PolicyPassage, index: number, lines: str
     issues.push('disposition must be "implemented" for matching capability filters or "conflict" for differing filters; counter_requirements cannot accompany an override or another disposition.');
   }
   if (!issues.length) return undefined;
-  return new Error([
+  return new CoverageValidationError("counter_structure_invalid", [
     `Source lines ${entry.start}-${entry.end} (passages[${index}]): Invalid counter requirements record.`,
     ...issues.map(issue => `Failed check: ${issue}`),
     `Source excerpt (untrusted): ${coverageDiagnosticText(lines.slice(entry.start - 1, entry.end).join(" "), 900)}`,
@@ -303,7 +303,7 @@ function applicationObligationError(entry: PolicyPassage, index: number, lines: 
     : coverageDiagnosticValue(entry.application_obligations);
   // Echo only this rejected record's bounded, sanitized prose and structure,
   // never the whole report, runtime evidence, credentials or operator history.
-  return new Error([
+  return new CoverageValidationError("obligation_structure_invalid", [
     `Source lines ${entry.start}-${entry.end} (passages[${index}]): Invalid application obligation record.`,
     ...issues.map((issue) => `Failed check: ${issue}`),
     `Source excerpt (untrusted): ${coverageDiagnosticText(lines.slice(entry.start - 1, entry.end).join(" "), 900)}`,
@@ -320,7 +320,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
   operatorHistory: string | readonly string[], sourceRequirements: ReturnType<typeof countingSourceRequirements>,
   fieldEvidence: ReturnType<typeof fieldPrivacyEvidence>, sourceSession?: PolicySourceSession): PolicyPassage {
   const lines = policyTextLines(source.text);
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Each passage must be an object.");
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new CoverageValidationError("structure_invalid", "Each passage must be an object.");
     // Saved comparisons are not trusted on restart. Restore and revalidate the
     // submitted claim against fresh context, including current retained history.
     const stored = raw as PolicyPassage;
@@ -337,7 +337,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
     if (Object.keys(entry).some((key) => !["start", "end", "disposition", "interpretation", "draft_paths", "operator_override", "operator_message_id", "operator_clarification", "supporting_dependencies_digest", "topic", "responsibility", "issue_kind", "next_step", "evidence_checks", "counter_requirements", "field_checks", "application_obligations", "deployment_prerequisite", "source_counter_obligation", "receipt_component"].includes(key))
       || !Number.isSafeInteger(entry.start) || !Number.isSafeInteger(entry.end) || entry.start < 1 || entry.end < entry.start || entry.end > lines.length
       || !DISPOSITIONS.includes(entry.disposition) || typeof entry.interpretation !== "string" || !entry.interpretation.trim() || entry.interpretation.length > 800
-      || !Array.isArray(entry.draft_paths) || entry.draft_paths.length > MAX_PASSAGE_REFERENCES) throw new Error("Invalid passage range, interpretation or disposition.");
+      || !Array.isArray(entry.draft_paths) || entry.draft_paths.length > MAX_PASSAGE_REFERENCES) throw new CoverageValidationError("structure_invalid", "Invalid passage range, interpretation or disposition.");
     if (entry.receipt_component !== undefined && entry.receipt_component !== "source_transaction_coupling")
       throw new Error("RECEIPT_COMPONENT_INVALID: Use the supported exact capability component; no category establishes proof.");
     if (entry.topic !== undefined && (typeof entry.topic !== "string" || !entry.topic.trim() || entry.topic.length > 90)
@@ -346,9 +346,9 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
       || entry.issue_kind !== undefined && !ISSUES.includes(entry.issue_kind)) throw new Error("Use a short business topic, a concrete next step and a supported responsibility/issue category.");
     const draftPaths: string[] = [];
     for (const [pointerIndex, pointer] of entry.draft_paths.entries()) {
-      if (typeof pointer !== "string" || !pointer.startsWith("/") || pointer.length > 500) throw new Error("Use exact JSON pointers into the current draft.");
+      if (typeof pointer !== "string" || !pointer.startsWith("/") || pointer.length > 500) throw new CoverageValidationError("structure_invalid", "Use exact JSON pointers into the current draft.");
       try { draftPaths.push(canonicalDraftPointer(draft, pointer)); }
-      catch { throw new CoverageComponentError(`/passages/${index}/draft_paths/${pointerIndex}`, new Error("Draft pointer(s) not present:")); }
+      catch { throw new CoverageComponentError(`/passages/${index}/draft_paths/${pointerIndex}`, new CoverageValidationError("reference_missing", "Draft pointer(s) not present:")); }
     }
     const counterMaintenance = resolveSourceCounterObligation({ ...entry, draft_paths: draftPaths }, source, draft);
     if (stored.source_counter_resolution && canonicalJsonDigest(stored.source_counter_resolution) !== canonicalJsonDigest(counterMaintenance ?? null)) {
@@ -369,7 +369,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
       }
     }
     if (needsDeploymentCoverageClassification({ ...entry, draft_paths: draftPaths })) {
-      throw new Error(`Source lines ${entry.start}-${entry.end}: Classify the deployment prerequisite against its exact current evidence, not the group overview or a generic execution link. Use deployment_prerequisite=runner_execution_setup only for supported writer review, execution consent and worker setup after authority review; runner_client_connection only for supported client installation; authenticated_identity only for wiring already reviewed customer scope. Link only /runner_evidence/runtime_contract/deployment_prerequisites/<name>. Split Read/privacy and business rules into their own passages, even on the same lines. Application behavior still requires its own responsibility decision; unsupported or ambiguous requirements must remain unresolved without a deployment waiver. Do not change the draft or ask for runtime identity values to repair this coverage link. Return the complete corrected coverage.`);
+      throw new CoverageValidationError("deployment_component_mixed", `Source lines ${entry.start}-${entry.end}: Classify the deployment prerequisite against its exact current evidence, not the group overview or a generic execution link. Use deployment_prerequisite=runner_execution_setup only for supported writer review, execution consent and worker setup after authority review; runner_client_connection only for supported client installation; authenticated_identity only for wiring already reviewed customer scope. Link only /runner_evidence/runtime_contract/deployment_prerequisites/<name>. Split Read/privacy and business rules into their own passages, even on the same lines. Application behavior still requires its own responsibility decision; unsupported or ambiguous requirements must remain unresolved without a deployment waiver. Do not change the draft or ask for runtime identity values to repair this coverage link. Return the complete corrected coverage.`);
     }
     if (entry.deployment_prerequisite !== undefined) {
       const clientConnection = entry.deployment_prerequisite === "runner_client_connection";
@@ -381,7 +381,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
       const pointer = `/runner_evidence/runtime_contract/deployment_prerequisites/${prerequisite}`;
       const extraPaths = draftPaths.filter((path) => path !== pointer && !path.startsWith(`${pointer}/`));
       if (!draftPaths.includes(pointer) || extraPaths.length) {
-        throw new Error(`Source lines ${entry.start}-${entry.end}: ${prerequisite} draft_paths must contain only ${JSON.stringify(pointer)} (and optional children of that exact evidence). Remove unrelated links ${JSON.stringify(extraPaths)} from this deployment passage. Put already-enforced Read scope in a separate implemented passage and privacy/eligibility decisions in their own passages. Return the complete corrected coverage; do not change the draft or request identity values.`);
+        throw new CoverageValidationError("deployment_component_mixed", `Source lines ${entry.start}-${entry.end}: ${prerequisite} draft_paths must contain only ${JSON.stringify(pointer)} (and optional children of that exact evidence). Remove unrelated links ${JSON.stringify(extraPaths)} from this deployment passage. Put already-enforced Read scope in a separate implemented passage and privacy/eligibility decisions in their own passages. Return the complete corrected coverage; do not change the draft or request identity values.`);
       }
       const supported = clientConnection || executionSetup
         ? draftValue(draft, `${pointer}/supported`) === true && draftValue(draft, `${pointer}/stage`) === "after_authority_review"
@@ -402,7 +402,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
           || !check.path.startsWith("/runner_evidence/") || check.path.length > 500
           || !(check.equals === null || ["string", "number", "boolean"].includes(typeof check.equals))) throw new Error("Evidence checks compare one exact Runner evidence path to a scalar value.");
         const actual = draftValue(draft, check.path);
-        if (actual !== check.equals) throw new CoverageComponentError(`/passages/${index}/evidence_checks/${checkIndex}`,new Error(`Mechanical evidence mismatch at ${check.path}: expected ${JSON.stringify(check.equals)}, actual ${JSON.stringify(actual)}. Reconcile this coverage claim with the existing configuration; do not change the rule to repair a claim.`));
+        if (actual !== check.equals) throw new CoverageComponentError(`/passages/${index}/evidence_checks/${checkIndex}`,new CoverageValidationError("evidence_value_mismatch", `Mechanical evidence mismatch at ${check.path}: expected ${JSON.stringify(check.equals)}, actual ${JSON.stringify(actual)}. Reconcile this coverage claim with the existing configuration; do not change the rule to repair a claim.`));
       }
     }
     if (entry.counter_requirements !== undefined) {
@@ -418,7 +418,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
           || typeof check.path !== "string" || !/^\/runner_evidence\/actions\/[^/]+\/automatic_limits\/\d+\/history_selector\/capability$/u.test(check.path)
           || !draftPaths.some((pointer) => check.path === pointer || check.path.startsWith(`${pointer}/`))
           || ![check.current_capability, check.required_capability].every((value) => value === null || typeof value === "string")) {
-          throw new Error(`Counter requirements must name an exact referenced history_selector/capability, its current filter and the policy-required filter; diagnostic IDs are not filters. Select path from ${JSON.stringify(counterCapabilityReferences(draft))} and include its parent evidence in draft_paths. Omit counter_requirements entirely when no capability-filter comparison is needed.`);
+          throw new CoverageValidationError("counter_reference_overbroad", `Counter requirements must name an exact referenced history_selector/capability, its current filter and the policy-required filter; diagnostic IDs are not filters. Select path from ${JSON.stringify(counterCapabilityReferences(draft))} and include its parent evidence in draft_paths. Omit counter_requirements entirely when no capability-filter comparison is needed.`);
         }
         const actual = draftValue(draft, check.path);
         if (actual !== null && typeof actual !== "string") throw new Error("COUNTING_CONFIGURATION_INCOMPLETE: The referenced current selector is unavailable in this prepared context.");
@@ -446,7 +446,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
           || typeof check.resource !== "string" || check.resource.length > 256 || typeof check.field !== "string" || check.field.length > 128
           || !["private", "business_visible"].includes(check.expectation)) throw new Error("Field checks require a reviewed resource, field and private/business_visible expectation.");
         const matches = fieldEvidence.filter(field => field.resource === check.resource && field.field === check.field);
-        if (!matches.length) throw new Error(`Field privacy evidence is not present: ${check.resource}.${check.field}. Use exact fields from read_access, Action scoped_bindings or host-proven excluded_field_access; do not infer private access from an absent resource.`);
+        if (!matches.length) throw new CoverageValidationError("field_evidence_unavailable", `Field privacy evidence is not present: ${check.resource}.${check.field}. Use exact fields from read_access, Action scoped_bindings or host-proven excluded_field_access; do not infer private access from an absent resource.`);
         let valuesReturned = false;
         const analysis = new Set<string>();
         for (const match of matches) {
@@ -455,7 +455,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
             || !value.model_analysis.every(operation => typeof operation === "string")
             || match.action && (typeof value.model_visible !== "boolean" || typeof value.read_access_present !== "boolean"
               || typeof value.private_read_selection !== "boolean" || typeof value.private_action_verification !== "boolean")) {
-            throw new Error(`Incomplete field privacy evidence at ${match.path}. Rebuild coverage from the exact current Read and compiled Action candidates; model_visible alone cannot prove privacy.`);
+            throw new CoverageValidationError("field_evidence_unavailable", `Incomplete field privacy evidence at ${match.path}. Rebuild coverage from the exact current Read and compiled Action candidates; model_visible alone cannot prove privacy.`);
           }
           valuesReturned ||= value.actual_values_returned || match.action && value.model_visible === true;
           for (const operation of value.model_analysis) analysis.add(operation);
@@ -463,14 +463,14 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
         const actual = { actual_values_returned: valuesReturned, model_analysis: [...analysis].sort() };
         if (entry.disposition === "implemented" && (check.expectation === "private"
           ? actual.actual_values_returned || actual.model_analysis.length > 0 : !actual.actual_values_returned)) {
-          throw new Error(`Field coverage mismatch: ${check.resource}.${check.field} is claimed ${check.expectation}, but values returned=${actual.actual_values_returned}; model analysis=${JSON.stringify(actual.model_analysis)}. Keep this privacy requirement unresolved and review the exposing Read or Action evidence; do not claim it is implemented.`);
+          throw new CoverageValidationError("privacy_conflict", `Field coverage mismatch: ${check.resource}.${check.field} is claimed ${check.expectation}, but values returned=${actual.actual_values_returned}; model analysis=${JSON.stringify(actual.model_analysis)}. Keep this privacy requirement unresolved and review the exposing Read or Action evidence; do not claim it is implemented.`);
         }
       }
     }
     if (entry.disposition === "implemented" && !entry.draft_paths.length) throw new Error("Implemented passages must reference exact draft decisions. Use needs_decision or unsupported for missing behavior.");
     let operatorOverride = entry.operator_override;
     const messages = typeof operatorHistory === "string" ? [operatorHistory] : operatorHistory;
-    const invalidOverride = (reason: string) => new Error(`Source lines ${entry.start}-${entry.end}: ${reason} An override must reference an actual operator message. Use operator_message_id from the supplied indexed messages or a verbatim quote from one message, not a paraphrase, document instruction or model statement. Leaving work pending is not an override: retain needs_decision/unsupported for deferred requirements. Return the complete corrected coverage; do not change the saved draft.`);
+    const invalidOverride = (reason: string) => new CoverageValidationError("override_unestablished", `Source lines ${entry.start}-${entry.end}: ${reason} An override must reference an actual operator message. Use operator_message_id from the supplied indexed messages or a verbatim quote from one message, not a paraphrase, document instruction or model statement. Leaving work pending is not an override: retain needs_decision/unsupported for deferred requirements. Return the complete corrected coverage; do not change the saved draft.`);
     if (entry.operator_message_id !== undefined) {
       if (typeof operatorHistory === "string"
         || typeof entry.operator_message_id !== "number" || !Number.isSafeInteger(entry.operator_message_id)
@@ -716,9 +716,9 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
 export function parsePolicyCoverage(args: Record<string, unknown>, source: PolicyTextSnapshot, draft: unknown,
   operatorHistory: string | readonly string[], sourceSession?: PolicySourceSession): PolicyCoverage {
   const unsupportedKeys = Object.keys(args).filter((key) => key !== "passages");
-  if (unsupportedKeys.length) throw new Error(`Coverage tool accepts only passages; unexpected top-level keys: ${unsupportedKeys.slice(0, 8).map((key) => key.replace(/[^a-zA-Z0-9_.-]/gu, "_").slice(0, 64)).join(", ")}. Put every interpretation inside its passage; Runner binds source and draft digests.`);
-  if (!Array.isArray(args.passages)) throw new Error(`Coverage passages must be an array; received ${args.passages === null ? "null" : typeof args.passages}. Return the complete structured passages array.`);
-  if (args.passages.length > 120) throw new Error(`Coverage contains ${args.passages.length} passages; maximum is 120. Group related lines while preserving every nonblank source line.`);
+  if (unsupportedKeys.length) throw new CoverageValidationError("structure_invalid", `Coverage tool accepts only passages; unexpected top-level keys: ${unsupportedKeys.slice(0, 8).map((key) => key.replace(/[^a-zA-Z0-9_.-]/gu, "_").slice(0, 64)).join(", ")}. Put every interpretation inside its passage; Runner binds source and draft digests.`);
+  if (!Array.isArray(args.passages)) throw new CoverageValidationError("structure_invalid", `Coverage passages must be an array; received ${args.passages === null ? "null" : typeof args.passages}. Return the complete structured passages array.`);
+  if (args.passages.length > 120) throw new CoverageValidationError("structure_invalid", `Coverage contains ${args.passages.length} passages; maximum is 120. Group related lines while preserving every nonblank source line.`);
   const sourceRequirements = countingSourceRequirements(source, draft, messagesForCoverage(operatorHistory));
   const missingReferences = args.passages.flatMap((raw) => {
     if (!raw || typeof raw !== "object" || !Array.isArray(raw.draft_paths)) return [];
@@ -727,7 +727,7 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
       try { canonicalDraftPointer(draft, pointer); return false; } catch { return true; }
     });
   });
-  if (missingReferences.length) throw new Error(`Draft pointer(s) not present: ${[...new Set(missingReferences)].join(", ")}. Use the supplied exact coverage references; do not invent a missing setting or edit a rule to repair a link. Private verification-only fields are under /runner_evidence/actions/<outcome>/scoped_bindings/<binding>/fields/<field>, not nonexistent read_access resources. Select an existing exact path; no missing Read path is redirected.`);
+  if (missingReferences.length) throw new CoverageValidationError("reference_missing", `Draft pointer(s) not present: ${[...new Set(missingReferences)].join(", ")}. Use the supplied exact coverage references; do not invent a missing setting or edit a rule to repair a link. Private verification-only fields are under /runner_evidence/actions/<outcome>/scoped_bindings/<binding>/fields/<field>, not nonexistent read_access resources. Select an existing exact path; no missing Read path is redirected.`);
   const fieldEvidence = fieldPrivacyEvidence(draft);
   const lines = policyTextLines(source.text);
   const passages: PolicyPassage[] = [];
