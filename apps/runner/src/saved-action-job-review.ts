@@ -151,7 +151,7 @@ export async function assertCompleteSelectedActionProgram(input: {
     }
   }
   let selected;
-  try { selected = (await readProjectReadAuthoring(input.projectRoot, input.env))?.selected; }
+  try { selected = (await readProjectReadAuthoring(input.projectRoot, input.env, input.permit))?.selected; }
   catch (error) {
     if ((error as { code?: string }).code === "POLICY_READ_AUTHORING_MISSING") {
       if (successor.status === "present") refuse("Fresh Read/Source review for the independent successor is unavailable.");
