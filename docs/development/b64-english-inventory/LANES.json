@@ -14,7 +14,8 @@
   "lanes": {
     "read": {
       "agent": "/root/b59_regression_fix",
-      "workspace": "../b57-fixture-prep"
+      "workspace": "../b56-owned-dir-remedy",
+      "current_task": "Read-only native activation hydration; shared question binding5689967c in R2 review"
     },
     "privacy_visibility": {
       "agent": "/root/b64_visibility_retirement",
@@ -34,14 +35,15 @@
     },
     "main": {
       "agent": "Main",
-      "workspace": "."
+      "workspace": ".",
+      "current_task": "Read public activation/native assessment; accepted B65 closure integrated7e0760fe"
     }
   },
   "heavy_slots": {
-    "1": "B65 Tester PRE01 ordinary eligibility then Action independent lifetime controls",
-    "2": "B65 Runtime receipt replay evidence / single INSERT upper SUM successor",
-    "3": "Privacy compatibility R2 review and inventory binding",
-    "4": "Action exact Mainlabel8cb adoption/types; R1 I02097 completed"
+    "1": "R1 public focused Read signoff variants",
+    "2": "B66 fixed Main7e076 integration focused/types; Action source work parallel",
+    "3": "Privacy local-ui/workbench presentation migration",
+    "4": "R2 pure Read question binding review; hydration helper source only"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -1204,10 +1206,10 @@
       ]
     },
     "privacy_visibility": {
-      "pin": "a733ccec",
-      "typed": 23,
-      "delete": 0,
-      "source": "Original23typed pendingbroadercoherentacceptance; newI00054/55 retiredpredicates proposeddelete; I00371 exactPK implementation829 independentlysourceverified,notMainintegrated. Scopef3852PASS, vocabulary463021PASS owner; native/publicports pending.",
+      "pin": "423dfed2",
+      "typed": 21,
+      "delete": 2,
+      "source": "Inspector I02080/I02081 exact accepted product already Main plus unchanged14 current controls closed; Main auto15 and vocabulary6+2delete consumers remain; UI c758 in affected tests, boundarycommands hooks ownedMain.",
       "reclassified_open": {
         "typed": [
           "I00371"
@@ -1218,13 +1220,17 @@
         ]
       },
       "with_reclassifications": {
-        "typed": 23,
+        "typed": 21,
         "delete": 2
       },
       "audit_reclassified_ids": [
         "I00054",
         "I00055",
         "I00371"
+      ],
+      "closed_ids": [
+        "I02080",
+        "I02081"
       ]
     },
     "chat_presentation": {
@@ -1247,7 +1253,7 @@
       ]
     },
     "action": {
-      "pin": "48cdcf07",
+      "pin": "e9e68bab",
       "typed": 41,
       "delete": 5,
       "source": "Nine original typed sites implemented source,13delete implemented; TUI79/guided28/renamed1PASS types0 owner evidence; successor independent acceptance pending. Two reclassified sites assigned.",
@@ -1264,7 +1270,8 @@
       "audit_reclassified_ids": [
         "I01961",
         "I01962"
-      ]
+      ],
+      "active_task": "Running typed coverage consumer 40F10P\u219250P; Main producer4ea adopted, actual241P/one pre-existing Read inventory failure/one skip; independent acceptance pending; units/source question producers next."
     },
     "read": {
       "pin": "a1744329",
@@ -1274,7 +1281,7 @@
       "source": "R2scoped178PASS/build0:all57originalRead11typed+46deleteclosed onownedbranch. Last6 notMainintegrated; native/public11Mainhook sites separate."
     },
     "main": {
-      "pin": "d6c14630",
+      "pin": "7e0760fe",
       "typed": 30,
       "delete": 0,
       "source": "Original30typed/0delete +five audit sites remain. I02087/I02100 accepted e52adbf1 owner126PASS/types0; I02097 accepted13292688 independent10PASS before1P9F, owner96PASS/types0. No English error/message or singular/plural query inference.",
@@ -1297,7 +1304,8 @@
         "I02087",
         "I02100",
         "I02097"
-      ]
+      ],
+      "active_task": "Read activation native assessment under same writer permit065ad independently4PASS; public options/native hydration and deletion of label-derived gates next. No unverified decrement."
     }
   },
   "exit_criterion": "Zero remaining English decision sites. All original250typed+66delete and independently reclassified sites must close; no deferral. Syntactic regex/candidate counts are not this metric.",
