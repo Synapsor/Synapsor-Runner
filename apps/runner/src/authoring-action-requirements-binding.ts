@@ -3,7 +3,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { actionRequirementDigestSchema as hash, actionRequirementColumnSchema, parseActionRequirementProposals,
   assertActionRequirementColumns, type ActionRequirementProposals } from "./authoring-action-requirements.js";
 import { parseActionRuleAuthoringCheckpoint, actionLogicalTurnMaterialDigest, type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
-import { validateAuthoringTransportState, assertAuthoringQuestionHandoff, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 const name = z.string().min(1).max(256).refine(value => value.trim() === value);
 const completion = z.object({ operation_id: z.string().uuid(), request_digest: hash, context_digest: hash, response_digest: hash }).strict();
 const scopes = z.enum(["boundary", "capability", "tenant", "tenant_principal", "tenant_object"]);
@@ -66,7 +66,13 @@ export function assertActionRequirementsQuestionGeneration(input: ActionRequirem
   const c = b.origin.completion, op = generation.operations.find(op => op.id === c.operation_id);
   if (!op || op.state !== "checkpointed" || !op.checkpoint_seen || op.request_digest !== c.request_digest
     || op.context_digest !== c.context_digest || op.attempts.at(-1)?.outcome !== "response") invalid();
-  if (b.origin.kind === "ordinary_clarification") assertAuthoringQuestionHandoff(generation, b.origin.checkpoint);
-  else if (!equal(op.action_checkpoint, { consumer: "action_rule_components", kind: "compiled_draft",
+  if (b.origin.kind === "ordinary_clarification") {
+    // The original handoff is append-only history after an actual answer. Its
+    // answer does not confirm these proposals or authorize another completion.
+    const h = op.question_handoff, original = b.origin.checkpoint;
+    if (!h || h.consumer !== "action_rule_clarification" || h.checkpoint_digest !== original.digest
+      || h.question !== original.pending_question!.question || h.question_digest !== canonicalJsonDigest(original.pending_question!.question)
+      || h.response_digest !== c.response_digest) invalid();
+  } else if (!equal(op.action_checkpoint, { consumer: "action_rule_components", kind: "compiled_draft",
     material_digest: actionLogicalTurnMaterialDigest(b.origin.checkpoint), response_digest: c.response_digest })) invalid();
 }
