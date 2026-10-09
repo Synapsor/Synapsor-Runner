@@ -36,7 +36,8 @@ function mapping(q: OperatorQuestion, value: unknown = { kind: q.kind }) {
     ? { source_reference: canonicalJsonDigest(q.source_binding) } : { answer_id: q.raw_answer!.id }), status: "proposal", disposition: "proposed", value };
 }
 function information(q: OperatorQuestion) {
-  return { question_id: q.id, revision: q.revision, ...(q.source_binding ? { source_reference: canonicalJsonDigest(q.source_binding) } : {}),
+  return { question_id: q.id, revision: q.revision, ...(q.source_binding ? { source_reference: canonicalJsonDigest(q.source_binding),
+      source_passages: [{ start: 1, end: 2, identifiers: ["note"] }] } : {}),
     status: "needs_information", question: "How short or long may the parcel note be?" };
 }
 function validateSourceProposal(root: OperatorQuestion) {

@@ -179,7 +179,8 @@ async function run() {
           assert(tool.parameters.oneOf.every((branch: any) => branch.properties.revision.enum.includes(q.revision)));
           let value: object;
           if (q.source_binding) value = { question_id: q.question_id, revision: q.revision,
-            source_reference: q.source_reference, status: "needs_information", question: INPUT_PROCESS_FACTS.question };
+            source_reference: q.source_reference, status: "needs_information", question: INPUT_PROCESS_FACTS.question,
+            source_passages: [{ start: 1, end: 2, identifiers: ["note"] }] };
           else {
             assert(q.raw_answer?.includes("1 through 64 UTF-16 units"));
             assert(q.presented_question?.includes("note"));

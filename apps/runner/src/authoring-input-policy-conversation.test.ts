@@ -30,7 +30,8 @@ const proposal = (q: OperatorQuestion, value = validValue(q)) => ({ question_id:
   ...(q.source_binding ? { source_reference: canonicalJsonDigest(q.source_binding) } : { answer_id: q.raw_answer!.id }),
   status: "proposal", disposition: "proposed", value });
 const information = (q: OperatorQuestion) => ({ question_id: q.id, revision: q.revision,
-  source_reference: canonicalJsonDigest(q.source_binding), status: "needs_information", question: "How short or long may the note be?" });
+  source_reference: canonicalJsonDigest(q.source_binding), status: "needs_information", question: "How short or long may the note be?",
+  source_passages: [{ start: 1, end: 2, identifiers: ["note"] }] });
 type Reply = (q: OperatorQuestion) => unknown;
 
 async function fixture(replies: Reply[] = [proposal], outcomes = ["work.hold"], sourceText = text) {
@@ -80,7 +81,7 @@ async function fixture(replies: Reply[] = [proposal], outcomes = ["work.hold"], 
       const child = presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(), revision: currentRoot.revision + 1,
         handoff_id: h.id, budget_owner_id: currentRoot.id, kind: "input_bounds", scope_digest: currentRoot.scope_digest,
         context_digest: currentRoot.context_digest, target: currentRoot.target, material: currentRoot.material,
-        evidence: currentRoot.evidence, continuation: "input_policy_review" }), question);
+        evidence: currentRoot.evidence, continuation: "input_policy_review", naming_passages: options.sourcePassages }), question);
       await persist({ operatorQuestions: [...resume.operator_questions!, child], ownerHandoffs: [...(resume.owner_handoffs ?? []), h],
         generationRecovery: authoringQuestionCheckpoint(resume.generation_recovery, ownerHandoffCheckpoint(h)) }, options.permit);
     },
@@ -142,7 +143,7 @@ async function fixture(replies: Reply[] = [proposal], outcomes = ["work.hold"], 
           const child = presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(), revision: selected().revision + 1,
             handoff_id: h.id, budget_owner_id: currentRoot.id, kind: "input_bounds", scope_digest: currentRoot.scope_digest,
             context_digest: currentRoot.context_digest, target: currentRoot.target, material: currentRoot.material,
-            evidence: currentRoot.evidence, continuation: "input_policy_review" }), q.presentation!.text);
+            evidence: currentRoot.evidence, continuation: "input_policy_review", naming_passages: q.naming_passages }), q.presentation!.text);
           await persist({ operatorQuestions: [...resume.operator_questions!, child],
             ownerHandoffs: oldH.state === "waiting" ? resume.owner_handoffs : [...resume.owner_handoffs!, h] }, permit);
         }
@@ -219,7 +220,7 @@ describe("specific assisted Source Input controller, real Source/Resume CAS and 
     const scoped = (q: OperatorQuestion) => proposal(q, { kind: "input_bounds", requirements: [{
       outcomes: ["parcel.set_priority"], input: "priority_note", start: 2, end: 2, min_length: 0, max_length: 7 }] });
     const f = await fixture([
-      q => ({ ...information(q), question }),
+      q => ({ ...information(q), question, source_passages: [{ start: 2, end: 2, identifiers: ["priority_note"] }] }),
       q => ({ ...proposal(q), disposition: "pending", value: undefined }),
       q => ({ ...proposal(q), value: { kind: "writer_maintenance", maintenance: "all_writers_increment" } }),
       scoped, scoped,

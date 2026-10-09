@@ -2,14 +2,14 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { createOperatorQuestion, presentOperatorQuestion, captureOperatorAnswer,
-  proposeOperatorAnswer, confirmOperatorAnswer, type OperatorQuestion } from "./authoring-operator-question.js";
+  proposeOperatorAnswer, confirmOperatorAnswer, assertOperatorQuestionsAdvance, parseOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import { runOperatorQuestionModel } from "./authoring-operator-question-model.js";
 import { makeSourceInputReview } from "./authoring-input-policy.js";
 import { newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
 import type { AskProviderDependencies } from "./model-ask.js";
 
 const policy = "Setting a parcel priority also takes priority_note as caller evidence.\nAsk the operator how short or long it may be.";
-function records(sourceText = policy) {
+function records(sourceText = policy, naming_passages: OperatorQuestion["naming_passages"] = [{ start: 1, end: 1, identifiers: ["priority_note"] }]) {
   const sources = newPolicySourceSession();
   const source = policyTextSnapshot(Buffer.from(sourceText), "current rules");
   sources.snapshots.push(source); sources.active = 1;
@@ -24,7 +24,7 @@ function records(sourceText = policy) {
   const child = captureOperatorAnswer(presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(), revision: 2,
     handoff_id: randomUUID(), budget_owner_id: root.id, kind: "input_bounds", scope_digest: root.scope_digest,
     context_digest: root.context_digest, target: root.target, material: root.material, evidence: root.evidence,
-    continuation: "input_policy_review" }), "How short or long may the priority note be?"),
+    continuation: "input_policy_review", ...(naming_passages?.length ? { naming_passages } : {}) }), "How short or long may the priority note be?"),
     "Empty text is allowed, up to 64 UTF-16 units, counting spaces. Do not trim or default it.");
   return { root, child, sources, source, store, outcomes };
 }
@@ -98,7 +98,7 @@ describe("answer-owned versus Source-owned Input provenance, real controlled pro
   });
   it("retrieves the literal input identity from current policy without dumping unrelated policy", async () => {
     const sourceText = "Unrelated archive requirement: UNRELATED_PRIVATE_FACT_SENTINEL.\n" + policy;
-    const f = records(sourceText), m = model(f.child, mapping(f.child));
+    const f = records(sourceText, [{ start: 2, end: 2, identifiers: ["priority_note"] }]), m = model(f.child, mapping(f.child));
     expect((await m.run({ inputContext: { root: f.root, policyText: sourceText } })).state).toBe("proposed");
     const body = JSON.stringify(m.requestJson.mock.calls[0]![0].body);
     expect(body).toContain("priority_note"); expect(body).toContain("naming_context_only");
@@ -107,11 +107,33 @@ describe("answer-owned versus Source-owned Input provenance, real controlled pro
     expect(body).not.toContain("Complete saved Source text");
     expect(f.child.source_binding).toBeUndefined(); expect(f.child.confirmation).toBeUndefined();
   });
+  it("keeps exact saved naming locators when presentation names an unrelated clause", async () => {
+    const sourceText = "Unrelated archive: PRIVATE_ARCHIVE_SENTINEL.\n" + policy;
+    const f = records(sourceText, [{ start: 2, end: 2, identifiers: ["priority_note"] }]);
+    const body = { ...f.child, presentation: { ...f.child.presentation!, text: "Which archive detail is needed?" } };
+    const { digest: _, ...unsigned } = body;
+    const child = parseOperatorQuestion({ ...unsigned, digest: canonicalJsonDigest(unsigned) });
+    const m = model(child, mapping(child));
+    expect((await m.run({ inputContext: { root: f.root, policyText: sourceText } })).state).toBe("proposed");
+    const request = JSON.stringify(m.requestJson.mock.calls[0]![0].body);
+    expect(request).toContain("priority_note"); expect(request).not.toContain("PRIVATE_ARCHIVE_SENTINEL");
+    expect(child.source_binding).toBeUndefined(); expect(child.confirmation).toBeUndefined();
+  });
+  it("refuses resealed mutation or removal of saved naming locators", () => {
+    const f = records();
+    for (const naming_passages of [undefined, [{ start: 2, end: 2, identifiers: ["operator"] }]]) {
+      const { digest: _, naming_passages: __, ...body } = f.child;
+      const unsigned = { ...body, ...(naming_passages ? { naming_passages } : {}) };
+      const changed = parseOperatorQuestion({ ...unsigned, digest: canonicalJsonDigest(unsigned) });
+      expect(() => assertOperatorQuestionsAdvance([f.child], [changed])).toThrow();
+    }
+    expect(f.child.confirmation).toBeUndefined();
+  });
   it.each(["changed Source", "wrong root", "too many matching lines", "oversized whole line", "no match"])("refuses unavailable bounded identity before egress without truncation: %s", async fault => {
     const sourceText = fault === "too many matching lines" ? Array(13).fill("The priority_note remains caller evidence.").join("\n")
       : fault === "oversized whole line" ? "priority_note " + "x".repeat(8_200)
       : fault === "no match" ? "Unrelated archived records." : policy;
-    const f = records(sourceText), m = model(f.child, mapping(f.child));
+    const f = records(sourceText, fault === "too many matching lines" ? [] : [{ start: 1, end: 1, identifiers: ["priority_note"] }]), m = model(f.child, mapping(f.child));
     const root = fault === "wrong root" ? records(sourceText).root : f.root;
     await expect(m.run({ inputContext: { root, policyText: fault === "changed Source" ? sourceText + " changed" : sourceText } }))
       .rejects.toMatchObject({ code: "OPERATOR_QUESTION_CONTEXT_INVALID" });

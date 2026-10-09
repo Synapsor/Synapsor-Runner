@@ -42,6 +42,7 @@ beforeAll(async () => {
   expect(baseline.counts.prompts).toBe(1);
   expect(baseline.counts.confirmations).toBe(1);
   expect(baseline.sources.input_policy_reviews).toHaveLength(1);
+  expect(baseline.resume.operator_questions!.at(-1)!.naming_passages).toEqual([{ start: 1, end: 2, identifiers: ["note"] }]);
 }, 30_000);
 afterAll(async () => { await fs.rm(root, { recursive: true, force: true }); });
 
@@ -53,6 +54,7 @@ describe("production Input host across genuine saved boundaries and fresh proces
       expect(interrupted.state).toBe("interrupted");
       const beforeRoot = interrupted.resume.operator_questions![0]!;
       const beforeQuestion = interrupted.resume.operator_questions!.at(-1)!;
+      if (stop !== "onset") expect(beforeQuestion.naming_passages).toEqual([{ start: 1, end: 2, identifiers: ["note"] }]);
       if (stop === "onset") expect(beforeQuestion.raw_answer).toBeUndefined();
       if (stop === "unanswered") {
         expect(beforeQuestion.presentation?.text).toBe(INPUT_PROCESS_FACTS.question);
@@ -75,7 +77,11 @@ describe("production Input host across genuine saved boundaries and fresh proces
       expect(restarted.pid).not.toBe(interrupted.pid);
       expect(["saved", "reused"]).toContain(restarted.state);
       expect(restarted.resume.operator_questions![0]!.id).toBe(beforeRoot.id);
-      if (stop !== "onset") expect(restarted.resume.operator_questions!.at(-1)!.id).toBe(beforeQuestion.id);
+      if (stop !== "onset") {
+        expect(restarted.resume.operator_questions!.at(-1)!.id).toBe(beforeQuestion.id);
+        expect(restarted.resume.operator_questions!.at(-1)!.naming_passages).toEqual(beforeQuestion.naming_passages);
+      }
+      expect(restarted.resume.operator_questions!.at(-1)!.source_binding).toBeUndefined();
       if (beforeQuestion.raw_answer) expect(restarted.resume.operator_questions!.at(-1)!.raw_answer).toEqual(beforeQuestion.raw_answer);
       if (beforeQuestion.proposal) expect(restarted.resume.operator_questions!.at(-1)!.proposal).toEqual(beforeQuestion.proposal);
       if (beforeQuestion.confirmation) expect(restarted.resume.operator_questions!.at(-1)!.confirmation).toEqual(beforeQuestion.confirmation);
