@@ -1,10 +1,10 @@
-import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import fs from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest as digest } from "@synapsor-runner/protocol";
 import { createReadScopeHost, type ReadScopeInteraction, type ReadScopeInteractionResponse } from "./authoring-read-scope-host.js";
 import { presentReadScopeInteraction } from "./authoring-question-presenter.js";
-import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import { readBoundaryAuthoringResumeStateHeld } from "./boundary-authoring-resume.js";
 import { leaveOperatorQuestionPending } from "./authoring-operator-question.js";
 import { nativeFixture } from "./test-fixtures/native-read-scope.js";
 
@@ -17,8 +17,8 @@ async function setup(options: { pending?: boolean; noRead?: boolean } = {}) {
     duringWait: undefined as (() => Promise<void>) | undefined };
   let locked = false;
   const views: ReadScopeInteraction[] = [], responses: Array<boolean | null | "keep" | "review" | "replace"> = [];
-  const loadSnapshot = async (questionId: string) => {
-      const disk = await readBoundaryAuthoringResumeState(f.dir, f.nativeBinding);
+  const loadSnapshot = async (questionId: string, permit: ProjectAuthorityMutationPermit) => {
+      const disk = await readBoundaryAuthoringResumeStateHeld(f.dir, f.nativeBinding, permit);
       if (disk.status !== "ready") throw new Error("Actual native fixture unavailable");
       return { questions: disk.value.operator_questions!, handoffs: disk.value.owner_handoffs ?? [], generation: disk.value.generation_recovery,
         question_id: questionId, expectedBinding: controls.currentBinding, ...inventory,
@@ -26,8 +26,8 @@ async function setup(options: { pending?: boolean; noRead?: boolean } = {}) {
         resume_revision_digest: disk.value.revision_digest, context_digest: q.context_digest, scope_digest: q.scope_digest };
     };
   const host = createReadScopeHost({ access: {
-    load: questionId => withProjectAuthorityMutation(f.dir, () => loadSnapshot(questionId)),
-    loadHeld: (questionId, permit) => withHeldProjectAuthorityAccess(f.dir, permit, () => loadSnapshot(questionId)),
+    load: questionId => withProjectAuthorityMutation(f.dir, permit => loadSnapshot(questionId, permit)),
+    loadHeld: (questionId, permit) => withHeldProjectAuthorityAccess(f.dir, permit, held => loadSnapshot(questionId, held)),
     mutate: operation => withProjectAuthorityMutation(f.dir, async permit => { locked = true; try { return await operation(permit); } finally { locked = false; } }),
     save: async (next, { expected, permit }) => {
       expect(locked).toBe(true); expect(expected.resume_revision_digest).toBe(f.state().revision_digest);

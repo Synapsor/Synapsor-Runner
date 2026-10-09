@@ -16,28 +16,33 @@
       "agent": "/root/b59_regression_fix",
       "workspace": "../b56-owned-dir-remedy",
       "current_task": "Coherent strict file consumers integrated7b13; Main21PASS. Remaining old typed fixtures/native-history/cold compatibility qualification.",
-      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
+      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
+      "execution_state": "HELD: Owner serial item6; exact next task/pin retained"
     },
     "privacy_visibility": {
       "agent": "/root/b64_visibility_retirement",
       "workspace": "../b64-visibility-retirement",
       "current_task": "Owned English decisions0/0 independently accepted; qualification separate. Main I03537 compatibility decision pending.",
-      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
+      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
+      "execution_state": "HELD: Owner serial item6; exact next task/pin retained"
     },
     "chat_presentation": {
       "agent": "B65 Tester /root/b64_chat_resume",
       "workspace": "../b64-chat-retirement",
-      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
+      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
+      "execution_state": "HELD: Owner serial item6; exact next task/pin retained"
     },
     "ask": {
       "agent": "R2 /root/b64_ask_typed",
       "workspace": "../b64-ask-typed",
-      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
+      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
+      "execution_state": "HELD: Owner serial item6; exact next task/pin retained"
     },
     "action": {
       "agent": "B66 /root/b64_action_resume",
       "workspace": "../b64-action-typed",
-      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
+      "standing_dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
+      "execution_state": "HELD: Owner serial item6; exact next task/pin retained"
     },
     "main": {
       "agent": "Main",
@@ -58,7 +63,8 @@
         "Main integrates reviewed batches hourly; checkpoint private backup only; one editor per hotspot and preserve frozen evidence.",
         "Use existing 0700 resources, max 4 heavy jobs/8 workers, at least 8 GiB RAM/disk; status short, handoff <=15 lines; routine authorized work continues.",
         "Use actual visible inputs and declared operator facts; no English decision fallback, fake authority, paid runs, or uncertain-effect replay."
-      ]
+      ],
+      "execution_state": "HELD: Owner serial item6; exact next task/pin retained"
     }
   },
   "heavy_slots": {
@@ -1454,7 +1460,36 @@
   "dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
   "main_access_wiring_checkpoint": {
     "status": "development; independent class/public acceptance open",
-    "record": "Main required Entry/Held wiring + owned Read-currentness extraction; scoped tsc exit0; actual currentness controls4PASS (original3PASS/1 fixture DataCloneError retained, corrected obsolete commit argument only); BC19066 vs19069; no English count credit; evidence /var/tmp/synapsor-b64-main-access-owned/evidence/{currentness-after.json,main-types-final.log}.",
-    "next": "Compose writer fixture migration0c73; run affected actual native/Source controls and public continuation; batch SA independent review; then public initializer/D01."
+    "record": "Main explicit Held callers/owned currentness extraction: scoped tsc0; initial composed101P9test-adapterF\u2192Read-host9P; native19P2fixtureF\u2192affected10P; receipt dropped configuration port actualbefore0P1F\u2192fullreceipt21P +coldInput7P; affectedcoverage2P; coldVersion17NOT_REACHED empty unreviewed syntheticcatalog. Raw failures preserved under /var/tmp/synapsor-b64-main-access-owned/evidence; BC19067 vs19069; R2 complete SA review/public closure OPEN; no English count credit.",
+    "next": "R2 final SA independent disposition/source/currentness/CAS proof review \u2192 integrate if accepted, else repair or clearly classify blocker; then serial D01/five public cases; no parallel implementation."
+  },
+  "controlling_mode": {
+    "mode": "SERIAL",
+    "active_item": 1,
+    "implementation_owner": "Main",
+    "reviewer": "R2",
+    "order": [
+      "permit class+review+Main integration",
+      "D01+five public hard-limit cases",
+      "$0 composed customer-service journey",
+      "real setup/edit cards",
+      "protected/details real entry",
+      "Main then Action English sites",
+      "MySQL full B65 matrix"
+    ],
+    "rules": "One active implementation item plus its required reviewer; finish or clearly block before next; decisions <=10 lines then proceed; no paid/deletion/grant widening/frozen changes; morning report <=15 lines.",
+    "state": "Main permit class checks and R2 independent review active; all other implementation lanes HELD at private-pushed checkpoints"
+  },
+  "serial_decision_queue": {
+    "B53_extension_format": [
+      "R2 design review, then Owner decision required; no implementation approval inferred.",
+      "Prospective Action checkpointv3/Resumev4/protocolv3; recoveryversion1 unchanged.",
+      "Immutable job/task/root/logical-turn anchor separate from exact Resume CAS.",
+      "Local installation operator, default-No/EOF; no model/JSON actor grant.",
+      "Extension receipt+finite allowance atomic under same revalidated CAS; no held UI lease or uncertain-save retry.",
+      "Proposed base12, extension1..3, max4 receipts, cumulative logical24 and physicalHTTP24 including failed/unknown sends.",
+      "Existing tighter cost/time/context/tool/campaign limits remain; missing genuine durable bindings refuses.",
+      "Old authoring jobs refuse; no migration, history/counter rewrite, window or experiment allowance reset."
+    ]
   }
 }

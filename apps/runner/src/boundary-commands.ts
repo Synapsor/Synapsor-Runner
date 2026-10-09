@@ -4248,6 +4248,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       currentDraft: review.currentDraft, refreshEvidence: review.refreshEvidence,
       assertEvidenceCurrent: review.assertEvidenceCurrent,
       readConfiguration: () => authoringReceiptConfiguration(input.projectRoot, review.receiptSources, process.env),
+      readConfigurationHeld: permit => authoringReceiptConfigurationHeld(input.projectRoot, review.receiptSources, permit, process.env),
       assertReviewCurrent: review.assertReviewCurrent,
       questionContext: (permit, sources) => ownerQuestionContext(permit, 'policy_clarification', receiptRequirementQuestionContext(sources), sources),
       mutate: mutateOwnerHandoff, acknowledgeResume: async permit => {

@@ -7,11 +7,11 @@ import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import { createBusinessStatementHost, type BusinessStatementRecordUpdate } from './authoring-business-statement-host.js';
 import type { BusinessStatementInteraction, BusinessStatementResponse } from './authoring-business-statement-interaction.js';
 import { assertOperatorQuestionsAdvance, parseOperatorQuestions } from './authoring-operator-question.js';
-import { newPolicySourceSession, policyTextSnapshot, savePolicySources, loadPolicySources, PolicySourceChangedError } from './authoring-policy-source.js';
+import { newPolicySourceSession, policyTextSnapshot, savePolicySources, loadPolicySources, loadPolicySourcesHeld, PolicySourceChangedError } from './authoring-policy-source.js';
 import { createReceiptRequirementHost, receiptRequirementCheckpoint, type ReceiptRequirementAnswerReview } from './authoring-receipt-requirement-host.js';
 import { currentReceiptRequirement, receiptRequirementDependencies, receiptRequirementPreparedContext,
   receiptRequirementQuestionContext, receiptRequirementSourceBinding } from './authoring-receipt-requirement.js';
-import { withProjectAuthorityMutation } from './project-authority-mutation.js';
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess } from './project-authority-mutation.js';
 import { receiptBusinessStatementAdapter, receiptRequirementMaterial } from './authoring-receipt-decision-adapter.js';
 import type { ProviderHttpInput } from './model-ask.js';
 import { authoringDestination } from './authoring-policy-source.js';
@@ -21,7 +21,7 @@ import { createModelAuthoringConversation } from './model-authoring-conversation
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, {recursive:true,force:true}); });
-async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceText?:string;productionHost?:boolean;nominateTarget?:boolean;onRefresh?:()=>Promise<void>;currentContext?:()=>string}={}) {
+async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceText?:string;productionHost?:boolean;nominateTarget?:boolean;onRefresh?:()=>Promise<void>;currentContext?:()=>string;realConfigurationAccess?:boolean}={}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'receipt-host-')); roots.push(root);
   const source = policyTextSnapshot(Buffer.from(options.sourceText ?? 'Describe a change as complete only from its trusted completion receipt.'), 'declared-policy.txt');
   const sources = newPolicySourceSession(); sources.snapshots = [source]; sources.active = source.version;
@@ -38,7 +38,7 @@ async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceTe
   const context = () => canonicalJsonDigest({source:receiptRequirementQuestionContext(sources),draft});
   const prepared = () => ({...draft,runner_evidence:{...draft.runner_evidence,receipt_requirement:receiptRequirementPreparedContext(sources,store)}});
   const checkpoint = receiptRequirementCheckpoint({projectRoot:root,sources,store,start:1,end:1,currentDraft:prepared,questions:()=>state.questions!,
-    assertCurrent:async()=>{ expect(canonicalJsonDigest(await loadPolicySources(root,sources.id))).toBe(canonicalJsonDigest(sources)); },
+    assertCurrent:async permit=>{ expect(canonicalJsonDigest(permit ? await loadPolicySourcesHeld(root,sources.id,permit) : await loadPolicySources(root,sources.id))).toBe(canonicalJsonDigest(sources)); },
     acknowledge:async()=>{events.push('Source acknowledgment');await fs.writeFile(file,JSON.stringify(state));} });
   const modelSession: import('./action-tui.js').ActionModelSuggestionSession = {provider:'openai',model:'declared-offline-model',apiKey:'inert-controlled-credential',dependencies:{requestJson:async request=>{
         requests.push({ ...request, body: structuredClone(request.body) });
@@ -83,8 +83,9 @@ async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceTe
     readSources:()=>sources,readQuestions:()=>state.questions!,readHandoff:()=>state.handoffs!.at(-1),
     scopeDigest:()=>scope,storeDigest:()=>store,currentDraft:prepared as never,refreshEvidence:async()=>{events.push('Evidence refresh');await options.onRefresh?.();},
     assertEvidenceCurrent:async()=>{},
-    readConfiguration:async()=>draft.runner_evidence.runtime_contract.receipt_configuration as never,
-    questionContext:async()=>{if(canonicalJsonDigest(await loadPolicySources(root,sources.id))!==canonicalJsonDigest(sources))throw new PolicySourceChangedError();return options.currentContext ? canonicalJsonDigest(options.currentContext()) : context();},
+    readConfiguration:async()=>options.realConfigurationAccess ? withProjectAuthorityMutation(root,async()=>draft.runner_evidence.runtime_contract.receipt_configuration as never) : draft.runner_evidence.runtime_contract.receipt_configuration as never,
+    readConfigurationHeld:permit=>withHeldProjectAuthorityAccess(root,permit,async()=>draft.runner_evidence.runtime_contract.receipt_configuration as never),
+    questionContext:async permit=>{if(canonicalJsonDigest(permit ? await loadPolicySourcesHeld(root,sources.id,permit) : await loadPolicySources(root,sources.id))!==canonicalJsonDigest(sources))throw new PolicySourceChangedError();return options.currentContext ? canonicalJsonDigest(options.currentContext()) : context();},
     mutate:operation=>withProjectAuthorityMutation(root,operation),
     acknowledgeResume:async()=>{events.push('Source acknowledgment');await fs.writeFile(file,JSON.stringify(state));},
     assertGenerationAdmission:()=>{events.push('Generation admission');},reviewAnswer:review=>invoke(interact,review),
@@ -167,7 +168,7 @@ it.each(['before-answer','after-vague-answer'] as const)('restarts %s at the sav
   const before=structuredClone(f.sources);
   await expect(ensurePreparedPolicyCoverage({projectRoot:f.root,sources:f.sources,modelSession,
     operatorSession:{confirm:async()=>false} as never,currentDraft:f.prepared as never,
-    authorityDigest:canonicalJsonDigest('declared current authority'),clarifications:[],assertCurrent:async()=>{},state:{}}))
+    authorityDigest:canonicalJsonDigest('declared current authority'),clarifications:[],assertCurrent:async()=>{},assertCurrentHeld:permit=>withHeldProjectAuthorityAccess(f.root,permit,async()=>{}),state:{}}))
     .rejects.toMatchObject({plan:expect.objectContaining({recommended:'receipt_requirement_review'})});
   expect(calls).toHaveLength(0);expect(f.sources).toEqual(before);
 });
@@ -276,4 +277,12 @@ it('refuses a cached receipt proposal when reopened through an unrelated generic
     ?{kind:'pending',binding:view.binding,choice:'review'}:respond('unused')(view)))
     .rejects.toThrow('POLICY_SOURCE_CHANGED');
   expect(f.inspect()).toEqual(before);expect(f.sources).toEqual(history);expect(f.requests).toHaveLength(1);
+});
+
+it('production receipt save propagates real held access through configuration reading',async()=>{
+  const f=await fixture({productionHost:true,nominateTarget:true,realConfigurationAccess:true});
+  expect(await f.productionInvoke(respond(clear))).toMatchObject({kind:'saved',disposition:'confirmed'});
+  expect(f.inspect().questions!.at(-1)?.confirmation).toBeDefined();
+  expect(f.requests).toHaveLength(1);
+  expect(currentReceiptRequirement(f.source,{start:1,end:1},f.prepared(),f.sources)?.mode).toBe('runner_ledger');
 });

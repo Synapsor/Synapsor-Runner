@@ -12,12 +12,12 @@ import { prepareActionVersionField } from "../action-rule-version-review.js";
 import { createVersionQuestionHost, type VersionQuestionRecordUpdate } from "../authoring-version-host.js";
 import { runVersionConversation } from "../authoring-version-conversation.js";
 import { actionVersionMaterialDigest, assertActionVersionQuestionHandoff, buildBoundaryAuthoringResumeState,
-  assertBoundaryAuthoringResumeCurrent, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState,
+  assertBoundaryAuthoringResumeCurrent, assertBoundaryAuthoringResumeCurrentHeld, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState,
   type BoundaryAuthoringResumeState } from "../boundary-authoring-resume.js";
 import { assertActionLogicalTurnJournalAdvance, type ActionRuleAuthoringCheckpoint } from "../action-rule-authoring-checkpoint.js";
 import { configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, authoringActionCheckpoint,
   authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion } from "../authoring-generation-recovery.js";
-import { newPolicySourceSession, policyTextSnapshot, savePolicySources, loadPolicySources,
+import { newPolicySourceSession, policyTextSnapshot, savePolicySources, loadPolicySources, loadPolicySourcesHeld,
   type PolicySourceSession } from "../authoring-policy-source.js";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "../project-authority-mutation.js";
 import { VERSION_PROCESS_FACTS as facts, versionProcessInspection } from "./source-version-process-contract.js";
@@ -59,8 +59,9 @@ async function persist(permit?: ProjectAuthorityMutationPermit) {
   resume = next; committed = structuredClone(next); counts.commits++;
 }
 async function assertFresh(permit?: ProjectAuthorityMutationPermit) {
-  await assertBoundaryAuthoringResumeCurrent(root!, committed, undefined, { permit });
-  assert.equal(canonicalJsonDigest(await loadPolicySources(root!, sources.id)), canonicalJsonDigest(sources), "SOURCE_CHANGED");
+  if (permit) await assertBoundaryAuthoringResumeCurrentHeld(root!, committed, permit);
+  else await assertBoundaryAuthoringResumeCurrent(root!, committed);
+  assert.equal(canonicalJsonDigest(permit ? await loadPolicySourcesHeld(root!, sources.id, permit) : await loadPolicySources(root!, sources.id)), canonicalJsonDigest(sources), "SOURCE_CHANGED");
   const manifest = JSON.parse(await fs.readFile(path.join(root!, "fixture-context.json"), "utf8"));
   assert.equal(manifest.fixtureDigest, fixtureDigest, "STRUCTURE_READ_ROLE_SCOPE_CHANGED");
   // This file is the declared current structural adapter input, independent of
@@ -122,6 +123,7 @@ const stageVersionQuestion: NonNullable<ModelActionRuleDraftInput["stageVersionQ
 const requestJson: NonNullable<NonNullable<ModelActionRuleDraftInput["session"]["dependencies"]>["requestJson"]> = async request => {
   assert.equal(held, 0, "No provider callback holds a writer lease"); counts.requests++;
   const body = request.body as { tools: Array<{ name: string; parameters: any }> };
+  await event("controlled-request-frame", { body });
   const visible = modelVisibleUserText(body);
   let name: string, args: unknown;
   if (body.tools.some(tool => tool.name === "runner__propose_operator_decision")) {

@@ -8,10 +8,10 @@ import { setTimeout as wait } from "node:timers/promises";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { createSourceInputHost, type SourceInputHostAccess, type SourceInputRecordUpdate } from "../authoring-input-host.js";
 import { runSourceInputConversation } from "../authoring-input-policy-conversation.js";
-import { buildBoundaryAuthoringResumeState, assertBoundaryAuthoringResumeCurrent,
+import { buildBoundaryAuthoringResumeState, assertBoundaryAuthoringResumeCurrent, assertBoundaryAuthoringResumeCurrentHeld,
   readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState,
   type BoundaryAuthoringResumeState } from "../boundary-authoring-resume.js";
-import { activePolicySource, loadPolicySources, newPolicySourceSession, policyTextSnapshot,
+import { activePolicySource, loadPolicySources, loadPolicySourcesHeld, newPolicySourceSession, policyTextSnapshot,
   savePolicySources, PolicySourceChangedError, type PolicySourceSession } from "../authoring-policy-source.js";
 import { authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
   withAuthoringGenerationRecovery, type AuthoringTransportState } from "../authoring-generation-recovery.js";
@@ -135,10 +135,10 @@ async function run() {
     resume = saved.value;
   }
   const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) =>
-    assertBoundaryAuthoringResumeCurrent(projectRoot, resume, undefined, { permit });
+    permit ? assertBoundaryAuthoringResumeCurrentHeld(projectRoot, resume, permit) : assertBoundaryAuthoringResumeCurrent(projectRoot, resume);
   const contextDigest = async (permit?: ProjectAuthorityMutationPermit, sourceContext = sources, savedSourceContext = sources) => {
     await assertCurrent(permit);
-    const actual = await loadPolicySources(projectRoot, sources.id);
+    const actual = permit ? await loadPolicySourcesHeld(projectRoot, sources.id, permit) : await loadPolicySources(projectRoot, sources.id);
     if (canonicalJsonDigest(actual) !== canonicalJsonDigest(savedSourceContext)) throw new PolicySourceChangedError();
     return canonicalJsonDigest({ scope: canonicalJsonDigest(INPUT_PROCESS_FACTS.job), store, outcomes, source: sourceContext });
   };
@@ -146,8 +146,10 @@ async function run() {
     readQuestions: () => resume.operator_questions ?? [], readHandoffs: () => resume.owner_handoffs ?? [],
     readRecovery: () => resume.generation_recovery, readConversationTurns: () => resume.conversation,
     readOutcomes: () => resume.action?.intended_outcomes, scopeDigest: () => canonicalJsonDigest(INPUT_PROCESS_FACTS.job),
-    contextDigest, assertResumeCurrent: assertCurrent,
+    contextDigest:(sourceContext,savedSourceContext)=>contextDigest(undefined,sourceContext,savedSourceContext),
+    contextDigestHeld:contextDigest, assertResumeCurrent:()=>assertCurrent(), assertResumeCurrentHeld:assertCurrent,
     loadContext: async () => ({ store, inspectReader: async () => undefined }),
+    loadContextHeld: async permit => { await assertCurrent(permit); return { store, inspectReader: async () => undefined }; },
     mutate: (operation, parentPermit) => withProjectAuthorityMutation(projectRoot, async permit => {
       held++; try { return await operation(permit); } finally { held--; }
     }, { permit: parentPermit }), commit,
@@ -215,7 +217,7 @@ if (stop === "append-before-ack") {
   const original = commit;
   commit = async (update, options) => {
     if (options.subject === "The saved input-policy interpretation") {
-      const actual = await loadPolicySources(projectRoot, sources.id);
+      const actual = await loadPolicySourcesHeld(projectRoot, sources.id, options.permit);
       assert.equal(actual.input_policy_reviews?.length, 1);
       await event("source-append-before-ack", { reviewDigest: actual.input_policy_reviews![0]!.digest });
       throw interrupt();

@@ -43,6 +43,7 @@ export function createReceiptRequirementHost(input: {
   refreshEvidence(): Promise<void>;
   assertEvidenceCurrent(): Promise<void>;
   readConfiguration(): Promise<Awaited<ReturnType<typeof authoringReceiptConfiguration>>>;
+  readConfigurationHeld(permit: ProjectAuthorityMutationPermit): Promise<Awaited<ReturnType<typeof authoringReceiptConfiguration>>>;
   assertReviewCurrent?(permit?: ProjectAuthorityMutationPermit): Promise<void>;
   questionContext(permit: ProjectAuthorityMutationPermit | undefined, sources: PolicySourceSession): Promise<Digest>;
   mutate<T>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>): Promise<T>;
@@ -90,7 +91,7 @@ export function createReceiptRequirementHost(input: {
       await input.assertReviewCurrent?.(permit);
       if (await input.questionContext(permit, sources) !== checkedContext) throw new PolicySourceChangedError();
       await input.assertEvidenceCurrent();
-      if (canonicalJsonDigest(await input.readConfiguration()) !== canonicalJsonDigest(configuration)
+      if (canonicalJsonDigest(permit ? await input.readConfigurationHeld(permit) : await input.readConfiguration()) !== canonicalJsonDigest(configuration)
         || receiptRequirementDependencies(input.currentDraft()) !== dependencies) throw new PolicySourceChangedError();
     };
     if (!waiting && currentReceiptRequirement(source, target, draft, sources)) {

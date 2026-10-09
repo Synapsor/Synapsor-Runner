@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { saveAuthoringRecoveryResume } from "./authoring-recovery-resume.js";
 import {
-  assertBoundaryAuthoringResumeCurrent, buildBoundaryAuthoringResumeState,
+  assertBoundaryAuthoringResumeCurrent, assertBoundaryAuthoringResumeCurrentHeld, readBoundaryAuthoringResumeStateHeld, buildBoundaryAuthoringResumeState,
   readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState,
   type BoundaryAuthoringResumeState,
 } from "./boundary-authoring-resume.js";
@@ -44,7 +44,8 @@ describe("acknowledged Resume transport writer", () => {
     await withProjectAuthorityMutation(root, async permit => {
       const assertCurrent = vi.fn<SaveInput["assertCurrent"]>(async received => {
         expect(received).toBe(permit);
-        await assertBoundaryAuthoringResumeCurrent(root, base, undefined, { permit: received });
+        expect(received).toBeDefined();
+        await assertBoundaryAuthoringResumeCurrentHeld(root, base, received!);
       });
       const write = vi.fn<SaveInput["write"]>(async (next, options) => {
         expect(options).toEqual({ expectedRevisionDigest: base.revision_digest, permit });
@@ -63,7 +64,7 @@ describe("acknowledged Resume transport writer", () => {
       expect(next).toMatchObject({ binding: base.binding, action: base.action, conversation: base.conversation,
         stage: base.stage, job_intent: base.job_intent });
       expect(base).toEqual(before);
-      expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: next });
+      expect(await readBoundaryAuthoringResumeStateHeld(root, binding, permit)).toEqual({ status: "ready", value: next });
     });
   });
 

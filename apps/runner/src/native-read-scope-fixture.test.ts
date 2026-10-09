@@ -6,7 +6,7 @@ import { expect,it } from "vitest";
 import { prepareReviewedReadScope } from "./test-fixtures/reviewed-read-scope.js";
 it("prepares real structural signoffs and an actual compiler candidate for native scope fixtures",async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),"native-scope-structure-"));await fs.chmod(root,0o700);
- try{const f=await prepareReviewedReadScope(root);
+ try{const f=await prepareReviewedReadScope(root,{resources:["work.items"],field:"label",review:{allow_reviewed_fields:["label"]}});
   await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({code:"ENOENT"});
   expect(f.context.progress!.confirmations.length).toBeGreaterThan(0);expect(f.context.bundle.outstanding_decision_ids).toEqual([]);
   expect(f.analysis.status).toBe("ready");expect(f.analysis.candidate?.pack.resources[0]?.id).toBe("work.items");
