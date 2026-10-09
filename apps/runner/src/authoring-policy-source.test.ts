@@ -13,6 +13,8 @@ import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { BoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { AnalyticsShellIo } from "./analytics-shell.js";
 import { derivedScopedResponse } from "./test-fixtures/coverage-derived.js";
+import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 
 const roots: string[] = [];
 async function directory() { const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-policy-")); roots.push(root); return root; }
@@ -25,10 +27,30 @@ function approved(text?: string) {
   session.approvals.push({ digest: source.digest, destination: authoringDestination(destination) });
   return session;
 }
+// Native answer retention now requires its actual configured job owner. This
+// prerequisite uses normal writers; no completion, confirmation or authority
+// is fabricated, and the original CAS/privacy assertions below are unchanged.
+async function bindOwnedSession(root: string, session: ReturnType<typeof approved>) {
+  await fs.chmod(root, 0o700); await fs.mkdir(path.join(root, ".git"), { recursive: true });
+  const config = path.join(root, "synapsor.runner.json");
+  await fs.writeFile(config, JSON.stringify({ version: 1, mode: "read_only", capabilities: [],
+    sources: { app: { engine: "postgres", read_url_env: "UNUSED_POLICY_FIXTURE_DB" } },
+    trusted_context: { provider: "static_dev", values: { tenant_id: "fixture-private-org", principal: "user-123" } },
+  }), { mode: 0o600 });
+  loadRuntimeConfigFromFile(config);
+  const state = buildBoundaryAuthoringResumeState({ binding: { boundary_name: "policy_fixture",
+    generation_lock_fingerprint: canonicalJsonDigest("owned policy generation"),
+    schema_fingerprint: canonicalJsonDigest("owned policy metadata"),
+    role_posture_fingerprint: canonicalJsonDigest("owned policy posture") },
+    stage: "planning", jobIntent: "Review the declared business policy.", provider: "openai", model: "offline-not-called",
+    policySourceSession: session.id });
+  await writeBoundaryAuthoringResumeState(root, state, { expectedRevisionDigest: null });
+}
 
 describe("complete operator-selected policy text", () => {
   it("appends exactly one accepted Source answer with matched CAS under the existing mutation permit", async () => {
     const root=await directory(),sources=approved();await savePolicySources(root,sources);
+    await bindOwnedSession(root,sources);
     const before=structuredClone(sources),expectedDigest=canonicalJsonDigest(sources),answer="The existing assigned reviewer must review the proposal.";
     await withProjectAuthorityMutation(root,async permit=>{
       await appendPolicySourceOperatorMessage(root,sources,answer,{permit,expectedDigest});
@@ -37,6 +59,7 @@ describe("complete operator-selected policy text", () => {
   });
   it.each([false,true])("refuses a stale append without altering the in-memory session (explicit digest=%s)", async explicit => {
     const root=await directory(),sources=approved();await savePolicySources(root,sources);
+    await bindOwnedSession(root,sources);
     const before=structuredClone(sources),expectedDigest=canonicalJsonDigest(sources),newer=structuredClone(sources);
     newer.operator_messages=["A competing accepted clarification."];await savePolicySources(root,newer);
     await expect(appendPolicySourceOperatorMessage(root,sources,"The older answer.",explicit ? {expectedDigest} : {})).rejects.toThrow("POLICY_SOURCE_CHANGED");
@@ -45,6 +68,7 @@ describe("complete operator-selected policy text", () => {
   it.each(["history","length","material"] as const)("keeps the Source unchanged when its answer cannot be retained: %s", async reason => {
     const root=await directory(),sources=approved();if(reason==="history")sources.operator_messages=Array.from({length:64},(_,i)=>`Prior statement ${i}.`);
     await savePolicySources(root,sources);const before=structuredClone(sources);
+    await bindOwnedSession(root,sources);
     const answer=reason==="length" ? "x".repeat(4001) : reason==="material" ? "principal_id: user-123" : "One more statement.";
     await expect(appendPolicySourceOperatorMessage(root,sources,answer)).rejects.toThrow(reason==="material" ? "TRUSTED_IDENTITY_BLOCKED" : "Source-related history is full");
     expect(sources).toEqual(before);expect(await loadPolicySources(root,sources.id)).toEqual(before);
@@ -52,6 +76,7 @@ describe("complete operator-selected policy text", () => {
   it("the installed source recorder refuses a competing writer before changing memory or calling onChange", async () => {
     const root=await directory(),conversation=createModelAuthoringConversation();conversation.policySources=approved();
     await savePolicySources(root,conversation.policySources);const before=structuredClone(conversation.policySources);
+    await bindOwnedSession(root,conversation.policySources);
     let record!:(answer:string)=>Promise<void>;const changed=vi.fn(async()=>{});
     const chat={session:{},setSourceAnswerRecorder:(value:typeof record)=>{record=value;},setSourceCommandHandler:()=>{}} as unknown as BoundaryAuthoringChat;
     installPolicySourceCommands({root,chat,conversation,destination:()=>destination,onChange:changed});
@@ -142,6 +167,8 @@ describe("complete operator-selected policy text", () => {
   it("cancels replacement, reconsents a changed destination, retains overrides and explicitly removes snapshots", async () => {
     const root = await directory(), conversation = createModelAuthoringConversation();
     conversation.policySources = approved();
+    await savePolicySources(root, conversation.policySources);
+    await bindOwnedSession(root, conversation.policySources);
     const previous = structuredClone(conversation.policySources);
     let handler!: (command: string, argument: string) => Promise<boolean>;
     let record!: (answer: string) => Promise<void>;
@@ -183,6 +210,7 @@ describe("complete operator-selected policy text", () => {
     const root = await directory(), conversation = createModelAuthoringConversation();
     conversation.policySources = approved();
     await savePolicySources(root, conversation.policySources);
+    await bindOwnedSession(root,conversation.policySources);
     const before = structuredClone(conversation.policySources);
     let record!: (answer: string) => Promise<void>;
     const changed = vi.fn(async () => undefined);
