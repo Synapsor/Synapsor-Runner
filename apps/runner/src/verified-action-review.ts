@@ -302,7 +302,8 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         lines: summary,
       };
     }
-    if (!await reviewHardLimitActionWriter({ ...input, draft: input.draft })) return reviewedNotice(input.draft, false);
+    const writerReview = await reviewHardLimitActionWriter({ ...input, draft: input.draft });
+    if (!writerReview.ready) return reviewedNotice(input.draft, false);
     const accepted = await (input.session.confirmActivation ?? input.session.confirm)(
       `Activate verified Action Boundary "${input.draft.authority.action_boundary.name}"?`,
       { activationView: proposalActivationView(),
@@ -317,6 +318,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
       draft: input.draft,
       actor: localInteractiveActor(),
       env: input.env,
+      writerReviewBinding: writerReview.writerReviewBinding,
     });
     return reviewedNotice(activated.activation, true, activated.config_path);
   }
@@ -647,7 +649,8 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
           "Execution bindings require their ordinary separate review before use."] };
     }
     if (choice === "activate" && input.draft && draftReady) {
-      if (!await reviewHardLimitActionWriter({ ...input, draft: input.draft })) return reviewedNotice(input.draft, false);
+      const writerReview = await reviewHardLimitActionWriter({ ...input, draft: input.draft });
+      if (!writerReview.ready) return reviewedNotice(input.draft, false);
       const confirmed = await (input.session.confirmActivation ?? input.session.confirm)(
         `Activate verified Action Boundary "${input.draft.authority.action_boundary.name}"?`,
         {
@@ -670,6 +673,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         draft: input.draft,
         actor: localInteractiveActor(),
         env: input.env,
+        writerReviewBinding: writerReview.writerReviewBinding,
       });
       return reviewedNotice(activated.activation, true, activated.config_path);
     }

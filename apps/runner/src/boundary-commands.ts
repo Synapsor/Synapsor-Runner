@@ -10595,23 +10595,22 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       : [];
     const reviewedOutcomes = new Set(semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome));
     const retainedOutcomeCount = semanticActionAuthorityDraft.authority.rules.filter((entry) => !reviewedOutcomes.has(entry.rule.outcome)).length;
-    const approveActivation = exactActiveAction || (await reviewHardLimitActionWriter({ projectRoot: input.projectRoot, baseConfigPath: input.baseConfigPath, draft: semanticActionAuthorityDraft, session: input.session }) && await (input.session.confirmActivation ?? input.session.confirm)(
+    const activationReviewWidth = terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns) - 2;
+    const writerReview = exactActiveAction ? undefined : await reviewHardLimitActionWriter({ projectRoot: input.projectRoot, baseConfigPath: input.baseConfigPath, draft: semanticActionAuthorityDraft, session: input.session });
+    const approveActivation = exactActiveAction || (writerReview?.ready && await (input.session.confirmActivation ?? input.session.confirm)(
       `Activate verified Action Boundary "${semanticActionAuthorityDraft.authority.action_boundary.name}" for ${semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome).join(", ")}?`,
       {
         activationView: proposalActivationView(),
         exactDetails: { title: "EXACT ACTION BOUNDARY", summaryTitle: "ACTION REVIEW",
           sections: [...(requestImpact.length ? [{ id: "pending_requests", title: "Existing requests and rule replacement", lines: requestImpact }] : []),
-            ...verifiedActionAuthoritySections(semanticActionAuthorityDraft,
-              terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns) - 2)],
-          lines: [...requestImpact, ...verifiedActionAuthorityDetails(semanticActionAuthorityDraft,
-            terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns) - 2)] },
+            ...verifiedActionAuthoritySections(semanticActionAuthorityDraft, activationReviewWidth)],
+          lines: [...requestImpact, ...verifiedActionAuthorityDetails(semanticActionAuthorityDraft, activationReviewWidth)] },
         context: [
           `This revision contains ${semanticActionAuthorityDraft.authority.rules.length} outcomes; ${retainedOutcomeCount} retained. View exact details > All reviewed outcomes ${semanticActionAuthorityDraft.authority.rules.length > AUTHORING_PROGRAM_CAPACITY.reviewPageActions ? "opens the complete paged inventory" : "lists all"}.`,
           ...(revisionReview.length ? ["REVIEWED REPLACEMENT", ...revisionReview, ""] : []),
           ...requestImpact.slice(0, 3),
           ...semanticActionDrafts.flatMap((entry) => [
-            ...semanticActionActivationReviewLines(entry.result.compiled, context.candidate,
-              terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns) - 2),
+            ...semanticActionActivationReviewLines(entry.result.compiled, context.candidate, activationReviewWidth),
           ]),
           ...(executionReReviewOutcomes.length ? [
             `EXECUTION RE-REVIEW AFTER ACTIVATION: ${executionReReviewOutcomes.join(", ")}.`,
@@ -10628,6 +10627,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         ...(input.baseConfigPath ? { baseConfigPath: input.baseConfigPath } : {}),
         draft: semanticActionAuthorityDraft,
         actor: localInteractiveActor(),
+        writerReviewBinding: writerReview?.writerReviewBinding,
       });
       semanticActionActivation = activated.activation;
       if (!exactActiveAction) await input.authoringChat?.streamCheckpoint("Verified Action Boundary active", renderReviewFacts([
