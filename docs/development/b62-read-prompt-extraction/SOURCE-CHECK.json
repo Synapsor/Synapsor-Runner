@@ -1,0 +1,14 @@
+{
+  "preseal_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b62-ee051-e55-read-prompt-source-preseal-v1.json",
+  "preseal_sha256": "ecf284aec880805b57cfb941cac50f01f2bdab18d8de6fa504f4cfc6ab69c4fc",
+  "host_outside_assembly_and_imports_byte_identical": true,
+  "host_outside_sha256": "aac94efbf5dea1239083343e3119fb55031c040c49c76fce3a539255215e551d",
+  "golden_unchanged_sha256": "e0e1b5552c4cc21a423b571310eb408cfa8fbc4f151b0ee7dba2d9995b0cd7f6",
+  "metadata": {
+    "id": "synapsor.read-workload.base",
+    "version": 1,
+    "wire_or_persistent_delta": false
+  },
+  "broader_corrections_and_continuations": "Remain existing model owner unchanged; broader B62 separation OPEN.",
+  "runtime": "NOT_RUN_PENDING_MAIN_END"
+}
