@@ -48,9 +48,11 @@ it('new receipt UI states conditional production recommendation and acknowledged
   expect(`${source.label} ${source.detail}`).toMatch(/recommended.*production/iu);
   expect(`${source.label} ${source.detail}`).toMatch(/verif/iu);
   expect(`${source.label} ${source.detail}`).toContain('NOT VERIFIED HERE');
+  expect(`${source.label} ${source.detail}`).toContain('administrator provisioning');
   expect(`${ledger.label} ${ledger.detail}`).toMatch(/acknowledged/iu);
   expect(`${ledger.label} ${ledger.detail}`).toMatch(/unknown.*commit|commit.*unknown/iu);
   expect(call[2]).toMatchObject({ initialValue: 'runner_ledger' });
+  expect(call[2]?.context?.join(' ')).toContain('SELECT, INSERT and UPDATE on that exact relation');
   expect(session.confirm).not.toHaveBeenCalled(); expect(session.promptText).not.toHaveBeenCalled();
   expect(await fs.readFile(input.configPath, 'utf8')).toBe(before);
   expect((await inspectSemanticReceiptSetup(input))!.selection).toBeUndefined();

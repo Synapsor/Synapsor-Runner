@@ -176,6 +176,7 @@ export async function reviewSemanticReceiptSetup(input: {
     ...(setup.receipt_readback.selection.origin === "existing_configuration"
       ? [`Existing configured receipt intent (unverified): ${JSON.stringify(setup.source.receipts)}. This is not a new setup or a reviewed native selection.`] : []),
     setup.receipt_readback.runner_ledger_meaning, setup.receipt_readback.source_db_recovery_meaning,
+    setup.receipt_readback.source_db_storage_requirements,
     setup.receipt_readback.storage.requirements,
     "Selecting a mode changes no source objects, active execution configuration or business authority. Administrator setup and execution review remain separate."];
   if (setup.selection_current) {
@@ -214,6 +215,7 @@ export async function reviewSemanticReceiptSetup(input: {
   const confirmed = await input.session.confirm("Save this exact receipt setup selection?", { defaultValue: false, context: [
     ...context, `Outcome: ${preview.outcome}`, `Source: ${preview.source_name}`, `Selected mode: ${JSON.stringify(preview.selection.receipts)}`,
     `Writer reference: ${preview.selection.write_url_env}`, `Review: ${preview.digest}`,
+    preview.receipt_readback.storage.requirements,
     "Confirm that this mode satisfies the reviewed receipt requirement. Source-atomic requirements need Source database mode.",
     "This does not satisfy other privacy, identity, source permissions or worker prerequisites. Execution remains unchanged.",
   ] });

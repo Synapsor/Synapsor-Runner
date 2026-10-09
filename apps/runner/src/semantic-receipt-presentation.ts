@@ -14,13 +14,17 @@ type SetupInput = {
 const ledgerMeaning = "Runner ledger records acknowledged successes outside the Source transaction. An unknown COMMIT may remain unresolved; missing evidence does not prove rollback or authorize replay.";
 const recoveryMeaning = "Exact lost-acknowledgment recovery requires the original operation, scope, effect and Source identity to match, retained receipt evidence, and the existing authorized idempotent reconciliation path. A matching row alone does not authorize adoption or replay.";
 
+function sourceReceiptRequirements(source: Source) {
+  return "A dedicated precreated receipt relation in the same Source database and transaction as the guarded effect; verify its schema and the effective writer's SELECT, INSERT and UPDATE on that exact relation."
+    + (source.engine === "postgres" ? " PostgreSQL also requires USAGE on its schema." : "");
+}
+
 function storageReadback(input: SetupInput, receipts?: ReceiptDestination) {
   if (receipts?.authority === "source_db") return {
     authority: "source_db" as const, source: input.source_name,
     provisioning: receipts.provisioning ?? null, schema: receipts.schema ?? null, table: receipts.table ?? null,
     status: "not_verified_here" as const,
-    requirements: "A dedicated precreated receipt relation in the same Source database and transaction as the guarded effect; verify its schema and the effective writer's SELECT, INSERT and UPDATE on that exact relation."
-      + (input.source.engine === "postgres" ? " PostgreSQL also requires USAGE on its schema." : ""),
+    requirements: sourceReceiptRequirements(input.source),
   };
   return {
     authority: "runner_ledger" as const, status: "not_verified_here" as const,
@@ -51,7 +55,9 @@ export function semanticReceiptSetupReadback(input: SetupInput) {
       mode: receipts?.authority ?? null, write_url_env: input.selection?.write_url_env ?? input.source.write_url_env ?? null },
     recommendation, storage: storageReadback(input, receipts),
     runner_ledger_meaning: ledgerMeaning, source_db_recovery_meaning: recoveryMeaning,
+    source_db_storage_requirements: sourceReceiptRequirements(input.source),
     source_db_choice_detail: origin === "new_setup" && !input.support_reason ? recommendation
+      + " Precreated same-transaction receipt storage and separate administrator provisioning are required."
       : "Precreated receipt in the same Source transaction. NOT VERIFIED HERE; separate administrator provisioning and execution verification are required.",
   };
 }
