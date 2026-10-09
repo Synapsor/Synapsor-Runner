@@ -238,7 +238,7 @@ import {
   type AskMode,
 } from "./ask-authority.js";
 import { WORKBENCH_SYNTAX_CSS, workbenchSyntaxScript } from "./workbench-syntax.js";
-import { exploreVocabularyStructuralProfile } from "./explore-vocabulary.js";
+import { exploreVocabularyMetadataProfile } from "./explore-vocabulary.js";
 import {
   readModelAuthorityMetadataMode,
   updateModelAuthorityMetadataMode,
@@ -973,10 +973,10 @@ async function handleRequest(input: {
       draft,
       candidate,
       ...(savedReview.authoring ? { authoring_binding: savedReview.authoring } : {}),
-      vocabulary_structural_profiles: Object.fromEntries(
-        draft.pack.resources.map((resource) => [
+      vocabulary_metadata_profiles: Object.fromEntries(
+        candidate.pack.resources.map((resource) => [
           resource.id,
-          exploreVocabularyStructuralProfile(resource),
+          exploreVocabularyMetadataProfile(resource),
         ]),
       ),
       confirmed_decisions: confirmedDecisions,

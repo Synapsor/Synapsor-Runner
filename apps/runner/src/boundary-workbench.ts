@@ -1036,7 +1036,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    let accessBaselineColumns=null;
 	    let highlightedAccessField=null;
 	    let focusedAccessReview=false;
-    let vocabularyStructuralProfiles={};
+    let vocabularyMetadataProfiles={};
     const permissions=[
       ["Show value","selectable_fields"],
       ["Filter","filterable_fields"],
@@ -1066,30 +1066,21 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    ])].filter(field=>!(resource?.kept_out_fields||[]).includes(field)).sort();
 	    const modelVocabularyCoverage=resource=>{
 	      const fields=modelFacingFieldIds(resource);
-	      const profile=vocabularyStructuralProfiles[resource?.id];
-	      const statusFor=field=>resource?.field_metadata?.[field]?.label||resource?.field_metadata?.[field]?.description
-	        ?"reviewed_vocabulary"
-	        :profile?.field_semantic_status?.[field]||"opaque_identifier";
-	      const opaqueFields=fields.filter(field=>statusFor(field)==="opaque_identifier");
-	      const codedFields=fields.filter(field=>statusFor(field)==="coded_values");
-	      const resourceGap=(profile?.resource_identifier_opaque??true)&&!resource?.label&&!resource?.description;
-	      const blocking=resourceGap||opaqueFields.length>0;
+	      const profile=vocabularyMetadataProfiles[resource?.id];
+	      const supplied=value=>typeof value==="string"&&value.trim().length>0;
 	      return {
-	        resourceGap,
-	        opaqueFields,
-	        codedFields,
-	        blocking,
-	        status:blocking?"review_required":codedFields.length?"review_advised":"ready"
+	        kind:"presentation_metadata",
+	        model_facing_fields:fields.length,
+	        fields_with_labels:fields.filter(field=>supplied(resource?.field_metadata?.[field]?.label)).length,
+	        fields_with_descriptions:fields.filter(field=>supplied(resource?.field_metadata?.[field]?.description)).length,
+	        fields_with_reviewed_vocabulary:fields.filter(field=>supplied(resource?.field_metadata?.[field]?.label)
+	          ||supplied(resource?.field_metadata?.[field]?.description)||profile?.field_vocabulary?.[field]==="reviewed_metadata").length
 	      };
 	    };
 	    const modelVocabularySummary=resource=>{
 	      const coverage=modelVocabularyCoverage(resource);
-	      const labelled=modelFacingFieldIds(resource).filter(field=>resource?.field_metadata?.[field]?.label).length;
-	      const described=modelFacingFieldIds(resource).filter(field=>resource?.field_metadata?.[field]?.description).length;
-	      const gaps=[...(coverage.resourceGap?["table name"]:[]),...coverage.opaqueFields];
-	      if(coverage.blocking)return "reviewed vocabulary required for "+gaps.join(", ");
-	      if(coverage.codedFields.length)return labelled+" field labels; "+described+" field descriptions; reviewed vocabulary advised for coded value fields "+coverage.codedFields.join(", ")+"; activation remains available";
-	      return labelled+" field labels; "+described+" field descriptions; no opaque or coded model-facing vocabulary gaps";
+	      return coverage.fields_with_labels+"/"+coverage.model_facing_fields+" field labels; "
+	        +coverage.fields_with_descriptions+"/"+coverage.model_facing_fields+" field descriptions; optional presentation metadata";
 	    };
 	    function handleSessionFailure(payload){
 	      if(!["WORKBENCH_SESSION_REQUIRED","WORKBENCH_SESSION_EXPIRED","WORKBENCH_SESSION_INVALID"].includes(payload?.error_code))return false;
@@ -3630,12 +3621,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      const columnList='<div class="access-column-list" data-access-column-list>'+orderedFields.map(renderColumnRow).join("")+'</div>';
 		      const privacyButton=resource?'<button class="quiet" id="open-resource-privacy" type="button">Privacy · minimum group '+esc(resource.minimum_cohort_size)+'</button>':"";
 	      const resourceMetadata=resource?managedMetadataReviewPanel("resource_metadata",undefined,{label:resource.label,description:resource.description}):"";
-	      const vocabularyCoverage=resource?modelVocabularyCoverage(resource):null;
-	      const vocabularyNotice=vocabularyCoverage?.blocking
-	        ?'<div class="risk"><strong>Reviewed model vocabulary required before activation</strong><p>'+esc(modelVocabularySummary(resource))+'. Add a table label or description above, and field labels or descriptions in the affected column panels. Exact database IDs remain the plan authority; this metadata grants no data access.</p></div>'
-	        :vocabularyCoverage?.status==="review_advised"
-	          ?'<div class="risk advisory"><strong>Reviewed model vocabulary advised</strong><p>'+esc(modelVocabularySummary(resource))+'. Clients are told not to infer business meaning from these codes. Add field labels or descriptions in the affected column panels when their meaning should be available to a model.</p></div>'
-	        :resource?'<div class="band"><strong>Model vocabulary ready</strong><p>'+esc(modelVocabularySummary(resource))+'.</p></div>':"";
+	      const vocabularyNotice=resource
+	        ?'<div class="band"><strong>Optional display metadata</strong><p>'+esc(modelVocabularySummary(resource))+'. Labels and descriptions do not establish business meaning or change access.</p></div>':"";
 		      const resourceHeading=resource?.label
 		        ?'<h3>'+esc(resource.label)+'</h3><p><code>'+esc(selectedResource)+'</code></p>'
 		        :'<h3>'+esc(selectedResource)+'</h3>';
@@ -3867,10 +3854,6 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function focusedBoundaryBlocker(){
       if(!candidate?.pack?.resources?.length)return "Include at least one table.";
       for(const resource of candidate.pack.resources){
-	        const vocabulary=modelVocabularyCoverage(resource);
-	        if(vocabulary.blocking){
-	          return resource.id+" cannot activate until reviewed model vocabulary is added: "+modelVocabularySummary(resource)+".";
-	        }
         const unresolved=(resource.relationships||[]).find(relationship=>relationship.unmatched_rows==="review_required");
         if(unresolved){
           return "Choose how unmatched rows behave for "+resource.id+" → "+unresolved.target_resource+" before activation.";
@@ -3883,7 +3866,6 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       if(!candidate||!reviewReport)return;
       if(focusedAccessReview){
         const blocker=focusedBoundaryBlocker();
-	      const vocabularyGapResource=candidate.pack.resources.find(resource=>modelVocabularyCoverage(resource).blocking);
         const unresolvedRelationship=candidate.pack.resources
           .flatMap(resource=>(resource.relationships||[]).map(relationship=>({resource,relationship})))
           .find(item=>item.relationship.unmatched_rows==="review_required");
@@ -3931,7 +3913,6 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           +(blocker?'<div class="risk high"><strong>One explicit choice remains.</strong><p>'+esc(blocker)+'</p><button id="return-to-access" class="secondary" type="button">Return to access editor</button></div>':'<p class="muted">Selecting Activate records every exact digest-bound decision shown here, activates only this boundary, and opens Ask.</p><div class="actions"><button id="keep-read-reviewed" class="secondary" type="button">Keep reviewed and prepare an action</button></div><p class="muted">This records review only. Read authority stays inactive; dependent proposal-action activation remains blocked.</p>');
         byId("return-to-access")?.addEventListener("click",()=>{
           if(unresolvedRelationship)selectedResource=unresolvedRelationship.resource.id;
-	      else if(vocabularyGapResource)selectedResource=vocabularyGapResource.id;
           setView("exceptions");
           window.requestAnimationFrame(()=>{
             const detail=byId("resource-detail")?.querySelector("[data-relationship-semantics]");
@@ -8892,7 +8873,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		      authoringBinding=payload.authoring_binding;
 		      original=payload.draft;
 		      candidate=structuredClone(payload.candidate||payload.draft);
-		      vocabularyStructuralProfiles=payload.vocabulary_structural_profiles||{};
+		      vocabularyMetadataProfiles=payload.vocabulary_metadata_profiles||{};
 		      boundaryLibrary=payload.boundary_library||{
 		        selected_name:candidate.pack.name,
 		        entries:[]
