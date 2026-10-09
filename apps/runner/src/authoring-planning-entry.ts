@@ -28,7 +28,7 @@ export async function runPlanningEntry(input: {
     ? await input.scope.restorePlanning(await prepareBoundaryJobPlanningInvocation(input.request, input.retained))
     : await input.produce();
   if (plan.state !== "planned") return { plan, readReviewPending: false };
-  const saved = input.retained ?? (plan.completion ? await input.scope.recordPlanning(plan) : undefined);
+  const saved = input.retained ?? await input.scope.recordPlanning(plan);
   // The genuine completed plan is already durable before this operator wait.
   // This review grants only the exact existing Read interpretation.
   const readReviewPending = Boolean(saved && plan.read_scope?.proposal.applicability === "no_read_requested"
