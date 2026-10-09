@@ -206,6 +206,13 @@ describe("MySQL administrator handoff", () => {
     expect(readme).not.toMatch(/NOLOGIN|PostgreSQL|psql/);
     expect(JSON.parse(await fs.readFile(path.join(directory, "requirements.json"), "utf8"))).toMatchObject({ engine: "mysql", relations: [{ update_columns: ["base_monthly_cents", "plan_code", "version"] }, { lock_column: "plan_offer_id" }] });
   });
+  it("refuses a PostgreSQL namespace requirement on a MySQL writer plan", () => {
+    const data = inspection(); data.engine = "mysql";
+    const required = assessment(); required.required_relations!.forEach(r => { r.rls_required = false; });
+    expect(writerProvisioningPlan({ assessment: required, inspection: data, outcome: "test", actionDigest, writerEnv: "WRITER", hardLimitNamespace: true })).toBeUndefined();
+    const plan = mysqlPlan(); plan.hard_limit_namespace = { relation: "pg_catalog.pg_namespace", privilege: "MAINTAIN" };
+    expect(() => writerProvisioningSql(plan)).toThrow("Unsupported hard-limit namespace requirement");
+  });
   it("refuses unbound MySQL effect UPDATE columns instead of emitting a broader grant", () => {
     const p = mysqlPlan(); p.relations[0]!.update_columns = [];
     expect(() => writerProvisioningSql(p)).toThrow("exact reviewed UPDATE columns");
@@ -232,3 +239,13 @@ describe("MySQL administrator handoff", () => {
     expect(writerProvisioningPlan({ inspection: data, assessment: assessment(), outcome: "test", actionDigest, writerEnv: "WRITER" })).toBeUndefined();
   });
 });
+ it("includes exact per-object namespace MAINTAIN only for designated hard limits", () => {
+  const input = { assessment: assessment(), inspection: inspection(), outcome: "telecom.change_plan", actionDigest, writerEnv: "WRITER", hardLimitNamespace: true };
+  const plan = writerProvisioningPlan(input)!;
+  expect(plan.hard_limit_namespace).toEqual({ relation: "pg_catalog.pg_namespace", privilege: "MAINTAIN" });
+  const sql = writerProvisioningSql(plan);
+  expect(sql).toContain(`GRANT MAINTAIN ON TABLE pg_catalog.pg_namespace TO "${plan.suggested_role}";`);
+  expect(sql).not.toMatch(/GRANT (?:UPDATE|DELETE|TRUNCATE).*pg_namespace/);
+  expect(sql).not.toMatch(/GRANT pg_maintain/);
+  expect(writerProvisioningPlan({ ...input, hardLimitNamespace: false })!.hard_limit_namespace).toBeUndefined();
+ });

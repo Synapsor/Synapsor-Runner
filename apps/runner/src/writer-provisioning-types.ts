@@ -12,6 +12,7 @@ export type WriterProvisioningPlan = {
   engine: string;
   /** Planned existing receipt infrastructure; never evidence that it exists. */
   receipt_setup?: { schema: string; table: string };
+  hard_limit_namespace?: { relation: 'pg_catalog.pg_namespace'; privilege: 'MAINTAIN' };
   relations: Array<NonNullable<SupervisedWriterPostureAssessment["required_relations"]>[number] & {
     schema: string; table: string;
     policies: NonNullable<SchemaInspection["tables"][number]["row_level_security_policies"]>;

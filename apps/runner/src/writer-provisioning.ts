@@ -13,9 +13,11 @@ export function writerProvisioningPlan(input: {
   assessment: SupervisedWriterPostureAssessment; inspection: SchemaInspection;
   outcome: string; outcomes?: string[]; actionDigest: string; writerEnv: string; readEnv?: string;
   receiptSetup?: WriterProvisioningPlan["receipt_setup"];
+  hardLimitNamespace?: boolean;
 }): WriterProvisioningPlan | undefined {
   if (!["postgres", "mysql"].includes(input.inspection.engine) || !input.assessment.required_relations?.length) return undefined;
   if (input.inspection.engine === "mysql" && input.assessment.required_relations.some(relation => relation.rls_required)) return undefined;
+  if (input.hardLimitNamespace && input.inspection.engine !== "postgres") return undefined;
   const relations: WriterProvisioningPlan["relations"] = [];
   for (const required of input.assessment.required_relations) {
     const table = input.inspection.tables.find((entry) => `${entry.schema}.${entry.name}` === required.relation);
@@ -43,7 +45,7 @@ export function writerProvisioningPlan(input: {
     : readEnv !== "SYNAPSOR_DATABASE_WRITE_URL" ? "SYNAPSOR_DATABASE_WRITE_URL" : "SYNAPSOR_EXECUTION_DATABASE_URL";
   return { version: 1, outcome: input.outcome, ...(input.outcomes ? { outcomes: [...input.outcomes].sort() } : {}), action_digest: input.actionDigest, writer_env: writerEnv, read_env: readEnv,
     suggested_role: `runner_writer_${createHash("sha256").update(input.actionDigest + input.outcome).digest("hex").slice(0, 12)}`,
-    engine: input.inspection.engine, relations, ...(input.receiptSetup ? { receipt_setup: input.receiptSetup } : {}) };
+    engine: input.inspection.engine, relations, ...(input.hardLimitNamespace ? { hard_limit_namespace: { relation: "pg_catalog.pg_namespace" as const, privilege: "MAINTAIN" as const } } : {}), ...(input.receiptSetup ? { receipt_setup: input.receiptSetup } : {}) };
 }
 
 const identifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
@@ -53,6 +55,7 @@ export function writerProvisioningSql(plan: WriterProvisioningPlan): string {
   if (plan.relations.some((relation) => !relation.privileges.every((value) => ["select", "insert", "update"].includes(value)))) {
     throw new Error("Unsupported writer privilege; export the exact reviewed requirements again.");
   }
+  if (plan.hard_limit_namespace && (plan.engine !== "postgres" || plan.hard_limit_namespace.relation !== "pg_catalog.pg_namespace" || plan.hard_limit_namespace.privilege !== "MAINTAIN")) throw new Error("Unsupported hard-limit namespace requirement.");
   if (plan.engine === "mysql") return mysqlWriterProvisioningSql(plan);
   const role = identifier(plan.suggested_role);
   return [
@@ -67,6 +70,11 @@ export function writerProvisioningSql(plan: WriterProvisioningPlan): string {
       formatPostgresReceiptMigration(plan.receipt_setup.schema, plan.receipt_setup.table),
     ] : []),
     ...[...new Set(plan.relations.map((relation) => relation.schema))].map((schema) => `GRANT USAGE ON SCHEMA ${identifier(schema)} TO ${role};`),
+    ...(plan.hard_limit_namespace ? [
+      "-- Hard-limit namespace replacement protection. MAINTAIN also permits maintenance and all lock modes on this catalog relation, subject to PostgreSQL restrictions.",
+      `GRANT MAINTAIN ON TABLE pg_catalog.pg_namespace TO ${role};`,
+      "-- No pg_maintain membership, catalog DML or grant option. Live PostgreSQL 17 validation and Source inspection remain mandatory.",
+    ] : []),
     ...plan.relations.flatMap((relation) => {
       const table = `${identifier(relation.schema)}.${identifier(relation.table)}`;
       const updates = relation.update_columns.length ? relation.update_columns : relation.lock_column ? [relation.lock_column] : [];
@@ -170,6 +178,7 @@ export async function exportWriterProvisioning(projectRoot: string, plan: Writer
     "# Dedicated Writer Review", "", `Outcomes: ${(plan.outcomes ?? [plan.outcome]).join(", ")}`, `Action revision: ${plan.action_digest}`, "",
     "This export is a deployment plan, not execution permission. No database command has run.",
     ...(plan.receipt_setup ? [`Selected source receipt: ${plan.receipt_setup.schema}.${plan.receipt_setup.table}. grants.sql includes the existing receipt migration before narrow writer grants. This is a preview, not proof that the objects or writer work. No Read access to receipt content is granted. Re-inspection and a rollback receipt probe remain required before execution review.`, ""] : []),
+    ...(plan.hard_limit_namespace ? ["Hard-limit prerequisite: exact MAINTAIN on pg_catalog.pg_namespace for the selected dedicated writer. This also permits maintenance and all table lock modes on that relation, subject to PostgreSQL object restrictions. Review this extra catalog capability; no catalog row mutation or global pg_maintain membership is requested. Setup must inspect the actual writer before Action activation and recheck on publication and each Source transaction.", ""] : []),
     "1. An authorized database administrator reviews requirements.json: exact effect columns, private locking columns, current RLS policies and triggers.",
     "2. Review grants.sql. It creates only a new NOLOGIN role with the exact relation privileges. Existing role names cause a transaction rollback; never replace a shared role.",
     "3. Provision scoped policies and required helper-function access for the new role. Policy predicates cannot be inferred safely for an arbitrary database. Do not disable RLS, inherit the shared writer, or grant source receipt tables not listed in requirements.json.",

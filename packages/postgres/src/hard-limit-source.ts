@@ -3,6 +3,7 @@ import { ActionRuleError, actionRuleRelationshipPairs, type CompiledRuleBindingV
 import { isCompleteCollectionScopeExpression } from './complete-collection-scope.js';
 import type { PostgresApplyClient, PostgresActionRuleRlsScope } from './index.js';
 
+type HardLimitScopeSettings = Pick<PostgresActionRuleRlsScope, 'tenantSetting' | 'principalSetting'>;
 type Receipt = { table: string; provisioning: 'precreated' | 'auto_migrate' };
 const receiptSearchPaths = new WeakMap<PostgresApplyClient, string>();
 const receiptNames = new WeakMap<PostgresApplyClient, string>();
@@ -80,7 +81,7 @@ async function resolveReceipt(client: PostgresApplyClient, table: string, origin
 
 /** Bounded trusted-core PG17 capability. No user-expression/body inference or grants. */
 export async function assertPostgresHardLimitSource(client: PostgresApplyClient, compiled: CompiledActionRuleV1,
-  scope: PostgresActionRuleRlsScope | undefined, receipt?: Receipt): Promise<void> {
+  scope: HardLimitScopeSettings | undefined, receipt?: Receipt): Promise<void> {
   if (!compiled.hard_limit) return;
   await protectPostgresHardLimitNames(client);
   if (qualified.get(client)?.has(compiled.compiled_plan_digest)) return;
@@ -154,7 +155,7 @@ export async function assertPostgresHardLimitSource(client: PostgresApplyClient,
 }
 
 async function inspectRelation(client: PostgresApplyClient,
-  r: { oid: string; binding?: CompiledRuleBindingV1; table: string }, scope?: PostgresActionRuleRlsScope, receiptRead = false): Promise<void> {
+  r: { oid: string; binding?: CompiledRuleBindingV1; table: string }, scope?: HardLimitScopeSettings, receiptRead = false): Promise<void> {
     const origin: SourceDiagnosticOrigin = receiptRead ? 'source.receipt_read' : 'source.hard_limit';
 
     const columns=await client.query(`SELECT a.attname,a.atttypid::integer AS type,a.atttypmod,a.attnotnull,a.attgenerated,a.attidentity,

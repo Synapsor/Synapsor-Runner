@@ -1,3 +1,4 @@
+export { assertPostgresHardLimitSource } from "./hard-limit-source.js";
 import { sourceRollbackBinding, sourceCompletionBinding } from "@synapsor-runner/worker-core";
 import crypto from "node:crypto";
 import { assertPostgresHardLimitSource, resetHardLimitQualification, hardLimitReceiptTable, inspectPostgresSourceReceiptRead } from "./hard-limit-source.js";
