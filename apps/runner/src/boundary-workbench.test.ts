@@ -63,6 +63,7 @@ describe("Auto Boundary Workbench renderer", () => {
       focusedAccessReview: false, reviewProgressHealthy: true, candidate: {}, candidateDigest: undefined,
       reviewRevision: 2, confirmedDecisions: new Set(), queueReviewProgressSave: async () => undefined,
       updateActivationState: () => undefined,
+      typedReviewSubmission: () => ({schema_version:"synapsor.boundary-review-submission.v1", candidate_digest:"sha256:declared", decisions:[]}),
       post: async (url: string) => { expect(url).toBe("/api/boundary/preview"); order.push("preview");
         return { digest: "exact", activation_warning_lines: warning }; },
       activateBoundary: async () => { order.push("activate"); } });
@@ -815,7 +816,7 @@ describe("Auto Boundary Workbench renderer", () => {
     expect(html).toContain("This remains a disabled draft until Step 2.");
     expect(html).toContain('byId("review-staged-access").onclick=openFocusedActivationReview');
     expect(html).toContain("One boundary, one exact confirmation");
-    expect(html).toContain("confirmedDecisions=new Set(candidate.unresolved_decisions||[])");
+    expect(html).toContain("confirmedDecisions=new Set(reviewDecisionIds())");
     expect(html).toContain("openAccessEditor(button.dataset.reviewResource,button.dataset.reviewField)");
     expect(html).toContain("data-access-highlighted");
     expect(html).not.toMatch(/drag(?:-| )and(?:-| )drop|approve all/i);

@@ -1,0 +1,35 @@
+{
+  "base": "264d35cf",
+  "before_pin": "fc53db24",
+  "scope": "Workbench exact typed partial review server and browser sender; no activation claim",
+  "before": {
+    "pass": 4,
+    "fail": 2,
+    "evidence": "/var/tmp/synapsor-workbench-typed-review-owned/evidence/before.json"
+  },
+  "after": {
+    "pass": 29,
+    "fail": 0,
+    "evidence": "/var/tmp/synapsor-workbench-typed-review-owned/evidence/after2.json"
+  },
+  "intermediate": {
+    "native_pass": 6,
+    "browser_pass": 17,
+    "browser_fail": 3,
+    "classification": "two VM contexts lacked newly required typed sender; one asserted retired English identity string. Added explicit typed sender stub and changed string assertion to typed IDs; warning sequence/default-No assertions unchanged.",
+    "evidence": "/var/tmp/synapsor-workbench-typed-review-owned/evidence/client-after1.json"
+  },
+  "guarantees": [
+    "actual typed submission only, exact current candidate/revision/native binding",
+    "existing save owner resolves origins and validates exact writer ACK",
+    "empty submission grants no new confirmation",
+    "browser display text never determines identity, deployment never auto-confirmed",
+    "candidate edits must be saved disabled separately before typed review"
+  ],
+  "open": [
+    "independent review",
+    "Workbench preview/activation and relationship staging old contracts remain pending follow-up",
+    "full build has pre-existing unrelated/remaining port diagnostics; type result recorded separately"
+  ],
+  "storage": "fixed existing worktree, no source snapshots/copies; retain all evidence"
+}

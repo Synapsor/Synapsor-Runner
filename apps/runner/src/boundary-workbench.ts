@@ -987,6 +987,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     let selectedResource=null;
     let openedResources=new Set();
     let confirmedDecisions=new Set();
+    let typedReviewDecisions=[];
+    let reviewCandidateDigest;
+    let reviewCandidateSnapshot;
     let reviewRevision=0;
     let authoringBinding;
     let reviewInvalidations=[];
@@ -1170,12 +1173,32 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      const reviewed=(reviewReport?.resources||[]).filter(resource=>ids.has(resource.id));
 	      return reviewedCollectionLabel(reviewed);
 	    };
-	    const resourceDecisions=id=>(candidate?.unresolved_decisions||[]).filter(decision=>decision.startsWith(id+":"));
-	    const outstandingResourceDecisions=id=>resourceDecisions(id).filter(decision=>!confirmedDecisions.has(decision));
-	    const globalDecisions=()=>(candidate?.unresolved_decisions||[]).filter(decision=>
-        !decision.startsWith("deployment profile:")
-        &&!(reviewReport.resources||[]).some(resource=>decision.startsWith(resource.id+":"))
-      );
+    const reviewDecision=id=>typedReviewDecisions.find(decision=>decision.id===id);
+    const reviewDecisionIds=()=>typedReviewDecisions.map(decision=>decision.id);
+    const resourceDecisions=id=>typedReviewDecisions.filter(decision=>decision.resource_id===id).map(decision=>decision.id);
+    const outstandingResourceDecisions=id=>resourceDecisions(id).filter(decision=>!confirmedDecisions.has(decision));
+    const globalDecisions=()=>typedReviewDecisions.filter(decision=>decision.resource_id===undefined).map(decision=>decision.id);
+    function adoptTypedReview(payload){
+      if(!Array.isArray(payload.review_decisions)||typeof payload.review_candidate_digest!=="string"
+        ||!Array.isArray(payload.confirmed_review_ids))throw new Error("Reload the current typed Read review before confirming settings.");
+      typedReviewDecisions=structuredClone(payload.review_decisions);
+      reviewCandidateDigest=payload.review_candidate_digest;
+      reviewCandidateSnapshot=JSON.stringify(candidate);
+      const ids=new Set(reviewDecisionIds());
+      confirmedDecisions=new Set(payload.confirmed_review_ids.filter(id=>ids.has(id)));
+    }
+    function typedReviewSubmission(selected=[...confirmedDecisions]){
+      if(!reviewCandidateDigest||reviewCandidateSnapshot!==JSON.stringify(candidate)){
+        throw new Error("Save the disabled change through the ordinary access editor, then reload its exact typed review before confirming settings.");
+      }
+      const decisions=selected.map(id=>{
+        const current=reviewDecision(id);
+        if(!current)throw new Error("The selected review changed. Reload before confirming settings.");
+        const {decision,...reference}=current;
+        return structuredClone(reference);
+      });
+      return {schema_version:"synapsor.boundary-review-submission.v1",candidate_digest:reviewCandidateDigest,decisions};
+    }
     const classificationFor=(id,field)=>{const resource=reviewResource(id);return resource&&resource.fields&&resource.fields.find(item=>item.name===field)?.sensitivity};
     const stateLabel=state=>state==="high_confidence_sensitive"?"Sensitive":state==="structurally_low_risk"?"Low structural risk":"Needs review";
     const hasActiveAuthority=()=>activeBoundaries.length>0||journey?.authority_active===true;
@@ -1737,7 +1760,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 		      const activeBoundaryName=activeBoundary?.pack?.name;
 		      const entries=(boundaryLibrary?.entries||[]).length
 		        ?boundaryLibrary.entries
-		        :[{name:candidate.pack.name,selected:true,active:activeBoundaryName===candidate.pack.name,matches_active_digest:activeBoundaryName===candidate.pack.name,table_count:candidate.pack.resources.length,outstanding_decisions:candidate.unresolved_decisions.length-confirmedDecisions.size}];
+		        :[{name:candidate.pack.name,selected:true,active:activeBoundaryName===candidate.pack.name,matches_active_digest:activeBoundaryName===candidate.pack.name,table_count:candidate.pack.resources.length,outstanding_decisions:reviewDecisionIds().length-confirmedDecisions.size}];
 		      const readRows=entries.map(entry=>{
 		        const status=entry.policy_review_required
 		          ?"Legacy policy review needed"
@@ -2403,19 +2426,8 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	    }
 
     function syncCandidateDecisions(){
-      if(!candidate||!original)return;
-      const retained=new Map(candidate.pack.resources.map(resource=>[resource.id,resource]));
-      candidate.unresolved_decisions=(original.unresolved_decisions||[]).filter(decision=>{
-        if(decision.startsWith("deployment profile:")||decision.startsWith("trusted context:")||decision.startsWith("database role:"))return true;
-        const separator=decision.indexOf(": ");
-        if(separator<1)return true;
-        const resource=retained.get(decision.slice(0,separator));
-        if(!resource)return false;
-        const match=/^review relationship (.+) cardinality and scope on (.+)$/.exec(decision.slice(separator+2));
-        return !match||resource.relationships.some(item=>item.id===match[1]&&item.target_resource===match[2]);
-      });
-      const required=new Set(candidate.unresolved_decisions);
-      confirmedDecisions=new Set([...confirmedDecisions].filter(decision=>required.has(decision)));
+      // Changes need the server's new exact typed inventory before any new sign-off.
+      if(reviewCandidateSnapshot!==JSON.stringify(candidate))confirmedDecisions.clear();
     }
 
 		    function openResource(id){
@@ -3430,16 +3442,23 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
     function queueReviewProgressSave(){
       if(!candidate||!reviewReport)return Promise.resolve();
       const savedCandidate=structuredClone(candidate);
-      const savedDecisions=[...confirmedDecisions];
+      let savedSubmission;
+      try{savedSubmission=typedReviewSubmission()}catch(error){
+        reviewProgressHealthy=false;
+        byId("message").textContent=error.message;
+        updateActivationState();
+        return Promise.resolve();
+      }
       progressSave=progressSave.catch(()=>undefined).then(async()=>{
         try{
           const payload=await post("/api/boundary/progress",{
             candidate:savedCandidate,
-            confirmed_decisions:savedDecisions,
+            review_submission:savedSubmission,
             expected_revision:reviewRevision,
             actor:byId("actor").value.trim()
           });
           reviewRevision=payload.revision;
+          if(JSON.stringify(candidate)===JSON.stringify(savedCandidate))adoptTypedReview(payload);
           reviewInvalidations=payload.invalidated_decisions||[];
           reviewProgressHealthy=true;
           updateActivationState();
@@ -3816,33 +3835,13 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       });
     }
 
-    function humanDecision(decision){
-      if(decision.startsWith("deployment profile:"))return "This is a development or staging setup, not production.";
-      if(decision.startsWith("trusted context:"))return "Your application chooses the customer and user. The AI cannot change either.";
-      if(decision.startsWith("database role:"))return "The database login is verified read-only and cannot bypass row security.";
-      if(decision.includes(": confirm tenant key "))return decision.slice(0,decision.indexOf(":"))+": confirm the customer-isolation column.";
-      if(decision.includes(": confirm mandatory derived tenant scope ")){
-        const resource=reviewResource(decision.slice(0,decision.indexOf(":")));
-        const scope=resource?.derived_tenant_scope?.selected;
-        return scope?resource.id+": confirm customer isolation through the "+derivedScopePathLabel(scope)+".":decision;
-      }
-      if(decision.includes(": confirm mandatory derived principal scope ")){
-        const resource=reviewResource(decision.slice(0,decision.indexOf(":")));
-        const scope=resource?.derived_principal_scope?.selected;
-        return scope?resource.id+": confirm user/owner isolation through the "+derivedScopePathLabel(scope)+".":decision;
-      }
-      if(decision.includes(": confirm principal scope "))return decision.slice(0,decision.indexOf(":"))+": confirm whether each user is limited to their own rows.";
-      if(decision.endsWith(": confirm visible and kept-out fields"))return decision.slice(0,decision.indexOf(":"))+": confirm which fields are model-visible, withheld from the model, or kept out.";
-      if(decision.endsWith(": confirm reviewed labels and descriptions"))return decision.slice(0,decision.indexOf(":"))+": confirm the reviewed human-readable names and descriptions for these exact database IDs.";
-      if(decision.endsWith(": confirm filter/sort/group/aggregate-only field permissions"))return decision.slice(0,decision.indexOf(":"))+": confirm how fields may be searched, sorted, grouped, or totaled.";
-      if(decision.endsWith(": confirm minimum cohort and extraction/differencing budgets"))return decision.slice(0,decision.indexOf(":"))+": confirm privacy and result-size limits.";
-      if(decision.includes(": review relationship "))return decision.slice(0,decision.indexOf(":"))+": confirm this reviewed table relationship cannot widen access.";
-      return decision;
+    function humanDecision(id){
+      return reviewDecision(id)?.decision||"Review is no longer current. Reload the saved candidate.";
     }
 
 	    function allDecisionsConfirmed(){
-	      const decisions=candidate?.unresolved_decisions||[];
-	      return decisions.every(decision=>confirmedDecisions.has(decision));
+	      const decisions=reviewDecisionIds();
+	      return Boolean(reviewCandidateDigest)&&reviewCandidateSnapshot===JSON.stringify(candidate)&&decisions.every(decision=>confirmedDecisions.has(decision));
 	    }
 
     function continueAfterFinalSignoff(){
@@ -3926,12 +3925,12 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         updateActivationState();
         return;
       }
-      const total=candidate.unresolved_decisions.length;
-      const outstanding=candidate.unresolved_decisions.filter(decision=>!confirmedDecisions.has(decision));
+      const total=reviewDecisionIds().length;
+      const outstanding=reviewDecisionIds().filter(decision=>!confirmedDecisions.has(decision));
       const resourceIds=new Set((reviewReport.resources||[]).map(resource=>resource.id));
-      const globalOutstanding=outstanding.filter(decision=>![...resourceIds].some(id=>decision.startsWith(id+":")));
+      const globalOutstanding=outstanding.filter(id=>reviewDecision(id)?.resource_id===undefined);
       const remainingResources=[...new Set(outstanding
-        .map(decision=>decision.slice(0,decision.indexOf(": ")))
+        .map(id=>reviewDecision(id)?.resource_id)
         .filter(id=>resourceIds.has(id)))];
       const collectionLabel=reviewedCollectionLabel();
       const decisionLabel=collectionLabel==="tables"?"table":"table/view";
@@ -3948,9 +3947,9 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	        +' / Model-withheld fields: '+esc(fieldAccess.runnerOnly)
 	        +' / Kept-out fields: '+esc(fieldAccess.keptOut)+'</p>';
       byId("review-next-blocker")?.addEventListener("click",()=>{
-        const separator=nextBlocker.indexOf(": ");
-        if(separator>0&&reviewResource(nextBlocker.slice(0,separator))){
-          openResource(nextBlocker.slice(0,separator));
+        const resourceId=reviewDecision(nextBlocker)?.resource_id;
+        if(resourceId&&reviewResource(resourceId)){
+          openResource(resourceId);
         }else{
           selectedResource=null;
           setView("exceptions");
@@ -3969,7 +3968,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         const blocker=focusedBoundaryBlocker();
         if(blocker)throw new Error(blocker);
         if(!byId("actor").value.trim())throw new Error("Enter who reviewed this access.");
-        confirmedDecisions=new Set(candidate.unresolved_decisions||[]);
+        confirmedDecisions=new Set(reviewDecisionIds());
         await queueReviewProgressSave();
         if(!reviewProgressHealthy)throw new Error("Review progress must be saved before preparing a dependent action.");
         guidedActionData=null;
@@ -4023,7 +4022,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
         if(focusedAccessReview){
           const blocker=focusedBoundaryBlocker();
           if(blocker)throw new Error(blocker);
-          confirmedDecisions=new Set(candidate.unresolved_decisions||[]);
+          confirmedDecisions=new Set(reviewDecisionIds());
         }
         await queueReviewProgressSave();
         if(!reviewProgressHealthy)throw new Error("Review progress must be saved before previewing a digest.");
@@ -4032,7 +4031,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          candidate,
 	          expected_revision:reviewRevision,
 	          actor:byId("actor").value.trim(),
-	          confirmed_decisions:[...confirmedDecisions]
+	          review_submission:typedReviewSubmission()
 	        });
 	        candidateDigest=payload.digest;
         if(!confirmReadActivationImpact(payload)){updateActivationState();return}
@@ -4056,7 +4055,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           expected_digest:candidateDigest,
           actor:byId("actor").value.trim(),
           confirmation:"ACTIVATE "+candidateDigest,
-          confirmed_decisions:[...confirmedDecisions]
+          review_submission:typedReviewSubmission()
 	        });
 	        activeBoundary=payload.active;
 	        activeBoundaries=[...activeBoundaries.filter(boundary=>boundary.pack?.name!==payload.active.pack.name),payload.active];
@@ -6869,10 +6868,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           confirmation:"REVIEW RELATIONSHIP "+review.proof_digest
         });
         candidate=payload.candidate;
-       confirmedDecisions=new Set(payload.confirmed_decisions||[]);
-       (candidate.unresolved_decisions||[])
-         .filter(decision=>decision.startsWith("deployment profile:"))
-         .forEach(decision=>confirmedDecisions.add(decision));
+        await load();
         reviewRevision=payload.revision;
         reviewInvalidations=payload.invalidated_decisions||[];
         candidateDigest=payload.candidate_digest;
@@ -7585,7 +7581,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const actionList=preparedActions.length
         ?preparedActions.map(item=>'<li><strong>'+esc(item.intent)+'</strong> · '+(item.approval==="deterministic"?'deterministic policy draft':'human approval')+' · disabled · rehearsal '+esc(item.rehearsal)+'</li>').join("")
         :'<li>No proposal action draft prepared.</li>';
-      const readReviewComplete=(candidate?.unresolved_decisions||[]).every(decision=>confirmedDecisions.has(decision));
+      const readReviewComplete=allDecisionsConfirmed();
       const unresolvedList=unresolved.length
         ?'<div class="band notice"><strong>'+esc(unresolved.length)+' proposal intent'+(unresolved.length===1?' needs':'s need')+' one more reviewed choice.</strong><ul>'+unresolved.map(item=>'<li>'+esc(item.intent)+' — '+esc(item.preparation?.decision?.title||item.error||"Open Safe Action to continue.")+'</li>').join("")+'</ul><button id="delegation-resolve" type="button">'+(readReviewComplete?'Resolve in Safe Action':'Review Read Boundary to continue')+'</button></div>'
         :'';
@@ -8893,10 +8889,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       instantOnboarding=payload.instant_onboarding;
       const namedAuthorityActive=!activeBoundaries.length&&journey?.authority_active===true;
       const anyAuthorityActive=activeBoundaries.length>0||namedAuthorityActive;
-      confirmedDecisions=new Set(payload.confirmed_decisions||[]);
-      (candidate.unresolved_decisions||[])
-        .filter(decision=>decision.startsWith("deployment profile:"))
-        .forEach(decision=>confirmedDecisions.add(decision));
+      adoptTypedReview(payload);
       reviewRevision=payload.review_progress?.revision||0;
       reviewInvalidations=payload.review_progress?.invalidated_decisions||[];
       reviewProgressHealthy=true;
