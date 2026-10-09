@@ -1,7 +1,7 @@
 {
-  "updated": "2026-10-09",
-  "accepted_Main": "7544b339",
-  "B2_composition": "65e14750 (unintegrated)",
+  "updated": "2026-10-09T03:24:28Z",
+  "accepted_Main": "0ea9c097 (product7544b339)",
+  "B2_composition": "2084d87e (unaccepted; displayed-writer currentness DP09 still open)",
   "windows": {
     "B64": [
       "2026-10-08T06:32:23Z",
@@ -16,93 +16,93 @@
   "rows": [
     {
       "id": "1",
-      "deliverable": "B64 English decision sites \u21920",
+      "deliverable": "B64 English decision sites →0",
       "owner": "Main/B66",
-      "status": "OPEN: Main30typed/0delete, Action28/5; Read/Ask/Chat/Privacy0/0 owned source; actual English retirement edits queued behind current initializer/admission work",
+      "status": "OPEN: Main30 typed/0 delete and Action28 typed/5 delete; other Read/Ask/Chat/Privacy owned-source counts0/0. No remaining-site retirement editing underway.",
       "active_work": false
     },
     {
       "id": "2",
       "deliverable": "B64 Runner cards + editable fields; Enter keeps suggestion, never confirms",
       "owner": "Main/B66 presentation",
-      "status": "QUEUED: existing typed cards/initializer partial work; real setup/edit screen acceptance not actively running",
+      "status": "QUEUED: existing typed-card/initializer work is partial; real setup/edit editable-field screens and Enter-keeps-never-confirms proof are not being implemented or qualified.",
       "active_work": false
     },
     {
       "id": "3",
       "deliverable": "B64 /details full per-operation history",
       "owner": "Main/B66 presentation",
-      "status": "QUEUED: no current implementation/acceptance run",
+      "status": "QUEUED: full per-operation /details history implementation and real-route acceptance are not underway.",
       "active_work": false
     },
     {
       "id": "4",
       "deliverable": "B64 full suite",
       "owner": "Main",
-      "status": "QUEUED: focused Workbench38PASS; globaltypes293/open fixes and integrated pin must settle first; no full suite running",
+      "status": "QUEUED: no full suite running. Integrated fixes and type failures must settle first; focused Workbench38PASS; last global type count293 remains historical/open.",
       "active_work": false
     },
     {
       "id": "5",
       "deliverable": "B64 real-Terra paid run",
       "owner": "Tester/Owner",
-      "status": "BLOCKED: needs Owner approval and accepted artifact; paid CLOSED",
+      "status": "BLOCKED: Owner paid approval and accepted artifact required; paid remains CLOSED.",
       "active_work": false
     },
     {
       "id": "6",
       "deliverable": "B65 public arithmetic55refused/50/40/45/55refused + races",
       "owner": "Tester/B66/Main",
-      "status": "BLOCKED public execution on truthful all-writers version fact + initializer/native binding; initializer actively built, no arithmetic/race currently running",
+      "status": "BLOCKED public execution: truthful every-writer version fact and native initializer/public binding unresolved. B66/Main initializer preparation active; five fresh arithmetic outcomes not established.",
       "active_work": true
     },
     {
       "id": "7",
       "deliverable": "B65 pre-activation actual writer capability integrated",
       "owner": "Main/Runtime/R1",
-      "status": "ACTIVE: PG17 native8 + configured-public4 scopedPASS on65e; composition integration + disabled-selection1119 before/after still open",
+      "status": "ACTIVE: native8 and configured-public4 scopedPASS; disabled-selection8 scopedPASS; DP10 lower held-permit after2084 passes with prerequisite2 cases. DP09 accepts an undisplayed changed writer after Yes: reproduced product finding, shared currentness repair active; whole B2 not accepted.",
       "active_work": true
     },
     {
       "id": "8",
-      "deliverable": "B65 portable schema identity PG14\u201316",
+      "deliverable": "B65 portable schema identity PG14–16",
       "owner": "Tester/Runtime",
-      "status": "ACTIVE: PG14 owned20controls; schema/function-body gaps retained; PG15/16/17 matrix/prototype in progress, strict fence unchanged",
-      "active_work": true
+      "status": "PROTOTYPE REPORT COMPLETE: PG14.23/15.18/16.14/17.11 main80 + supplemental4 native cases sealed e57abace. One original PG14 OID-type checker failure retained; independent full post-state80 verified without effect replay. Portable replacement not established; schema/function-body/statement-trigger gaps reported; strict strategy retained. No active further prototype implementation.",
+      "active_work": false
     },
     {
       "id": "9",
-      "deliverable": "B65 T01\u2013T10 cross-resource verdicts",
+      "deliverable": "B65 T01–T10 cross-resource verdicts",
       "owner": "Tester",
-      "status": "QUEUED: old compiler/support matrix retained; current runtime verdicts await exact reviewed public hard-limit pin; no T01\u2013T10 execution active",
+      "status": "QUEUED: prior compiler/support matrix retained. Current T01-T10 native verdicts await reviewed public hard-limit pin; no current execution underway.",
       "active_work": false
     },
     {
       "id": "10",
       "deliverable": "Step-owned prompts B62",
       "owner": "Prompt helper/R2/Main",
-      "status": "ACTIVE: Read extractioncb3 golden8+independent6PASS; integrate first owned module, broader correction/prompt families open",
+      "status": "ACTIVE Main integration: accepted Readcb3 extraction, frozen8 byte-goldens and independent6PASS. Broader step-owned prompt/context/correction migration remains open.",
       "active_work": true
     },
     {
       "id": "11",
       "deliverable": "Progress-aware continuation B53",
       "owner": "Prompt helper/R2/Main/Action",
-      "status": "ACTIVE preparation: actual baseline67a/API10029 preseal pending; no pure product/controller binding yet, no allowance resets",
+      "status": "ACTIVE independent pure review:6543a448 owns13PASS and scoped2-file TypeScript0; R2 reviewing exact interface. No live producer/persistence/CAS/extension binding; actual controller baseline9639 remains0PASS2FAIL, no minted/reset allowance.",
       "active_work": true
     },
     {
       "id": "12",
       "deliverable": "65/128-Action programs B63",
       "owner": "Read helper/R1/Main",
-      "status": "ACTIVE preparation:65 reaches full agenda/paged review/cold reopen;128 blocked by192 export records; bounded capacity representation decision next",
+      "status": "ACTIVE bounded representation design:65 reaches agenda/paged review/fresh-process reopen but complete acceptance open.128 fails192 export-record cap; helper designing bounded pages/references within unchanged cap, not increasing disclosure limits or claiming4096.",
       "active_work": true
     },
     {
       "id": "13",
       "deliverable": "source_db recommendation readback",
       "owner": "Main/Read helper",
-      "status": "QUEUED: read-only receipt test map prepared; no current product/readback implementation; existing deployments untouched",
+      "status": "QUEUED: existing receipt test map only; source_db recommendation readback not being implemented or qualified. Keep runner_ledger unknown-COMMIT limitation and existing deployments unchanged.",
       "active_work": false
     }
   ],
@@ -112,9 +112,22 @@
     "3",
     "4",
     "5",
+    "8",
     "9",
     "13"
   ],
-  "next": "Main writer/typed binding and integration; R1disabledselection proof; helperB53baseline/capacity representation; existing reviewers independent",
-  "limits": "4heavy/max8workers perrun/0700 isolatedHOME_TMP_DB/8GiB free memory+disk/privatebackup only; no automaticwindow reset"
+  "next": "Main shared writer-currentness/native initializer and accepted Read-prompt integration; R2 B53 pure review; Read bounded capacity design; R1 lower permit verdict. No new paid admission.",
+  "limits": "4heavy/max8workers perrun/0700 isolatedHOME_TMP_DB/8GiB free memory+disk/privatebackup only; no automaticwindow reset",
+  "not_actively_worked_open_items": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "9",
+    "13"
+  ],
+  "completed_with_reported_boundary": [
+    "8 (prototype report; no replacement guarantee accepted)"
+  ]
 }
