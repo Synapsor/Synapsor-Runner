@@ -39,7 +39,7 @@
   "storage": {
     "new_native_vocabulary_fixtures": "all six before/after fixture roots preserved",
     "logs": "preserved",
-    "legacy_affected_fixtures": "Existing scope-host/question tests executed fs.rm cleanup of their own generated roots; discovered and reported to Main. No further run pending keep-all cleanup port."
+    "legacy_affected_fixtures": "Existing scope-host/question tests cleaned up ordinary ephemeral unit-fixture roots. Main clarified this is not deletion of protected retained evidence. Native vocabulary roots and all evidence logs remain retained."
   },
   "privacy_remaining_acceptance": {
     "typed": 23,

@@ -1,0 +1,123 @@
+{
+  "scope": "Port existing vocabulary unit tests to the retired classifier replacement contract; no product changes",
+  "base": "ae22616a",
+  "before": {
+    "passed": 0,
+    "failed": 18,
+    "reason": "Original tests still call retired English opacity/coded-value semantic exports"
+  },
+  "after": {
+    "passed": 18,
+    "failed": 0
+  },
+  "preserved_variants": {
+    "identifiers": [
+      "legacy.val_1",
+      "legacy.dim_a",
+      "legacy.c7",
+      "legacy.t_0031",
+      "col17",
+      "public.orders",
+      "carrier_mode",
+      "warehouse_zone",
+      "licence_number",
+      "x_coordinate"
+    ],
+    "enums": [
+      [
+        "P1",
+        "P2",
+        "P3"
+      ],
+      [
+        "W1",
+        "W2",
+        "W3",
+        "W4"
+      ],
+      [
+        "Thames Valley",
+        "North West"
+      ],
+      [
+        "P1"
+      ],
+      [
+        "P1",
+        "phase two"
+      ]
+    ],
+    "other_cases": [
+      "model-facing-only metadata count with kept-out exclusion and deduplication",
+      "all unlabelled model-facing fields treated alike",
+      "label addition changes only presentation coverage"
+    ]
+  },
+  "contract": "Optional metadata has no semantic readiness, permission, or required-question effect. Actual native3 semantics remain separately evidenced by ae226 and were not rerun because this checkpoint changes only unit tests.",
+  "validation": {
+    "targeted_strict_types": "exit0 for explore-vocabulary.ts and matching test; not global typecheck",
+    "network": "bwrap --unshare-net",
+    "workers": 1,
+    "minimum_MemAvailable_bytes": 20255604736,
+    "minimum_available_disk_bytes": 59100651520
+  },
+  "privacy_remaining_acceptance": {
+    "typed": 23,
+    "delete": 2,
+    "auto-boundary.ts": {
+      "typed_ids": [
+        "I00296",
+        "I00297",
+        "I00298",
+        "I00299",
+        "I00300",
+        "I00302",
+        "I00303",
+        "I00304",
+        "I00312",
+        "I00313",
+        "I00314",
+        "I00321",
+        "I00322",
+        "I00323",
+        "I00324"
+      ]
+    },
+    "explore-vocabulary.ts": {
+      "typed_ids": [
+        "I00048",
+        "I00049",
+        "I00050",
+        "I00051",
+        "I00052",
+        "I00053"
+      ],
+      "delete_ids": [
+        "I00054",
+        "I00055"
+      ]
+    },
+    "schema-inspector/src/index.ts": {
+      "typed_ids": [
+        "I02080",
+        "I02081"
+      ]
+    },
+    "other_ten_owned_files": "0 typed/0 delete"
+  },
+  "independent_acceptance": "R2 pending; Main integration pending; no count closure",
+  "evidence": [
+    {
+      "path": "/var/tmp/b64-privacy-evidence/legacy-vocabulary-before.log",
+      "sha256": "96a84198908257a49f9979d2707d556ae5ede0c464fbf63cacd2d7ede3e46815"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/legacy-vocabulary-after.log",
+      "sha256": "e8aa3fd126c61d1d6253b83f11fb00a5ff9ba8d25694b386db1b578c0c8abf4f"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/legacy-vocabulary-types.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}
