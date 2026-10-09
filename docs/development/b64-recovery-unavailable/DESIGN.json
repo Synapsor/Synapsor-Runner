@@ -1,0 +1,12 @@
+{
+  "deliverable": 17,
+  "base": "0e426cd8c9fb93da88053d665040f339fd973f11",
+  "evidence": "b65-native-review/docs/development/b65-sequential-public-review/D01-MISSING-CONTINUE-OPTIONS.json at16eef35e",
+  "actual_case": "Two unfinished operations. Exact captured selected-step details show2 remaining chain attempts, not exhaustion. Other route labels are not proof of successful continuation.",
+  "unchanged_gate": "preview.unresolved_operation_count === 1 && preview.remaining_attempts > 0 && ownsAllowance",
+  "proposal": "Compute presentation-only explanation lines from each false gate predicate. Display all applicable reasons in the mode view lines and details. Multiple unfinished operations: exact count and exactly-one requirement, guide review of each selected unfinished step separately through existing local review. Missing attempts and missing owner are independent reasons. Explicitly state local review does not complete work, replay output, grant allowance or promise Continue becomes available.",
+  "scope": "authoring-recovery-host.ts only, plus new matching presentation test. No BC, persisted schema, source/currentness, CAS, attempt/allowance cap, confirmation default-No, selection or disposition behavior changes.",
+  "controls": "Ten new synthetic host-port controls: seven false-predicate combinations, eligible unchanged menu, declined and confirmed exact per-step local review. Existing host tests retain stale/binding/ACK/forged Continue controls. This is component presentation proof only.",
+  "runtime": "Not run; awaiting finite slot and R2 preseal before product implementation.",
+  "completion": "Deliverable17 remains OPEN until independent actual supported PG native route succeeds. No native success, replay/completion or positive continuation invented."
+}
