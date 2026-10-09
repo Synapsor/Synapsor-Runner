@@ -2,7 +2,7 @@ import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import type { ActionRuleBooleanExpressionV1 } from '@synapsor/spec';
 import { ActionRuleError } from './errors.js';
 import { normalizeActionRuleBooleanExpression } from './normalize.js';
-import { HardLimitPostStateExceeded } from './hard-limit.js';
+import { checkExactWeightedConstraint } from './exact-weighted-constraint.js';
 import { actionRuleRelationshipPairs } from './relationships.js';
 import { snapshotActionRuleRegistry } from './registry.js';
 import type { ActionRuleFactRowV1, ActionRuleFactSetV1, CompiledActionRuleV1, CompiledRuleBindingV1,
@@ -206,14 +206,20 @@ function integer(value: unknown): number {
   return value;
 }
 function numericState(ctx: Context, designation: ExperimentalSharedSumDesignationV1,
-  facts: ActionRuleFactSetV1): { total: number; limit: number } {
+  facts: ActionRuleFactSetV1): { total: number; limit: number; quantities: number[] } {
   const limit = integer(facts.bindings[ctx.parent.binding]!.rows[0]![designation.limit.field]);
   let total = 0;
-  for (const [i, b] of ctx.populations.entries()) for (const row of facts.bindings[b.binding]!.rows) {
-    total += integer(row[designation.populations[i]!.field]);
-    if (!Number.isSafeInteger(total)) refuse('facts_overflow');
+  const quantities: number[] = [];
+  for (const [i, b] of ctx.populations.entries()) {
+    let population = 0;
+    for (const row of facts.bindings[b.binding]!.rows) {
+      const value = integer(row[designation.populations[i]!.field]);
+      total += value; population += value;
+      if (!Number.isSafeInteger(total)) refuse('facts_overflow');
+    }
+    quantities.push(population);
   }
-  return { total, limit };
+  return { total, limit, quantities };
 }
 /** Stable physical guard identity for diagnostics/tests. Protection itself is
  * the existing parent-row FOR UPDATE; this digest is never a lock service. */
@@ -284,6 +290,6 @@ export function checkSharedSumDerivedPostState(state: SharedSumDerivedState,
     }
   }
   validateRows(ctx, post);
-  const { total, limit } = numericState(ctx, state.designation, post);
-  if (total > limit) throw new HardLimitPostStateExceeded();
+  const { limit, quantities } = numericState(ctx, state.designation, post);
+  checkExactWeightedConstraint(quantities.map(value => ({ quantity: BigInt(value), numerator: '1', denominator: '1' })), BigInt(limit));
 }
