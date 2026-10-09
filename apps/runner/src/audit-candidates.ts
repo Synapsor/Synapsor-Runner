@@ -24,68 +24,8 @@ const BEFORE_FILE = "tool-surface.before.json";
 const AFTER_FILE = "tool-surface.after.json";
 const REVIEW_FILE = "REVIEW.md";
 
-const MODEL_AUTHORITY_FIELDS = new Set([
-  "sql",
-  "query",
-  "statement",
-  "rawsql",
-  "where",
-  "predicate",
-  "tenantid",
-  "tenant",
-  "principal",
-  "principalid",
-  "userid",
-  "projectid",
-  "sourceid",
-  "databaseid",
-  "schema",
-  "schemaname",
-  "table",
-  "tablename",
-  "column",
-  "columns",
-  "columnname",
-  "database",
-  "databasename",
-  "approvalidentity",
-  "expectedversion",
-  "rowversion",
-  "allowedcolumns",
-  "databaseurl",
-  "password",
-  "token",
-  "apikey",
-  "secret",
-]);
-
-const WRITE_PREFIXES = new Set([
-  "add",
-  "apply",
-  "approve",
-  "cancel",
-  "charge",
-  "close",
-  "commit",
-  "create",
-  "delete",
-  "drop",
-  "insert",
-  "issue",
-  "merge",
-  "mutate",
-  "refund",
-  "remove",
-  "resolve",
-  "run",
-  "settle",
-  "update",
-  "upsert",
-  "waive",
-  "write",
-]);
-
-const READ_PREFIXES = new Set(["find", "get", "inspect", "list", "lookup", "query", "read", "search", "select"]);
+// Credential redaction is a security classification, not business interpretation.
+const CREDENTIAL_FIELDS = new Set(["databaseurl", "password", "token", "apikey", "secret"]);
 
 export type AuditCandidateOutput = {
   output_dir: string;
@@ -225,6 +165,26 @@ export function buildAuditCandidateBundle(manifest: unknown, target: string): Ca
     "x-runner-review-status": "blocked_unreviewed",
     "x-runner-source-digest": sourceDigest,
   };
+  // Only the normative validator owns reserved argument identity. External role
+  // declarations remain untrusted and disabled; no name dictionary supplies meaning.
+  const initialValidation = validateContract(contract);
+  for (const [index, capability] of capabilities.entries()) {
+    const refused = Object.keys(capability.args).filter(argument => initialValidation.errors.some(issue =>
+      issue.code === "MODEL_CONTROLLED_TRUST_ARG" && issue.path === `$.capabilities[${index}].args.${argument}`));
+    if (!refused.length) continue;
+    for (const argument of refused) delete capability.args[argument];
+    capability["x-runner-canonical-argument-refusals"] = refused.map(argument => ({ argument, code: "MODEL_CONTROLLED_TRUST_ARG" }));
+    const lookup = capability.lookup?.id_from_arg;
+    if (lookup && refused.includes(lookup)) {
+      let replacement = "review_request_id";
+      while (replacement in capability.args) replacement += "_review";
+      capability.args[replacement] = { type: "string", required: true, max_length: 128 };
+      capability.lookup = { ...capability.lookup, id_from_arg: replacement };
+      if (capability.proposal) capability.proposal.patch.review_required_write_field = { from_arg: replacement };
+    }
+    if (capability.proposal) capability.proposal["x-runner-suggested-allowed-fields"] =
+      (capability.proposal["x-runner-suggested-allowed-fields"] as string[]).filter(field => field in capability.args);
+  }
   const validation = validateContract(contract);
   if (!validation.ok) {
     throw new Error(`internal audit candidate contract error: ${validation.errors.map((issue) => `${issue.code}@${issue.path}`).join(", ")}`);
@@ -294,14 +254,19 @@ function capabilityCandidate(
   index: number,
   usedNames: Set<string>,
 ): CapabilitySpec {
-  const proposal = tool.signals.write_like || tool.signals.generic_sql || tool.signals.model_callable_commit;
+  const proposal = tool.declaration_status !== "declared_unverified" || tool.signals.write_like || tool.signals.generic_sql || tool.signals.model_callable_commit;
   const name = uniqueCapabilityName(candidateCapabilityName(tool, proposal), usedNames);
   const { args, todos, excludedFields } = candidateArgs(tool.input_fields);
-  const lookupArg = Object.keys(args).find((arg) => /(?:^|_)id$/.test(arg)) ?? Object.keys(args)[0]!;
-  const sensitiveSuggestions = tool.input_fields
-    .map((field) => safeIdentifier(field.name))
-    .filter((field) => /(password|secret|token|key|ssn|social_security|card|credential|private|internal)/i.test(field))
-    .sort();
+  const declaredLookups = tool.input_fields.filter((field) => field.role === "lookup")
+    .map((field) => safeIdentifier(field.name)).filter((name) => name in args);
+  let lookupArg = declaredLookups.length === 1 ? declaredLookups[0]! : "review_request_id";
+  if (declaredLookups.length !== 1) {
+    while (lookupArg in args) lookupArg += "_review";
+    args[lookupArg] = { type: "string", required: true, max_length: 128 };
+    todos.push("Review and replace the dedicated lookup placeholder; exactly one declared lookup argument is required.");
+  }
+  const sensitiveSuggestions = tool.input_fields.filter((field) => field.role === "sensitive")
+    .map((field) => safeIdentifier(field.name)).sort();
   const common = {
     name,
     description: proposal
@@ -345,12 +310,8 @@ function capabilityCandidate(
   };
   if (!proposal) return common;
 
-  const suggestedAllowedFields = tool.input_fields
-    .map((field) => safeIdentifier(field.name))
-    .filter((field) => !isAuthorityField(field))
-    .filter((field) => !/(?:^|_)id$/.test(field))
-    .filter((field) => !/(reason|note|comment|message|request)/i.test(field))
-    .sort();
+  const suggestedAllowedFields = tool.input_fields.filter((field) => field.role === "change_value")
+    .map((field) => safeIdentifier(field.name)).filter((field) => field in args).sort();
   return {
     ...common,
     proposal: {
@@ -381,7 +342,7 @@ function candidateArgs(fields: McpAuditToolField[]): {
   const excludedFields: string[] = [];
   for (const field of fields) {
     const name = safeIdentifier(field.name);
-    if (isAuthorityField(name)) {
+    if (isCredentialField(name) || !["business_value", "lookup", "change_value", "free_text"].includes(field.role)) {
       excludedFields.push(name);
       continue;
     }
@@ -406,15 +367,6 @@ function candidateArgs(fields: McpAuditToolField[]): {
       args[name] = { type: "boolean", required: field.required };
     }
   }
-  if (Object.keys(args).length === 0) {
-    args.review_request_id = {
-      type: "string",
-      required: true,
-      max_length: 128,
-      description: "TODO: replace with the reviewed business-object lookup argument.",
-    };
-    todos.push("No safe business argument could be inferred; replace review_request_id.");
-  }
   return {
     args: Object.fromEntries(Object.entries(args).sort(([left], [right]) => left.localeCompare(right))),
     todos,
@@ -429,7 +381,6 @@ function candidateCapabilityName(tool: McpAuditToolShape, proposal: boolean): st
     .filter(Boolean)
     .map(safeIdentifier);
   const namespace = tool.name.includes(".") && parts.length > 1 ? parts.shift()! : "review";
-  while (parts.length > 1 && (proposal ? WRITE_PREFIXES : READ_PREFIXES).has(parts[0]!)) parts.shift();
   const object = parts.join("_") || "business_action";
   const verb = proposal ? "propose" : "inspect";
   return `${namespace}.${verb}_${object}`;
@@ -582,8 +533,8 @@ async function assertOwnedCandidateDirectory(directory: string): Promise<void> {
   }
 }
 
-function isAuthorityField(value: string): boolean {
-  return MODEL_AUTHORITY_FIELDS.has(normalize(value));
+function isCredentialField(value: string): boolean {
+  return CREDENTIAL_FIELDS.has(normalize(value));
 }
 
 function normalize(value: string): string {

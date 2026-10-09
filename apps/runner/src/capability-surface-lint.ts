@@ -33,18 +33,6 @@ type IndexedCapability = {
   targetLabel: string;
 };
 
-const GENERIC_ARGUMENT_NAMES = new Set(["filter", "predicate", "query", "sql", "where"]);
-const ACTION_PREFIXES = new Set([
-  "activate", "add", "answer", "archive", "assign", "cancel", "change", "close", "count", "create", "delete", "export", "find", "freeze",
-  "get", "grant", "inspect", "list", "lookup", "open", "propose", "read", "refund", "remove", "request", "resolve",
-  "restore", "revert", "search", "set", "sum", "suspend", "update", "verify", "waive", "write",
-]);
-const ACTION_SUFFIXES = new Set(["average", "count", "lookup", "review", "search", "summary", "total"]);
-const GENERIC_OPERATION_WORDS = new Set([
-  "any", "create", "data", "database", "db", "delete", "everything", "execute", "get", "item", "manage", "mutate", "object", "process",
-  "query", "read", "record", "resource", "row", "run", "set", "sql", "table", "thing", "update", "write",
-]);
-
 export function analyzeCapabilitySurface(contract: SynapsorContract): CapabilitySurfaceAnalysis {
   const resources = new Map((contract.resources ?? []).map((resource) => [resource.name, resource]));
   const indexed = contract.capabilities.map((capability): IndexedCapability => {
@@ -62,7 +50,6 @@ export function analyzeCapabilitySurface(contract: SynapsorContract): Capability
   const findings: CapabilitySurfaceFinding[] = [];
   for (const entry of indexed) {
     collectGenericArgumentFindings(findings, entry);
-    collectOperationNamingFinding(findings, entry);
   }
 
   const grouped = new Map<string, IndexedCapability[]>();
@@ -117,34 +104,18 @@ function collectGenericArgumentFindings(findings: CapabilitySurfaceFinding[], en
       }
       return;
     }
-    const normalizedName = normalizeIdentifier(argName);
-    if (arg.type !== "string" || (arg.enum?.length ?? 0) > 0 || !GENERIC_ARGUMENT_NAMES.has(normalizedName)) return;
+    if (arg.type !== "string" || (arg.enum?.length ?? 0) > 0 || arg.max_length !== undefined) return;
     findings.push({
       code: "SURFACE_GENERIC_ARGUMENT",
       severity: "warning",
       path: argPath,
-      message: `${entry.capability.name} exposes un-enumerated string argument ${argName}, a generic query/predicate-style name. Runner does not turn it into SQL, but reviewers should confirm this remains a named business operation instead of an escape-hatch surface.`,
+      message: `${entry.capability.name} exposes un-enumerated string argument ${argName}, with no enum or length bound. Review a finite bound for this model input; lint cannot infer argument meaning from its name.`,
       details: { capability: entry.capability.name, argument: argName },
     });
   };
   for (const [argName, arg] of Object.entries(entry.capability.args).sort(([left], [right]) => left.localeCompare(right))) {
     visit(arg, argName, `${capabilityPath(entry.capability.name)}.args.${argName}`);
   }
-}
-
-function collectOperationNamingFinding(findings: CapabilitySurfaceFinding[], entry: IndexedCapability): void {
-  const operation = entry.capability.name.split(".").at(-1) ?? entry.capability.name;
-  const tokens = tokenizeIdentifier(operation);
-  const genericOnly = tokens.length > 0 && tokens.every((token) => GENERIC_OPERATION_WORDS.has(token));
-  const actionOriented = tokens.length >= 2 && (ACTION_PREFIXES.has(tokens[0]!) || ACTION_SUFFIXES.has(tokens.at(-1)!));
-  if (tokens.length >= 2 && actionOriented && !genericOnly) return;
-  findings.push({
-    code: "SURFACE_OPERATION_NAMING",
-    severity: "warning",
-    path: `${capabilityPath(entry.capability.name)}.name`,
-    message: `${entry.capability.name} appears overly broad or does not have a reviewer-recognizable verb-plus-object shape. Name the bounded business effect and object instead of exposing a generic database, command, data-management, or catch-all operation; this is an advisory naming heuristic, not runtime enforcement.`,
-    details: { capability: entry.capability.name, operation, tokens },
-  });
 }
 
 function collectNearDuplicateFindings(findings: CapabilitySurfaceFinding[], entries: IndexedCapability[]): void {
@@ -272,20 +243,8 @@ function sameExtensions(left: Record<string, unknown>, right: Record<string, unk
   return stableString(extensionEntries(left)) === stableString(extensionEntries(right));
 }
 
-function normalizeIdentifier(value: string): string {
-  return tokenizeIdentifier(value).join("_");
-}
-
 function capabilityPath(name: string): string {
   return `$.capabilities[name=${JSON.stringify(name)}]`;
-}
-
-function tokenizeIdentifier(value: string): string[] {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter(Boolean);
 }
 
 function stableString(value: unknown): string {

@@ -211,3 +211,35 @@ function wrapCellLine(value: string, width: number): string[] {
   lines.push(remaining);
   return lines;
 }
+
+/** Decisions use typed catalog roles and reviewed operation flags, never this wording. */
+export function boundaryMapFieldReview(
+  roles: readonly string[], access: BoundaryMapFieldRow["access"],
+  operations: BoundaryMapOperationFlags,
+): { note?: string; review_required: boolean } {
+  const labels: string[] = [];
+  if (roles.includes("trusted_scope")) labels.push("trusted scope");
+  if (roles.includes("record_identity")) labels.push("record identity");
+  else if (roles.includes("internal_identifier_candidate")) labels.push("possible internal identifier");
+  if (roles.includes("relationship_key")) labels.push("relationship key");
+  if (roles.includes("conflict_or_version_guard")) labels.push("possible conflict/version guard");
+  if (roles.includes("private_policy_candidate")) labels.push("possible private policy fact");
+  if (!labels.length) return { review_required: false };
+  const summary = labels.join(", ");
+  if (access !== "KEPT" && !Object.values(operations).some(Boolean)) return {
+    review_required: false, note: `No reviewed Read operations; ${summary}. Private Action use is not established by this Read view.` };
+  if (access !== "KEPT" && !operations.return_value) return {
+    review_required: true, note: `REVIEW: model analysis of ${summary}; raw values are not returned` };
+  if (access === "MODEL") return {
+    review_required: true, note: `REVIEW: model-facing ${summary}; prefer Runner only unless raw values are intentionally required by the agent` };
+  if (access === "RUNNER") return { review_required: false,
+    note: `Runner-only ${summary}${roles.includes("record_identity") || roles.includes("internal_identifier_candidate") ? "; model uses opaque obj_* references" : ""}` };
+  return { review_required: false, note: `Kept out ${summary}; unavailable to model and Runner reads` };
+}
+
+export function describeInspectedBoundaryField(resource: string, field: {
+  name: string; data_type: string; enum_values?: readonly string[];
+}): string {
+  return `${field.name} - ${field.data_type} column of ${resource}`
+    + (field.enum_values?.length ? ` (database-declared values: ${field.enum_values.join(", ")})` : "");
+}

@@ -187,16 +187,12 @@ export function lintContract(
     }
     if (capability.evidence?.required !== true) add({ code: "EVIDENCE_NOT_REQUIRED", severity: "warning", path: `${base}.evidence.required`, message: `${capability.name} does not require evidence.` });
     if (!capability.subject.principal_scope_key) {
-      const possibleOwnerFields = [...new Set([...capability.visible_fields, ...(capability.kept_out_fields ?? [])])]
-        .filter((field) => /^(?:assigned_to|assignee_id|owner_id|principal_id|user_id|case_manager_id)$/i.test(field));
-      if (possibleOwnerFields.length > 0) {
-        add({
-          code: "PRINCIPAL_SCOPE_REVIEW_RECOMMENDED",
-          severity: "info",
-          path: `${base}.subject.principal_scope_key`,
-          message: `${capability.name} includes ${possibleOwnerFields.join(", ")}, which may represent row ownership. Review whether PRINCIPAL SCOPE KEY is appropriate; this is only a naming heuristic and is not data classification.`,
-        });
-      }
+      add({
+        code: "PRINCIPAL_SCOPE_REVIEW_RECOMMENDED",
+        severity: "info",
+        path: `${base}.subject.principal_scope_key`,
+        message: `${capability.name} has no declared principal row scope. Review whether one is required; field names cannot establish ownership or a safe absence of principal scope.`,
+      });
     }
     for (const [argName, arg] of Object.entries(capability.args)) lintArgument(add, `${base}.args.${argName}`, argName, arg);
 

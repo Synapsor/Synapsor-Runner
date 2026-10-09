@@ -68,6 +68,7 @@ export type McpAuditReport = {
 
 export type McpAuditRootCause =
   | "UNBOUNDED_DATABASE_AUTHORITY"
+  | "UNVERIFIED_AUTHORITY"
   | "MODEL_CONTROLLED_TRUST"
   | "MODEL_CALLABLE_COMMIT"
   | "WRITE_SAFETY_GAPS"
@@ -89,6 +90,7 @@ export type McpAuditToolField = {
   name: string;
   type: "string" | "number" | "boolean" | "array" | "object" | "unknown";
   required: boolean;
+  role: McpAuditFieldRole;
   max_length?: number;
   minimum?: number;
   maximum?: number;
@@ -108,6 +110,7 @@ export type McpAuditToolShape = {
     read_only?: boolean;
     destructive?: boolean;
   };
+  declaration_status: "declared_unverified" | "requires_operator_verification";
   signals: {
     generic_sql: boolean;
     write_like: boolean;
@@ -129,70 +132,46 @@ type ToolCandidate = {
   path: string;
 };
 
-const GENERIC_SQL_TOOL_NAMES = [
-  "executesql",
-  "runsql",
-  "runquery",
-  "querydatabase",
-  "databasequery",
-  "sqlquery",
-  "rawsql",
-  "executequery",
-];
+/** Manifest claims are advisory declarations, not authenticated runtime evidence. */
+export type McpAuditFieldRole =
+  | "business_value" | "lookup" | "change_value" | "free_text" | "sensitive"
+  | "sql" | "identifier" | "predicate" | "trust_scope" | "idempotency"
+  | "conflict" | "receipt" | "retry" | "unclassified";
+const FIELD_ROLES = new Set<McpAuditFieldRole>([
+  "business_value", "lookup", "change_value", "free_text", "sensitive", "sql", "identifier",
+  "predicate", "trust_scope", "idempotency", "conflict", "receipt", "retry",
+]);
+type AuditDeclaration = {
+  operation: "read" | "write" | "read_write" | "generic_sql" | "commit";
+  boundary: "none" | "proposal";
+};
 
-const MODEL_CONTROLLED_SCOPE_FIELDS = [
-  "tenantid",
-  "principal",
-  "principalid",
-  "userid",
-  "projectid",
-  "sourceid",
-  "databaseid",
-  "allowedcolumns",
-  "rowversion",
-  "currentversion",
-  "expectedversion",
-  "approvalidentity",
-];
+function auditDeclaration(tool: ToolCandidate): AuditDeclaration | undefined {
+  const value = tool.raw["x-synapsor-audit"];
+  if (!isRecord(value) || value.version !== 1) return undefined;
+  if (typeof value.operation !== "string" || !["read", "write", "read_write", "generic_sql", "commit"].includes(value.operation)) return undefined;
+  if (value.boundary !== "none" && value.boundary !== "proposal") return undefined;
+  if (value.boundary === "proposal" && value.operation !== "write" && value.operation !== "read_write") return undefined;
+  if (value.operation === "read" && (tool.annotations.readOnlyHint === false || tool.annotations.destructiveHint === true)) return undefined;
+  if ((value.operation === "write" || value.operation === "read_write") && tool.annotations.readOnlyHint === true) return undefined;
+  return { operation: value.operation as AuditDeclaration["operation"], boundary: value.boundary };
+}
 
-const ARBITRARY_IDENTIFIER_FIELDS = [
-  "table",
-  "tablename",
-  "schema",
-  "schemaname",
-  "column",
-  "columns",
-  "columnname",
-  "database",
-  "databasename",
-];
-
-const ARBITRARY_PREDICATE_FIELDS = [
-  "filter",
-  "filters",
-  "where",
-  "whereclause",
-  "predicate",
-  "predicates",
-  "condition",
-  "conditions",
-];
-
-const IDEMPOTENCY_FIELDS = ["idempotencykey", "requestid", "requestkey", "dedupekey"];
-const CONFLICT_FIELDS = [
-  "expectedversion",
-  "rowversion",
-  "updatedat",
-  "etag",
-  "conflictguard",
-  "previousversion",
-];
+function fieldRole(value: JsonRecord): McpAuditFieldRole {
+  const role = value["x-synapsor-audit-role"];
+  return typeof role === "string" && FIELD_ROLES.has(role as McpAuditFieldRole) ? role as McpAuditFieldRole : "unclassified";
+}
 
 const ROOT_CAUSE_DEFINITIONS: Record<McpAuditRootCause, {
   title: string;
   blastRadius: string;
   recommendedAction: string;
 }> = {
+  UNVERIFIED_AUTHORITY: {
+    title: "Tool authority requires independent verification",
+    blastRadius: "Supplied read, proposal, and field-role claims may omit actual direct authority or runtime gaps; metadata cannot establish safety.",
+    recommendedAction: "Review the actual implementation and deployment before model access. Typed declarations support advisory inspection, never verified enforcement or authorization.",
+  },
   UNBOUNDED_DATABASE_AUTHORITY: {
     title: "The model can shape database authority",
     blastRadius:
@@ -485,6 +464,7 @@ export function inspectMcpManifestTools(input: unknown): McpAuditToolShape[] {
             ? { destructive: tool.annotations.destructiveHint }
             : {}),
         },
+        declaration_status: auditDeclaration(tool) ? "declared_unverified" as const : "requires_operator_verification" as const,
         signals,
       };
     })
@@ -500,7 +480,10 @@ export function overallMcpAuditRisk(report: McpAuditReport): McpAuditSeverity | 
 
 function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
   const propertyNames = collectSchemaPropertyNames(tool.inputSchema);
-  const normalizedProperties = new Set([...propertyNames].map(normalizeToken));
+  const inspection = inspectSchemaFieldRoles(tool.inputSchema);
+  const fields = inspection.fields;
+  const hasRole = (...roles: McpAuditFieldRole[]): boolean => fields.some((field) => roles.includes(field.role));
+  const namesFor = (role: McpAuditFieldRole): string => fields.filter((field) => field.role === role).map((field) => safeFieldName(field.name)).join(", ");
   const {
     generic_sql: sqlLike,
     write_like: writeLike,
@@ -509,19 +492,42 @@ function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
     model_callable_commit: modelCallableCommit,
   } = toolSignals(tool);
 
+  if (!auditDeclaration(tool)) {
+    addFinding(findings, {
+      severity: "HIGH", code: "TOOL_AUTHORITY_UNVERIFIED", tool: tool.name,
+      message: "Tool authority has no valid typed declaration; names and prose cannot establish a read or review boundary.",
+      evidence: evidenceFor(tool, "Missing, invalid, or contradictory x-synapsor-audit v1 declaration."),
+      recommendation: "Inspect the implementation and supply an explicit operation/boundary declaration for advisory review. Supplied metadata never proves runtime enforcement.",
+    });
+  }
+  addFinding(findings, {
+    severity: "HIGH", code: "TOOL_ENFORCEMENT_UNVERIFIED", tool: tool.name,
+    message: "Supplied declarations cannot prove runtime authority, isolation, approval, or writeback enforcement.",
+    evidence: evidenceFor(tool, "No authenticated implementation/runtime evidence is available to this static metadata audit."),
+    recommendation: "Independently verify the actual implementation and deployment before model access; reassuring read/proposal/business-role declarations do not establish safety.",
+  });
+  if (inspection.coverage === "incomplete" || hasRole("unclassified")) {
+    addFinding(findings, {
+      severity: "HIGH", code: "INPUT_FIELD_ROLES_UNVERIFIED", tool: tool.name,
+      message: "Input field roles are not completely declared; their names do not establish business values or trust scope.",
+      evidence: evidenceFor(tool, `Role traversal: ${inspection.coverage}; unclassified named fields: ${namesFor("unclassified") || "none enumerated"}. Open, referenced, patterned, negated, or truncated schema paths remain unverified.`),
+      recommendation: "Review each input and declare its exact x-synapsor-audit-role. These untrusted declarations do not grant model authority or prove runtime controls.",
+    });
+  }
+
   if (sqlLike) {
     addFinding(findings, {
       severity: "HIGH",
       code: "GENERIC_SQL_TOOL",
       tool: tool.name,
       message: "Generic SQL/query tool exposed to the model.",
-      evidence: evidenceFor(tool, "Tool name or description matches execute_sql/run_query/raw SQL patterns."),
+      evidence: evidenceFor(tool, "Untrusted typed declaration states generic_sql operation."),
       recommendation:
         "Replace model-facing SQL tools with reviewed semantic capabilities that use fixed identifiers and parameterized values.",
     });
   }
 
-  if (sqlLike && hasAny(normalizedProperties, ["sql", "query", "statement", "rawsql"])) {
+  if (hasRole("sql")) {
     addFinding(findings, {
       severity: "HIGH",
       code: "WRITE_TOOL_ACCEPTS_ARBITRARY_SQL",
@@ -533,37 +539,37 @@ function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
     });
   }
 
-  if (hasAny(normalizedProperties, ARBITRARY_IDENTIFIER_FIELDS)) {
+  if (hasRole("identifier")) {
     addFinding(findings, {
       severity: "HIGH",
       code: "ARBITRARY_IDENTIFIER_INPUT",
       tool: tool.name,
       message: "Tool accepts schema, table, database, or column identifiers as ordinary model input.",
-      evidence: evidenceFor(tool, `Identifier-like fields: ${matchingFields(propertyNames, ARBITRARY_IDENTIFIER_FIELDS).join(", ")}.`),
+      evidence: evidenceFor(tool, `Identifier-like fields: ${namesFor("identifier")}.`),
       recommendation:
         "Move identifiers into reviewed configuration. Model arguments should carry business values, not table/schema/column names.",
     });
   }
 
-  if (hasAny(normalizedProperties, ARBITRARY_PREDICATE_FIELDS)) {
+  if (hasRole("predicate")) {
     addFinding(findings, {
       severity: "HIGH",
       code: "ARBITRARY_PREDICATE_INPUT",
       tool: tool.name,
       message: "Tool accepts a free-form filter, predicate, WHERE clause, or condition as model input.",
-      evidence: evidenceFor(tool, `Predicate-like fields: ${matchingFields(propertyNames, ARBITRARY_PREDICATE_FIELDS).join(", ")}.`),
+      evidence: evidenceFor(tool, `Predicate-like fields: ${namesFor("predicate")}.`),
       recommendation:
         "Move row selection into reviewed capability metadata. Model arguments may select only bounded business values explicitly allowed by that fixed predicate.",
     });
   }
 
-  if (hasAny(normalizedProperties, MODEL_CONTROLLED_SCOPE_FIELDS)) {
+  if (hasRole("trust_scope")) {
     addFinding(findings, {
       severity: "HIGH",
       code: "MODEL_CONTROLLED_TRUST_SCOPE",
       tool: tool.name,
       message: "Tool accepts tenant, principal, source, approval, or row-version trust fields as model input.",
-      evidence: evidenceFor(tool, `Trust-like fields: ${matchingFields(propertyNames, MODEL_CONTROLLED_SCOPE_FIELDS).join(", ")}.`),
+      evidence: evidenceFor(tool, `Trust-like fields: ${namesFor("trust_scope")}.`),
       recommendation:
         "Bind tenant, principal, source, approval identity, allowed columns, and version guards from trusted context outside model arguments.",
     });
@@ -575,7 +581,7 @@ function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
       code: "MODEL_CALLABLE_COMMIT_OR_APPROVAL",
       tool: tool.name,
       message: "Tool appears to approve, commit, apply, settle, merge, or execute writeback from a model-callable surface.",
-      evidence: evidenceFor(tool, "Tool name or description contains approval/commit/apply/settlement/writeback language."),
+      evidence: evidenceFor(tool, "Untrusted typed declaration states commit operation."),
       recommendation:
         "Keep approval and guarded execution outside the model-facing MCP tool catalog. Expose proposal tools, then approve/commit through a trusted human or runner path.",
     });
@@ -587,7 +593,7 @@ function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
       code: "WRITE_WITHOUT_PROPOSAL_BOUNDARY",
       tool: tool.name,
       message: "Write-capable tool has no visible proposal, approval, or guarded writeback boundary.",
-      evidence: evidenceFor(tool, "Tool looks write-capable but the manifest does not describe proposal/review/approval semantics."),
+      evidence: evidenceFor(tool, "Typed declaration or boolean risk annotation indicates writes without a declared proposal boundary; no runtime boundary is verified."),
       recommendation:
         "Turn direct write tools into proposal tools that return exact before/after diffs and require approval or deterministic settlement before execution.",
     });
@@ -605,7 +611,7 @@ function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
     });
   }
 
-  if (writeLike && !proposalBoundary && !hasAny(normalizedProperties, IDEMPOTENCY_FIELDS)) {
+  if (writeLike && !proposalBoundary && !hasRole("idempotency")) {
     addFinding(findings, {
       severity: "MEDIUM",
       code: "NO_IDEMPOTENCY_FIELD",
@@ -617,7 +623,7 @@ function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
     });
   }
 
-  if (writeLike && !proposalBoundary && !hasAny(normalizedProperties, CONFLICT_FIELDS)) {
+  if (writeLike && !proposalBoundary && !hasRole("conflict")) {
     addFinding(findings, {
       severity: "MEDIUM",
       code: "NO_CONFLICT_GUARD",
@@ -635,7 +641,7 @@ function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
       code: "AMBIGUOUS_READ_WRITE_TOOL",
       tool: tool.name,
       message: "Tool appears to mix read and write behavior without a clear proposal boundary.",
-      evidence: evidenceFor(tool, "Tool name or description contains both read/query and write/update language."),
+      evidence: evidenceFor(tool, "Untrusted typed declaration states read_write operation without a proposal boundary."),
       recommendation:
         "Split reads from proposals. A model-facing read tool should not also mutate durable business state.",
     });
@@ -679,28 +685,14 @@ function auditTool(tool: ToolCandidate, findings: McpAuditFinding[]): void {
 }
 
 function toolSignals(tool: ToolCandidate): McpAuditToolShape["signals"] {
-  const text = `${tool.name} ${tool.description} ${safeStringify(tool.annotations)}`.toLowerCase();
-  const normalizedToolName = normalizeToken(tool.name);
-  const lowerToolName = tool.name.toLowerCase();
-  const genericSql =
-    GENERIC_SQL_TOOL_NAMES.includes(normalizedToolName) ||
-    /\b(execute|run|raw)\s*(sql|query)\b/.test(text) ||
-    /\b(sql|query)\s*(executor|database)\b/.test(text);
-  const writeLike = isWriteLike(text, tool.annotations);
-  const readLike = /\b(read|get|list|search|inspect|select|query)\b/.test(text);
-  const proposalBoundary =
-    /\b(proposal|propose|change[- ]?set|review[- ]?required|approval|approve[- ]?required|guarded writeback|trusted worker)\b/.test(text);
-  const modelCallableCommit =
-    /(^|[._-])(approve|commit|apply|settle|merge|revert|rollback|undo)[._-]?(proposal|write|change|writeback)([._-]|$)/.test(lowerToolName) ||
-    /(^|[._-])(proposal|write|change|writeback)[._-]?(approve|commit|apply|settle|merge|revert|rollback|undo)([._-]|$)/.test(lowerToolName) ||
-    (/\b(approve|commit|apply|settle|merge|revert|rollback|undo)\b/.test(text) &&
-      !/\b(propose|proposal|review[- ]?required|approval[- ]?required)\b/.test(text));
+  const declaration = auditDeclaration(tool);
+  const writeHint = tool.annotations.destructiveHint === true || tool.annotations.readOnlyHint === false;
   return {
-    generic_sql: genericSql,
-    write_like: writeLike,
-    read_like: readLike,
-    proposal_boundary: proposalBoundary,
-    model_callable_commit: modelCallableCommit,
+    generic_sql: declaration?.operation === "generic_sql",
+    write_like: writeHint || (declaration !== undefined && declaration.operation !== "read"),
+    read_like: declaration?.operation === "read" || declaration?.operation === "read_write",
+    proposal_boundary: declaration?.boundary === "proposal",
+    model_callable_commit: declaration?.operation === "commit",
   };
 }
 
@@ -768,6 +760,7 @@ function schemaTopLevelFields(schema: unknown): Omit<McpAuditToolField, "require
       const type = schemaFieldType(field);
       return {
         name: safeFieldName(name),
+        role: fieldRole(field),
         type,
         ...(type === "string" && positiveInteger(field.maxLength)
           ? { max_length: Math.min(Number(field.maxLength), 1_000_000) }
@@ -799,36 +792,68 @@ function schemaFieldType(schema: JsonRecord): McpAuditToolField["type"] {
   return "unknown";
 }
 
-function collectSchemaPropertyNames(schema: unknown): Set<string> {
-  const names = new Set<string>();
+type SchemaRoleInspection = {
+  fields: Array<{ name: string; role: McpAuditFieldRole }>;
+  coverage: "complete" | "incomplete";
+};
 
+/** Bounded advisory projection only. Unknown schema paths are never resolved or certified. */
+function inspectSchemaFieldRoles(schema: unknown): SchemaRoleInspection {
+  const fields: SchemaRoleInspection["fields"] = [];
+  let incomplete = false;
+  let visited = 0;
   function visit(value: unknown, depth: number): void {
-    if (depth > 10 || !isRecord(value)) return;
-    const properties = value.properties;
-    if (isRecord(properties)) {
-      for (const [name, propertySchema] of Object.entries(properties)) {
-        names.add(name);
-        visit(propertySchema, depth + 1);
+    if (depth > 10 || ++visited > 1024) { incomplete = true; return; }
+    if (value === false) return;
+    if (!isRecord(value)) { incomplete = true; return; }
+    if (typeof value.type !== "string") incomplete = true;
+    if (depth === 0 && value.type !== "object") incomplete = true;
+    if (value.$ref !== undefined || value.$dynamicRef !== undefined || value.$recursiveRef !== undefined
+      || value.patternProperties !== undefined || value.not !== undefined
+      || value.if !== undefined || value.then !== undefined || value.else !== undefined
+      || value.dependentSchemas !== undefined || value.dependencies !== undefined
+      || value.unevaluatedProperties !== undefined || value.unevaluatedItems !== undefined
+      || value.contains !== undefined || value.prefixItems !== undefined || value.propertyNames !== undefined) incomplete = true;
+    const objectShape = value.type === "object" || value.properties !== undefined || value.additionalProperties !== undefined || value.patternProperties !== undefined;
+    if (objectShape && value.additionalProperties !== false) incomplete = true;
+    if (value.type === "array" && value.items === undefined) incomplete = true;
+    if (value.properties !== undefined && !isRecord(value.properties)) incomplete = true;
+    if (isRecord(value.properties)) {
+      for (const [name, child] of Object.entries(value.properties)) {
+        if (visited >= 1024) { incomplete = true; break; }
+        fields.push({ name, role: isRecord(child) ? fieldRole(child) : "unclassified" });
+        visit(child, depth + 1);
       }
     }
-    for (const key of ["items", "additionalProperties", "not"]) {
-      visit(value[key], depth + 1);
-    }
+    // `not` is a negated schema. Its role labels cannot be positive input/guard evidence.
+    if (value.items !== undefined) visit(value.items, depth + 1);
     for (const key of ["anyOf", "oneOf", "allOf"]) {
-      const list = value[key];
-      if (Array.isArray(list)) {
-        for (const item of list) visit(item, depth + 1);
+      const children = value[key];
+      if (children !== undefined && !Array.isArray(children)) incomplete = true;
+      if (Array.isArray(children)) {
+        for (const child of children) {
+          if (visited >= 1024) { incomplete = true; break; }
+          visit(child, depth + 1);
+        }
       }
     }
   }
-
   visit(schema, 0);
-  return names;
+  return { fields, coverage: incomplete ? "incomplete" : "complete" };
+}
+
+function collectSchemaFieldRoles(schema: unknown): SchemaRoleInspection["fields"] {
+  return inspectSchemaFieldRoles(schema).fields;
+}
+
+function collectSchemaPropertyNames(schema: unknown): Set<string> {
+  return new Set(collectSchemaFieldRoles(schema).map((field) => field.name));
 }
 
 function buildMcpAuthorityMapFromTools(tools: ToolCandidate[]): McpAuditAuthorityMap {
   const select = (predicate: (tool: ToolCandidate) => boolean): string[] => [...new Set(tools.filter(predicate).map((tool) => tool.name))].sort();
-  const status = (matches: string[]): McpAuditEvidenceStatus => matches.length > 0 ? "observed" : "not_observed";
+  const status = (matches: string[]): McpAuditEvidenceStatus => matches.length > 0 ? "observed" : "requires_operator_verification";
+  const declaredRole = (tool: ToolCandidate, ...roles: McpAuditFieldRole[]): boolean => collectSchemaFieldRoles(tool.inputSchema).some((field) => roles.includes(field.role));
   const semanticReads = select((tool) => {
     const signals = toolSignals(tool);
     return signals.read_like && !signals.write_like;
@@ -842,36 +867,30 @@ function buildMcpAuthorityMapFromTools(tools: ToolCandidate[]): McpAuditAuthorit
     return signals.write_like && !signals.proposal_boundary;
   });
   const rawQuery = select((tool) => toolSignals(tool).generic_sql);
-  const identifiers = select((tool) => hasAny(new Set([...collectSchemaPropertyNames(tool.inputSchema)].map(normalizeToken)), ARBITRARY_IDENTIFIER_FIELDS));
-  const predicates = select((tool) => hasAny(new Set([...collectSchemaPropertyNames(tool.inputSchema)].map(normalizeToken)), ARBITRARY_PREDICATE_FIELDS));
-  const modelTrust = select((tool) => hasAny(new Set([...collectSchemaPropertyNames(tool.inputSchema)].map(normalizeToken)), MODEL_CONTROLLED_SCOPE_FIELDS));
+  const identifiers = select((tool) => declaredRole(tool, "identifier"));
+  const predicates = select((tool) => declaredRole(tool, "predicate"));
+  const modelTrust = select((tool) => declaredRole(tool, "trust_scope"));
   const modelCommit = select((tool) => toolSignals(tool).model_callable_commit);
   const structured = select(hasStructuredOutput);
-  const conflictOrIdempotency = select((tool) => {
-    const fields = new Set([
-      ...collectSchemaPropertyNames(tool.inputSchema),
-      ...collectSchemaPropertyNames(tool.outputSchema),
-    ].map(normalizeToken));
-    return hasAny(fields, IDEMPOTENCY_FIELDS) || hasAny(fields, CONFLICT_FIELDS)
-      || hasAny(fields, ["retryable", "errorcode", "runtimecode", "receiptid", "receipthash", "alreadyapplied", "conflict"]);
-  });
+  const conflictOrIdempotency = select((tool) => [...collectSchemaFieldRoles(tool.inputSchema), ...collectSchemaFieldRoles(tool.outputSchema)]
+    .some((field) => ["idempotency", "conflict", "receipt", "retry"].includes(field.role)));
   return {
     items: [
-      authorityItem("semantic_read_tools", "Semantic read tools", status(semanticReads), semanticReads, `${semanticReads.length} tool(s) look read-only from names, descriptions, schemas, and annotations.`),
-      authorityItem("semantic_proposal_tools", "Semantic proposal tools", status(proposals), proposals, `${proposals.length} tool(s) visibly stop at a proposal/review boundary.`),
-      authorityItem("direct_write_tools", "Direct model-callable write tools", status(directWrites), directWrites, `${directWrites.length} tool(s) look write-capable without a visible proposal boundary.`),
-      authorityItem("raw_query_tools", "Raw SQL or arbitrary-query tools", status(rawQuery), rawQuery, `${rawQuery.length} tool(s) match generic SQL/query authority.`),
-      authorityItem("arbitrary_identifier_inputs", "Model-controlled table, column, schema, or database inputs", status(identifiers), identifiers, `${identifiers.length} tool(s) expose identifier-like input fields.`),
-      authorityItem("arbitrary_predicate_inputs", "Model-controlled filters, predicates, WHERE clauses, or conditions", status(predicates), predicates, `${predicates.length} tool(s) expose predicate-like input fields.`),
-      authorityItem("model_controlled_trust", "Model-controlled tenant, principal, source, approval, or version inputs", status(modelTrust), modelTrust, `${modelTrust.length} tool(s) expose trust-like input fields.`),
-      authorityItem("model_visible_commit", "Model-visible approval, apply, commit, settle, merge, or revert authority", status(modelCommit), modelCommit, `${modelCommit.length} tool(s) look capable of crossing the review boundary.`),
-      authorityItem("structured_output", "Structured output schema", status(structured), structured, `${structured.length}/${tools.length} inspected tool(s) declare structured output.`),
-      authorityItem("conflict_idempotency_signals", "Observable conflict, retry, idempotency, or receipt signals", status(conflictOrIdempotency), conflictOrIdempotency, `${conflictOrIdempotency.length}/${tools.length} inspected tool(s) expose one or more machine-readable signals.`),
+      authorityItem("semantic_read_tools", "Semantic read tools", status(semanticReads), semanticReads, `${semanticReads.length} tool(s) declare read operations in untrusted typed metadata; runtime enforcement is unverified.`),
+      authorityItem("semantic_proposal_tools", "Semantic proposal tools", status(proposals), proposals, `${proposals.length} tool(s) declare a proposal boundary; runtime enforcement is unverified.`),
+      authorityItem("direct_write_tools", "Direct model-callable write tools", status(directWrites), directWrites, `${directWrites.length} tool(s) declare or annotate writes without a typed proposal boundary; runtime enforcement is unverified.`),
+      authorityItem("raw_query_tools", "Raw SQL or arbitrary-query tools", status(rawQuery), rawQuery, `${rawQuery.length} tool(s) declare generic SQL operations in untrusted metadata.`),
+      authorityItem("arbitrary_identifier_inputs", "Model-controlled table, column, schema, or database inputs", status(identifiers), identifiers, `${identifiers.length} tool(s) expose typed identifier input roles.`),
+      authorityItem("arbitrary_predicate_inputs", "Model-controlled filters, predicates, WHERE clauses, or conditions", status(predicates), predicates, `${predicates.length} tool(s) expose typed predicate input roles.`),
+      authorityItem("model_controlled_trust", "Model-controlled tenant, principal, source, approval, or version inputs", status(modelTrust), modelTrust, `${modelTrust.length} tool(s) expose typed trust-scope input roles.`),
+      authorityItem("model_visible_commit", "Model-visible approval, apply, commit, settle, merge, or revert authority", status(modelCommit), modelCommit, `${modelCommit.length} tool(s) declare commit operations in untrusted metadata.`),
+      authorityItem("structured_output", "Structured output schema", structured.length > 0 ? "observed" : "not_observed", structured, `${structured.length}/${tools.length} inspected tool(s) declare structured output.`),
+      authorityItem("conflict_idempotency_signals", "Declared conflict, retry, idempotency, or receipt signals", status(conflictOrIdempotency), conflictOrIdempotency, `${conflictOrIdempotency.length}/${tools.length} inspected tool(s) expose one or more machine-readable signals.`),
       authorityItem("sensitive_field_completeness", "Completeness of sensitive-field classification", "requires_operator_verification", [], "Tool metadata cannot establish that every sensitive field was identified or kept out."),
       authorityItem("database_enforcement", "Database roles, views, RLS, grants, and pooled-session scope reset", "outside_static_audit_visibility", [], "tools/list does not reveal database-enforced isolation or connection-pool behavior."),
       authorityItem("operator_and_writeback_enforcement", "Operator identity, approval integrity, guarded writeback, atomicity, and receipt durability", "outside_static_audit_visibility", [], "These controls execute outside the model-facing MCP catalog and require runtime/configuration evidence."),
     ],
-    visibility_limit: "This map records only structural evidence visible in the supplied manifest or tools/list. It does not execute business tools or prove runtime, database, identity, network, or operational enforcement.",
+    visibility_limit: "This map records untrusted typed declarations and structural schemas visible in the supplied manifest or tools/list; observed means declared, not verified. It does not execute business tools or prove runtime, database, identity, network, or operational enforcement.",
   };
 }
 
@@ -903,33 +922,24 @@ function inspectConfiguredServer(name: string, raw: JsonRecord, liveSelectedServ
       status: "observed_direct_authority",
       transport,
       tools_observed: [...new Set(tools.map((tool) => tool.name))].sort(),
-      evidence: `Observed direct/raw/commit-like tools in ${liveSelectedServer === name ? "the explicitly requested live tools/list" : "supplied tool metadata"}: ${direct.map((tool) => tool.name).sort().join(", ")}.`,
+      evidence: `Untrusted declarations or boolean risk annotations indicate direct/raw/commit tools in ${liveSelectedServer === name ? "the explicitly requested live tools/list" : "supplied tool metadata"}: ${direct.map((tool) => tool.name).sort().join(", ")}.`,
       remediation: "Disable or remove this model-visible server, constrain it to a separately reviewed read-only surface, or route the business action through Synapsor. Synapsor cannot govern calls that bypass Runner.",
     };
   }
-  if (tools.length > 0) {
+  if (tools.some((tool) => !auditDeclaration(tool))) {
     return {
-      server: safeName,
-      status: "no_direct_authority_observed",
-      transport,
+      server: safeName, status: "requires_operator_verification", transport,
       tools_observed: [...new Set(tools.map((tool) => tool.name))].sort(),
-      evidence: `No direct/raw/commit-like tool was observed in ${liveSelectedServer === name ? "the explicitly requested live tools/list" : "supplied tool metadata"}.`,
-      remediation: "Keep reviewing runtime and database controls; absence from tools/list is not proof of complete security.",
+      evidence: "One or more tools have no valid typed authority declaration. Tool names and descriptions cannot establish absence of direct authority.",
+      remediation: "Inspect this server's implementation and review typed declarations and runtime controls before model access.",
     };
   }
-  const structuralText = `${name} ${typeof raw.command === "string" ? raw.command : ""} ${Array.isArray(raw.args) ? raw.args.filter((item) => typeof item === "string").join(" ") : ""}`.toLowerCase();
-  const databaseHint = /(?:postgres|mysql|sqlite|supabase|database|sql)/.test(structuralText);
-  const runnerHint = /synapsor-runner/.test(structuralText);
   return {
     server: safeName,
     status: "requires_operator_verification",
     transport,
-    tools_observed: [],
-    evidence: runnerHint
-      ? "The config points to Synapsor Runner, but static config does not reveal its active tools/list."
-      : databaseHint
-        ? "The server name or command looks database-related, but static config contains no tool metadata."
-        : "Static config contains no tool metadata for this server.",
+    tools_observed: [...new Set(tools.map((tool) => tool.name))].sort(),
+    evidence: "Supplied config or tool declarations cannot establish absence of direct authority or verify runtime enforcement; inspect the implementation before model access.",
     remediation: `Review this server's tools/list explicitly before enabling it for a model. Use --live-server ${safeName} --yes only after reviewing the configured command, or audit an exported tools/list file.`,
   };
 }
@@ -950,7 +960,7 @@ function addBypassFindings(findings: McpAuditFinding[], bypass: McpAuditBypassCh
         severity: "LOW",
         code: "MCP_SERVER_TOOL_SURFACE_UNVERIFIED",
         tool: server.server,
-        message: "Configured MCP server tool authority was not visible to the static audit.",
+        message: "Configured MCP server authority remains unverified by this static metadata audit.",
         evidence: [server.evidence],
         recommendation: server.remediation,
       });
@@ -978,6 +988,7 @@ function summarizeFindings(findings: McpAuditFinding[], toolsInspected: number):
 }
 
 function rootCauseForFinding(code: string): McpAuditRootCause {
+  if (["TOOL_AUTHORITY_UNVERIFIED", "TOOL_ENFORCEMENT_UNVERIFIED", "INPUT_FIELD_ROLES_UNVERIFIED", "MCP_SERVER_TOOL_SURFACE_UNVERIFIED"].includes(code)) return "UNVERIFIED_AUTHORITY";
   if (code === "MODEL_CONTROLLED_TRUST_SCOPE") return "MODEL_CONTROLLED_TRUST";
   if (code === "MODEL_CALLABLE_COMMIT_OR_APPROVAL") return "MODEL_CALLABLE_COMMIT";
   if (["NO_IDEMPOTENCY_FIELD", "NO_CONFLICT_GUARD", "AMBIGUOUS_READ_WRITE_TOOL"].includes(code)) {
@@ -1052,15 +1063,6 @@ function remediationUrlForFinding(code: string): string {
   return `https://github.com/Synapsor/Synapsor-Runner/blob/main/docs/mcp-audit.md#finding-${anchor}`;
 }
 
-function isWriteLike(text: string, annotations: JsonRecord): boolean {
-  if (annotations.destructiveHint === true || annotations.readOnlyHint === false) {
-    return true;
-  }
-  return /\b(update|insert|delete|upsert|write|mutate|refund|waive|charge|cancel|commit|approve|settle|apply|merge|revert|rollback|undo|resolve|close|create|drop|alter)\b/.test(
-    text,
-  );
-}
-
 function hasStructuredOutput(tool: ToolCandidate): boolean {
   if (tool.outputSchema !== undefined) return true;
   if (tool.raw.structuredContent !== undefined) return true;
@@ -1074,25 +1076,8 @@ function hasExampleOrFixture(raw: JsonRecord): boolean {
   );
 }
 
-function matchingFields(fields: Set<string>, normalizedCandidates: string[]): string[] {
-  const candidates = new Set(normalizedCandidates);
-  return [...fields].filter((field) => candidates.has(normalizeToken(field)));
-}
-
-function hasAny(fields: Set<string>, normalizedCandidates: string[]): boolean {
-  const candidates = new Set(normalizedCandidates);
-  for (const field of fields) {
-    if (candidates.has(field)) return true;
-  }
-  return false;
-}
-
 function evidenceFor(tool: ToolCandidate, detail: string): string[] {
   return [`path ${tool.path}`, detail];
-}
-
-function normalizeToken(value: string): string {
-  return value.replace(/[^A-Za-z0-9]/g, "").toLowerCase();
 }
 
 function safeToolName(value: string): string {
@@ -1129,12 +1114,4 @@ function optionalString(value: unknown): string | undefined {
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function safeStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value) ?? "";
-  } catch {
-    return "";
-  }
 }

@@ -34,6 +34,9 @@ import { type OperatorQuestion } from "./authoring-operator-question.js";
 import { operatorBusinessContext, operatorBusinessLabel, operatorBusinessReadback, presentOperatorClarification,
   type OperatorBusinessContext } from "./authoring-operator-presentation.js";
 import { randomUUID } from "node:crypto";
+import { semanticActionBusinessReviewView } from "./authoring-action-business-view.js";
+import { readCurrentAuthoringRawAnswer } from "./authoring-raw-answer.js";
+import { boundaryMapFieldReview, describeInspectedBoundaryField } from "./boundary-map-presentation.js";
 import { reviewSourceInputPolicy } from "./authoring-input-policy-operation.js";
 import { runSourceInputConversation } from "./authoring-input-policy-conversation.js";
 import { assertSourceInputRootBinding, createSourceInputHost } from "./authoring-input-host.js";
@@ -3114,13 +3117,6 @@ function boundaryAuthoringModelSession(
     ...session,
     ...(dependencies ? { dependencies } : {}),
   };
-}
-
-function isBoundaryAuthoringExplanationQuestion(value: string): boolean {
-  const normalized = value.trim().replace(/\s+/gu, " ");
-  if (!normalized) return false;
-  return /^(?:why\b|what\s+(?:does|do|is|are|will|would|happens?)\b|how\b|when\b|where\b|who\b|do\s+i\b|does\s+this\b|is\s+this\b|are\s+these\b|can\s+(?:i|you|runner|the model)\b|could\s+(?:i|you|runner|the model)\b|would\s+you\b|please\s+(?:explain|clarify)\b|explain\b|help\s+me\s+understand\b)/iu
-    .test(normalized);
 }
 
 function boundaryAuthoringProviderOptions(
@@ -8890,36 +8886,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The Read question's Source, permissions or request changed. No answer was accepted.");
             }
           };
-          await assertAnswerCurrent();
-          let answer = chat.readOperator
-            ? await chat.readOperator(undefined, assertAnswerCurrent, { recordPolicyAnswer: false, preserveWhitespace })
-            : await input.session.promptText(question, { recordPolicyAnswer: false, preserveWhitespace });
-          while (answer !== undefined && isBoundaryAuthoringExplanationQuestion(answer)) {
-            const explanation = await runWithProgress(
-              `${boundaryModelLabel(modelSession)} is answering your question`,
-              () => narrator({
-                session: modelSession,
-                operatorMessage: answer!.trim(),
-                validatedFacts: [
-                  `Pending Read Boundary revision question: ${question}`,
-                  "Runner can revise exact field exposure and reviewed policy settings in this step, but cannot change trusted scope or activate authority.",
-                  "Runner-only fields may still support joins, opaque object references, trusted verification, and stale-write protection without returning their raw values to the model.",
-                  "No revision or authority change has been saved yet.",
-                ],
-                nextQuestion: question,
-                egressAcknowledged: true,
-              }),
-            );
-            if (explanation?.trim()) await chat.streamModel(explanation.trim().split(/\r?\n/u));
-            else chat.checkpoint("Model explanation unavailable", [
-              "The pending Read revision is unchanged. Answer it, use /details, or press Esc to pause safely.",
-            ], "warning");
-            answer = chat.readOperator
-              ? await chat.readOperator(undefined, assertAnswerCurrent, { recordPolicyAnswer: false, preserveWhitespace })
-              : await input.session.promptText(question, { recordPolicyAnswer: false, preserveWhitespace });
-          }
-          await assertAnswerCurrent();
-          return answer;
+          return readCurrentAuthoringRawAnswer({ assertCurrent: assertAnswerCurrent,
+            read: () => chat.readOperator
+              ? chat.readOperator(undefined, assertAnswerCurrent, { recordPolicyAnswer: false, preserveWhitespace })
+              : input.session.promptText(question, { recordPolicyAnswer: false, preserveWhitespace }) });
         };
 
         const answer = guidedInstruction ?? await readModelAnswer(instructionHandoff?.state === "waiting" && instructionHandoff.consumer === "read_revision_instruction"
@@ -9889,7 +9859,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       assertEvidenceCurrent: () => assertPolicyReviewSourceCurrent(reviewedReader, input.schemaInspector),
     });
   };
-  const readPolicyOwnerAnswer = async (prepareQuestion: () => Promise<string>, facts: string[]) => {
+  const readPolicyOwnerAnswer = async (prepareQuestion: () => Promise<string>, _facts: string[]) => {
     const chat = input.authoringChat;
     if (!chat?.readOperator || !modelAssistSession) return undefined;
     let handoff = ownerHandoffs.at(-1);
@@ -9921,28 +9891,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     };
     await assertAnswerCurrent();
     await chat.streamModel(savedQuestion.question.split(/\r?\n/u));
-    let explanationTurns = 0;
-    while (true) {
-      const answer = await chat.readOperator(undefined, assertAnswerCurrent, { recordPolicyAnswer: false });
-      if (!answer?.trim()) return undefined;
-      if (!isBoundaryAuthoringExplanationQuestion(answer)) {
-        await recordOwnerAnswer(savedQuestion, answer.trim());
-        return { answer: answer.trim(), question: savedQuestion.question };
-      }
-      if (explanationTurns++ >= 2) {
-        chat.checkpoint("Business decision still pending", ["Answer the saved question, inspect /details, or press Esc to pause. No meaning was accepted."], "warning");
-        continue;
-      }
-      await assertAnswerCurrent();
-      const explanation = await (input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep)({
-        session: modelAssistSession, operatorMessage: answer, validatedFacts: facts,
-        nextQuestion: savedQuestion.question, egressAcknowledged: true,
-      }).catch(error => { if (isAuthoringGenerationStop(error)) throw error; return undefined; });
-      await persistAuthoringResume("authority_review");
-      if (resumePersistenceBlocked) throw checkpointSaveFailure("The question explanation");
-      if (explanation) await chat.streamModel(explanation.split(/\r?\n/u));
-      else chat.checkpoint("Explanation unavailable", ["The exact saved question is still unanswered. Inspect /details, answer it, or pause safely."], "warning");
-    }
+    const answer = await readCurrentAuthoringRawAnswer({ assertCurrent: assertAnswerCurrent,
+      read: () => chat.readOperator!(undefined, assertAnswerCurrent, { recordPolicyAnswer: false }) });
+    if (!answer?.trim()) return undefined;
+    await recordOwnerAnswer(savedQuestion, answer.trim());
+    return { answer: answer.trim(), question: savedQuestion.question };
   };
   const resolveRequirements = async (explicitRetry = false) => {
     if (explicitRetry) { modelPrivacyRepairAttempt = undefined; modelActionRepairAttempt = undefined; }
@@ -10249,11 +10202,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     return { ...boundaryAssistResult(notice, false, false, Boolean(input.authoringChat)), navigation: "pause" };
   };
   async function reconcilePendingPolicyRepair(): Promise<boolean> {
-    // Recheck generated repair work before replay. Prefix recognition only offers
-    // a legacy routing review; it never establishes provenance or owner consent.
-    if (pendingActionRevision && (pendingActionRevision.coverage_repair
-      || pendingActionRevision.operator_statements?.length && pendingActionRevision.instruction.startsWith(
-        "Implement this already supplied business requirement in the same disabled action."))) {
+    // Only the recorded repair designation owns this route. Instruction wording
+    // neither establishes provenance nor selects a generated repair.
+    if (pendingActionRevision?.coverage_repair) {
       const pending = pendingActionRevision;
       const entry = semanticActionDrafts.find(item => item.result.compiled.rule.outcome === pending.outcome);
       let current = entry && pending.baseline_digest === canonicalJsonDigest(entry.result.compiled.draft)
@@ -12364,10 +12315,10 @@ function semanticActionNarrationFacts(compiled: CompiledActionRuleModelDraftV1):
 }
 
 export function semanticActionActivationReviewLines(compiled: CompiledActionRuleModelDraftV1, read: ExplorationBoundaryDraft, width: number): string[] {
-  const business = semanticActionBusinessReviewLines(compiled, read);
+  const business = compiledBusinessReview(compiled, read);
   return renderRunnerResultPanel({
-    result: business[0]!.replace(/^Change: /u, ""),
-    checked: business.slice(1).filter((line) => !line.startsWith("Completion:")).join("\n"),
+    result: business.change,
+    checked: business.checks.join("\n"),
     changed: "Allow the assistant to submit requests under these rules. This decision does not execute a change.",
     decision: "Enable these reviewed requests, or keep the draft disabled.",
     notChecked: "Live customer completion and client behavior.",
@@ -12379,60 +12330,14 @@ export function semanticActionActivationReviewLines(compiled: CompiledActionRule
 
 /** Summarize the compiled conditions/effect, never model-authored review prose. */
 export function semanticActionBusinessReviewLines(compiled: CompiledActionRuleModelDraftV1, read: ExplorationBoundaryDraft): string[] {
-  const words = (value: string) => value.replaceAll("_", " ");
-  const resources = new Map(read.pack.resources.map((resource) => [resource.id, resource]));
-  const fieldNames = new Map<string, string>();
-  for (const binding of compiled.verification_boundary.resources) {
-    const resource = resources.get(binding.resource);
-    for (const field of binding.fields) fieldNames.set(`${binding.binding}.${field.name}`,
-      `${resource?.label ?? words(binding.binding)} ${resource?.field_metadata?.[field.name]?.label ?? words(field.name)}`);
-  }
-  const target = resources.get(compiled.rule.effect.target_resource);
-  const targetBinding = compiled.verification_boundary.resources.find((entry) => entry.binding === compiled.effect_envelope.target_binding);
-  let selectedBinding = targetBinding;
-  const visited = new Set<string>();
-  while (selectedBinding?.source.kind === "relationship" && !visited.has(selectedBinding.binding)) {
-    visited.add(selectedBinding.binding);
-    const fromBinding = selectedBinding.source.from_binding;
-    selectedBinding = compiled.verification_boundary.resources.find((entry) => entry.binding === fromBinding);
-  }
-  const selectedName = selectedBinding && (resources.get(selectedBinding.resource)?.label ?? words(selectedBinding.binding));
-  const changed = Object.entries(compiled.rule.effect.set).map(([field, value]) =>
-    `${target?.field_metadata?.[field]?.label ?? words(field)} becomes ${actionRuleScalarSummary(value, fieldNames)}`);
-  const expressions = Object.values(compiled.rule.effect.set);
-  const sourceBindings = [...new Set(expressions.flatMap((value) => value.kind === "field" ? [value.binding] : []))];
-  const sourceNames = sourceBindings.map((binding) => {
-    const resource = compiled.verification_boundary.resources.find((entry) => entry.binding === binding)?.resource;
-    return (resource && resources.get(resource)?.label) || words(binding);
-  });
-  const effect = sourceNames.length && expressions.every((value) => value.kind === "field")
-    ? `terms come from verified ${sourceNames.join(" and ")} records`
-    : changed.join("; ");
-  const policy = compiled.approval_class;
-  const automatic = policy.rules.find((rule) => rule.outcome === compiled.rule.outcome)?.auto_approve_when;
-  const reviewers = `${policy.required_approvals} ${policy.required_approvals > 1 ? "distinct " : ""}${words(policy.required_role)} approval${policy.required_approvals === 1 ? "" : "s"}`;
-  return [
-    `Change: ${compiled.draft.discovery?.title ?? words(compiled.rule.outcome.split(".").at(-1)!)}. ${compiled.rule.effect.operation === "insert" ? "Create" : "Update"} one ${target?.label ?? words(target?.table ?? compiled.rule.effect.target_resource)} record; ${effect}.`,
-    ...(compiled.rule.atomic_updates ? [
-      ...compiled.rule.atomic_updates.map((effect) => {
-        const related = resources.get(effect.target_resource);
-        return `Also changes: ${related?.label ?? words(effect.target_resource.split(".").at(-1)!)} - ${Object.entries(effect.set).map(([field, value]) =>
-          `${related?.field_metadata?.[field]?.label ?? words(field)} becomes ${actionRuleScalarSummary(value, fieldNames)}`).join("; ")}.`;
-      }),
-      "Saved together: every record is checked for intervening changes. All updates succeed in one transaction, or none are saved.",
-    ] : []),
-    ...(compiled.rule.effect.operation === "update" && selectedBinding?.source.kind === "subject_ref"
-      ? [`Target: only ${targetBinding === selectedBinding ? `the selected ${selectedName} record` : `the record linked to the selected ${selectedName} through the reviewed relationship${visited.size > 1 ? "s" : ""}`}; Runner verifies that selection and its trusted scope before any change.`]
-      : []),
-    `Eligibility: ${actionRuleBooleanSummary(compiled.rule.require, fieldNames)}. Missing or failed eligibility checks are refused, not sent for human approval.`,
-    ...(compiled.hard_limit_review ?? []),
-    ...(compiled.hard_limit_review ? ["A hard-invariant violation is refused; human approval cannot override it."] : []),
-    policy.mode === "policy" && automatic
-      ? `Approval: automatic ${actionRuleBooleanIsUnconditional(automatic) ? "for valid requests" : `only when ${actionRuleBooleanSummary(automatic, fieldNames)}`}; other valid requests, including ${compiled.hard_limit_review ? "automatic-approval budget overruns" : "limit overruns"}, require ${reviewers}.`
-      : `Approval: every valid request requires ${reviewers}.`,
-    ...(policy.mode === "policy" ? [`Approval limits: ${automaticApprovalBusinessSummary(compiled, read)}.`] : []),
-    `Completion: ${compiled.effect_envelope.writeback.mode === "none" ? "proposal only; automatic execution is not configured" : "automatic execution is prepared for separate review, not enabled by this Read decision"}.`,
-  ];
+  const view = compiledBusinessReview(compiled, read);
+  return [`Change: ${view.change}`, ...view.checks, `Completion: ${view.completion}`];
+}
+
+function compiledBusinessReview(compiled: CompiledActionRuleModelDraftV1, read: ExplorationBoundaryDraft) {
+  return semanticActionBusinessReviewView({ compiled, read, scalar: actionRuleScalarSummary,
+    boolean: actionRuleBooleanSummary, unconditional: actionRuleBooleanIsUnconditional,
+    approval: automaticApprovalBusinessSummary });
 }
 
 function actionRuleSharedLimitSummary(limit: ActionBoundarySharedLimitV1): string {
@@ -14798,34 +14703,6 @@ function readBoundaryFieldOperationFlags(
   };
 }
 
-function readBoundaryFieldReviewNote(
-  roles: string[],
-  access: BoundaryMapFieldRow["access"],
-  operations: BoundaryMapFieldRow["operations"],
-): string | undefined {
-  const labels: string[] = [];
-  if (roles.includes("trusted_scope")) labels.push("trusted scope");
-  if (roles.includes("record_identity")) labels.push("record identity");
-  else if (roles.includes("internal_identifier_candidate")) labels.push("possible internal identifier");
-  if (roles.includes("relationship_key")) labels.push("relationship key");
-  if (roles.includes("conflict_or_version_guard")) labels.push("possible conflict/version guard");
-  if (roles.includes("private_policy_candidate")) labels.push("possible private policy fact");
-  const unique = [...new Set(labels)];
-  if (!unique.length) return undefined;
-  const roleSummary = unique.join(", ");
-  if (access !== "KEPT" && !Object.values(operations).some(Boolean)) return `No reviewed Read operations; ${roleSummary}. Private Action use is not established by this Read view.`;
-  if (access !== "KEPT" && !operations.return_value) return `REVIEW: model analysis of ${roleSummary}; raw values are not returned`;
-  if (access === "MODEL") {
-    return `REVIEW: model-facing ${roleSummary}; prefer Runner only unless raw values are intentionally required by the agent`;
-  }
-  if (access === "RUNNER") {
-    const opaqueReference = unique.some((label) =>
-      label === "record identity" || label === "internal identifier");
-    return `Runner-only ${roleSummary}${opaqueReference ? "; model uses opaque obj_* references" : ""}`;
-  }
-  return `Kept out ${roleSummary}; unavailable to model and Runner reads`;
-}
-
 function styleReadBoundaryFieldMatrix(
   lines: string[],
   theme: ReturnType<typeof terminalTheme>,
@@ -14862,7 +14739,7 @@ export function formatFocusedBoundaryActivationReview(
     const keptOut = new Set(resource.kept_out_fields);
     const runnerOnly = new Set(resource.model_withheld_fields ?? []);
     const fields = Object.keys(resource.field_types).sort();
-    const fieldRows: BoundaryMapFieldRow[] = fields.map((field) => {
+    const fieldRows = fields.map((field): BoundaryMapFieldRow & { review_required: boolean } => {
       const access: BoundaryMapFieldRow["access"] = keptOut.has(field)
         ? "KEPT"
         : runnerOnly.has(field)
@@ -14870,21 +14747,21 @@ export function formatFocusedBoundaryActivationReview(
           : "MODEL";
       const roles = catalogResource?.fields.find((candidate) => candidate.id === field)?.roles ?? [];
       const operations = readBoundaryFieldOperationFlags(resource, field, access === "KEPT");
-      const note = readBoundaryFieldReviewNote(roles, access, operations);
+      const review = boundaryMapFieldReview(roles, access, operations);
       return {
         field,
         data_type: resource.field_types[field] ?? "reviewed",
         access,
         operations,
-        ...(note ? { note } : {}),
+        ...review,
       };
     }).sort((left, right) => {
-      const leftReview = left.access === "MODEL" && left.note?.startsWith("REVIEW:") ? 0 : 1;
-      const rightReview = right.access === "MODEL" && right.note?.startsWith("REVIEW:") ? 0 : 1;
+      const leftReview = left.access === "MODEL" && left.review_required ? 0 : 1;
+      const rightReview = right.access === "MODEL" && right.review_required ? 0 : 1;
       return leftReview - rightReview || left.field.localeCompare(right.field);
     });
     const riskyModelFields = fieldRows.filter((row) =>
-      row.access === "MODEL" && row.note?.startsWith("REVIEW:"));
+      row.access === "MODEL" && row.review_required);
     const relationships = resource.relationships.map((relationship) => {
       const path = { source_resource: resource.id, target_resource: relationship.target_resource,
         links: relationship.proof?.links };
@@ -17256,10 +17133,7 @@ function formatRequestedBoundaryChanges(
 function describeReviewedField(view: BoundaryResourceReviewView, fieldName: string): string {
   const field = view.fields.find((candidate) => candidate.name === fieldName);
   if (!field) return `${fieldName} column of ${view.resource_id}`;
-  const enumEvidence = field.evidence.find((item) => item.startsWith("database enum values:"));
-  const knownValues = enumEvidence?.slice("database enum values:".length).trim();
-  return `${field.name} - ${field.data_type} column of ${view.resource_id}` +
-    `${knownValues ? ` (database-declared values: ${knownValues})` : ""}`;
+  return describeInspectedBoundaryField(view.resource_id, field);
 }
 
 function formatBoundaryBatchMutationPreview(

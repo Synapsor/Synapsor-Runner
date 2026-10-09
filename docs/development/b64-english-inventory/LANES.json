@@ -1485,8 +1485,22 @@
       "Independent variants: live/partial/forged response, currentness drift, cold answer/decline/confirm, interrupted/lost ACK/CAS, immutable counters/stage, old-reader refusal.",
       "Main owns checkpoint/recovery/public binding; no new store/grant/Source fact/paid capability/unrestricted ports; existing typed/default-No/compiler boundaries preserved.",
       "PROPOSED not approved/implemented: INSERT public cases blocked; D01 UPDATE unaffected. Independent proposal904b952f at reviewer2-read8/initializer-stage-compatibility-independent-decision-proposal-v1.json."
+    ],
+    "history_payload_access": [
+      "No existing exact historical actor/nested-value inspection capability found; current default[] redacts all payloads.",
+      "Owner decision: authenticated local authoring actor may inspect only specified parts/nested fields of exact current job-owned owner/id/digest records.",
+      "No parent-right transfer, model forwarding, Source query/write, acceptance/activation/recovery grant, new store or reconstruction of missing payloads."
     ]
   },
-  "serial_current_item": 4,
-  "serial_state": "Item2 arithmetic blocked scope/currentness+INSERTformat; item3 firstbreak structured Read batching candidate row19. Item4 cards helper/Main hooks ACTIVE, R2 reviewer only; others HELD."
+  "serial_current_item": 6,
+  "serial_state": "Item4 cardsWIP8ab8059e integrationNOTACCEPTED; item5 redacted index966a716b scopedSource/nativeACCEPT, publicdispatchOPEN/fullpayloadBLOCKED. Item6MainEnglish30/0 soleimplementation next, Action28/5QUEUED; MySQLitem7QUEUED. Acceptedintegration2392/productbf5 unchanged.",
+  "serial_main_retirement": {
+    "status": "ACTIVE_WIP_NOT_INTEGRATED",
+    "base": "2392f7df",
+    "branch": "codex/b64-main-retirement-serial-20261010",
+    "checks": "4 source guards failed before\u219219P; canonical candidate3F1P\u21924P; activation source guard1F4P\u2192after; combined122P10files; scoped actual boundary types0",
+    "review": "R2:913 NB13 source sites ACCEPT; current boundary/RF successors pending; public qualification OPEN",
+    "counts": "accepted Main30/0 Action28/5 unchanged pending exact integrated review",
+    "next": "finish remaining current Main sites and batch independent review; do not claim zero"
+  }
 }
