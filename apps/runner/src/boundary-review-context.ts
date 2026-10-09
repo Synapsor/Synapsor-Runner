@@ -74,7 +74,7 @@ async function loadBoundaryReviewContextUnlocked(projectRoot: string,
 }
 /** Pure projection of the exact already-loaded records. No filesystem or
  * protected access is acquired here, and the result conveys no permission. */
-function projectBoundaryReviewContext(input: {
+export function projectBoundaryReviewContext(input: {
   boundaryRoot: string; draft: ExplorationBoundaryDraft; lock: GenerationLock;
   progress: BoundaryReviewContext["progress"]; stored: ProjectReadAuthoring | undefined;
 }): BoundaryReviewContext {

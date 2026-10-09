@@ -9,6 +9,7 @@ import { normalizeStoredBoundaryReviewProgress, type BoundaryReviewProgress } fr
 import { OPERATOR_READ_AUTHORING_KEY, assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
 import type { GovernedReadEditDecision } from "./control-policy-read-edit.js";
 import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { decodeOperatorAuthority } from "./control-policy-authority-codec.js";
 export { assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
 
 export type ProjectReadAuthoring = {
@@ -27,6 +28,34 @@ export async function readProjectReadAuthoring(projectRoot: string, env?: NodeJS
 export async function readProjectReadAuthoringHeld(projectRoot: string, permit: ProjectAuthorityMutationPermit,
   env?: NodeJS.ProcessEnv): Promise<ProjectReadAuthoring | undefined> {
   return withHeldProjectAuthorityAccess(projectRoot, permit, held => readProjectReadAuthoringUnlocked(held.projectRoot, held, env));
+}
+/** Historical structural evidence for the selected Read family only. It is
+ * inspectable native history, never a current grant or replacement selection. */
+export async function readProjectReadAuthoringHistoryHeld(projectRoot: string,
+  input: { boundaryName: string; before?: { epoch: number; revision_id: string } },
+  permit: ProjectAuthorityMutationPermit): Promise<{ items: ProjectReadAuthoring[];
+    before?: { epoch: number; revision_id: string } }> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, async held => {
+    const binding = await openBoundProjectControlPolicies(held.projectRoot);
+    if (!binding) return { items: [] };
+    try {
+      const revisions = await binding.repository.history({ deployment_id: binding.deployment_id,
+        key: OPERATOR_READ_AUTHORING_KEY, ...(input.before ? { before: input.before } : {}), limit: 100 });
+      const items: ProjectReadAuthoring[] = [];
+      for (const { epoch, revision } of revisions) {
+        const authoring = decodeOperatorAuthority(revision);
+        if (authoring.type !== "read_authoring") continue;
+        const selected = authoring.entries.find(entry => entry.progress.boundary_id === authoring.selected_boundary_id);
+        if (selected?.progress.candidate.pack.name !== input.boundaryName) continue;
+        items.push(await resolveAuthoringState(held.projectRoot, { authoring, selected, resolvedOrigins: [],
+          bindings: { repository_id: binding.repository_id, deployment_id: binding.deployment_id,
+            project_id: binding.project_id, epoch, revision_id: revision.revision_id } }, held));
+      }
+      const last = revisions.at(-1);
+      return { items, ...(revisions.length === 100 && last
+        ? { before: { epoch: last.epoch, revision_id: last.revision.revision_id } } : {}) };
+    } finally { await binding.close(); }
+  });
 }
 async function readProjectReadAuthoringUnlocked(projectRoot: string, permit: ProjectAuthorityMutationPermit,
   env?: NodeJS.ProcessEnv): Promise<ProjectReadAuthoring | undefined> {

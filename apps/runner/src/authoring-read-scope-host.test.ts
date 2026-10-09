@@ -6,6 +6,7 @@ import { createReadScopeHost, type ReadScopeInteraction, type ReadScopeInteracti
 import { presentReadScopeInteraction } from "./authoring-question-presenter.js";
 import { readBoundaryAuthoringResumeStateHeld } from "./boundary-authoring-resume.js";
 import { leaveOperatorQuestionPending } from "./authoring-operator-question.js";
+import { buildBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { nativeFixture } from "./test-fixtures/native-read-scope.js";
 
 // Actual controlled provider and native Resume CAS. The mutation callback models
@@ -22,6 +23,7 @@ async function setup(options: { pending?: boolean; noRead?: boolean } = {}) {
       if (disk.status !== "ready") throw new Error("Actual native fixture unavailable");
       return { questions: disk.value.operator_questions!, handoffs: disk.value.owner_handoffs ?? [], generation: disk.value.generation_recovery,
         question_id: questionId, expectedBinding: controls.currentBinding, ...inventory,
+        historical_inventory: { binding, ...inventory },
         ...(!options.pending && !options.noRead ? { analysis: analysis() } : {}),
         resume_revision_digest: disk.value.revision_digest, context_digest: q.context_digest, scope_digest: q.scope_digest };
     };
@@ -32,7 +34,9 @@ async function setup(options: { pending?: boolean; noRead?: boolean } = {}) {
     save: async (next, { expected, permit }) => {
       expect(locked).toBe(true); expect(expected.resume_revision_digest).toBe(f.state().revision_digest);
       if (controls.failSave) throw new Error("NATIVE_REVIEW_SAVE_FAILED");
-      await f.save(next, permit);
+      if (f.state().operator_questions!.some(q => q.id === next.id)) await f.save(next, permit);
+      else await f.persist(buildBoundaryAuthoringResumeState({ ...f.input, previous: f.state(),
+        operatorQuestions: [...f.state().operator_questions!, next] }), permit);
     },
   }, interact: async view => {
     expect(locked).toBe(false); views.push(view); await controls.duringWait?.();
@@ -43,6 +47,35 @@ async function setup(options: { pending?: boolean; noRead?: boolean } = {}) {
   return { f, q, host, controls, views, responses, cleanup: () => fs.rm(f.dir, { recursive: true, force: true }) };
 }
 describe("grouped Read scope protected review", () => {
+  it("loads authentic stale scope for inspection and keeps it pending without a Yes or model request", async () => {
+    const h = await setup();
+    try {
+      h.controls.currentBinding.operation_digest = digest("changed reviewed permissions");
+      const before = structuredClone(h.f.state());
+      h.responses.push("keep");
+      expect((await h.host.review(h.q.id)).state).toBe("pending");
+      expect(h.views).toHaveLength(1);
+      expect(h.views[0]).toMatchObject({ kind: "pending", canReview: false, canReplace: true });
+      expect(h.f.state()).toEqual(before);
+    } finally { await h.cleanup(); }
+  });
+  it("replaces stale confirmed scope with a validated pending successor, preserving the historical Yes", async () => {
+    const h = await setup();
+    try {
+      h.responses.push(true); await h.host.review(h.q.id);
+      const confirmed = structuredClone(h.f.state().operator_questions![0]!);
+      const generation = structuredClone(h.f.state().generation_recovery);
+      h.controls.currentBinding.catalog_digest = digest("narrower current catalog");
+      h.responses.push("replace");
+      const result = await h.host.review(h.q.id);
+      expect(result.state).toBe("replace_requested"); expect(result.question_id).not.toBe(h.q.id);
+      expect(h.f.state().operator_questions![0]).toEqual(confirmed);
+      expect(h.f.state().operator_questions![1]).toMatchObject({ id: result.question_id,
+        disposition: "declined", read_scope: { predecessor_id: h.q.id } });
+      expect(h.f.state().operator_questions![1]!.confirmation).toBeUndefined();
+      expect(h.f.state().generation_recovery).toEqual(generation);
+    } finally { await h.cleanup(); }
+  });
   it.each([true, false, null])("records only the explicit displayed decision %s through native CAS", async accepted => {
     const h = await setup();
     try {

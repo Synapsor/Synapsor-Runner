@@ -98,6 +98,6 @@ export async function nativeFixture(noRead = false, withoutAnalysis = false,
     await persist(buildBoundaryAuthoringResumeState({ ...input, previous: state, generationRecovery, operatorQuestions: [...(state.operator_questions ?? []), q] }));
     return q;
   });
-  return { dir, input, nativeBinding, binding,inventory,analysis, boundary: () => structuredClone(context.candidate),
+  return { dir, input, nativeBinding, binding,inventory,analysis, inspection: () => structuredClone(prepared.inspection), boundary: () => structuredClone(context.candidate),
     state: () => state, persist, save, produce, scopeDigest, contextDigest };
 }

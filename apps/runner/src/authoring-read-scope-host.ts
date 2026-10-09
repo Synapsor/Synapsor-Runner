@@ -1,5 +1,9 @@
+import { ReadScopeReviewError, nativeReadScopeFailure } from "./authoring-read-scope-error.js";
+import { randomUUID } from "node:crypto";
+import { assertReadScopeHistoricalReferences, type HistoricalReadScopeInventory } from "./authoring-read-scope-history.js";
+import { assertReadScopeProvenance } from "./read-structured-scope.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { confirmReadScopeReview, proposeReadScopeReview, resolveNativeReadScope } from "./authoring-read-scope-question.js";
+import { confirmReadScopeReview, createReadScopeQuestion, proposeReadScopeReview, resolveNativeReadScope } from "./authoring-read-scope-question.js";
 import { leaveOperatorQuestionPending, operatorQuestionReadback, reopenOperatorQuestion,
   type OperatorQuestion } from "./authoring-operator-question.js";
 import type { AuthoringQuestionInteraction } from "./authoring-question-interaction.js";
@@ -9,9 +13,12 @@ type Digest = `sha256:${string}`;
 export type ReadScopeReviewSnapshot = Parameters<typeof resolveNativeReadScope>[0] & {
   /** Actual acknowledged Resume revision, loaded with the records/analysis. */
   resume_revision_digest: Digest; context_digest: Digest; scope_digest: Digest;
+  /** Exact historical references resolved by native owners, never model claims. */
+  historical_inventory?: HistoricalReadScopeInventory;
 };
 export type ReadScopeReviewBinding = { question_id: string; question_revision: number; question_digest: Digest;
-  context_digest: Digest; scope_digest: Digest; proposal_digest?: Digest; analysis_digest?: Digest; snapshot_digest: Digest };
+  context_digest: Digest; scope_digest: Digest; current_context_digest: Digest; current_scope_digest: Digest;
+  proposal_digest?: Digest; analysis_digest?: Digest; snapshot_digest: Digest };
 type View = AuthoringQuestionInteraction<ReadScopeReviewBinding>;
 export type ReadScopeInteraction = Extract<View, { kind: "readback" }>
   | (Omit<Extract<View, { kind: "pending" }>, "canAnswer"> & { canReview: boolean; canReplace: boolean });
@@ -25,18 +32,26 @@ export type ReadScopeHostAccess = {
   /** Existing protected Resume CAS/rollback. No new persistence owner. */
   save(question: OperatorQuestion, options: { permit: ProjectAuthorityMutationPermit; expected: ReadScopeReviewSnapshot; subject: string }): Promise<void>;
 };
-function changed(): never { throw new Error("READ_SCOPE_REVIEW_CHANGED: The displayed scope, analysis or native revision changed. No decision was saved."); }
+function changed(): never { throw new ReadScopeReviewError("READ_SCOPE_REVIEW_CHANGED", "The displayed scope, analysis or native revision changed. No decision was saved."); }
 function checked(snapshot: ReadScopeReviewSnapshot, questionId: string) {
   if (snapshot.question_id !== questionId) changed();
   const resolved = resolveNativeReadScope(snapshot), q = resolved.question;
-  if (q.id !== questionId || q.context_digest !== snapshot.context_digest || q.scope_digest !== snapshot.scope_digest
-    || resolved.status === "stale") changed();
+  if (q.id !== questionId) changed();
+  // Loading historical testimony is separate from admitting a current decision.
+  // Missing/forged native provenance is not an ordinary stale proposal.
+  const historical = snapshot.historical_inventory ?? { binding: snapshot.expectedBinding,
+    references: snapshot.references, catalog: snapshot.catalog };
+  assertReadScopeHistoricalReferences(resolved.record, historical.references);
+  assertReadScopeProvenance(resolved.record, { expectedBinding: historical.binding, ...historical });
+  const applicability = resolved.status === "stale" || q.context_digest !== snapshot.context_digest
+    || q.scope_digest !== snapshot.scope_digest ? "stale_inspectable" : "current";
   const binding: ReadScopeReviewBinding = { question_id: q.id, question_revision: q.revision, question_digest: q.digest,
     context_digest: q.context_digest, scope_digest: q.scope_digest,
+    current_context_digest: snapshot.context_digest, current_scope_digest: snapshot.scope_digest,
     ...(q.proposal ? { proposal_digest: canonicalJsonDigest(q.proposal) } : {}),
     ...(snapshot.analysis ? { analysis_digest: canonicalJsonDigest(snapshot.analysis) } : {}),
     snapshot_digest: canonicalJsonDigest(snapshot) };
-  return { snapshot, resolved, q, binding };
+  return { snapshot, resolved, q, binding, applicability };
 }
 /** Grouped scope review only. The existing native question owns the proposal,
  * actual model completion and history; this adapter never drafts or activates. */
@@ -73,21 +88,28 @@ export function createReadScopeHost(input: { access: ReadScopeHostAccess;
     question_id: string; question_digest: Digest }> => {
     let current = await load(questionId);
     const result = (state: "confirmed" | "pending" | "replace_requested") => ({ state, question_id: current.q.id, question_digest: current.q.digest });
-    if (current.resolved.status === "confirmed") return result("confirmed");
-    let canReview = !current.resolved.replacement_pending;
+    if (current.applicability === "current" && current.resolved.status === "confirmed") return result("confirmed");
+    let canReview = current.applicability === "current" && !current.resolved.replacement_pending;
     try { if (canReview) proposeReadScopeReview(reopenOperatorQuestion(current.q), current.snapshot.expectedBinding,
       current.snapshot.analysis, current.snapshot); } catch (error) {
-      if (!(error instanceof Error) || !error.message.startsWith("READ_SCOPE_REVIEW_STALE:")) throw error;
+      if (nativeReadScopeFailure(error)?.code !== "READ_SCOPE_REVIEW_STALE") throw error;
       canReview = false;
     }
     if (!canReview || current.q.disposition) {
-      const response = await exchange(current, { kind: "pending", binding: current.binding, canReview, canReplace: true, defaultValue: "keep",
-        material: [canReview ? "This complete scope remains unconfirmed." : "This scope still needs ordinary Read mapping before it can be confirmed.",
+      const response = await exchange(current, { kind: "pending", binding: current.binding, canReview,
+        canReplace: current.q.scope_digest === current.snapshot.scope_digest, defaultValue: "keep",
+        material: [current.applicability === "stale_inspectable"
+          ? "This saved scope is available for inspection, but its dependencies changed. It cannot be confirmed until ordinary replacement and current Read mapping are reviewed."
+          : canReview ? "This complete scope remains unconfirmed." : "This scope still needs ordinary Read mapping before it can be confirmed.",
           ...current.q.read_scope!.record.proposal.requirements.map(r => `${r.disposition}: ${r.intended_use}${r.unresolved ? ` — ${r.unresolved}` : ""}`),
           "Keeping or replacing this proposal does not renew the model allowance or activate access."] });
       if (response.kind !== "pending" || response.choice === "keep") return result("pending");
       if (response.choice === "replace") {
-        current = await save(current, q => leaveOperatorQuestionPending(q, "declined"), "The scope kept pending for its ordinary replacement route");
+        current = await save(current, (q, snapshot) => leaveOperatorQuestionPending(
+          current.applicability === "stale_inspectable" ? createReadScopeQuestion({ id: randomUUID(), revision: q.revision + 1,
+            scope_digest: q.scope_digest, context_digest: snapshot.context_digest,
+            read_scope: { ...q.read_scope!, predecessor_id: q.id } }) : q, "declined"),
+          "The scope kept pending for its ordinary replacement route");
         return result("replace_requested");
       }
     }

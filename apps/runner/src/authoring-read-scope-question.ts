@@ -1,3 +1,4 @@
+import { ReadScopeReviewError } from "./authoring-read-scope-error.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { parseOperatorQuestion, parseOperatorQuestions, proposeOperatorAnswer, confirmOperatorAnswer,
   type OperatorQuestion } from "./authoring-operator-question.js";
@@ -21,16 +22,16 @@ function assertCurrentAnalysis(q: OperatorQuestion, binding: ReadScopeBinding, a
   inventory: ReadScopeNativeInventory): void {
   if (!q.read_scope || q.read_scope.mode !== "review"
     || canonicalJsonDigest(q.read_scope.record.binding) !== canonicalJsonDigest(binding)) {
-    throw new Error("READ_SCOPE_REVIEW_STALE: Review the exact current analyzed Read proposal. No decision was accepted.");
+    throw new ReadScopeReviewError("READ_SCOPE_REVIEW_STALE", "Review the exact current analyzed Read proposal. No decision was accepted.");
   }
   assertReadScopeProvenance(q.read_scope.record, { expectedBinding: binding, ...inventory });
   const record = q.read_scope.record;
   if (record.proposal.applicability === "no_read_requested") {
     if (analysis !== undefined || record.analysis_digest !== undefined)
-      throw new Error("READ_SCOPE_REVIEW_STALE: A no-Read interpretation must not invent an analyzed Read plan.");
+      throw new ReadScopeReviewError("READ_SCOPE_REVIEW_STALE", "A no-Read interpretation must not invent an analyzed Read plan.");
   } else if (!analysis || record.analysis_digest !== canonicalJsonDigest(analysis)
     || assessReadScopeDraft(record, analysis).status !== "compatible")
-    throw new Error("READ_SCOPE_REVIEW_STALE: Review the exact current analyzed Read proposal. No decision was accepted.");
+    throw new ReadScopeReviewError("READ_SCOPE_REVIEW_STALE", "Review the exact current analyzed Read proposal. No decision was accepted.");
 }
 /** Pure transition only. Caller persists through the existing Resume CAS after
  * rechecking current catalog, Source, request, question lineage and analysis. */
@@ -44,7 +45,7 @@ export function proposeReadScopeReview(value: OperatorQuestion, binding: ReadSco
 export function confirmReadScopeReview(value: OperatorQuestion, binding: ReadScopeBinding,
   analysis: ReadWorkloadAnalysis | undefined, displayedQuestionDigest: Digest, inventory: ReadScopeNativeInventory): OperatorQuestion {
   const q = parseOperatorQuestion(value); assertCurrentAnalysis(q, binding, analysis, inventory);
-  if (q.digest !== displayedQuestionDigest) throw new Error("READ_SCOPE_REVIEW_STALE: The displayed review changed.");
+  if (q.digest !== displayedQuestionDigest) throw new ReadScopeReviewError("READ_SCOPE_REVIEW_STALE", "The displayed review changed.");
   return confirmOperatorAnswer(q);
 }
 /** Reconstruct from actual native history, never a caller-supplied confirmed
@@ -55,7 +56,7 @@ export function resolveNativeReadScope(input: { questions: readonly OperatorQues
   references: readonly ReadScopeReference[]; catalog: ReadScopeCatalog }) {
   const questions = parseOperatorQuestions(input.questions, input.handoffs, input.generation);
   let q = questions.find(q => q.id === input.question_id && q.kind === "read_scope" && q.read_scope?.mode === "review");
-  if (!q) throw new Error("READ_SCOPE_QUESTION_MISSING: Inspect the existing native question history.");
+  if (!q) throw new ReadScopeReviewError("READ_SCOPE_QUESTION_MISSING", "Inspect the existing native question history.");
   for (;;) {
     const next = questions.find(item => item.read_scope?.predecessor_id === q!.id);
     if (!next) break;

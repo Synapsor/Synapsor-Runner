@@ -11,6 +11,7 @@ import { authoringPlanningCheckpoint, authoringReadCheckpoint, type AuthoringQue
 import { projectAuthoringReadScopeContext, projectAuthoringReadScopePreview } from "./authoring-read-scope-context.js";
 import { createReadScopeHost, type ReadScopeHostAccess, type ReadScopeInteraction, type ReadScopeInteractionResponse } from "./authoring-read-scope-host.js";
 import { createReadScopeQuestion, proposeReadScopeReview, resolveNativeReadScope } from "./authoring-read-scope-question.js";
+import { loadHistoricalReadScopeInventoryHeld } from "./authoring-read-scope-history.js";
 import { readScopeConsumption } from "./authoring-read-scope-binding.js";
 import { assertReadScopeProvenance, assessReadScopeDraft, assessReadScopeRecordCurrentness, parseReadScopeRecord, type ReadScopeRecord } from "./read-structured-scope.js";
 import { loadBoundaryReviewContextHeld, type BoundaryReviewContext } from "./boundary-review-context.js";
@@ -187,10 +188,14 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     if (question.read_scope.record.analysis_digest && (!stored || stored.analysis_digest !== state.read?.analysis_digest))
       unavailable("The exact analyzed Read proposal");
     const context_digest = await input.ports.questionContext(permit);
+    const historical_inventory = await loadHistoricalReadScopeInventoryHeld({ projectRoot: input.projectRoot,
+      record: question.read_scope.record, current, resume: state.resume,
+      sources: state.sources, questions: state.questions, handoffs: state.handoffs, generation: state.generation }, permit);
     await input.ports.assertCurrent(permit);
     if (snapshot().revision !== state.revision) return unavailable("The coherent native Read assessment");
     return { candidate_digest: explorationBoundaryCandidateDigest(current.candidate), questions: state.questions, handoffs: state.handoffs, generation: state.generation, question_id: questionId,
       expectedBinding: scope.binding, references: scope.references, catalog: scope.catalog,
+      historical_inventory,
       ...(stored ? { analysis: stored.analysis } : {}), resume_revision_digest: state.revision,
       context_digest, scope_digest: input.ports.questionScope() };
   };
@@ -227,7 +232,13 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     loadHeld: (questionId, permit) => withHeldProjectAuthorityAccess(input.projectRoot, permit, held => loadScopeUnlocked(questionId, held)),
     save: async (question, options) => {
       const state = snapshot();
-      await input.ports.save({ questions: state.questions.map(q => q.id === question.id ? question : q),
+      const existing = state.questions.some(q => q.id === question.id);
+      if (!existing && (question.read_scope?.mode !== "review"
+        || question.read_scope.predecessor_id !== options.expected.question_id
+        || state.read?.scope_question_id !== options.expected.question_id))
+        return unavailable("The exact selected Read scope replacement");
+      await input.ports.save({ questions: existing ? state.questions.map(q => q.id === question.id ? question : q) : [...state.questions, question],
+        ...(!existing ? { read: { ...state.read!, scope_question_id: question.id } } : {}),
         stage: state.resume.stage, acknowledgeCompletedTurn: true, subject: options.subject }, options.permit);
     },
   }, interact: input.interact });

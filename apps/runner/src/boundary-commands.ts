@@ -1,3 +1,4 @@
+import { projectReadScopeCheckpointSave } from "./authoring-read-scope-checkpoint.js";
 import { AuthoringResumeMaterialError, AuthoringCheckpointSaveError, rejectedCheckpointMaterial } from "./authoring-checkpoint-save-error.js";
 import { reloadReadReviewForModelRevision, reloadReadReviewForModelRevisionHeld } from "./authoring-read-review-currentness.js";
 export { reloadReadReviewForModelRevision, reloadReadReviewForModelRevisionHeld } from "./authoring-read-review-currentness.js";
@@ -4127,9 +4128,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     assertCurrent: permit => assertAuthoringResumeCurrent(undefined, false, permit),
     questionContext: permit => ownerQuestionContext(permit), questionScope: ownerQuestionScope, mutate: mutateOwnerHandoff, failure: checkpointSaveFailure,
     save: async (next, permit) => {
-      operatorQuestions = next.questions;
-      if (next.planningResult) planningResult = next.planningResult;
-      if (next.generation) generationRecovery = next.generation;
+      ({ questions: operatorQuestions, planningResult, generation: generationRecovery, read: resumeRead,
+        pendingRevision: pendingReadRevisionState, pendingRequest: pendingReadRevision } = projectReadScopeCheckpointSave({
+          questions: operatorQuestions, planningResult, generation: generationRecovery, read: resumeRead,
+          pendingRevision: pendingReadRevisionState, pendingRequest: pendingReadRevision }, next));
       await persistAuthoringResume(next.stage, permit, next.acknowledgeCompletedTurn);
       if (resumePersistenceBlocked) throw checkpointSaveFailure(next.subject);
     },
