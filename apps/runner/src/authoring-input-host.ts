@@ -1,3 +1,4 @@
+import { parseActionRuleSourceQuestionPassages } from "./action-rule-source-question-codec.js";
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
@@ -164,13 +165,14 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
       const records = readQuestions();
       if (records.root.digest !== options.expectedRootDigest || records.root.id !== currentRoot.id
         || access.readHandoffs().at(-1)?.state === "waiting") throw new PolicySourceChangedError();
+      const naming_passages = parseActionRuleSourceQuestionPassages(options.sourcePassages, records.root, source);
       const h = createOwnerHandoff({ consumer: "input_policy", question: text, scope_digest: records.root.scope_digest,
         context_digest: records.root.context_digest, completion });
       const recovery = authoringQuestionCheckpoint(access.readRecovery(), ownerHandoffCheckpoint(h));
       const q = presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(),
         revision: Math.max(records.root.revision, ...records.children.map(c => c.revision)) + 1,
         handoff_id: h.id, kind: "input_bounds", scope_digest: h.scope_digest, context_digest: h.context_digest, target: records.root.target,
-        material: records.root.material, evidence: records.root.evidence, continuation: "input_policy_review", budget_owner_id: records.root.id }), text);
+        material: records.root.material, evidence: records.root.evidence, continuation: "input_policy_review", budget_owner_id: records.root.id, naming_passages }), text);
       await commit({ questions: [...access.readQuestions(), q], handoffs: [...access.readHandoffs(), h], recovery }, permit, "The missing input-policy question");
     }, options.permit),
     recordRawAnswer: async (q, raw, expected, options) => access.mutate(async permit => {
@@ -233,7 +235,8 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
         }
         const next = presentOperatorQuestion(createOperatorQuestion({ id: randomUUID(), revision: q.revision + 1, handoff_id: h.id,
           kind: "input_bounds", scope_digest: q.scope_digest, context_digest: q.context_digest, target: q.target, material: q.material,
-          evidence: q.evidence, continuation: q.continuation, budget_owner_id: records.root.id }), q.presentation.text);
+          evidence: q.evidence, continuation: q.continuation, budget_owner_id: records.root.id,
+          ...(q.naming_passages ? { naming_passages: q.naming_passages } : {}) }), q.presentation.text);
         update.questions = [...access.readQuestions(), next];
         await commit(update, permit, "The replacement input-policy answer question");
         return "replace" as const;

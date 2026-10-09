@@ -1,3 +1,4 @@
+import { parseActionRuleSourceQuestionPassages, type ActionRuleSourceQuestionPassageV1 } from "./action-rule-source-question-codec.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionModelSuggestionSession } from "./action-tui.js";
 import { makeSourceInputReview, assertSourceInputRequirements, type SourceInputPolicyReview } from "./authoring-input-policy.js";
@@ -26,7 +27,7 @@ export type SourceInputConversationPorts = {
     permit?: ProjectAuthorityMutationPermit; completion?: Completion; rawCheckpoint?: true;
   }): Promise<void>;
   createMissingQuestion(root: OperatorQuestion, text: string, completion: Completion, options: {
-    expectedRootDigest: Digest; permit?: ProjectAuthorityMutationPermit;
+    expectedRootDigest: Digest; sourcePassages: ActionRuleSourceQuestionPassageV1[]; permit?: ProjectAuthorityMutationPermit;
   }): Promise<void>;
   recordRawAnswer(question: OperatorQuestion, raw: string, expectedDigest: Digest, options: {
     permit?: ProjectAuthorityMutationPermit;
@@ -158,13 +159,15 @@ export async function runSourceInputConversation(input: {
         question = selected().question;
         if (result.state === "question") {
           if (!result.completion) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The missing-business question has no current consumed generation. Preserve it for inspection; no handoff was fabricated.", 409);
+          const sourcePassages = parseActionRuleSourceQuestionPassages(result.source_passages, selected().root, source);
           await withProjectAuthorityMutation(input.projectRoot, async permit => {
             await pendingCurrent(permit, original);
             const { root } = selected();
-            await ports.createMissingQuestion(root, result.question, result.completion!, { expectedRootDigest: root.digest, permit });
+            await ports.createMissingQuestion(root, result.question, result.completion!, { expectedRootDigest: root.digest, sourcePassages, permit });
           }, { signal: input.signal });
           question = selected().question;
-          if (question.source_binding || question.presentation?.text !== result.question) invalid();
+          if (question.source_binding || question.presentation?.text !== result.question
+            || canonicalJsonDigest(question.naming_passages ?? null) !== canonicalJsonDigest(sourcePassages)) invalid();
         } else {
           const proposed = proposeOperatorAnswer(question, result.proposal);
           if (result.state === "pending") return pending(proposed, "unknown", result.completion, question);

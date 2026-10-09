@@ -1,3 +1,4 @@
+import { parseActionRuleSourceQuestionPassageShape, type ActionRuleSourceQuestionPassageV1 } from "./action-rule-source-question-codec.js";
 import { parseActionSubjectBinding, parseActionSubjectProposal, assertActionSubjectSequence, assertActionSubjectGeneration, type ActionSubjectBinding, type ActionSubjectProposal } from "./authoring-action-subject-binding.js";
 import { parseTypedParameterBinding, parseTypedParameterRecord, assertTypedParameterSequence, assertTypedParameterGeneration, typedParameterPendingFields, type TypedParameterBinding, type TypedParameterRecord } from "./authoring-typed-parameter-binding.js";
 import { parseReadScopeQuestionBinding, readScopeConsumption, type ReadScopeQuestionBinding } from "./authoring-read-scope-binding.js";
@@ -50,6 +51,8 @@ export type OperatorQuestion = {
   /** A missing-part question draws from its Source interpretation's existing
    * pool. It owns no fresh allowance; the controller reserves the root. */
   budget_owner_id?: string;
+  /** Exact naming locators consumed by the Source producer; no adopted meaning. */
+  naming_passages?: ActionRuleSourceQuestionPassageV1[];
   /** Read keeps its producer's counters. New assisted local consumers share
    * ONE existing normal provider allowance across both stages and restart. */
   budget?: { iterations_used: number; tool_calls_used: number; correction_used: boolean };
@@ -82,7 +85,7 @@ function invalid(reason: string): never { throw new Error(`AUTHORING_QUESTION_IN
 const reseal = (q: Omit<OperatorQuestion, "digest">): OperatorQuestion => parseOperatorQuestion({ ...q, digest: canonicalJsonDigest(q) });
 
 export function createOperatorQuestion(input: Pick<OperatorQuestion,
-  "id" | "revision" | "handoff_id" | "kind" | "scope_digest" | "context_digest" | "target" | "material" | "evidence" | "continuation" | "source_binding" | "budget_owner_id" | "receipt_selection"> & {
+  "id" | "revision" | "handoff_id" | "kind" | "scope_digest" | "context_digest" | "target" | "material" | "evidence" | "continuation" | "source_binding" | "budget_owner_id" | "naming_passages" | "receipt_selection"> & {
     assistedLocalConsumer?: boolean;
   }): OperatorQuestion {
   const { assistedLocalConsumer, ...body } = input;
@@ -92,7 +95,7 @@ export function createOperatorQuestion(input: Pick<OperatorQuestion,
 
 export function parseOperatorQuestion(value: unknown): OperatorQuestion {
   if (!object(value) || !exact(value, ["version", "id", "revision", "handoff_id", "kind", "scope_digest", "context_digest", "target",
-    "material", "evidence", "receipt_selection", "read_scope", "typed_parameters", "action_subject", "continuation", "source_binding", "budget_owner_id", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
+    "material", "evidence", "receipt_selection", "read_scope", "typed_parameters", "action_subject", "continuation", "source_binding", "budget_owner_id", "naming_passages", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
     || ![1, 2].includes(value.version as number) || !id(value.id) || value.handoff_id !== undefined && !text(value.handoff_id, 100) || !count(value.revision, Number.MAX_SAFE_INTEGER, 1)
     || !["attributed_meaning", "input_bounds", "writer_maintenance", "receipt_requirement", "read_scope", "typed_parameters", "action_subject"].includes(value.kind as string)
     || !digest(value.scope_digest) || !digest(value.context_digest) || !digest(value.digest)
@@ -160,6 +163,12 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     || !["input_bounds", "receipt_requirement"].includes(value.kind as string) || value.source_binding !== undefined
     || value.kind === "input_bounds" && value.budget !== undefined || value.kind === "receipt_requirement" && value.budget === undefined))
     invalid("The missing-answer question cannot own or reset another allowance.");
+  if (value.naming_passages !== undefined) {
+    if (value.kind !== "input_bounds" || !value.budget_owner_id || !value.handoff_id || value.source_binding !== undefined)
+      invalid("Naming passages belong only to the Source episode's missing-answer child.");
+    try { parseActionRuleSourceQuestionPassageShape(value.naming_passages); }
+    catch { invalid("The saved naming passages are malformed or exceed their supported bounds."); }
+  }
   if (continuation[value.kind as OperatorQuestion["kind"]] !== value.continuation
       && !(value.kind === "attributed_meaning" && value.continuation === "action_rule_review")
     || value.kind === "attributed_meaning" && value.continuation === "read_mapping" && !value.target.resource
@@ -389,6 +398,10 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
         || canonicalJsonDigest(root.evidence) !== canonicalJsonDigest(q.evidence)
         || result.some(other => other.id !== q.id && other.budget_owner_id === q.budget_owner_id && other.revision === q.revision))
         invalid("The missing-answer question has no exact current owning Source episode.");
+      if (q.naming_passages) {
+        try { parseActionRuleSourceQuestionPassageShape(q.naming_passages, root!.source_binding!.lines); }
+        catch { invalid("The missing-answer naming passages exceed their owning Source."); }
+      }
       if (q.kind === "input_bounds" && q.terminal_failure && !root!.budget!.correction_used) invalid("The owning Input correction was not exhausted.");
     }
     if (q.terminal_failure) {
@@ -585,7 +598,8 @@ export function assertOperatorQuestionsAdvance(previous: readonly OperatorQuesti
       ...(q.action_subject ? { action_subject: q.action_subject } : {}),
       ...(q.receipt_selection ? { receipt_selection: q.receipt_selection } : {}),
       ...(q.source_binding ? { source_binding: q.source_binding } : {}),
-      ...(q.budget_owner_id ? { budget_owner_id: q.budget_owner_id } : {}) });
+      ...(q.budget_owner_id ? { budget_owner_id: q.budget_owner_id } : {}),
+      ...(q.naming_passages ? { naming_passages: q.naming_passages } : {}) });
     if (canonicalJsonDigest(fixed(old)) !== canonicalJsonDigest(fixed(current))) invalid("A pending question's routing or currentness binding changed.");
     for (const field of ["wording_state", "presentation", "raw_answer"] as const) {
       if (old[field] && canonicalJsonDigest(old[field]) !== canonicalJsonDigest(current[field] ?? null)) invalid("Presented or captured evidence changed.");

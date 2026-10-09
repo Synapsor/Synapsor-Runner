@@ -1,3 +1,4 @@
+import { parseActionRuleSourceQuestionPassages, type ActionRuleSourceQuestionPassageV1 } from "./action-rule-source-question-codec.js";
 import { actionSubjectSubmissionSchema, actionSubjectModelContext, decodeActionSubjectSubmission } from "./authoring-action-subject-model.js";
 import type { ActionSubjectEntry } from "./authoring-action-subject-binding.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -15,7 +16,7 @@ const TOOL = "runner.propose_operator_decision";
 type Stage = "present" | "source-review" | "answer-map";
 type Proposal = NonNullable<OperatorQuestion["proposal"]>;
 type Completion = ReturnType<typeof completedAuthoringQuestionSequence>;
-type OrdinaryDecision = { state: "question"; question: string }
+type OrdinaryDecision = { state: "question"; question: string; source_passages?: ActionRuleSourceQuestionPassageV1[] }
   | { state: "pending" | "proposed"; proposal: Proposal };
 type SubjectDecision = { state: "subject_interpretation"; entries: ActionSubjectEntry[] };
 type StagedDecision = OrdinaryDecision | SubjectDecision;
@@ -147,13 +148,15 @@ async function runQuestionModel(input: OperatorQuestionModelInput): Promise<Stag
       try {
         if (name !== TOOL || !isObject(args) || args.question_id !== q.id || args.revision !== q.revision) throw new Error("wrong target");
         if (args.status === "needs_information") {
-          const keys = ["question_id", "revision", "status", "question", ...(q.source_binding ? ["source_reference"] : [])];
+          const keys = ["question_id", "revision", "status", "question", ...(q.source_binding ? ["source_reference", "source_passages"] : [])];
           if (input.stage === "answer-map" || !onlyKeys(args, keys) || typeof args.question !== "string"
             || !args.question.trim() || args.question.length > 4_000 || /[\x00-\x08\x0b-\x1f\x7f]/u.test(args.question)
             || q.source_binding && args.source_reference !== canonicalJsonDigest(q.source_binding)) throw new Error("invalid question");
+          const source_passages = q.source_binding ? parseActionRuleSourceQuestionPassages(args.source_passages, q,
+            policyTextSnapshot(Buffer.from(sourceText!, "utf8"), "current saved Source")) : undefined;
           const presented = wording(args.question.trim());
           if (presented.state === "rephrase" && !consumed.length) { safeIssue = presented.guidance; throw new Error("business wording required"); }
-          staged = { state: "question", question: presented.state === "question" ? presented.question
+          staged = { state: "question", ...(source_passages ? { source_passages } : {}), question: presented.state === "question" ? presented.question
             : presentOperatorClarification(args.question.trim(), { stage: q.kind === "writer_maintenance" ? "version"
               : q.kind === "input_bounds" ? "input" : q.kind === "action_subject" ? "action" : "read", context: input.businessContext, target: q.target }) };
         } else if (q.kind === "action_subject") {
@@ -187,7 +190,7 @@ async function runQuestionModel(input: OperatorQuestionModelInput): Promise<Stag
   const question = [
     "Propose only the current operator decision through the one required structured tool. Nothing is adopted, saved, verified, or enabled by your response.",
     input.stage === "present" ? "Ask one plain business question for the missing meaning. Do not ask the operator to provide database mechanics, JSON, identifiers, SQL, or line numbers."
-      : input.stage === "source-review" ? "Use the complete saved policy as operator evidence. Map only meanings actually stated there. If genuine business information is missing, return needs_information with one plain question. Never invent a raw operator answer or fill an unstated bound."
+      : input.stage === "source-review" ? "Use the complete saved policy as operator evidence. Map only meanings actually stated there. If genuine business information is missing, return needs_information with one plain question and source_passages naming only exact current whole Source ranges and identifiers for that question. Never invent a raw operator answer or fill an unstated bound."
         : "Map only the exact captured raw operator words, referenced by answer_id. If they do not establish this meaning, return a pending proposal without a value. Never replace, normalize, quote-rewrite, strengthen or guess their meaning.",
     "For free-form Read meaning, the only proposed value is its kind; Runner keeps the exact raw words. For writer maintenance, propose all_writers_increment only when that statement is established; unknown stays pending. Input ranges must use exact current outcome/input identities. Other Source duties remain subject to their normal review.",
     ...(q.kind !== "receipt_requirement" ? [] : [
@@ -261,7 +264,14 @@ function decisionTool(q: OperatorQuestion, stage: Stage): AskToolDefinition {
     properties: { ...properties, ...extra }, required: [...required, ...Object.keys(extra)] });
   const branches: unknown[] = [];
   if (stage !== "answer-map") branches.push(branch({ status: { type: "string", enum: ["needs_information"] },
-    question: { type: "string", minLength: 1, maxLength: 4_000, description: "One plain question for missing business meaning, without technical forms or private values." } }));
+    question: { type: "string", minLength: 1, maxLength: 4_000, description: "One plain question for missing business meaning, without technical forms or private values." },
+    ...(q.source_binding ? { source_passages: { type: "array", minItems: 1, maxItems: 12, items: {
+      type: "object", additionalProperties: false, required: ["start", "end", "identifiers"], properties: {
+        start: { type: "integer", minimum: 1, maximum: q.source_binding.lines },
+        end: { type: "integer", minimum: 1, maximum: q.source_binding.lines },
+        identifiers: { type: "array", minItems: 1, maxItems: 16, uniqueItems: true,
+          items: { type: "string", maxLength: 128, pattern: "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*$" } }
+      } } } } : {}) }));
   if (q.kind === "action_subject" && stage === "answer-map") {
     branches.push(branch({ status: { const: "subject_interpretation" }, entries: actionSubjectSubmissionSchema(q) }));
     return { name: TOOL, title: "Propose the current Action subject interpretation", description: "Typed answer mapping only; no provenance, save or authority may be supplied.", input_schema: { type: "object", oneOf: branches } };
@@ -285,9 +295,8 @@ function decisionTool(q: OperatorQuestion, stage: Stage): AskToolDefinition {
     input_schema: { type: "object", oneOf: branches } };
 }
 
-/** Lexical retrieval of already-permitted operator policy text, not an Input
- * schema, an eligibility oracle or a completeness/meaning proof. Whole lines
- * retain their actual locators; overflow never truncates or dumps the Source. */
+/** Saved locators from the actual current Source producer, used only for
+ * bounded naming context. Presentation words cannot select a different clause. */
 function inputAnswerNamingContext(q: OperatorQuestion, input: { root: OperatorQuestion; policyText: string }) {
   const fail = (): never => { throw new AskError("OPERATOR_QUESTION_CONTEXT_INVALID",
     "The current input's bounded naming evidence is unavailable or changed. Keep the saved answer pending and review the current question; no Source was inferred, shortened or sent in full.", 409); };
@@ -303,21 +312,9 @@ function inputAnswerNamingContext(q: OperatorQuestion, input: { root: OperatorQu
     || source.digest !== binding.source_digest || source.lines !== binding.lines || source.text !== input.policyText
     || binding.agenda_digest !== canonicalJsonDigest({ source_session: binding.source_session,
       source_digest: binding.source_digest, store_digest: binding.store_digest, outcomes: root.target.outcomes })) fail();
-  const words = (text: string) => text.normalize("NFKC").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
-  const generic = new Set("a an and are as at be can do does for from how if in is it may maximum minimum must of on or should short long text the this to what when which with would length allowed units".split(" "));
-  const query = new Set(words(q.presentation!.text).filter(w => !generic.has(w)));
-  const candidates = source.text.split("\n").map((text, index) => {
-    const tokens = [...text.matchAll(/[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/gu)].map(m => m[0]);
-    const matches = tokens.filter(token => words(token).some(w => query.has(w)));
-    const namedScore = Math.max(0, ...matches.filter(token => /[_.]/u.test(token))
-      .map(token => new Set(words(token).filter(w => query.has(w))).size));
-    const score = namedScore * 4 + new Set(words(text).filter(w => query.has(w))).size;
-    return { start: index + 1, end: index + 1, text, identifiers: [...new Set(matches)], score };
-  });
-  const score = Math.max(0, ...candidates.map(line => line.score));
-  const passages = candidates.filter(line => score > 0 && line.score === score)
-    .map(({ score: _, ...line }) => line);
-  if (!passages.length || passages.length > 12) fail();
+  const ranges = parseActionRuleSourceQuestionPassages(q.naming_passages, root, source);
+  const lines = source.text.split("\n");
+  const passages = ranges.map(range => ({ ...range, text: lines.slice(range.start - 1, range.end).join("\n") }));
   const result = { purpose: "naming_context_only" as const, complete_policy_review: false as const,
     source_session: binding!.source_session, source_digest: binding!.source_digest,
     store_digest: binding!.store_digest, agenda_digest: binding!.agenda_digest,
