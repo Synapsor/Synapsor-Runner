@@ -233,7 +233,7 @@ export function boundaryMapFieldReview(
   if (access === "MODEL") return {
     review_required: true, note: `REVIEW: model-facing ${summary}; prefer Runner only unless raw values are intentionally required by the agent` };
   if (access === "RUNNER") return { review_required: false,
-    note: `Runner-only ${summary}${roles.includes("record_identity") || roles.includes("internal_identifier_candidate") ? "; model uses opaque obj_* references" : ""}` };
+    note: `Runner-only ${summary}${roles.includes("record_identity") ? "; model uses opaque obj_* references" : ""}` };
   return { review_required: false, note: `Kept out ${summary}; unavailable to model and Runner reads` };
 }
 

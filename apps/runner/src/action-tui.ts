@@ -101,7 +101,8 @@ import {
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { explorationBoundaryCandidateDigest, loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import { reviewVerifiedActionAuthority } from "./verified-action-review.js";
-import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { readProjectReadAuthoring, readProjectReadAuthoringHeld } from "./control-policy-read-authoring-project.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { runManualSemanticActionEditor } from "./manual-semantic-action-editor.js";
 
 export { rankActionIntent } from "./guided-action-quick.js";
@@ -239,8 +240,19 @@ export async function inspectActionProject(
   projectRootInput: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<SchemaInspection> {
-  const projectRoot = path.resolve(projectRootInput);
-  const governed = await readProjectReadAuthoring(projectRoot);
+  return withProjectAuthorityMutation(projectRootInput, permit => inspectActionProjectHeld(projectRootInput, permit, env));
+}
+
+/** Metadata inspection inside an existing authoring holder. No ambient permit
+ * inference or nested Entry; the same reviewed reader/writer posture is used. */
+export async function inspectActionProjectHeld(projectRootInput: string, permit: ProjectAuthorityMutationPermit,
+  env: NodeJS.ProcessEnv = process.env): Promise<SchemaInspection> {
+  return withHeldProjectAuthorityAccess(projectRootInput, permit, held => inspectActionProjectUnlocked(held.projectRoot, held, env));
+}
+
+async function inspectActionProjectUnlocked(projectRoot: string, permit: ProjectAuthorityMutationPermit,
+  env: NodeJS.ProcessEnv): Promise<SchemaInspection> {
+  const governed = await readProjectReadAuthoringHeld(projectRoot, permit);
   if (governed && !governed.selected) {
     throw Object.assign(new Error("Select a saved governed Read boundary before reviewing Actions; legacy exports cannot replace its bindings."),
       { code: "POLICY_AUTHORING_SELECTION_CHANGED" });

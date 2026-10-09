@@ -1,3 +1,4 @@
+import { AuthoringResumeMaterialError } from "./authoring-checkpoint-save-error.js";
 import { appendBoundaryPlanningResult, assertBoundaryPlanningHistoryAdvance, parseBoundaryPlanningResult, assertBoundaryPlanningResultNative, type BoundaryPlanningResult } from "./authoring-planning-result.js";
 import { readStoredReadWorkloadAnalysis } from "./read-workloads.js";
 import { OLDER_AUTHORING_SETUP_MESSAGE, assertCurrentAuthoringEnvelope, STRUCTURED_AUTHORING_PROTOCOL_VERSION, STRUCTURED_AUTHORING_RESUME_VERSION, parseStructuredAuthoringProtocol, assertAuthoringProtocolUnchanged, type StructuredAuthoringProtocol } from "./authoring-protocol.js";
@@ -1488,9 +1489,8 @@ function reviewedReadRequestText(value: string, label: string): string {
 export function assertBoundaryAuthoringResumeMaterial(value: unknown): void {
   const serialized = JSON.stringify(value);
   if (/(?:postgres|mysql):\/\/|https?:\/\/(?!127\.0\.0\.1(?::\d+)?(?:\/|"))|BEGIN [A-Z ]*PRIVATE KEY|api[_-]?key\s*[:=]|bearer\s+[A-Za-z0-9._-]+/iu.test(serialized)) {
-    throw new Error(
-      "BOUNDARY_AUTHORING_RESUME_PRIVATE_MATERIAL_BLOCKED: credentials, endpoint URLs, and private keys cannot be saved in Boundary-authoring state.",
-    );
+    throw new AuthoringResumeMaterialError("BOUNDARY_AUTHORING_RESUME_PRIVATE_MATERIAL_BLOCKED",
+      "credentials, endpoint URLs, and private keys cannot be saved in Boundary-authoring state.");
   }
   for (const { text, category } of resumeMaterialText(value)) {
     // Markdown presentation does not decide whether a value is an identity.
@@ -1522,9 +1522,8 @@ export function assertBoundaryAuthoringResumeMaterial(value: unknown): void {
         && /^\s+(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed)\b/iu.test(tail));
     });
     if (concreteIdentity) {
-      throw new Error(
-        `BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED: concrete tenant or principal values cannot be saved in Boundary-authoring state (field category: ${category}).`,
-      );
+      throw new AuthoringResumeMaterialError("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED",
+        `concrete tenant or principal values cannot be saved in Boundary-authoring state (field category: ${category}).`);
     }
   }
 }

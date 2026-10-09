@@ -1,3 +1,4 @@
+import { AuthoringResumeMaterialError, AuthoringCheckpointSaveError, rejectedCheckpointMaterial } from "./authoring-checkpoint-save-error.js";
 import { reloadReadReviewForModelRevision, reloadReadReviewForModelRevisionHeld } from "./authoring-read-review-currentness.js";
 export { reloadReadReviewForModelRevision, reloadReadReviewForModelRevisionHeld } from "./authoring-read-review-currentness.js";
 import { actionRuleDraftFailureView } from "./action-rule-diagnostic-view.js";
@@ -224,6 +225,7 @@ import { executeGuidedActionPreview } from "./guided-action-runtime.js";
 import {
   conventionalModelAuthoringSession,
   inspectActionProject,
+  inspectActionProjectHeld,
   renderActionControlPlaneTable,
   runActionControlPlane,
   type ActionModelSuggestionSession,
@@ -3866,10 +3868,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let canonicalJobIntent: string | undefined;
   let resumePersistenceBlocked = false;
   let resumePersistenceFailure: string | undefined;
+  let resumeRejectedMaterial: AuthoringResumeMaterialError | undefined;
   // Revalidated/in-memory state is not an acknowledged disk revision.
   let savedResumeRevision = loadedResume.status === "ready" || loadedResume.status === "stale"
     ? loadedResume.value.revision_digest : null;
-  const checkpointSaveFailure = (step: string) => new Error(`ACTION_CHECKPOINT_NOT_SAVED: ${step} could not be saved. ${resumePersistenceFailure ?? "Inspect local storage access and retry the saved job."} Existing drafts and authority are unchanged.`);
+  const checkpointSaveFailure = (step: string, rejectedMaterial?: AuthoringResumeMaterialError) => new AuthoringCheckpointSaveError(step, resumePersistenceFailure, rejectedMaterial);
   const assertAuthoringResumeCurrent = async (action: Parameters<typeof assertBoundaryAuthoringResumeCurrent>[2], checkpointWrite = false, permit?: ProjectAuthorityMutationPermit) => {
     if (!input.authoringChat) return;
     assertRunning();
@@ -3949,6 +3952,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   };
   const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage, permit?: ProjectAuthorityMutationPermit,
     acknowledgeGeneration: boolean | AuthoringQuestionCompletion = true): Promise<void> => {
+    // Never attach an older refusal to a skipped/successful/different save.
+    resumeRejectedMaterial = undefined;
     assertRunning();
     if (!input.authoringChat
       || !currentResumeBinding
@@ -4028,7 +4033,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           "Reopen the saved job. This session will not overwrite another session's work or restore a removed action."]);
         throw error;
       }
-      const prohibitedMaterial = /^BOUNDARY_AUTHORING_RESUME_(?:PRIVATE_MATERIAL|TRUSTED_IDENTITY)_BLOCKED:/u.test(resumePersistenceFailure);
+      const prohibitedMaterial = error instanceof AuthoringResumeMaterialError;
+      resumeRejectedMaterial = prohibitedMaterial ? error : undefined;
       if (prohibitedMaterial && authoringConversation) {
         // The rejected turn was never acknowledged. Restore only transcript
         // material, leaving saved authority and exact pending revisions intact.
@@ -4075,7 +4081,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       // rather than an absent draft or newly generated activation timestamp.
       const authority = (permit ? await readActionRuleAuthorityRevisionBaselineHeld(input.projectRoot, permit) : await readActionRuleAuthorityRevisionBaseline(input.projectRoot));
       const action = Object.keys(authority.drafts).length || authority.active
-        ? await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env) : undefined;
+        ? (input.actionProjectInspector ? await input.actionProjectInspector(input.projectRoot, process.env)
+          : await inspectActionProjectHeld(input.projectRoot, permit, process.env)) : undefined;
       policyContext = { authority,
         action_schema: action ? schemaFingerprintForInspection(action) : null,
         action_role: action ? rolePostureFingerprint(action) : null };
@@ -6152,7 +6159,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const assertFresh = async (permit?: ProjectAuthorityMutationPermit) => {
       assertRunning();
       await assertAuthoringResumeCurrent(settings.freshness, true, permit);
-      const inspected = await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env);
+      const inspected = input.actionProjectInspector ? await input.actionProjectInspector(input.projectRoot, process.env)
+        : permit ? await inspectActionProjectHeld(input.projectRoot, permit, process.env) : await inspectActionProject(input.projectRoot, process.env);
       if (schemaFingerprintForInspection(inspected) !== schema || rolePostureFingerprint(inspected) !== role) throw stale();
       const fresh = permit ? await loadBoundaryReviewContextHeld(input.projectRoot, permit) : await loadBoundaryReviewContext(input.projectRoot);
       if (fresh.candidate.generation_lock_fingerprint !== canonicalJsonDigest(settings.generationLock)) throw stale();
@@ -6176,8 +6184,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         // A prohibited checkpoint save already discarded that unacknowledged
         // material; do not resurrect it. Match this actual save failure, not
         // sticky persistence flags from an earlier refusal or a CAS failure.
-        if (error instanceof Error && /^ACTION_CHECKPOINT_NOT_SAVED: The checkpoint could not be saved\. BOUNDARY_AUTHORING_RESUME_(?:PRIVATE_MATERIAL|TRUSTED_IDENTITY)_BLOCKED:/u.test(error.message)
-          && authoringConversation) {
+        if (rejectedCheckpointMaterial(error) && authoringConversation) {
           authoringConversation.turns.splice(0, authoringConversation.turns.length,
             ...structuredClone(activeResume?.conversation ?? []));
         }
@@ -6190,7 +6197,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       operatorQuestions = projected.questions; generationRecovery = projected.generation;
       settings.write(next);
       await persistAuthoringResume(settings.stage, permit);
-      if (resumePersistenceBlocked) throw checkpointSaveFailure("The checkpoint");
+      if (resumePersistenceBlocked) throw checkpointSaveFailure("The checkpoint", resumeRejectedMaterial);
     });
     const stageVersionQuestion: NonNullable<ModelActionRuleDraftInput["stageVersionQuestion"]> = request => {
       const prepared = prepareActionVersionField({ ...request, inspection: settings.inspection, generationLock: settings.generationLock });
@@ -6294,7 +6301,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       if (expectedSource) {
         if (activeResume) await assertBoundaryAuthoringResumeCurrentHeld(input.projectRoot, activeResume, permit);
         const reader = await inspectPolicyReviewSource(context.lock, input.schemaInspector);
-        const action = await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env);
+        const action = input.actionProjectInspector ? await input.actionProjectInspector(input.projectRoot, process.env)
+          : await inspectActionProjectHeld(input.projectRoot, permit, process.env);
         if (schemaFingerprintForInspection(reader.inspection) !== expectedSource.reader_schema
           || rolePostureFingerprint(reader.inspection) !== expectedSource.reader_role
           || schemaFingerprintForInspection(action) !== expectedSource.action_schema

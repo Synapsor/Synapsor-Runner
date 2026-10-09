@@ -4,6 +4,9 @@ import { describe, expect, it } from "vitest";
 // Source ownership guards, not substitutes for public setup/Resume acceptance.
 const source = fs.readFileSync(new URL("./boundary-commands.ts", import.meta.url), "utf8");
 describe("Main typed boundary ownership", () => {
+  it("does not infer discarded checkpoint material from an English wrapper", () => {
+    expect(source.includes('/^ACTION_CHECKPOINT_NOT_SAVED: The checkpoint could not be saved')).toBe(false);
+  });
   it("does not treat a business answer word as a recovery command", () => {
     expect(source.includes('answer?.trim().toLowerCase() === "retry"')).toBe(false);
   });

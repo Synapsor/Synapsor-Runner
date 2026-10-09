@@ -12,12 +12,13 @@ describe("typed Read field presentation", () => {
   it("keeps unknown role prose from inventing review or authority", () => {
     expect(boundaryMapFieldReview(["record identity", "REVIEW:"], "MODEL", {...none,return_value:true})).toEqual({review_required:false});
   });
-  it("describes opaque references for both typed identity roles", () => {
-    for (const role of ["record_identity", "internal_identifier_candidate"]) {
-      const result=boundaryMapFieldReview([role],"RUNNER",{...none,return_value:true});
-      expect(result.review_required).toBe(false);
-      expect(result.note).toContain("opaque obj_* references");
-    }
+  it("describes opaque record identity without inventing support from a candidate role", () => {
+    const identity=boundaryMapFieldReview(["record_identity"],"RUNNER",{...none,return_value:true});
+    expect(identity.review_required).toBe(false);
+    expect(identity.note).toContain("opaque obj_* references");
+    const candidate=boundaryMapFieldReview(["internal_identifier_candidate"],"RUNNER",{...none,return_value:true});
+    expect(candidate.note).toContain("possible internal identifier");
+    expect(candidate.note).not.toContain("obj_*");
   });
   it("renders only inspected enum values, not asserted evidence prose", () => {
     const field={name:"state",data_type:"text",enum_values:["WAITING","READY"],evidence:["database enum values: invented"]};
