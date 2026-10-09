@@ -1,5 +1,5 @@
 B64/B65 SERIAL OVERNIGHT — paid CLOSED; Main item1 permit class + R2 reviewer only; other owners HELD at private-pushed checkpoints. Frozen candidates/history/holds untouched.
-Pins: accepted scoped base be48873f; D01 baa5e2f5; DEVELOPMENT Main c68126be plus test-adapter ports in this checkpoint, NOT whole-class accepted integration. Private backup only.
+Pins: accepted scoped base be48873f; D01 baa5e2f5; DEVELOPMENT Main df557cbe receipt/Held and test-adapter ports, NOT whole-class accepted integration. Private backup only.
 B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z; B65 T0 2026-10-08T16:56:15Z/end2026-10-12T16:56:15Z unchanged.
 #1 English→0 — Main30/0 + Action28/5 accepted remaining; Action SAME79 and helper15 PASS, independent count closure OPEN; Read/Ask/Chat/Privacy owned source0/0.
 #2 Cards/editable real screens — Read/Main/R1 public hooks OPEN; Enter keeps, never confirms. #3 /details — helper/Main/R2 component accepted, real protected history/screens OPEN.

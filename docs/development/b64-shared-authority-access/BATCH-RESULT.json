@@ -125,5 +125,245 @@
       "allocated_files": 0,
       "remaining": "All41 in Main-owned boundary-commands; previous2 external diagnostics removed."
     }
+  },
+  "main_serial_batch": {
+    "pin": "df557cbe45c60e443ee20561c7912e691fd52af2",
+    "branch": "codex/b64-shared-access-main-hooks-20261009",
+    "utc": "2026-10-09T08:21:41.240846+00:00",
+    "source_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c",
+    "source_manifest_sha256": "1d2c0cdaa45614248fad01b6eda7f84fb9b747e060772843e2ad8ce46e588329",
+    "runs": [
+      {
+        "name": "composed-controls",
+        "files": [
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-input-host-access.test.ts",
+            "pass": 2,
+            "fail": 0,
+            "pending": 0
+          },
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-input-policy-conversation.test.ts",
+            "pass": 38,
+            "fail": 0,
+            "pending": 0
+          },
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-read-review-currentness.test.ts",
+            "pass": 4,
+            "fail": 0,
+            "pending": 0
+          },
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-read-scope-host.test.ts",
+            "pass": 0,
+            "fail": 9,
+            "pending": 0
+          },
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/project-authority-access-contract.test.ts",
+            "pass": 9,
+            "fail": 0,
+            "pending": 0
+          },
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/project-authority-current-records.test.ts",
+            "pass": 4,
+            "fail": 0,
+            "pending": 0
+          },
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/scripts/experiments/b65/hard-limit-writer-setup.test.ts",
+            "pass": 44,
+            "fail": 0,
+            "pending": 0
+          }
+        ],
+        "sha256": {
+          "composed-controls.json": "a78b4a3bc09a5b6876734c67edbfb725a80cf7f42ed1d49acd66a9b0f4414b08",
+          "composed-controls.log": "249f1608e5e87a9c9542d092a6aa6259b592793bf8641a63df1c48991a87e357"
+        }
+      },
+      {
+        "name": "read-host-after",
+        "files": [
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-read-scope-host.test.ts",
+            "pass": 9,
+            "fail": 0,
+            "pending": 0
+          }
+        ],
+        "sha256": {
+          "read-host-after.json": "c9b4d4c97808fa05010585f4cc7c2babd11600169bd3b460424be477861ef1d2",
+          "read-host-after.log": "868819a0d28adb75370d7db22bf1433236fc9611bd394c7716ea06fb12719e41"
+        }
+      },
+      {
+        "name": "currentness-after",
+        "files": [
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-read-review-currentness.test.ts",
+            "pass": 4,
+            "fail": 0,
+            "pending": 0
+          }
+        ],
+        "sha256": {
+          "currentness-after.json": "f50ba19db3d912c90936ad5d5c3970c619f09a1184e5ed40cd9741176f7d7ac4",
+          "currentness-after.log": "91c25841e2ab957a67a39a2e8ab1415419627dfdb4012801c514775f753f59d8"
+        }
+      },
+      {
+        "name": "native-recovery-before",
+        "files": [
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-read-scope-activation.test.ts",
+            "pass": 7,
+            "fail": 0,
+            "pending": 0
+          },
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-recovery-resume.test.ts",
+            "pass": 8,
+            "fail": 1,
+            "pending": 0
+          },
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-typed-parameter-native-adapter.test.ts",
+            "pass": 4,
+            "fail": 0,
+            "pending": 0
+          },
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/native-read-scope-fixture.test.ts",
+            "pass": 0,
+            "fail": 1,
+            "pending": 0
+          }
+        ],
+        "sha256": {
+          "native-recovery-before.json": "aee8799bb9b0889c102c3ff2cbf0f5c520c9b207507a8ec49459b081e44d38cc",
+          "native-recovery-before.log": "3b23ed55a987ace74b42f01f6012a053273e68e7ea4301d17da0d7ef8e3c3dc2"
+        }
+      },
+      {
+        "name": "native-recovery-after",
+        "files": [
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-recovery-resume.test.ts",
+            "pass": 9,
+            "fail": 0,
+            "pending": 0
+          },
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/native-read-scope-fixture.test.ts",
+            "pass": 1,
+            "fail": 0,
+            "pending": 0
+          }
+        ],
+        "sha256": {
+          "native-recovery-after.json": "851c67ab94f50d4eddce3697e9868c8542b966233f0133043fe96b837307497a",
+          "native-recovery-after.log": "02df9ee6290fe5c649d93749b8d63c3fddc7b6da65e688bc62e684d4aefec4dc"
+        }
+      },
+      {
+        "name": "cold-process",
+        "files": [
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-input-host-process.test.ts",
+            "pass": 6,
+            "fail": 1,
+            "pending": 0
+          },
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-version-host-process.test.ts",
+            "pass": 0,
+            "fail": 17,
+            "pending": 0
+          }
+        ],
+        "sha256": {
+          "cold-process.json": "b077e3473371a265501855430f2df46d3c323efda8dc540cbb2818db8bb9964f",
+          "cold-process.log": "1cbf5d885d00feb41275f824f00d8068045718d8dfa78fe6c1344b5ff79da598"
+        }
+      },
+      {
+        "name": "version-classify",
+        "files": [
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-version-host-process.test.ts",
+            "pass": 0,
+            "fail": 1,
+            "pending": 0
+          }
+        ],
+        "sha256": {
+          "version-classify.json": "4ec8a3e93e6ad89213872d9682c605533c6c215511c78df68c3077e15fc8654b",
+          "version-classify.log": "94e721ac3ed5c538f402c531c01d150b0f6a73d7b6647e2e36259982fabfd1b0"
+        }
+      },
+      {
+        "name": "receipt-before",
+        "files": [
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/receipt-requirement-host.test.ts",
+            "pass": 0,
+            "fail": 1,
+            "pending": 0
+          }
+        ],
+        "sha256": {
+          "receipt-before.json": "54661ee74fca95d9aa6570a9c2ef0076bdb742cf53bbe9f254a41694ccfd6a3d",
+          "receipt-before.log": "f56bf3459a6d68bd01188da7e3545426d8b8fed1b2469d56d7bee9b6c9d9f073"
+        }
+      },
+      {
+        "name": "receipt-input-after",
+        "files": [
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/authoring-input-host-process.test.ts",
+            "pass": 7,
+            "fail": 0,
+            "pending": 0
+          },
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/receipt-requirement-host.test.ts",
+            "pass": 21,
+            "fail": 0,
+            "pending": 0
+          }
+        ],
+        "sha256": {
+          "receipt-input-after.json": "ce6c6205a497226303ec4b3e5c50d46795500da8e4de76f5d94586a3c0f0bbb8",
+          "receipt-input-after.log": "cd33e7115197d0970c981bcb52fb1a8f3196398c2ba1c53876d182e37b6cd581"
+        }
+      },
+      {
+        "name": "receipt-coverage-port-after",
+        "files": [
+          {
+            "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-b51-workspaces/consents6c/apps/runner/src/receipt-requirement-host.test.ts",
+            "pass": 2,
+            "fail": 0,
+            "pending": 0
+          }
+        ],
+        "sha256": {
+          "receipt-coverage-port-after.json": "f6b55797549b504ee25e16c914047747931044724033e759830d063ea3ca5d4f",
+          "receipt-coverage-port-after.log": "1ed3a8c900b18c1da268916b2494d99a3b32b21a69f5bfe4007b6a8620620203"
+        }
+      }
+    ],
+    "types": {
+      "command": "HOME=/var/tmp/synapsor-b64-main-access-owned/home TMPDIR=/var/tmp/synapsor-b64-main-access-owned/tmp unshare -Urn node node_modules/typescript/bin/tsc -p /var/tmp/synapsor-b64-main-access-owned/tsconfig.json --pretty false",
+      "exit": 0,
+      "config_sha256": "4143738389f838be989c3123bfb91f578c461fae3b7d3454a80ba9e3ffe359e1",
+      "log": "serial-types-closure.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope": "Scoped owner types including project-authority-access-contract.test.ts @ts-expect-error absent/forged/wrong-context negatives; not whole repository typecheck"
+    },
+    "custody": "Earlier runs precede final fixture repairs; separate invocations retained, no aggregate all-pass claim. Final df557cbe receipt source adds required readConfigurationHeld and actual boundary hook. Cold Version 17 NOT REACHED: actual first model context has resources=[]; no public continuation claim. Input cold seven and native recovery ten reached actual native stores/processes; native-port component fixture is not full public/CAS acceptance."
   }
 }
