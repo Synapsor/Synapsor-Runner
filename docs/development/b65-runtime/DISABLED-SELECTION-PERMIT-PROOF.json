@@ -1,0 +1,71 @@
+{
+  "schema_version": "b65.disabled-selection-permit.proof-contract.v1",
+  "classification": "SOURCE_FIX_PENDING_ACTUAL_BEFORE_AFTER_AND_INDEPENDENT_ACCEPTANCE",
+  "base": "65e14750",
+  "composition_dependency": "Unaccepted Main B2 composition; its third-argument Read-origin permit API is required. Prior component acceptance does not qualify this composed fix.",
+  "source_finding": "Locked hard-limit activation projects a disabled writer selection. Disabled receipt inspection reads confirmed Read origins directly and again through saved requirements without the held permit. Saving disabled selection also held a permit while its fresh preview did not receive it. These reads can reacquire the same project mutation gate.",
+  "change": "Only pass actual branded live permit through the existing readers and existing nested mutation gate. The save path excludes it from frozen/persisted selection fields and gives fresh preview the actual held child permit.",
+  "unchanged_guards": [
+    "Native project/root/current origin resolution and existing permit validation",
+    "Exact Read/action/source/policy/receipt selection binding and native epoch/config-text consistency",
+    "Fresh actual writer capability before activation and final publication",
+    "Source transactional hard-limit namespace/effect guard, scope/version/idempotency/atomic receipts",
+    "No extra lease, fabricated actor, unchecked latest adoption or cached readiness"
+  ],
+  "native_resource_rule": "No source owner native/heavy execution until Main allocates available slot after physical END of current holder. Reuse R1 existing actual public fixture/container; no new container or grant.",
+  "actual_before": {
+    "status": "NOT_RUN",
+    "pin": "65e14750",
+    "predicted_boundary": "Exact genuinely disabled-selection case reaches held-reader re-entry before activation; record actual error, never relabel as a hard-limit refusal."
+  },
+  "actual_after": {
+    "status": "NOT_RUN",
+    "pin": "source commit to be reported after seal"
+  },
+  "cases": [
+    {
+      "id": "DP01",
+      "setup": "Existing R1 actual public prepared program with genuine confirmed Read origins. Source remains read_only with no configured writer; normal disabled receipt/writer selection current and matches exact Action digest. Real narrow PG17 owned-fixture writer has already-approved exact namespace MAINTAIN.",
+      "before": "Same fixture and assertions against65e, expected re-entry failure; preserve raw observed failure even if different.",
+      "after": "Normal writer-readback ready and public Yes/final publication succeeds; native active authority and selected writer exact. No worker/business effect claimed from publication."
+    },
+    {
+      "id": "DP02",
+      "setup": "Normal public disabled writeback selection save, including confirmed origins and saved source requirements.",
+      "after": "Fresh preview inside real held permit saves exact selected intent under native CAS. No authority/execution granted by selection."
+    },
+    {
+      "id": "DP03",
+      "setup": "Ready selection, actual writer lacks namespace capability or has unsafe/uninspectable Source.",
+      "after": "Preactivation typed refusal and no publication/business/receipt write."
+    },
+    {
+      "id": "DP04",
+      "setup": "Change/revoke writer capability between public readback and final Yes.",
+      "after": "Fresh final check refuses, not cached-ready publication."
+    },
+    {
+      "id": "DP05",
+      "setup": "Change saved selection/Read/source/policy epoch after preview before held publication.",
+      "after": "Refuse exact stale/currentness mismatch; never adopt another selection or bypass full program proof."
+    },
+    {
+      "id": "DP06",
+      "setup": "Other-project, fabricated or expired permit passed through reader path containing actual confirmed origins.",
+      "after": "Existing native permit validation rejects; no stale-origin acceptance or selection/publication."
+    },
+    {
+      "id": "DP07",
+      "setup": "Existing configured-writer public branch and ordinary receipt save paths.",
+      "after": "Existing accepted scoped behavior retained, no mandatory disabled selection dependency."
+    }
+  ],
+  "public_numeric_queue": "Separate supported real worker route still requires committed30 then fresh25 typed hard-limit REFUSED; fresh10 pass40, boundary50, replacement45/55, unchanged30/40 race. Publication proof cannot substitute.",
+  "files_sha256": {
+    "apps/runner/src/semantic-receipt-setup.ts": "c9c5b1d3c9fce67b56a05d8f086a39a5cde18e7d2e7b38a969e560e007b56fd0",
+    "apps/runner/src/saved-execution-requirements.ts": "1b341955c2f35570de35c13886bd6b3abb07d12e8828a1118e91989036a3b736",
+    "apps/runner/src/hard-limit-writer-selection.ts": "6b82bf2a5a142cd67576bfbf19c27eb60b4aaf5e75c0961d65b200dd0b0fcac5",
+    "apps/runner/src/semantic-action-deployment.ts": "9c0c64a59c9e6e967963f3a3af26e0e966b57e9ee31eb37c080d2d6f13d3f85a"
+  },
+  "owner_verification": "Source diff/check only; no new test, native SQL, build/typecheck, provider run, grants or DML launched. No fabricated PASS/FAIL counts."
+}

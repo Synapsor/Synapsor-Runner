@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { ProjectAuthorityMutationPermit } from './project-authority-mutation.js';
 import type { RuntimeActionRuleRegistryV1 } from '@synapsor-runner/action-rules';
 import type { RuntimeConfig } from '@synapsor-runner/mcp-server';
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
@@ -10,7 +11,7 @@ import { HardLimitWriterSetupError } from './hard-limit-writer-setup.js';
  * the exact authority being published. No default writer is inferred. */
 export async function projectHardLimitActivationWriterSelections(input: {
   projectRoot: string; config: RuntimeConfig; registry: RuntimeActionRuleRegistryV1;
-  authorityDigest: string; env?: NodeJS.ProcessEnv;
+  authorityDigest: string; env?: NodeJS.ProcessEnv; permit?: ProjectAuthorityMutationPermit;
 }): Promise<RuntimeConfig> {
   const config = structuredClone(input.config);
   const required = new Map<string, number>();
@@ -26,7 +27,7 @@ export async function projectHardLimitActivationWriterSelections(input: {
     let setup;
     try {
       setup = await inspectSemanticReceiptSetup({ projectRoot: input.projectRoot,
-        configPath: path.join(path.resolve(input.projectRoot), 'synapsor.runner.json'), outcome: compiled.outcome, disabled: true, env: input.env });
+        configPath: path.join(path.resolve(input.projectRoot), 'synapsor.runner.json'), outcome: compiled.outcome, disabled: true, env: input.env, permit: input.permit });
     } catch (error) {
       if (['SEMANTIC_RECEIPT_REVIEW_UNAVAILABLE', 'SEMANTIC_RECEIPT_DRAFT_STALE', 'SEMANTIC_RECEIPT_SOURCE_MISSING', 'SEMANTIC_RECEIPT_OUTCOME_REQUIRED'].includes(String((error as { code?: unknown }).code))) continue;
       throw error;

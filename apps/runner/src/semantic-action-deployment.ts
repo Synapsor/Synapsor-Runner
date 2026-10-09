@@ -287,7 +287,7 @@ async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof ac
   const rawSourceConfig = await readJsonObject(sourceConfigPath);
   const parsedDraft = parseActionRuleAuthority(input.draft.authority, input.draft.digest);
   const sourceConfig = !withdrawal && parsedDraft.registry.rules.some(({ compiled }) => compiled.hard_limit)
-    ? await projectHardLimitActivationWriterSelections({ projectRoot, registry: parsedDraft.registry, authorityDigest: input.draft.digest, env: input.env,
+    ? await projectHardLimitActivationWriterSelections({ projectRoot, registry: parsedDraft.registry, authorityDigest: input.draft.digest, env: input.env, permit,
       config: (await executionConfigForReview(projectRoot, sourceConfigPath, rawSourceConfig, undefined, input.env)).config as RuntimeConfig }) : rawSourceConfig;
   const binding = await openBoundProjectControlPolicies(projectRoot, input.env);
   try {

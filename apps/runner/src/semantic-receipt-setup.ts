@@ -8,7 +8,7 @@ import type { ControlPolicyKey } from "@synapsor-runner/proposal-store";
 import { createActiveActionRuleAuthorityLoader, listActionRuleAuthorityDrafts } from "./action-rule-authority.js";
 import { openBoundProjectControlPolicies, commitImmutableControlPolicies } from "./control-policy-store.js";
 import { assertOperatorPolicyRecord, storedOperatorPolicyRecord } from "./control-policy-record.js";
-import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { actionRuleModelDraftFromAuthority } from "./action-rule-draft.js";
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
@@ -36,6 +36,8 @@ function fail(code: string, message: string): never { throw Object.assign(new Er
  * reviewed execution configuration and its exact governed binding. */
 export type SemanticReceiptSetupInput = {
   projectRoot: string; configPath: string; outcome?: string; disabled?: boolean; env?: NodeJS.ProcessEnv;
+  /** Existing live project scope only; never selection data or persisted permission. */
+  permit?: ProjectAuthorityMutationPermit;
 };
 export async function inspectSemanticReceiptSetup(input: SemanticReceiptSetupInput) {
   if (input.disabled) return inspectDisabledSemanticReceiptSetup(input);
@@ -57,7 +59,7 @@ export async function inspectSemanticReceiptSetup(input: SemanticReceiptSetupInp
     if (!rule) fail("SEMANTIC_RECEIPT_OUTCOME_REQUIRED", "Select one current source-writing outcome with --outcome <name>.");
     const source = config.sources?.[rule.compiled.source];
     if (!source) fail("SEMANTIC_RECEIPT_SOURCE_MISSING", "Restore the current Action source binding.");
-    const requirements = await readSavedExecutionRequirements({ projectRoot: root, boundaryName: rule.read_boundary_name, env: input.env });
+    const requirements = await readSavedExecutionRequirements({ projectRoot: root, boundaryName: rule.read_boundary_name, env: input.env, permit: input.permit });
     // Read-only -> writable and receipt configuration are the later reviewed
     // deployment, not a new business/Read contract. A rule-limit edit also leaves
     // this contract unchanged. Source/scope/effect changes invalidate selection.
@@ -123,7 +125,7 @@ export async function saveSemanticReceiptSelection(input: Parameters<typeof prev
     outcome: input.outcome, disabled: input.disabled, env: input.env, receipts: input.receipts,
     writeUrlEnv: input.writeUrlEnv, confirmation: input.confirmation });
   return withProjectAuthorityMutation(input.projectRoot, async held => {
-    const preview = await previewSemanticReceiptSelection({ ...frozen, projectRoot: held.projectRoot });
+    const preview = await previewSemanticReceiptSelection({ ...frozen, projectRoot: held.projectRoot, permit: held });
     if (frozen.confirmation !== preview.confirmation) fail("SEMANTIC_RECEIPT_CONFIRMATION_REQUIRED", `Review the exact selection and enter ${preview.confirmation}.`);
     const binding = await openBoundProjectControlPolicies(held.projectRoot, frozen.env);
     if (!binding) fail("SEMANTIC_RECEIPT_REVIEW_UNAVAILABLE", "The reviewed policy repository is unavailable.");
@@ -136,7 +138,7 @@ export async function saveSemanticReceiptSelection(input: Parameters<typeof prev
             revision_id: revision.revision_id, source_database_changed: false, execution_enabled: false } } });
       return preview;
     } finally { await binding.close(); }
-  });
+  }, { permit: input.permit });
 }
 
 export function selectedSemanticReceipts(setup: NonNullable<Awaited<ReturnType<typeof inspectSemanticReceiptSetup>>>, writeUrlEnv?: string): SemanticReceiptMode {
@@ -217,7 +219,7 @@ async function inspectDisabledSemanticReceiptSetup(input: SemanticReceiptSetupIn
   if (configPath !== path.join(root, "synapsor.runner.json")) fail("SEMANTIC_RECEIPT_CONFIG_UNRELATED", "Disabled receipt review uses this project's saved Read source configuration.");
   const configText = await fs.readFile(configPath, "utf8");
   const config = resolveRuntimeConfig(JSON.parse(configText) as RuntimeConfig, root);
-  const read = await readProjectReadAuthoring(root, input.env);
+  const read = await readProjectReadAuthoring(root, input.env, input.permit);
   if (!read?.selected) fail("SEMANTIC_RECEIPT_REVIEW_UNAVAILABLE", "Select the governed disabled Read and Action before reviewing receipt intent.");
   const candidate = read.selected.progress.candidate, readDigest = explorationBoundaryCandidateDigest(candidate);
   const drafts = await listActionRuleAuthorityDrafts(root);
@@ -236,7 +238,7 @@ async function inspectDisabledSemanticReceiptSetup(input: SemanticReceiptSetupIn
   if (!source || source.engine !== read.selected.draft_lock.engine || source.read_url_env !== read.selected.draft_lock.source_env) {
     fail("SEMANTIC_RECEIPT_SOURCE_MISSING", "Restore the selected Read's exact source binding before receipt review.");
   }
-  const requirements = await readSavedExecutionRequirements({ projectRoot: root, boundaryName: candidate.pack.name, env: input.env });
+  const requirements = await readSavedExecutionRequirements({ projectRoot: root, boundaryName: candidate.pack.name, env: input.env, permit: input.permit });
   if (!requirements.source_digest) fail("SEMANTIC_RECEIPT_REVIEW_UNAVAILABLE", "Attach and review the current source requirement before selecting disabled receipt intent.");
   const { read_only: _readOnly, write_url_env: _writer, receipts: _receipts, ...readSource } = source;
   const bindingDigest = canonicalJsonDigest({ phase: "disabled_authoring", source: candidate.source, source_binding: readSource,

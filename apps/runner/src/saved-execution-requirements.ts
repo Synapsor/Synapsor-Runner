@@ -1,13 +1,14 @@
+import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { receiptRequirement } from "./authoring-obligation-review.js";
 import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 
 /** Exact saved deployment passages for operator setup. These are explanatory
  * source statements, never executable requirements or permission to provision. */
-export async function readSavedExecutionRequirements(input: { projectRoot: string; boundaryName: string; env?: NodeJS.ProcessEnv }) {
+export async function readSavedExecutionRequirements(input: { projectRoot: string; boundaryName: string; env?: NodeJS.ProcessEnv; permit?: ProjectAuthorityMutationPermit }) {
   const { loadPolicySources, activePolicySource, policyTextLines } = await import("./authoring-policy-source.js");
   let selected;
-  try { selected = (await readProjectReadAuthoring(input.projectRoot, input.env))?.selected; }
+  try { selected = (await readProjectReadAuthoring(input.projectRoot, input.env, input.permit))?.selected; }
   catch (error) {
     if ((error as { code?: string }).code !== "POLICY_READ_AUTHORING_MISSING") throw error;
   }
