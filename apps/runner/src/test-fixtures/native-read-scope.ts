@@ -1,3 +1,5 @@
+import type { BoundaryResourceReviewRequest } from "../read-authoring-contract-types.js";
+import type { ProjectAuthorityMutationPermit } from "../project-authority-mutation.js";
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest as d } from "@synapsor-runner/protocol";
 import { parseOperatorQuestion } from "../authoring-operator-question.js";
@@ -22,13 +24,15 @@ import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, wr
 
 // Actual controlled provider -> native generation consumption -> Resume CAS.
 // This is not an OS/public CLI restart; reconstruction below uses disk records.
-export async function nativeFixture(noRead = false, withoutAnalysis = false) {
+export async function nativeFixture(noRead = false, withoutAnalysis = false,
+  declared?: { resource: string; field: string; request: string; review?: NonNullable<Parameters<typeof prepareReviewedReadScope>[1]>["review"] & Pick<BoundaryResourceReviewRequest, "metadata" | "field_metadata"> }) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "owned-native-scope-"));
   await fs.chmod(dir,0o700);
-  const prepared=await prepareReviewedReadScope(dir), {context}=prepared;
+  const target = declared ?? { resource: "work.items", field: "label" };
+  const prepared=await prepareReviewedReadScope(dir, { resources: [target.resource], field: target.field, review: { allow_reviewed_fields: [target.field], ...declared?.review } }), {context}=prepared;
   const nativeBinding={boundary_name:context.candidate.pack.name,generation_lock_fingerprint:context.candidate.generation_lock_fingerprint,
     schema_fingerprint:context.lock.schema_fingerprint,role_posture_fingerprint:context.lock.role_posture_fingerprint};
-  const input = { binding: nativeBinding, stage: "read_mapping" as const, jobIntent: noRead ? "Prepare the program without any customer data access" : "Show the signed-in person their item labels", provider: "openai" as const, model: "controlled" };
+  const input = { binding: nativeBinding, stage: "read_mapping" as const, jobIntent: noRead ? "Prepare the program without any customer data access" : declared?.request ?? "Show the signed-in person their item labels", provider: "openai" as const, model: "controlled" };
   let state = buildBoundaryAuthoringResumeState({ ...input, authoringProtocol: { version: "synapsor.structured-authoring.v2" } });
   const request={id:`job:${d({created_at:state.created_at,boundary_name:nativeBinding.boundary_name})}`,text:input.jobIntent};
   const catalog=readWorkloadCatalog(context.candidate);
@@ -42,8 +46,8 @@ export async function nativeFixture(noRead = false, withoutAnalysis = false) {
   const analysis=()=>structuredClone(prepared.analysis);
   const scopeDigest=d({request,purpose:"original_read_task"}),contextDigest=d(projected);
   await writeBoundaryAuthoringResumeState(dir, state, { expectedRevisionDigest: null });
-  const persist = async (next: BoundaryAuthoringResumeState) => {
-    await writeBoundaryAuthoringResumeState(dir, next, { expectedRevisionDigest: state.revision_digest }); state = next;
+  const persist = async (next: BoundaryAuthoringResumeState, permit?: ProjectAuthorityMutationPermit) => {
+    await writeBoundaryAuthoringResumeState(dir, next, { expectedRevisionDigest: state.revision_digest, permit }); state = next;
   };
   const save = async (q: ReturnType<typeof parseOperatorQuestion>) => persist(buildBoundaryAuthoringResumeState({ ...input, previous: state,
     operatorQuestions: state.operator_questions!.map(old => old.id === q.id ? q : old) }));
@@ -55,7 +59,8 @@ export async function nativeFixture(noRead = false, withoutAnalysis = false) {
       input_schema: { type: "object", additionalProperties: false, properties: { read_scope: readScopeProposalSchema }, required: ["read_scope"] } }];
     const result = await runAskProviderTurn({ configuration: resolveAskProviderConfiguration({ provider: "openai", model: "controlled",
       api_key: "inert-local-credential", egress_acknowledged: true, authority_digest: askToolSurfaceDigest(tools) }, {}, new Date()),
-      question: JSON.stringify({request:input.jobIntent,original_request:request.id,...inventory,declared_no_read:noRead}), history: [], tools, signal: new AbortController().signal, authorityDigest: askToolSurfaceDigest(tools),
+      question: JSON.stringify({request:input.jobIntent,original_request:request.id,...inventory,declared_no_read:noRead,
+        declared_target: { resource: target.resource, field: target.field } }), history: [], tools, signal: new AbortController().signal, authorityDigest: askToolSurfaceDigest(tools),
       requiredInitialToolName: tools[0]!.name, completeAfterRequiredTool: true,
       gateway: { mode: "authoring", listTools: () => tools, close: async () => {}, callTool: async (_tool, args) => {
         submitted = resolveReadScopeProposal((args as { read_scope: unknown }).read_scope, { expectedBinding: binding,
@@ -63,7 +68,8 @@ export async function nativeFixture(noRead = false, withoutAnalysis = false) {
         return { ok: true, value: { proposed: true } };
       } },
       dependencies: { requestJson: async actual => {
-        const find=(value:unknown):typeof inventory & {request:string;original_request:string;declared_no_read:boolean}|undefined=>{
+        const find=(value:unknown):typeof inventory & {request:string;original_request:string;declared_no_read:boolean;
+          declared_target:{resource:string;field:string}}|undefined=>{
           if(typeof value==="string") {
             // Runner prefixes its host-owned date notice. Parse only a complete
             // JSON line actually transmitted, never reconstruct hidden inputs.
@@ -73,14 +79,15 @@ export async function nativeFixture(noRead = false, withoutAnalysis = false) {
           return undefined;
         };
         const visible=find(actual.body);if(!visible)throw new Error("Actual provider request lacks the declared fixture inputs");
-        const resource=visible.catalog.resources.find(resource=>resource.id==="work.items");
+        const resource=visible.catalog.resources.find(resource=>resource.id===visible.declared_target.resource);
+        const field=resource?.fields.find(field=>field.id===visible.declared_target.field);
         const subject=visible.catalog.subject_scopes?.find(scope=>scope.root_resource===resource?.id);
-        if(!resource||!subject)throw new Error("Actual provider catalog lacks the reviewed item scope");
+        if(!resource||!field||!subject)throw new Error("Actual provider catalog lacks the declared reviewed resource, field, or subject scope");
         const proposal={protocol:READ_SCOPE_PROTOCOL,original_request:visible.original_request,
           applicability:visible.declared_no_read?"no_read_requested":"read_requested",requirements:visible.declared_no_read?[]:[{
             id:"items",intended_use:visible.request,references:[visible.original_request],disposition:"include",
             subjects:[{root_resource:resource.id,mode:"reviewed_resource",scope_reference:subject.reference}],
-            targets:[{root_resource:resource.id,resource:resource.id,operation:"resource"},{root_resource:resource.id,resource:resource.id,operation:"return",field:"label"}],
+            targets:[{root_resource:resource.id,resource:resource.id,operation:"resource"},{root_resource:resource.id,resource:resource.id,operation:"return",field:field.id}],
           }]};
         return {status:200,body:{output:[{type:"function_call",call_id:randomUUID(),name:"runner__propose_scope",arguments:JSON.stringify({read_scope:proposal})}]}};
       } } });
@@ -93,6 +100,6 @@ export async function nativeFixture(noRead = false, withoutAnalysis = false) {
     await persist(buildBoundaryAuthoringResumeState({ ...input, previous: state, generationRecovery, operatorQuestions: [...(state.operator_questions ?? []), q] }));
     return q;
   });
-  return { dir, input, nativeBinding, binding,inventory,analysis, state: () => state, persist, save, produce };
+  return { dir, input, nativeBinding, binding,inventory,analysis, boundary: () => structuredClone(context.candidate),
+    state: () => state, persist, save, produce, scopeDigest, contextDigest };
 }
-
