@@ -105,6 +105,18 @@ async function resolveCurrent(input: AuthoringMaterialContextInput): Promise<Res
   }
 }
 
+/** Synchronous capture BEFORE reading created_at or awaiting host context.
+ * This validates original JSON shape and credentials only. It grants NO identity
+ * screening, currentness, retention, display or send approval. Pass its exact
+ * parsed projection to assertAuthoringMaterial and retain only that result. */
+export function snapshotAuthoringMaterial(value: unknown): string {
+  try { return assertCredentials(snapshotJson(value, new WeakSet())); }
+  catch (error) {
+    if (error instanceof AuthoringResumeMaterialError || error instanceof AuthoringMaterialContextError) throw error;
+    throw new AuthoringMaterialContextError(codes.unavailable);
+  }
+}
+
 /** Call at the actual retention/send/save boundary with the same complete material
  * and owning-schema origin. ONLY the returned immutable JSON may be retained or
  * sent; do not subsequently serialize the caller's mutable value. This checks

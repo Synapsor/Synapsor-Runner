@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadRuntimeConfigFromFile, type RuntimeConfig, type TrustedContext } from "@synapsor-runner/mcp-server";
-import { assertAuthoringMaterial, resolveAuthoringMaterialContext, type AuthoringMaterialContext, type AuthoringMaterialOrigin } from "./authoring-resume-material.js";
+import { assertAuthoringMaterial, snapshotAuthoringMaterial, resolveAuthoringMaterialContext, type AuthoringMaterialContext, type AuthoringMaterialOrigin } from "./authoring-resume-material.js";
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
@@ -188,5 +188,26 @@ describe("configured identity retention", () => {
     const f = await fixture(); const value = { answer: "person-123" };
     const pending = f.check(value); value.answer = "business";
     await expect(pending).rejects.toThrow("IDENTITY_BLOCKED");
+  });
+});
+
+describe("synchronous material capture before host context", () => {
+  it("returns exact immutable JSON but makes no identity-screening claim", () => {
+    const value = { created_at: "2026-10-09T10:00:00.000Z", answer: "person-123" };
+    const snapshot = snapshotAuthoringMaterial(value);
+    value.answer = "changed";
+    expect(snapshot).toBe('{"created_at":"2026-10-09T10:00:00.000Z","answer":"person-123"}');
+  });
+  it("rejects original custom prototypes, accessors and proxies before invocation", () => {
+    let calls = 0;
+    class Custom { toJSON() { calls++; return "person-123"; } }
+    const accessor = Object.defineProperty({}, "created_at", { enumerable: true, get() { calls++; return "2026-10-09"; } });
+    const proxy = new Proxy({}, { getPrototypeOf() { calls++; return Object.prototype; } });
+    for (const value of [new Custom(), accessor, proxy])
+      expect(() => snapshotAuthoringMaterial(value)).toThrow("CONTEXT_UNAVAILABLE");
+    expect(calls).toBe(0);
+  });
+  it("retains credential blocking even before identity context is available", () => {
+    expect(() => snapshotAuthoringMaterial({ value: "api_key=secret" })).toThrow("PRIVATE_MATERIAL_BLOCKED");
   });
 });
