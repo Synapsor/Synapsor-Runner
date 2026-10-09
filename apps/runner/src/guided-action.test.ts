@@ -58,6 +58,43 @@ afterEach(async () => {
 });
 
 describe("guided write actions", () => {
+  it.each(["membership_phase", "phase", "membership_status"])("preserves reviewed transitions on inspected %s", async (transitionColumn) => {
+    const fixture = await activatedFitFlowFixture({ transitionColumn, reviewedPending: true });
+    const result = await createGuidedActionDraft({
+      projectRoot: fixture.root, inspection: fixture.inspection, allowReviewedPending: true,
+      action: {
+        capability_name: "membership.reviewed_transition", description: "Propose the reviewed transition for one assigned member.",
+        resource: "public.members", operation: "update", conflict_column: "version", version_advance: "integer_increment",
+        approval_role: "membership_reviewer", confirmed_trusted_scope: true,
+        patches: [{ column: transitionColumn, value_source: "fixed", fixed_value: "frozen", allowed_from: ["active", "frozen"] }],
+      },
+    });
+    expect(result.dsl).toContain(`TRANSITION ${transitionColumn} ALLOW 'active' -> 'frozen', 'frozen' -> 'frozen'`);
+    expect(result.contract.capabilities[0]?.proposal?.transition_guards?.[transitionColumn]).toEqual({
+      allowed: { active: ["frozen"], frozen: ["frozen"] },
+    });
+    expect(result.draft.state).toBe("disabled");
+  });
+
+  it.each(["phase", "membership_status"])("keeps absent transition sources explicit on %s", async (transitionColumn) => {
+    const fixture = await activatedFitFlowFixture({ transitionColumn, reviewedPending: true });
+    const draft = createGuidedActionDraft({
+      projectRoot: fixture.root, inspection: fixture.inspection, allowReviewedPending: true,
+      action: {
+        capability_name: "membership.without_transition_sources", description: "Review the fixed value without supplied source transitions.",
+        resource: "public.members", operation: "update", conflict_column: "version", version_advance: "integer_increment",
+        approval_role: "membership_reviewer", confirmed_trusted_scope: true,
+        patches: [{ column: transitionColumn, value_source: "fixed", fixed_value: "frozen" }],
+      },
+    });
+    if (transitionColumn === "membership_status") await expect(draft).rejects.toThrow("GUIDED_ACTION_TRANSITION_REQUIRED");
+    else {
+      const result = await draft;
+      expect(result.dsl).not.toContain("TRANSITION ");
+      expect(result.contract.capabilities[0]?.proposal?.transition_guards).toBeUndefined();
+    }
+  });
+
   it("keeps Action Boundary field review independent from minimized Read Boundary row returns", async () => {
     const fixture = await activatedFitFlowFixture();
     const generatedDraft = structuredClone(fixture.candidate);
@@ -2431,6 +2468,8 @@ function runtimeConfigForMockRead(configPath: string) {
 }
 
 async function activatedFitFlowFixture(options: {
+  transitionColumn?: string;
+  reviewedPending?: boolean;
   compositePrimaryKey?: boolean;
   untrustedPrimaryKeyComponent?: boolean;
   principalScoped?: boolean;
@@ -2444,6 +2483,12 @@ async function activatedFitFlowFixture(options: {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-action-"));
   temporaryRoots.push(root);
   const inspection = fitFlowInspection();
+  if (options.transitionColumn) {
+    const table = inspection.tables[0]!;
+    table.columns.find((candidate) => candidate.name === "membership_status")!.name = options.transitionColumn;
+    table.suggestions.default_visible_columns = table.suggestions.default_visible_columns.map((name) =>
+      name === "membership_status" ? options.transitionColumn! : name);
+  }
   if (options.singleOrganization) {
     const table = inspection.tables[0]!;
     table.columns = table.columns.filter((candidate) => candidate.name !== "organization_id");
@@ -2507,6 +2552,12 @@ async function activatedFitFlowFixture(options: {
       schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION,
       resources: {
         "public.members": {
+          ...(options.reviewedPending && !options.singleOrganization ? { tenant_key: {
+            value: "organization_id",
+            actor: "reviewer@example.test",
+            reason: "Review the inspected organization column as the trusted tenant boundary.",
+            decided_at: "2026-07-24T17:00:00.000Z",
+          } } : {}),
           principal_key: {
             value: options.principalScoped === false ? null : "assigned_trainer_id",
             actor: "reviewer@example.test",
@@ -2515,6 +2566,12 @@ async function activatedFitFlowFixture(options: {
               : "Assigned trainers may access only their reviewed member rows.",
             decided_at: "2026-07-24T17:00:00.000Z",
           },
+          ...(options.transitionColumn ? {
+            fields: Object.fromEntries(["id", "version", options.transitionColumn].map((field) => [field, {
+              exposure: "allow_reviewed_use" as const, actor: "reviewer@example.test",
+              reason: "Review this exact inspected field for the bounded transition proposal.", decided_at: "2026-07-24T17:00:00.000Z",
+            }])),
+          } : {}),
           ...(options.hiddenRequiredInsertField ? {
             fields: {
               service_window: {
@@ -2530,9 +2587,19 @@ async function activatedFitFlowFixture(options: {
     },
   });
 
+  const candidate = structuredClone(build.exploration_boundary);
+  if (options.reviewedPending) {
+    const guided = await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.8.0", instantOnboarding: true });
+    const config = await readRuntimeConfig(guided.config_path);
+    await initializeFreshGovernedAuthoring({ projectRoot: root, config, storePath: guided.store_path, build, actor: "reviewer@example.test" });
+    const saved = (await readProjectReadAuthoring(root))!;
+    const selected = saved.selected!;
+    await saveInstantBoundaryReviewBaseline({ projectRoot: root, draft: selected.draft, candidate: selected.progress.candidate,
+      expectedAuthoring: saved.bindings, actor: "reviewer@example.test" });
+    return { root, inspection, candidate: selected.progress.candidate };
+  }
   await writeAutoBoundaryArtifacts({ projectRoot: root, build });
   await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.6.4" });
-  const candidate = structuredClone(build.exploration_boundary);
   const digest = explorationBoundaryCandidateDigest(candidate);
   await activateExplorationBoundary({
     projectRoot: root,

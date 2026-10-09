@@ -4,5 +4,5 @@ Owner multi-unit approval supersedes old shared-SUM hold; priority E1→same-uni
 RESULT: descriptor50P/currency11P/V3wire36P(coretypes0); V3draft dispatch before2P1diagnosticF→3new+44legacy47P; forcedapp160diagnostics/0owned, separate scopes/not wholePASS.
 Action count DATA fix: capability/all_outcomes explicitly refused by parser/grammar/consumer; legacy raw selectors retained pending review; exact R2 test22P1F→owner replay23P, own30P separate; native custody/independent acceptance/count credit open.
 Main owns protected current Source/AST/catalog/Read/Question and same Held save; Runtime owns inspected Source/period/effect/protection; no model meaning grants technical proof.
-Next: V3 authority/registry/Boundary requires actual Runtime compiler hook in constructors/snapshots; runtime admission/Source dispatch and Main native/current publication/same-unit public route remain open.
+I01958: reviewed allowed_from drives transition emission; exact five-test pair3P2F→5P, types160baseline fixtures/0product; I01957/60 and native/current publication remain open, count credit pending independent review/Main integration.
 Private DEV only; zero provider/paid CLOSED; OwnerGO still separately required for paid A and B; no automatic distribution.

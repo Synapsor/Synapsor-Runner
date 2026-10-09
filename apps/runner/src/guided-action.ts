@@ -3138,7 +3138,7 @@ function transitionDsl(
   patch: ReturnType<typeof normalizePatch>,
   operation: GuidedActionOperation,
 ): string[] {
-  if (operation !== "update" || !/(?:^|_)(?:status|state)$/i.test(patch.column) || patch.value_source !== "fixed" || typeof patch.fixed_value !== "string") return [];
+  if (operation !== "update" || patch.allowed_from.length === 0 || patch.value_source !== "fixed" || typeof patch.fixed_value !== "string") return [];
   return [`  TRANSITION ${safeIdentifier(patch.column)} ALLOW ${patch.allowed_from.map((value) => `${dslLiteral(value)} -> ${dslLiteral(patch.fixed_value)}`).join(", ")}`];
 }
 
