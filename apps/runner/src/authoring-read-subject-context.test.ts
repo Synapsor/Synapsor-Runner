@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { canonicalJsonDigest as d } from "@synapsor-runner/protocol";
 import { prepareReviewedReadScope } from "./test-fixtures/reviewed-read-scope.js";
 import { projectReadSubjectContext } from "./authoring-read-subject-context.js";
@@ -10,11 +10,12 @@ import { prepareBoundaryResourceReviewMutation, commitBoundaryResourceReviewMuta
 
 describe("native acknowledged Read subject inventory", () => {
   let root: string, fixture: Awaited<ReturnType<typeof prepareReviewedReadScope>>;
-  beforeAll(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), "read-subject-projector-")); await fs.chmod(root, 0o700); fixture = await prepareReviewedReadScope(root); });
-  afterAll(async () => { if (root) await fs.rm(root, { recursive: true, force: true }); });
+  beforeAll(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), "read-subject-projector-")); await fs.chmod(root, 0o700); fixture = await prepareReviewedReadScope(root, { resources: ["work.items"], field: "label",
+    review: { allow_reviewed_fields: ["label"] } }); });
+  // Preserve the real native repository and immutable origins for independent replay.
   it("projects only actual ordinary structural acknowledgments with no source rows or subject values", () => {
     const projected = projectReadSubjectContext({ context: fixture.context, sourceDigest: d(null) });
-    expect(projected.subject_scopes, JSON.stringify(fixture.context.bundle.decisions.map(({id, kind, resource_id, input_digest, confirmed}) => ({id,kind,resource_id,input_digest,confirmed})))).toHaveLength(1);
+    expect(projected.subject_scopes, JSON.stringify(fixture.context.bundle.decisions)).toHaveLength(1);
     expect(projected.subject_scopes[0]).toMatchObject({ root_resource: "work.items", kind: "principal", source_digest: d(null) });
     expect(projected.descriptions[0]?.text).toContain("signed-in person");
     expect(JSON.stringify(projected)).not.toMatch(/declared fixture operator|DATABASE_URL|principal_id|tenant_id/);
@@ -36,6 +37,42 @@ describe("native acknowledged Read subject inventory", () => {
     const next = projectReadSubjectContext({ context: fixture.context, sourceDigest: d("changed operator-consented Source") });
     expect(next.subject_scopes[0]?.reference).not.toBe(first.subject_scopes[0]?.reference);
     expect(JSON.stringify(next)).not.toContain("changed operator-consented Source");
+  });
+  it("uses exact typed confirmations independently of cached decision copy", () => {
+    const context = structuredClone(fixture.context);
+    context.progress!.confirmed_decisions = [];
+    for (const confirmation of context.progress!.confirmations) confirmation.decision = "Translated operator display";
+    for (const decision of context.bundle.decisions) {
+      decision.decision = "Different translated review display";
+      decision.confirmed = false;
+    }
+    const { bundle_digest: _digest, mutation_bindings: _bindings, ...body } = context.bundle;
+    context.bundle.bundle_digest = d(body);
+    expect(projectReadSubjectContext({ context, sourceDigest: d(null) }).subject_scopes)
+      .toEqual(projectReadSubjectContext({ context: fixture.context, sourceDigest: d(null) }).subject_scopes);
+  });
+  it("preserves exact-input subject acknowledgments without an origin where the existing owner permits them", () => {
+    const context = structuredClone(fixture.context);
+    context.resolvedOrigins = [];
+    for (const confirmation of context.progress!.confirmations) delete confirmation.origin;
+    expect(projectReadSubjectContext({ context, sourceDigest: d(null) }).subject_scopes).toHaveLength(1);
+  });
+  it("keeps a same-ID confirmation for a different typed resource pending", () => {
+    const context = structuredClone(fixture.context);
+    const confirmation = context.progress!.confirmations.find(item => item.kind === "principal_scope")!;
+    if (!("resource_id" in confirmation)) throw new Error("Expected actual resource-scoped acknowledgment");
+    confirmation.resource_id = "work.other_items";
+    expect(projectReadSubjectContext({ context, sourceDigest: d(null) }).subject_scopes).toEqual([]);
+  });
+  it("refuses a claimed immutable origin whose actual candidate has a different Source", () => {
+    const context = structuredClone(fixture.context);
+    const confirmation = context.progress!.confirmations.find(item => item.kind === "principal_scope")!;
+    expect(confirmation.origin).toBeDefined();
+    const origin = context.resolvedOrigins!.find(item => d(item.reference) === d(confirmation.origin))!;
+    expect(origin).toBeDefined();
+    origin.candidate.source = "other_source";
+    expect(() => projectReadSubjectContext({ context, sourceDigest: d(null) }))
+      .toThrow("Resolved boundary review origin does not match its exact candidate digest");
   });
   it("retains subject identity through an ordinary unrelated metadata edit and newer progress revision", async () => {
     const first = projectReadSubjectContext({ context: fixture.context, sourceDigest: d(null) });
