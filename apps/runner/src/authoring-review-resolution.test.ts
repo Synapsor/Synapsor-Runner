@@ -121,6 +121,7 @@ describe('shared saved-review refusal resolution',()=>{
       'CoverageComponentError','CoverageComponentsError','CoverageCounterSupportError',
       'CoverageCurrentDescriptionError','CoverageReceiptConfigurationError','CoverageReceiptDutyError',
       'CoverageReceiptObservationError','CoverageReceiptReadContextError','CoverageReceiptReadExclusionError',
+      'CoverageValidationError',
     ].sort());
     const actual={source_transaction_review:localSourceTransactionReview,
       source_transaction_scope_review:localSourceTransactionScopeReview,
