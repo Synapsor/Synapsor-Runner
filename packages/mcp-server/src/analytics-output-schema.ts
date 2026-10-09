@@ -33,12 +33,7 @@ const reviewedFieldMetadataSchema = z.object({
   label: z.string().max(64).optional(),
   description: z.string().max(280).optional(),
   plan_reference: z.literal("exact_id_only").optional(),
-  semantic_status: z.enum([
-    "reviewed_vocabulary",
-    "descriptive_identifier",
-    "coded_values",
-    "opaque_identifier",
-  ]).optional(),
+  vocabulary_status: z.enum(["reviewed_metadata", "unspecified"]).optional(),
   operations: z.object({
     return_value: z.boolean(),
     model_egress: z.enum(["visible", "withheld"]),
@@ -73,14 +68,13 @@ const reviewedClientFieldMetadataSchema = z.object({
   description: z.string().max(280).optional(),
 }).passthrough();
 const exploreVocabularyCoverageSchema = z.object({
-  status: z.enum(["ready", "review_advised", "review_required"]),
+  kind: z.literal("presentation_metadata"),
   model_facing_fields: z.number().int().nonnegative(),
   fields_with_labels: z.number().int().nonnegative(),
   fields_with_descriptions: z.number().int().nonnegative(),
   fields_with_reviewed_vocabulary: z.number().int().nonnegative(),
-  opaque_resource_without_vocabulary: z.boolean(),
-  opaque_fields_without_vocabulary: z.array(z.string()),
-  coded_fields_without_vocabulary: z.array(z.string()),
+  resource_has_reviewed_vocabulary: z.boolean(),
+  fields_without_reviewed_vocabulary: z.array(z.string()),
 }).strict();
 const modelWithheldTokenSchema = z.string().regex(/^\[withheld:[a-f0-9]{12}:[1-9][0-9]*\]$/);
 const modelEgressResultSchema = z.object({
@@ -588,14 +582,11 @@ export const scopedExploreDescribeOutputSchema = z.object({
     model_supplied_date_arithmetic: z.literal(false),
   }).strict().optional(),
   vocabulary_policy: z.object({
-    reviewed_metadata_is_semantic_only: z.literal(true),
+    metadata_purpose: z.literal("optional_presentation"),
     exact_ids_required_in_plans: z.literal(true),
-    opaque_identifier_behavior: z.literal(
-      "do_not_guess; ask the operator to add a reviewed label or description",
-    ),
-    coded_value_behavior: z.literal(
-      "do_not_infer_business_meaning_from_codes; use exact codes only when the question names them or reviewed metadata explains them",
-    ),
+    meaning_authority: z.literal("current_native_read_scope"),
+    missing_meaning_behavior: z.literal("use_existing_read_owner_typed_requirements"),
+    metadata_grants_authority: z.literal(false),
   }).strict().optional(),
   resources: z.array(z.object({
     boundary_name: z.string().optional(),
@@ -663,6 +654,7 @@ export const scopedExploreDescribeOutputSchema = z.object({
       }).strict()),
       field_egress: fieldEgressSchema,
       fields: z.array(reviewedFieldMetadataSchema),
+      selectable_fields: z.array(z.string()),
       filterable_fields: z.array(z.string()),
       filter_operators: z.record(z.array(z.string())),
       groupable_fields: z.array(z.string()),
