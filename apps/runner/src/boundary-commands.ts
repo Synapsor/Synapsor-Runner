@@ -12517,8 +12517,10 @@ export function semanticActionBusinessReviewLines(compiled: CompiledActionRuleMo
       ? [`Target: only ${targetBinding === selectedBinding ? `the selected ${selectedName} record` : `the record linked to the selected ${selectedName} through the reviewed relationship${visited.size > 1 ? "s" : ""}`}; Runner verifies that selection and its trusted scope before any change.`]
       : []),
     `Eligibility: ${actionRuleBooleanSummary(compiled.rule.require, fieldNames)}. Missing or failed eligibility checks are refused, not sent for human approval.`,
+    ...(compiled.hard_limit_review ?? []),
+    ...(compiled.hard_limit_review ? ["A hard-invariant violation is refused; human approval cannot override it."] : []),
     policy.mode === "policy" && automatic
-      ? `Approval: automatic ${actionRuleBooleanIsUnconditional(automatic) ? "for valid requests" : `only when ${actionRuleBooleanSummary(automatic, fieldNames)}`}; other valid requests, including limit overruns, require ${reviewers}.`
+      ? `Approval: automatic ${actionRuleBooleanIsUnconditional(automatic) ? "for valid requests" : `only when ${actionRuleBooleanSummary(automatic, fieldNames)}`}; other valid requests, including ${compiled.hard_limit_review ? "automatic-approval budget overruns" : "limit overruns"}, require ${reviewers}.`
       : `Approval: every valid request requires ${reviewers}.`,
     ...(policy.mode === "policy" ? [`Approval limits: ${automaticApprovalBusinessSummary(compiled, read)}.`] : []),
     `Completion: ${compiled.effect_envelope.writeback.mode === "none" ? "proposal only; automatic execution is not configured" : "automatic execution is prepared for separate review, not enabled by this Read decision"}.`,
