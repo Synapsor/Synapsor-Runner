@@ -12,6 +12,7 @@ import {
   actionRuleModelDraftFromAuthority,
   compactActionRuleAuthoringCatalog,
   compileActionRuleModelDraft,
+  parseActionRuleModelDraftProposal,
   type ActionRuleModelDraftV1,
 } from "./action-rule-draft.js";
 import { rolePostureFingerprint, schemaFingerprintForInspection } from "./auto-boundary.js";
@@ -856,9 +857,9 @@ export function parseStructuredActionDraft(value: unknown, index: number): Actio
   }
   assertKeys(draft, [
     "schema_version", "name", "outcome", "discovery", "inputs", "verification", "effect",
-    "require", "derive", "approval", "hard_limit", "shared_sum_proposal", "ttl_seconds", "review",
+    "require", "derive", "approval", "hard_limit", "shared_sum_proposal", "requirement_proposals", "ttl_seconds", "review",
   ], label);
-  if (!["synapsor.action-rule-model-draft.v1", "synapsor.action-rule-model-draft.v2"].includes(draft.schema_version as string)) {
+  if (!["synapsor.action-rule-model-draft.v1", "synapsor.action-rule-model-draft.v2", "synapsor.action-rule-model-draft.v3"].includes(draft.schema_version as string)) {
     throw new Error(`${label}.schema_version is unsupported.`);
   }
   const approval = record(draft.approval, `${label}.approval`);
@@ -882,7 +883,7 @@ export function parseStructuredActionDraft(value: unknown, index: number): Actio
     || Array.isArray(approval.auto_approve_when)) {
     throw new Error(`${label}.approval.auto_approve_when must be a policy predicate.`);
   }
-  return draft as ActionRuleModelDraftV1;
+  return parseActionRuleModelDraftProposal(draft as ActionRuleModelDraftV1);
 }
 
 function structuredReadRequestJsonSchema(): Record<string, unknown> {

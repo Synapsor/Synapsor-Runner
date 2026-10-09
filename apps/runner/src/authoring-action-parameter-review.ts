@@ -49,6 +49,7 @@ const componentLabels: Record<keyof ActionRuleModelDraftV1 | "hard_limit", strin
   ttl_seconds: "Request expiry", review: "Retained original review wording",
   hard_limit: "Business invariant and post-change limit",
   shared_sum_proposal: "Shared total proposal and unit meaning; separate review required",
+  requirement_proposals: "Exact Action requirement proposals; separate review required",
 };
 const comparatorLabels: Record<Compare["operator"], string> = {
   eq: "Exactly equal to", neq: "Different from", lt: "Less than", lte: "At most (includes the threshold)",

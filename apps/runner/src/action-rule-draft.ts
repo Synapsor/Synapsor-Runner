@@ -1,3 +1,4 @@
+import { parseActionRequirementProposals, type ActionRequirementProposals } from "./authoring-action-requirements.js";
 import { ActionRuleAuthoringError, actionRuleTrustedFailure, type ActionRuleTrustedFailure } from "./action-rule-authoring-error.js";
 import { SourceInputFidelityError } from "./authoring-input-policy.js";
 import { actionSubjectCompatibility, type ActionSubjectCompatibility } from "./action-subject-compatibility.js";
@@ -37,6 +38,8 @@ import type {
 export const ACTION_RULE_MODEL_DRAFT_VERSION = "synapsor.action-rule-model-draft.v1" as const;
 export const SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION = "synapsor.action-rule-model-draft.v2" as const;
 
+export const REQUIREMENTS_ACTION_RULE_MODEL_DRAFT_VERSION = "synapsor.action-rule-model-draft.v3" as const;
+
 export type ActionRuleVerificationDraftResourceV1 = {
   binding: string;
   resource: string;
@@ -51,7 +54,8 @@ export type ActionRuleVerificationDraftResourceV1 = {
 };
 
 export type ActionRuleModelDraftV1 = {
-  schema_version: typeof ACTION_RULE_MODEL_DRAFT_VERSION | typeof SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION;
+  schema_version: typeof ACTION_RULE_MODEL_DRAFT_VERSION | typeof SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION | typeof REQUIREMENTS_ACTION_RULE_MODEL_DRAFT_VERSION;
+  requirement_proposals?: ActionRequirementProposals;
   /** Unreviewed proposal DATA; never the authoritative reviewed record. */
   shared_sum_proposal?: SharedSumDesignationV1;
   name: string;
@@ -875,13 +879,20 @@ export function parseActionRuleModelDraftProposal(value: ActionRuleModelDraftV1)
   return normalizeDraft(value);
 }
 function normalizeDraft(value: ActionRuleModelDraftV1): ActionRuleModelDraftV1 {
-  if (!value || ![ACTION_RULE_MODEL_DRAFT_VERSION, SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION].includes(value.schema_version)) {
+  if (!value || ![ACTION_RULE_MODEL_DRAFT_VERSION, SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION, REQUIREMENTS_ACTION_RULE_MODEL_DRAFT_VERSION].includes(value.schema_version)) {
     invalid("The Action model draft version is unsupported.");
   }
-  if (value.schema_version === ACTION_RULE_MODEL_DRAFT_VERSION ? Object.hasOwn(value, "shared_sum_proposal") : value.shared_sum_proposal === undefined
-    || Object.keys(value).some(key => !["schema_version", "name", "outcome", "discovery", "inputs", "shared_sum_proposal", "verification", "effect", "require", "derive", "approval", "ttl_seconds", "review"].includes(key))) {
-    invalid("The shared-SUM proposal requires its closed v2 Action draft; reviewed authority and provenance are not model fields.");
+  const requirementsVersion = value.schema_version === REQUIREMENTS_ACTION_RULE_MODEL_DRAFT_VERSION;
+  if (requirementsVersion ? value.requirement_proposals === undefined
+    : Object.hasOwn(value, "requirement_proposals")) invalid("Typed requirements require their own closed v3 proposal format.");
+  if (value.schema_version === ACTION_RULE_MODEL_DRAFT_VERSION ? Object.hasOwn(value, "shared_sum_proposal")
+    : value.schema_version === SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION && value.shared_sum_proposal === undefined) {
+    invalid("The shared-SUM proposal requires its versioned proposal format.");
   }
+  if (value.schema_version !== ACTION_RULE_MODEL_DRAFT_VERSION && Object.keys(value).some(key => !["schema_version", "name", "outcome", "discovery", "inputs", "shared_sum_proposal", "requirement_proposals", "verification", "effect", "require", "derive", "approval", "ttl_seconds", "review"].includes(key))) {
+    invalid("Reviewed authority, confirmation and provenance are not model proposal fields.");
+  }
+  if (requirementsVersion) parseActionRequirementProposals(value.requirement_proposals);
   const resourceBindings = value.verification?.resources;
   if (!Array.isArray(resourceBindings) || resourceBindings.length < 1 || resourceBindings.length > 12) {
     invalid("Verification draft must contain from 1 through 12 bounded resources.");
@@ -903,7 +914,17 @@ export function retainSharedSumProposal(baseline: ActionRuleModelDraftV1 | undef
   if (!original) return normalizeDraft(next);
   if (next.shared_sum_proposal && canonicalJsonDigest(parseSharedSumDesignation(next.shared_sum_proposal)) !== canonicalJsonDigest(parseSharedSumDesignation(original)))
     invalid("A phased model edit cannot change the existing shared-SUM meaning. Keep it and use its owning explicit review.");
-  return normalizeDraft({ ...next, schema_version: SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION, shared_sum_proposal: structuredClone(original) });
+  return normalizeDraft({ ...next, schema_version: next.requirement_proposals ? REQUIREMENTS_ACTION_RULE_MODEL_DRAFT_VERSION : SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION, shared_sum_proposal: structuredClone(original) });
+}
+
+/** Omission preserves the original proposal. Changing/removing typed meaning
+ * requires its own current operator review and a new native baseline. */
+export function retainActionRequirementProposals(baseline: ActionRuleModelDraftV1 | undefined, next: ActionRuleModelDraftV1): ActionRuleModelDraftV1 {
+  const original = baseline?.requirement_proposals;
+  if (!original) return normalizeDraft(next);
+  if (next.requirement_proposals && canonicalJsonDigest(parseActionRequirementProposals(next.requirement_proposals)) !== canonicalJsonDigest(parseActionRequirementProposals(original)))
+    invalid("A model edit cannot change the retained Action requirement meaning without its owning review.");
+  return normalizeDraft({ ...next, schema_version: REQUIREMENTS_ACTION_RULE_MODEL_DRAFT_VERSION, requirement_proposals: structuredClone(original) });
 }
 
 function boundedInteger(value: unknown, minimum: number, maximum: number, label: string): number {

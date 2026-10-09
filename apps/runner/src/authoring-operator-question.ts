@@ -1,3 +1,5 @@
+import { parseActionRequirementsQuestionBinding, assertActionRequirementsQuestionGeneration, type ActionRequirementsQuestionBinding } from "./authoring-action-requirements-binding.js";
+import { parseActionRequirementProposals, actionRequirementsPending, actionRequirementsReadback, actionRequirementTargetsDigest, type ActionRequirementProposals } from "./authoring-action-requirements.js";
 import { parseActionRuleSourceQuestionPassageShape, type ActionRuleSourceQuestionPassageV1 } from "./action-rule-source-question-codec.js";
 import { parseActionSubjectBinding, parseActionSubjectProposal, assertActionSubjectSequence, assertActionSubjectGeneration, type ActionSubjectBinding, type ActionSubjectProposal } from "./authoring-action-subject-binding.js";
 import { parseTypedParameterBinding, parseTypedParameterRecord, assertTypedParameterSequence, assertTypedParameterGeneration, typedParameterPendingFields, type TypedParameterBinding, type TypedParameterRecord } from "./authoring-typed-parameter-binding.js";
@@ -16,6 +18,7 @@ import { parseSharedSumQuestionBinding, assertSharedSumQuestionGeneration, share
 
 type Digest = `sha256:${string}`;
 export type OperatorQuestionValue =
+  | { kind: "action_requirements"; proposals: ActionRequirementProposals }
   | { kind: "shared_sum"; designation: SharedSumQuestionBinding["designation"] }
   | { kind: "action_subject"; record: ActionSubjectProposal }
   | { kind: "typed_parameters"; record: TypedParameterRecord }
@@ -31,7 +34,8 @@ export type OperatorQuestionValue =
  * Source fact nor an authority revision. The consumer owns currentness/CAS and
  * validates domain values again before its ordinary reviewed save. */
 export type OperatorQuestion = {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
+  action_requirements?: ActionRequirementsQuestionBinding;
   shared_sum?: SharedSumQuestionBinding;
   read_scope?: ReadScopeQuestionBinding;
   typed_parameters?: TypedParameterBinding;
@@ -100,9 +104,9 @@ export function createOperatorQuestion(input: Pick<OperatorQuestion,
 
 export function parseOperatorQuestion(value: unknown): OperatorQuestion {
   if (!object(value) || !exact(value, ["version", "id", "revision", "handoff_id", "kind", "scope_digest", "context_digest", "target",
-    "material", "evidence", "receipt_selection", "read_scope", "typed_parameters", "action_subject", "shared_sum", "continuation", "source_binding", "budget_owner_id", "naming_passages", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
-    || ![1, 2, 3].includes(value.version as number) || !id(value.id) || value.handoff_id !== undefined && !text(value.handoff_id, 100) || !count(value.revision, Number.MAX_SAFE_INTEGER, 1)
-    || !["attributed_meaning", "input_bounds", "writer_maintenance", "receipt_requirement", "read_scope", "typed_parameters", "action_subject", "shared_sum"].includes(value.kind as string)
+    "material", "evidence", "receipt_selection", "read_scope", "typed_parameters", "action_subject", "shared_sum", "action_requirements", "continuation", "source_binding", "budget_owner_id", "naming_passages", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
+    || ![1, 2, 3, 4].includes(value.version as number) || !id(value.id) || value.handoff_id !== undefined && !text(value.handoff_id, 100) || !count(value.revision, Number.MAX_SAFE_INTEGER, 1)
+    || !["attributed_meaning", "input_bounds", "writer_maintenance", "receipt_requirement", "read_scope", "typed_parameters", "action_subject", "shared_sum", "action_requirements"].includes(value.kind as string)
     || !digest(value.scope_digest) || !digest(value.context_digest) || !digest(value.digest)
     || !object(value.target) || !exact(value.target, ["phase", "resource", "field", "outcomes"])
     || !text(value.target.phase, 100) || value.target.resource !== undefined && !text(value.target.resource, 256)
@@ -114,12 +118,22 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     || value.evidence.some(e => !object(e) || !exact(e, ["id", "digest"]) || !text(e.id, 256) || !digest(e.digest))
     || !["read_mapping", "action_rule_review", "input_policy_review", "version_mapping", "receipt_requirement_review"].includes(value.continuation as string)
     || Buffer.byteLength(JSON.stringify(value)) > 128 * 1024) invalid("The saved question envelope is malformed or too large.");
-  const continuation = { shared_sum: "action_rule_review", action_subject: "action_rule_review", typed_parameters: "action_rule_review", read_scope: "read_mapping", attributed_meaning: "read_mapping", input_bounds: "input_policy_review", writer_maintenance: "version_mapping",
+  const continuation = { action_requirements: "action_rule_review", shared_sum: "action_rule_review", action_subject: "action_rule_review", typed_parameters: "action_rule_review", read_scope: "read_mapping", attributed_meaning: "read_mapping", input_bounds: "input_policy_review", writer_maintenance: "version_mapping",
     receipt_requirement: "receipt_requirement_review" };
-  if (value.version === 3 ? value.kind !== "shared_sum" : value.version === 2
+  if (value.version === 4 ? value.kind !== "action_requirements" : Object.hasOwn(value, "action_requirements") || (value.version === 3 ? value.kind !== "shared_sum" : value.version === 2
     ? !["read_scope", "typed_parameters", "action_subject"].includes(value.kind as string) || value.shared_sum !== undefined
-    : ["read_scope", "typed_parameters", "action_subject", "shared_sum"].includes(value.kind as string) || value.read_scope !== undefined || value.typed_parameters !== undefined || value.action_subject !== undefined || value.shared_sum !== undefined)
+    : ["read_scope", "typed_parameters", "action_subject", "shared_sum", "action_requirements"].includes(value.kind as string) || value.read_scope !== undefined || value.typed_parameters !== undefined || value.action_subject !== undefined || value.shared_sum !== undefined))
     invalid("The question version does not support this typed interaction.");
+  if (value.kind === "action_requirements") {
+    const binding = parseActionRequirementsQuestionBinding(value.action_requirements);
+    if (["read_scope", "typed_parameters", "action_subject", "shared_sum", "source_binding", "handoff_id", "raw_answer", "budget", "budget_owner_id", "wording_state", "terminal_failure", "receipt_selection", "naming_passages"].some(key => value[key] !== undefined)
+      || value.target.phase !== "action_requirements" || value.target.resource !== undefined || value.target.field !== undefined
+      || value.scope_digest !== actionRequirementTargetsDigest(binding.proposals) || value.context_digest !== binding.dependencies.context_digest
+      || canonicalJsonDigest(value.target.outcomes) !== canonicalJsonDigest(binding.dependencies.participating_outcomes))
+      invalid("Action requirement review retains its original typed targets and host dependencies without testimony or a new allowance.");
+    if (value.confirmation !== undefined && actionRequirementsPending(binding.proposals).length)
+      invalid("Unsupported or missing requirement meaning remains pending.");
+  } else if (value.action_requirements !== undefined) invalid("Action requirements belong to their own v4 review.");
   if (value.kind === "shared_sum") {
     const binding = parseSharedSumQuestionBinding(value.shared_sum);
     if (["read_scope", "typed_parameters", "action_subject", "source_binding", "handoff_id", "raw_answer", "budget", "budget_owner_id", "wording_state", "terminal_failure", "receipt_selection", "naming_passages"].some(key => value[key] !== undefined)
@@ -173,7 +187,7 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
         source_digest: s.source_digest, store_digest: s.store_digest, outcomes: value.target.outcomes })) {
       invalid("The input interpretation is not bound to its exact current Source and agenda.");
     }
-  } else if (value.kind !== "shared_sum" && value.kind !== "typed_parameters" && value.kind !== "action_subject" && !(value.kind === "read_scope" && (value.read_scope as ReadScopeQuestionBinding).mode === "review") && !text(value.handoff_id, 100)) invalid("A raw-answer question requires its actual owner handoff.");
+  } else if (value.kind !== "action_requirements" && value.kind !== "shared_sum" && value.kind !== "typed_parameters" && value.kind !== "action_subject" && !(value.kind === "read_scope" && (value.read_scope as ReadScopeQuestionBinding).mode === "review") && !text(value.handoff_id, 100)) invalid("A raw-answer question requires its actual owner handoff.");
   if (value.budget_owner_id !== undefined && (!id(value.budget_owner_id) || value.budget_owner_id === value.id
     || !["input_bounds", "receipt_requirement"].includes(value.kind as string) || value.source_binding !== undefined
     || value.kind === "input_bounds" && value.budget !== undefined || value.kind === "receipt_requirement" && value.budget === undefined))
@@ -261,7 +275,10 @@ function validateProposal(q: OperatorQuestion, proposal: unknown): asserts propo
   if (!object(proposal) || !exact(proposal, ["question_id", "revision", "answer_id", "source_reference", "disposition", "value"])
     || proposal.question_id !== q.id || proposal.revision !== q.revision
     || !["pending", "proposed"].includes(proposal.disposition as string)) invalid("The proposed answer belongs to another question or response.");
-  if (q.shared_sum) {
+  if (q.action_requirements) {
+    if (proposal.answer_id !== undefined || proposal.source_reference !== canonicalJsonDigest(q.action_requirements))
+      invalid("The requirement proposal must retain its full original typed submission and host binding.");
+  } else if (q.shared_sum) {
     if (proposal.answer_id !== undefined || proposal.source_reference !== canonicalJsonDigest(q.shared_sum))
       invalid("The shared-SUM proposal must retain its exact original material and host binding.");
   } else if (q.action_subject) {
@@ -279,10 +296,14 @@ function validateProposal(q: OperatorQuestion, proposal: unknown): asserts propo
   } else if (proposal.source_reference !== undefined || !q.raw_answer || proposal.answer_id !== q.raw_answer.id)
     invalid("The proposed answer belongs to another trusted response.");
   if (proposal.disposition === "pending") { if (proposal.value !== undefined) invalid("A pending answer cannot carry a resolved value."); return; }
-  if (!q.source_binding && !q.read_scope && !q.typed_parameters && !q.action_subject && !q.shared_sum && !q.raw_answer!.text.trim()) invalid("A blank response has no resolved meaning.");
+  if (!q.source_binding && !q.read_scope && !q.typed_parameters && !q.action_subject && !q.shared_sum && !q.action_requirements && !q.raw_answer!.text.trim()) invalid("A blank response has no resolved meaning.");
   const v = proposal.value;
   if (!object(v) || v.kind !== q.kind) invalid("The proposal changed the decision kind.");
-  if (v.kind === "shared_sum") {
+  if (v.kind === "action_requirements") {
+    if (!exact(v, ["kind", "proposals"]) || !q.action_requirements
+      || canonicalJsonDigest(parseActionRequirementProposals(v.proposals)) !== canonicalJsonDigest(q.action_requirements.proposals))
+      invalid("The requirement answer must retain the exact closed proposal; changed meaning needs its owning native review.");
+  } else if (v.kind === "shared_sum") {
     if (!exact(v, ["kind", "designation"]) || !q.shared_sum
       || canonicalJsonDigest(parseSharedSumDesignation(v.designation)) !== canonicalJsonDigest(q.shared_sum.designation))
       invalid("The shared-SUM answer must be the exact closed proposed meaning; changes require their owning review.");
@@ -354,6 +375,8 @@ export function confirmOperatorAnswer(q: OperatorQuestion): OperatorQuestion {
     if (next.proposal?.disposition !== "proposed" || next.disposition) invalid("No material proposal is ready for explicit operator adoption.");
     if (next.kind === "typed_parameters" && (next.proposal.value?.kind !== "typed_parameters" || next.proposal.value.record.view.unresolved.length))
       invalid("Typed values remain pending; no grouped confirmation is available.");
+    if (next.action_requirements && actionRequirementsPending(next.action_requirements.proposals).length)
+      invalid("Unsupported or missing requirement meaning remains pending.");
     next.confirmation = { actor: "local_installation_operator", recorded_at: new Date().toISOString(),
       proposal_digest: canonicalJsonDigest(next.proposal), decision: "new_attributed_decision" };
   });
@@ -399,6 +422,15 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
   for (const q of result) {
     if (seen.has(q.id)) invalid("Duplicate question identity.");
     seen.add(q.id);
+    if (q.action_requirements) {
+      assertActionRequirementsQuestionGeneration(q.action_requirements, generation);
+      const ref = q.action_requirements.predecessor, predecessor = ref && result.find(p => p.id === ref.question_id);
+      if (ref ? !predecessor || !seen.has(predecessor.id) || predecessor.id === q.id || predecessor.digest !== ref.question_digest
+        || predecessor.kind !== q.kind || predecessor.scope_digest !== q.scope_digest || q.revision !== predecessor.revision + 1
+        || result.some(other => other.id !== q.id && other.action_requirements?.predecessor?.question_id === predecessor.id)
+        : q.revision !== 1) invalid("Requirement reviews retain exact native lineage without branching.");
+      continue;
+    }
     if (q.shared_sum) {
       assertSharedSumQuestionGeneration(q.shared_sum, generation);
       const ref = q.shared_sum.predecessor;
@@ -629,6 +661,7 @@ export function assertOperatorQuestionsAdvance(previous: readonly OperatorQuesti
       ...(q.typed_parameters ? { typed_parameters: q.typed_parameters } : {}),
       ...(q.action_subject ? { action_subject: q.action_subject } : {}),
       ...(q.shared_sum ? { shared_sum: q.shared_sum } : {}),
+      ...(q.action_requirements ? { action_requirements: q.action_requirements } : {}),
       ...(q.receipt_selection ? { receipt_selection: q.receipt_selection } : {}),
       ...(q.source_binding ? { source_binding: q.source_binding } : {}),
       ...(q.budget_owner_id ? { budget_owner_id: q.budget_owner_id } : {}),
@@ -652,6 +685,7 @@ export function operatorQuestionReadback(q: OperatorQuestion): string[] {
   parseOperatorQuestion(q);
   const v = q.proposal?.value;
   if (!v || q.proposal?.disposition !== "proposed") return ["This answer is still pending. No interpretation or permission will be recorded.", ...q.material];
+  if (v.kind === "action_requirements") return actionRequirementsReadback(v.proposals);
   if (v.kind === "shared_sum") return sharedSumQuestionReadback(q.shared_sum!);
   if (v.kind === "action_subject") return [...v.record.view.normalized_lines, ...v.record.view.change_lines, ...v.record.view.unresolved];
   if (v.kind === "typed_parameters") return [...v.record.view.normalized_lines, ...v.record.view.change_lines, ...v.record.view.unresolved];

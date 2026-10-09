@@ -1,3 +1,4 @@
+import { parseActionRequirementProposals, type ActionRequirementProposals } from "./authoring-action-requirements.js";
 import { parseStructuredAuthoringProtocol, type StructuredAuthoringProtocol } from "./authoring-protocol.js";
 import { assertAuthoringGenerationAdmission } from "./authoring-generation-recovery.js";
 import { AskError } from "./model-provider-transport.js";
@@ -90,7 +91,7 @@ export type ActionAuthoringPendingVersion = {
 };
 
 export type ActionRuleAuthoringCheckpoint = {
-  schema_version: "synapsor.action-authoring-checkpoint.v1" | "synapsor.action-authoring-checkpoint.v3";
+  schema_version: "synapsor.action-authoring-checkpoint.v1" | "synapsor.action-authoring-checkpoint.v4";
   authoring_protocol?: StructuredAuthoringProtocol;
   intent_digest: `sha256:${string}`;
   context_digest: `sha256:${string}`;
@@ -98,6 +99,8 @@ export type ActionRuleAuthoringCheckpoint = {
   logical_turns?: ActionAuthoringLogicalTurn[];
   pending_version?: ActionAuthoringPendingVersion;
   subject_question?: { id: string; revision: number; question_digest: Digest };
+  /** Exact validated native proposal DATA, retained before ordinary closure. */
+  requirement_proposals?: ActionRequirementProposals;
   operator_messages?: string[];
   pending_question?: {
     question: string;
@@ -116,7 +119,7 @@ export type ActionRuleAuthoringCheckpoint = {
 export function actionRuleAuthoringCheckpoint(
   input: Omit<ActionRuleAuthoringCheckpoint, "schema_version" | "digest">,
 ): ActionRuleAuthoringCheckpoint {
-  const core = { schema_version: input.authoring_protocol ? "synapsor.action-authoring-checkpoint.v3" as const : "synapsor.action-authoring-checkpoint.v1" as const, ...structuredClone(input) };
+  const core = { schema_version: input.authoring_protocol ? "synapsor.action-authoring-checkpoint.v4" as const : "synapsor.action-authoring-checkpoint.v1" as const, ...structuredClone(input) };
   return parseActionRuleAuthoringCheckpoint({ ...core, digest: canonicalJsonDigest(core) });
 }
 
@@ -124,15 +127,19 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   const fail = () => new Error("ACTION_AUTHORING_CHECKPOINT_INVALID: saved draft components are invalid or changed. Active authority is unchanged.");
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const record = value as Record<string, unknown>;
-  if ((record.schema_version !== "synapsor.action-authoring-checkpoint.v1" && record.schema_version !== "synapsor.action-authoring-checkpoint.v3")
-    || Object.keys(record).some((key) => !["schema_version", "authoring_protocol", "intent_digest", "context_digest", "components", "operator_messages", "pending_question", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "source_repair", "logical_turns", "pending_version", "subject_question", "digest"].includes(key))
+  if ((record.schema_version !== "synapsor.action-authoring-checkpoint.v1" && record.schema_version !== "synapsor.action-authoring-checkpoint.v4")
+    || Object.keys(record).some((key) => !["schema_version", "authoring_protocol", "intent_digest", "context_digest", "components", "requirement_proposals", "operator_messages", "pending_question", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "source_repair", "logical_turns", "pending_version", "subject_question", "digest"].includes(key))
     || ![record.intent_digest, record.context_digest, record.digest].every((digest) => typeof digest === "string" && /^sha256:[a-f0-9]{64}$/u.test(digest))
     || !record.components || typeof record.components !== "object" || Array.isArray(record.components)) throw fail();
-  if (record.schema_version === "synapsor.action-authoring-checkpoint.v3") parseStructuredAuthoringProtocol(record.authoring_protocol);
+  if (record.schema_version === "synapsor.action-authoring-checkpoint.v4") parseStructuredAuthoringProtocol(record.authoring_protocol);
   else if (record.authoring_protocol !== undefined) throw fail();
+  if (record.requirement_proposals !== undefined) {
+    if (record.schema_version !== "synapsor.action-authoring-checkpoint.v4") throw fail();
+    parseActionRequirementProposals(record.requirement_proposals);
+  }
   const rule = (record.components as Record<string, unknown>).rule;
-  if (rule && typeof rule === "object" && Object.hasOwn(rule, "shared_sum_proposal")
-    && record.schema_version !== "synapsor.action-authoring-checkpoint.v3") throw fail();
+  if (rule && typeof rule === "object" && (Object.hasOwn(rule, "shared_sum_proposal") || Object.hasOwn(rule, "requirement_proposals"))
+    && record.schema_version !== "synapsor.action-authoring-checkpoint.v4") throw fail();
   if (record.operator_messages !== undefined && (!Array.isArray(record.operator_messages)
     || record.operator_messages.length > 16
     || record.operator_messages.some((message) => typeof message !== "string" || !message.trim() || message.length > 4_000))) throw fail();
@@ -186,7 +193,7 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   }
   if (record.subject_question !== undefined) {
     const q = record.subject_question as ActionRuleAuthoringCheckpoint["subject_question"];
-    if (record.schema_version !== "synapsor.action-authoring-checkpoint.v3" || !q || typeof q !== "object" || Array.isArray(q)
+    if (record.schema_version !== "synapsor.action-authoring-checkpoint.v4" || !q || typeof q !== "object" || Array.isArray(q)
       || Object.keys(q).some(k => !["id", "revision", "question_digest"].includes(k))
       || typeof q.id !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(q.id)
       || !Number.isSafeInteger(q.revision) || q.revision < 1 || typeof q.question_digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(q.question_digest)
@@ -328,7 +335,7 @@ export function assertActionLogicalTurnJournalAdvance(previous: ActionRuleAuthor
  * is excluded; this digest alone is never proof that a response was consumed. */
 export function actionLogicalTurnMaterialDigest(checkpoint: ActionRuleAuthoringCheckpoint): Digest {
   return canonicalJsonDigest({ intent_digest: checkpoint.intent_digest, context_digest: checkpoint.context_digest,
-    components: checkpoint.components, question: checkpoint.pending_question ? {
+    components: checkpoint.components, ...(checkpoint.requirement_proposals ? { requirement_proposals: checkpoint.requirement_proposals } : {}), question: checkpoint.pending_question ? {
       question: checkpoint.pending_question.question, operator_message: checkpoint.pending_question.operator_message,
       policy_source_digest: checkpoint.pending_question.policy_source_digest ?? null } : null });
 }

@@ -1,7 +1,7 @@
 /** Native job protocol identity, selected before dispatch. Old authoring jobs
  * are refused rather than interpreted or migrated. */
-export const STRUCTURED_AUTHORING_RESUME_VERSION = "synapsor.boundary-authoring-resume.v5" as const;
-export const STRUCTURED_AUTHORING_PROTOCOL_VERSION = "synapsor.structured-authoring.v4" as const;
+export const STRUCTURED_AUTHORING_RESUME_VERSION = "synapsor.boundary-authoring-resume.v6" as const;
+export const STRUCTURED_AUTHORING_PROTOCOL_VERSION = "synapsor.structured-authoring.v5" as const;
 export type StructuredAuthoringProtocol = { version: typeof STRUCTURED_AUTHORING_PROTOCOL_VERSION };
 
 export function parseStructuredAuthoringProtocol(value: unknown): StructuredAuthoringProtocol {
@@ -33,7 +33,7 @@ export function assertCurrentAuthoringEnvelope(value: unknown): void {
   const olderStructured = envelope.schema_version === STRUCTURED_AUTHORING_RESUME_VERSION
     && pin !== null && typeof pin === "object" && !Array.isArray(pin)
     && (pin as { version?: unknown }).version === "synapsor.structured-authoring.v1";
-  if (["synapsor.boundary-authoring-resume.v1", "synapsor.boundary-authoring-resume.v2", "synapsor.boundary-authoring-resume.v3", "synapsor.boundary-authoring-resume.v4"]
+  if (["synapsor.boundary-authoring-resume.v1", "synapsor.boundary-authoring-resume.v2", "synapsor.boundary-authoring-resume.v3", "synapsor.boundary-authoring-resume.v4", "synapsor.boundary-authoring-resume.v5"]
     .includes(typeof envelope.schema_version === "string" ? envelope.schema_version : "") || olderStructured)
     throw Object.assign(new Error(OLDER_AUTHORING_SETUP_MESSAGE), { code: "AUTHORING_SETUP_OLDER_VERSION" });
   if (envelope.schema_version !== STRUCTURED_AUTHORING_RESUME_VERSION)
