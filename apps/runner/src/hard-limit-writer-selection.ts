@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from './project-authority-mutation.js';
-import type { RuntimeActionRuleRegistryV1 } from '@synapsor-runner/action-rules';
+import { deriveReviewedSharedSumProtection, resolveReviewedSharedSumProtection, type RuntimeActionRuleRegistryV1 } from '@synapsor-runner/action-rules';
 import type { RuntimeConfig } from '@synapsor-runner/mcp-server';
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import { inspectSemanticReceiptSetupHeld, selectedSemanticReceipts } from './semantic-receipt-setup.js';
@@ -23,12 +23,13 @@ export async function projectHardLimitActivationWriterSelectionsHeld(input: Hard
   return withHeldProjectAuthorityAccess(input.projectRoot, permit, held => writerSelectionsHeld(captured, held));
 }
 async function writerSelectionsHeld(input: HardLimitActivationWriterSelectionInput, permit: ProjectAuthorityMutationPermit): Promise<RuntimeConfig> {
+  const shared = deriveReviewedSharedSumProtection(input.registry);
   const config = structuredClone(input.config);
   const required = new Map<string, number>();
   const selectedCounts = new Map<string, number>();
   const selected = new Map<string, { writer: string; receipts: NonNullable<RuntimeConfig['sources']>[string]['receipts'] }>();
   for (const { compiled } of input.registry.rules) {
-    if (!compiled.hard_limit) continue;
+    if (!compiled.hard_limit && !(shared && resolveReviewedSharedSumProtection(shared, input.registry, compiled))) continue;
     const source = input.config.sources?.[compiled.source];
     // Current genuine execution/source bindings retain precedence. A disabled
     // setup record cannot silently rebind an already selected writer.

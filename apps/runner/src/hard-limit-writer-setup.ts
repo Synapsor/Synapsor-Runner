@@ -1,8 +1,8 @@
 import process from 'node:process';
 import type { PoolClient } from 'pg';
-import { ActionRuleError, type RuntimeActionRuleRegistryV1 } from '@synapsor-runner/action-rules';
+import { ActionRuleError, deriveReviewedSharedSumProtection, resolveReviewedSharedSumProtection, type RuntimeActionRuleRegistryV1 } from '@synapsor-runner/action-rules';
 import { resolveSemanticSupervisedWriterSource, type RuntimeConfig, type RuntimeSupervisedWorkerOutcomePolicy } from '@synapsor-runner/mcp-server';
-import { assertPostgresHardLimitSource, createPostgresPool } from '@synapsor-runner/postgres';
+import { assertPostgresHardLimitSource, assertPostgresReviewedSharedSumSource, createPostgresPool } from '@synapsor-runner/postgres';
 import { inspectDatabaseWithConnection, rolePostureFingerprint, schemaFingerprintForInspection } from '@synapsor-runner/schema-inspector';
 import { assessSemanticSupervisedWriterPosture } from './worker-policy.js';
 
@@ -50,7 +50,9 @@ export function hardLimitWriterSetupLines(readback: HardLimitWriterSetupReadback
 /** Fresh bounded native inspection, never a cached execution permit. No business
  * rows, human identity, effect execution, or credential URLs enter the readback. */
 export async function inspectHardLimitWriterSetup(input: HardLimitWriterSetupInput): Promise<HardLimitWriterSetupReadback> {
-  const rules = input.registry.rules.filter(({ compiled }) => compiled.hard_limit && (!input.outcome || compiled.outcome === input.outcome));
+  const shared = deriveReviewedSharedSumProtection(input.registry);
+  const rules = input.registry.rules.filter(({ compiled }) => (compiled.hard_limit
+    || (shared && resolveReviewedSharedSumProtection(shared, input.registry, compiled))) && (!input.outcome || compiled.outcome === input.outcome));
   const readback: HardLimitWriterSetupReadback = { status: rules.length ? 'ready' : 'not_required', requirements: [], checks: [] };
   const env = input.env ?? process.env;
   for (const { compiled } of rules) {
@@ -93,7 +95,9 @@ export async function inspectHardLimitWriterSetup(input: HardLimitWriterSetupInp
       else if (role.rows[0]?.global_maintain !== false || role.rows[0]?.catalog_dml !== false) refuse('namespace_maintain_overbroad');
       else {
         const receipt = source.receipts?.authority === 'source_db' ? { table: `${quote(source.receipts.schema ?? 'public')}.${quote(source.receipts.table ?? 'synapsor_writeback_receipts')}`, provisioning: 'precreated' as const } : undefined;
-        await assertPostgresHardLimitSource(client, compiled, { tenantSetting: source.database_scope.tenant_setting, principalSetting: source.database_scope.principal_setting }, receipt);
+        const scope = { tenantSetting: source.database_scope.tenant_setting, principalSetting: source.database_scope.principal_setting };
+        if (compiled.hard_limit) await assertPostgresHardLimitSource(client, compiled, scope, receipt);
+        else await assertPostgresReviewedSharedSumSource(client, compiled, scope, receipt);
         // Existing metadata posture checks supply the ordinary business/receipt
         // privilege and RLS envelope. The connection is the selected writer.
         const nativeSource = await inspectNativeWriterSource(client);

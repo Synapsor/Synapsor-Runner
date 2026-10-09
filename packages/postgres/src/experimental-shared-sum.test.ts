@@ -53,27 +53,30 @@ function loader(client: ProfileClient, receipt?: { table: string; provisioning: 
 }
 const receipt = { table: 'shared_fixture.receipts', provisioning: 'precreated' as const };
 
-describe('experimental shared SUM uses existing PostgreSQL Source protection', () => {
+describe.each(['experimental', 'reviewed'] as const)('%s shared SUM uses existing PostgreSQL Source protection', profile => {
+  const inspect = (l: ReturnType<typeof loader>, c: ProfileClient) => profile === 'experimental'
+    ? l.assertExperimentalSharedSumSource!(c.fixture.registry.rules[0]!.compiled)
+    : l.assertReviewedSharedSumSource!(c.fixture.registry.rules[0]!.compiled);
   it.each(['absent', 'auto_migrate'] as const)('refuses %s atomic receipt before querying Source', async mode => {
     const c = new ProfileClient(), l = loader(c, mode === 'absent' ? undefined : { ...receipt, provisioning: 'auto_migrate' });
-    await expect(l.assertExperimentalSharedSumSource!(c.fixture.registry.rules[0]!.compiled))
-      .rejects.toMatchObject({ code: 'ACTION_RULE_SCOPE_UNPROVEN', path: 'experimental.shared_sum.source_receipt' });
+    await expect(inspect(l, c))
+      .rejects.toMatchObject({ code: 'ACTION_RULE_SCOPE_UNPROVEN', path: profile === 'experimental' ? 'experimental.shared_sum.source_receipt' : 'source.hard_limit.shared_sum_receipt' });
     expect(c.sql).toEqual([]);
   });
   it('qualifies the existing native profile and protects all three relations before inspection', async () => {
     const c = new ProfileClient(), l = loader(c, receipt), compiled = c.fixture.registry.rules[0]!.compiled;
-    await expect(l.assertExperimentalSharedSumSource!(compiled)).resolves.toBeUndefined();
+    await expect(inspect(l, c)).resolves.toBeUndefined();
     const guards = c.sql.filter(s => s.startsWith('PREPARE'));
     expect(guards).toHaveLength(3);
     expect(c.sql.indexOf(guards[2]!)).toBeLessThan(c.sql.findIndex(s => s.includes('AS triggers')));
     expect(c.sql.some(s => /^(INSERT|UPDATE|DELETE|COMMIT)\b/u.test(s))).toBe(false);
     const count = c.sql.length;
-    await l.assertExperimentalSharedSumSource!(compiled);
+    await inspect(l, c);
     expect(c.sql.length - count).toBe(2); // Session/namespace evidence precedes cache reuse.
   });
   it.each([true, 'missing', 'error'] as const)('fails closed for %s opaque metadata with no Source DML', async mode => {
     const c = new ProfileClient(mode), l = loader(c, receipt);
-    await expect(l.assertExperimentalSharedSumSource!(c.fixture.registry.rules[0]!.compiled)).rejects.toThrow();
+    await expect(inspect(l, c)).rejects.toThrow();
     expect(c.sql.some(s => /^(INSERT|UPDATE|DELETE|COMMIT)\b/u.test(s))).toBe(false);
   });
 });

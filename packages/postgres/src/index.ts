@@ -1,3 +1,5 @@
+export { assertPostgresReviewedSharedSumSource } from "./reviewed-shared-sum.js";
+import { assertPostgresReviewedSharedSumSource } from "./reviewed-shared-sum.js";
 export { assertPostgresHardLimitSource } from "./hard-limit-source.js";
 import { sourceRollbackBinding, sourceCompletionBinding } from "@synapsor-runner/worker-core";
 import crypto from "node:crypto";
@@ -205,6 +207,7 @@ export function createPostgresActionRuleFactLoader(
   const compatible = new Set<string>();
   return {
     engine: "postgres",
+    assertReviewedSharedSumSource: compiled => assertPostgresReviewedSharedSumSource(client, compiled, databaseScope, admission?.receipt),
     assertHardLimitSource: compiled => assertPostgresHardLimitSource(client, compiled, databaseScope, admission?.receipt),
     assertExperimentalSharedSumSource: compiled => assertPostgresExperimentalSharedSumSource(client, compiled, databaseScope, admission?.receipt),
     async assertResourceCompatible(binding: CompiledRuleBindingV1): Promise<void> {
@@ -1261,7 +1264,8 @@ async function sourceTransaction<T>(
 
 async function admitNewPostgresSource(client: PostgresApplyClient, job: WritebackJob, config: RunnerConfig): Promise<void> {
   if (job.protocol_version !== "5.0") return;
-      await config.semanticActionVerifier?.admitSource?.({ job,
+  if (!config.semanticActionVerifier) throw new Error("SEMANTIC_REVERIFIER_UNAVAILABLE");
+  await config.semanticActionVerifier.admitSource?.({ job,
         factLoader: createPostgresActionRuleFactLoader(client, config.databaseScope,
           receiptAuthority(config) === "source_db" ? { receipt: {
             table: sourceReceiptTable(config), provisioning: config.receipts?.provisioning ?? "precreated" } } : undefined) });

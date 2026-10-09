@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveRuntimeConfig, type RuntimeConfig } from "@synapsor-runner/mcp-server";
-import type { RuntimeActionRuleRegistryV1 } from "@synapsor-runner/action-rules";
+import { assertReviewedSharedSumRegistry, type RuntimeActionRuleRegistryV1 } from "@synapsor-runner/action-rules";
 import type { BoundProjectPolicyStore } from "./control-policy-store.js";
 import { executionConfigForReview, SEMANTIC_ACTION_RUNTIME_CONFIG } from "./semantic-execution-state.js";
 import { assertHardLimitWriterSetup } from "./hard-limit-writer-setup.js";
@@ -25,7 +25,8 @@ export async function assertHardLimitAuthorityWriterAdmission(input: {
     held => assertWriterAdmissionHeld({ ...captured, projectRoot: held.projectRoot, mutationPermit: held }));
 }
 async function assertWriterAdmissionHeld(input: Parameters<typeof assertHardLimitAuthorityWriterAdmission>[0]): Promise<void> {
-  if (!input.registry.rules.some(({ compiled }) => compiled.hard_limit)) return;
+  assertReviewedSharedSumRegistry(input.registry);
+  if (!input.registry.shared_sum && !input.registry.rules.some(({ compiled }) => compiled.hard_limit)) return;
   const root = path.resolve(input.projectRoot);
   let configPath = path.join(root, SEMANTIC_ACTION_RUNTIME_CONFIG);
   let text: string | undefined;

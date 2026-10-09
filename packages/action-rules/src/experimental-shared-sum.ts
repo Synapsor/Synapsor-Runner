@@ -25,9 +25,9 @@ export type ExperimentalSharedSumProtection = Readonly<{
   [protectionBrand]: true;
 }>;
 type Context = { parent: CompiledRuleBindingV1; populations: [CompiledRuleBindingV1, CompiledRuleBindingV1] };
-type Built = { designation: ExperimentalSharedSumDesignationV1; contexts: Map<string, Context>;
+export type SharedSumDerivedState = { designation: ExperimentalSharedSumDesignationV1; contexts: Map<string, Context>;
   participants: Array<{ outcome: string; compiled_plan_digest: string }>; meaning: string };
-const issued = new WeakMap<ExperimentalSharedSumProtection, Built>();
+const issued = new WeakMap<ExperimentalSharedSumProtection, SharedSumDerivedState>();
 function refuse(stage: string): never {
   throw new ActionRuleError('ACTION_RULE_SCOPE_UNPROVEN',
     'The experimental shared limit cannot be inspected with the supported guarantees.', `experimental.shared_sum.${stage}`);
@@ -139,8 +139,8 @@ function meaning(ctx: Context, d: ExperimentalSharedSumDesignationV1): string {
   return canonicalJsonDigest({ parent: material(ctx.parent, d.limit.field),
     populations: ctx.populations.map((b, i) => material(b, d.populations[i]!.field)).sort((a, b) => a.physical.localeCompare(b.physical)) });
 }
-function build(registry: RuntimeActionRuleRegistryV1, designation: ExperimentalSharedSumDesignationV1): Built {
-  const d = normalizeDesignation(designation), current = snapshotActionRuleRegistry(registry);
+export function buildSharedSumDerivedState(registry: RuntimeActionRuleRegistryV1, designation: ExperimentalSharedSumDesignationV1): SharedSumDerivedState {
+  const d = normalizeDesignation(designation), current = registry;
   const relevant = current.rules.filter(({ compiled: c }) => c.source === d.source
     && c.effect_envelope.writeback.mode !== 'none'
     && [c.target_resource, ...(c.atomic_updates ?? []).map(m => m.target_resource)].some(r =>
@@ -165,7 +165,7 @@ function build(registry: RuntimeActionRuleRegistryV1, designation: ExperimentalS
 export function compileExperimentalSharedSumProtection(input: {
   registry: RuntimeActionRuleRegistryV1; designation: ExperimentalSharedSumDesignationV1;
 }): ExperimentalSharedSumProtection {
-  const state = build(input.registry, input.designation);
+  const state = buildSharedSumDerivedState(snapshotActionRuleRegistry(input.registry), input.designation);
   const plan = Object.freeze({ schema_version: state.designation.schema_version,
     disposition: 'EXPERIMENTAL_NO_PUBLIC_ACTIVATION' as const,
     digest: canonicalJsonDigest({ schema_version: state.designation.schema_version, meaning: state.meaning }) }) as ExperimentalSharedSumProtection;
@@ -174,14 +174,14 @@ export function compileExperimentalSharedSumProtection(input: {
 export function resolveExperimentalSharedSumProtection(plan: ExperimentalSharedSumProtection,
   registry: RuntimeActionRuleRegistryV1, compiled: CompiledActionRuleV1): { digest: `sha256:${string}` } | undefined {
   const state = issued.get(plan); if (!state) return refuse('plan_origin');
-  const current = build(registry, state.designation);
+  const current = buildSharedSumDerivedState(snapshotActionRuleRegistry(registry), state.designation);
   if (current.meaning !== state.meaning || canonicalJsonDigest(current.participants) !== canonicalJsonDigest(state.participants)) refuse('inventory_changed');
   const participant = current.participants.find(p => p.outcome === compiled.outcome);
   if (!participant) return undefined;
   if (participant.compiled_plan_digest !== compiled.compiled_plan_digest) return refuse('inventory_changed');
   return { digest: plan.digest };
 }
-function stateFor(plan: ExperimentalSharedSumProtection, compiled: CompiledActionRuleV1): { state: Built; ctx: Context } {
+function stateFor(plan: ExperimentalSharedSumProtection, compiled: CompiledActionRuleV1): { state: SharedSumDerivedState; ctx: Context } {
   const state = issued.get(plan), ctx = state?.contexts.get(compiled.outcome);
   if (!state || !ctx || !state.participants.some(p => p.outcome === compiled.outcome && p.compiled_plan_digest === compiled.compiled_plan_digest)) return refuse('plan_origin');
   return { state, ctx };
@@ -218,7 +218,13 @@ function numericState(ctx: Context, designation: ExperimentalSharedSumDesignatio
  * the existing parent-row FOR UPDATE; this digest is never a lock service. */
 export function experimentalSharedSumGuardIdentity(plan: ExperimentalSharedSumProtection,
   compiled: CompiledActionRuleV1, facts: ActionRuleFactSetV1): `sha256:${string}` {
-  const { ctx } = stateFor(plan, compiled); validateRows(ctx, facts);
+  const { state } = stateFor(plan, compiled);
+  return sharedSumDerivedGuardIdentity(state, compiled, facts);
+}
+export function sharedSumDerivedGuardIdentity(state: SharedSumDerivedState,
+  compiled: CompiledActionRuleV1, facts: ActionRuleFactSetV1): `sha256:${string}` {
+  const ctx = state.contexts.get(compiled.outcome); if (!ctx) return refuse('plan_origin');
+  validateRows(ctx, facts);
   return canonicalJsonDigest({ source: compiled.source, relation: physical(ctx.parent),
     tenant: facts.trusted.tenant, principal: facts.trusted.principal,
     key: { column: ctx.parent.resource.primary_key, value: facts.bindings[ctx.parent.binding]!.rows[0]![ctx.parent.resource.primary_key] } });
@@ -227,7 +233,14 @@ export function experimentalSharedSumGuardIdentity(plan: ExperimentalSharedSumPr
  * Called only after the existing verifier establishes immutable effect identity. */
 export function checkExperimentalSharedSumPostState(plan: ExperimentalSharedSumProtection,
   compiled: CompiledActionRuleV1, facts: ActionRuleFactSetV1, effect: DerivedActionEffectV1): void {
-  const { state, ctx } = stateFor(plan, compiled); validateRows(ctx, facts);
+  const { state } = stateFor(plan, compiled);
+  checkSharedSumDerivedPostState(state, compiled, facts, effect);
+}
+export function checkSharedSumDerivedPostState(state: SharedSumDerivedState,
+  compiled: CompiledActionRuleV1, facts: ActionRuleFactSetV1, effect: DerivedActionEffectV1): void {
+  const ctx = state.contexts.get(compiled.outcome);
+  if (!ctx || !state.participants.some(p => p.outcome === compiled.outcome && p.compiled_plan_digest === compiled.compiled_plan_digest)) return refuse('plan_origin');
+  validateRows(ctx, facts);
   // Validate the original complete state before replacement can hide invalid
   // amounts or unsafe arithmetic; projection must not repair unknown facts.
   numericState(ctx, state.designation, facts);
