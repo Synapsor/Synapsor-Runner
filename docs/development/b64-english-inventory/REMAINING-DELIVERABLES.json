@@ -53,8 +53,8 @@
       "id": "6",
       "deliverable": "B65 public arithmetic55refused/50/40/45/55refused + races",
       "owner": "Tester/B66/Main",
-      "status": "SERIAL item2 same fresh D01 on b668: actual public export and typed UPDATE counter review/disabled save PASS; current Read activation correctly pending saved confirmed Read meaning. Tester inspecting offered W ordinary revision with prepared $0 responder. D01/F04/F05 arithmetic not reached; F01-F03 INSERT blocked pending explicit initializer-stage/compilation-format decision. Old held Source/jobs/history untouched.",
-      "active_work": true
+      "status": "SERIAL2 BLOCKED at same-job bf5 ordinary Resume READ_SCOPE_REVIEW_CHANGED,0dispatches; exact offered reopen/details/pause/manual preserved. D01 UPDATE25 and F04/F05 no arithmetic reached; F01INSERT25/F02INSERT20/F03INSERT10 BLOCKED Owner initializer format. Actual export/counter disabled save/native scope confirmation progressed, no activation/business effects. Same Source30/50/history untouched.",
+      "active_work": false
     },
     {
       "id": "7",
@@ -131,7 +131,7 @@
       "id": "17",
       "deliverable": "D01 interrupted-step recovery missing Continue / supported recorded route",
       "owner": "Main recovery / Read owner regression / R2 / PG independent tester",
-      "status": "Permit migration SOURCE + OWNER COMPONENT ARTIFACT ACCEPT at df557cbe by R2; immediate typed self-conflict/required Held propagation, actual boundary types0, final233PASS19files0skip. Full native/public class qualification OPEN; coldVersion17 NOTREACHED retained. Main scoped integration complete; serial item2 public arithmetic next.",
+      "status": "Scoped migration df557 + export b668 + exact post-Read Held reload bf5 SOURCE/OWNER NATIVE COMPONENT independently ACCEPT;233P/26P/8P scoped; public scope/currentness/revision wiring OPEN. ColdVersion17NOT_REACHED; full class qualification OPEN, no arithmetic proof.",
       "active_work": false,
       "evidence": "MAIN-D01-CONTROLS-COMPOSITION.json"
     },
@@ -209,5 +209,9 @@
   "compiler_typed_path_integration": "MAIN-I01944-TYPED-PATH-INTEGRATION.json",
   "standing_ceremony_rule": "Standing ceremony: small fixes = tests in the commit + one-line record; independent review batched per deliverable; full preseal/seal only for format, security/permission, concurrency semantics, paid runs or customer data. Handoffs \u226415 lines; status replies short.",
   "dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
-  "controlling_mode": "Owner SERIAL overnight: one active implementation item plus required review; order permit, PG public cases, scripted journey, cards, details, Main/Action English, MySQL."
+  "controlling_mode": "Owner SERIAL overnight: one active implementation item plus required review; order permit, PG public cases, scripted journey, cards, details, Main/Action English, MySQL.",
+  "serial_customer_service_journey": {
+    "owner": "Tester",
+    "status": "ACTIVE SERIAL3 fresh approved-recipe copy/customer-service workflow, zero-provider; record first breaking step before advancing cards. No new grants/authority seeds/frozen changes."
+  }
 }

@@ -1459,7 +1459,7 @@
   "standing_ceremony_rule": "Standing ceremony: small fixes = tests in the commit + one-line record; independent review batched per deliverable; full preseal/seal only for format, security/permission, concurrency semantics, paid runs or customer data. Handoffs \u226415 lines; status replies short.",
   "dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
   "main_access_wiring_checkpoint": {
-    "status": "df557 scoped migration + b668 export successor SOURCE/OWNER COMPONENT ACCEPT; real D01 export PASS; activation/arithmetic OPEN",
+    "status": "df557 + b668 + bf5 scoped SOURCE/OWNER COMPONENT ACCEPT; same D01 typed UPDATE disabled/save confirmed; actual activation/arithmetic OPEN",
     "record": "Main explicit Held callers/owned currentness extraction: scoped tsc0; initial composed101P9test-adapterF\u2192Read-host9P; native19P2fixtureF\u2192affected10P; receipt dropped configuration port actualbefore0P1F\u2192fullreceipt21P +coldInput7P; affectedcoverage2P; coldVersion17NOT_REACHED empty unreviewed syntheticcatalog. Raw failures preserved under /var/tmp/synapsor-b64-main-access-owned/evidence; BC19067 vs19069; R2 complete SA review/public closure OPEN; no English count credit.",
     "next": "Serial item2 D01 UPDATE and supported public cases; initializer format decision queued; no other implementation active."
   },
@@ -1487,6 +1487,6 @@
       "PROPOSED not approved/implemented: INSERT public cases blocked; D01 UPDATE unaffected. Independent proposal904b952f at reviewer2-read8/initializer-stage-compatibility-independent-decision-proposal-v1.json."
     ]
   },
-  "serial_current_item": 2,
-  "serial_state": "Item2 same fresh D01 proceeding typed UPDATE setup/activation on b668; INSERT format decision BLOCKED; all other implementation HELD."
+  "serial_current_item": 3,
+  "serial_state": "Item2 clearly BLOCKED: bf5 same-job Resume READ_SCOPE_REVIEW_CHANGED with0dispatches; INSERT format decision queued. Tester item3 $0 customer-service journey/first break ACTIVE; others HELD."
 }
