@@ -1,0 +1,23 @@
+{
+  "base": "05683d32",
+  "test": "57382de4",
+  "product": "9ae6499f",
+  "before": "3PASS5FAIL actual B48 completed batches; needed filtered-history port absent",
+  "after": "8PASS0FAIL0SKIP actual B48 same tests",
+  "affected": "35PASS0FAIL197filtered existing host-owned whole-batch-stop group; not full suite",
+  "producer_binding": "Immutable captured authority before awaiting, genuine completion context in existing private WeakMap; exact original identity only. No public trace/history reconstruction.",
+  "history": "Already filtered providerHistory; existing12288char detail/omission representation.",
+  "old_getters": "Existing clone/sequence semantics retained; no format/counters/egress/provider/model settings change.",
+  "evidence": "/var/tmp/synapsor-main-generation-context-owned/evidence",
+  "hashes": {
+    "feedback-before.json": "74dc3ca9f6eeafbfba0d4148c648d9b2c013f2da7ba38e4aefcbc764dc220659",
+    "feedback-before.log": "0eb1f7cca24f93d1a64d219e49151d5daa8262b18aadf96efaacbf5bc0ccb318",
+    "feedback-after.json": "1efe0a6920be749304b09857e39bb9dea77933ed3e3906e0a98819c82dc7d252",
+    "feedback-after.log": "31ac9e53bb89fe0ac909d0f17566996e3e1b74f76f0449285e9b7b7cb459c625",
+    "feedback-affected.json": "6e736448076df7b73a5d9fd2625872a0caea254087520133113fe23917d47ea5",
+    "feedback-affected.log": "6153dc73ad17443586f3a031d63b1df4a1d26b99ef00ab0da595b846334b8650",
+    "FEEDBACK-SOURCE-MANIFEST.json": "40dba00043a5e39fbfb2c261a387c9434733d85daaf837321b6d56e9ef41d710"
+  },
+  "independent": "R2sourceACK9ae; rawpacket review pending; B53 actualproducer/CAS extension integration NOTRUN.",
+  "qualified": "In-memory native authoring transport host plus actual B48 decoding/callbacks; no SourceDB/provider access/publicCLI/nativeResume delivery claim."
+}
