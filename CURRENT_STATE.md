@@ -1,14 +1,14 @@
 ACTIVE B64/B65 — paid CLOSED; private backup only; frozen candidate3/history untouched.
-B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z; B65 T0Oct8 16:56:15Z/endOct12 sameUTC; unchanged.
-Main codex/b64-read-compose-20261008 @96e14201; [ownership/counts](docs/development/b64-english-inventory/LANES.json).
-Remaining accepted typed/delete: Privacy0/0, Action28/5, Main30/0; Ask/Read/Chat0/0 owned-source only; qualification still OPEN.
-Main runtime four accepted85PASS; Source I02064 accepted/integrated132uniquePASS; boundary19121lines; exact evidence linked in inventory records.
-Read strict file consumers569ca+coherent pair12d8 independently R1accepted9d40/ae1b; actual Main21PASS at7b13, zero source-copy bytes; [record](docs/development/b64-english-inventory/MAIN-READ-CONSUMERS-INTEGRATION.json).
-Read next remaining typed fixture/native-history/cold old-reader qualification; public bundle5PASS reaches identity prerequisite only, not signed activation; globaltypes/full remain OPEN.
-I03537 raw-text privacy/compatibility decision pending Owner; source-only12620da3; no English exemption or invented complete identity set.
-Action receipt96e14201 R2 ACCEPT/Main197PASS; four IDs retired; [record](docs/development/b64-english-inventory/MAIN-RECEIPT-IDENTITY-INTEGRATION.json); approved initializer implementation B66/Action child.
-B65 hard-limit/import/renderer IN MAIN; original publicfive787 sealed: all ScopeUnproven, Source30/0effects; arithmetic NOT ESTABLISHED.
-D01 exact7b13 stops at Read visible-field projection before job/worker; helper diagnosing. Types293 incl27production remain OPEN. Runtime clone namespace_acl refusal separate; no grants expanded.
-All-lane snapshots filtered/hashmanifested; R2 16.2MB, Ask14.8MB, B66 36.9MB, Tester72.2MB incltar; Main/Read/R1 reuse0copy. [Storage report](docs/development/snapshot-storage-20261009/REPORT.md); no deletion.
-Slots1TesterD01/2R2snapshot/3initializer available/4free;4heavy,max8workers/run,0700isolation,8GiBfreeRAM/disk; no usagepause.
-Commit/privatepush checkpoints; Luna35total/remain19.72936875 inclholds paid CLOSED; next finish initializer binding, report exact public deciding checks.
+B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z; B65 T0 2026-10-08T16:56:15Z/end2026-10-12T16:56:15Z; unchanged.
+Accepted Main codex/b64-read-compose-20261008 @42aae87c; unaccepted B65 composer codex/b65-namespace-admission-compose-20261009 @b3b1ca60 plus current next-action checkpoint.
+[Controlling bounded scope/owners](docs/development/b64-english-inventory/OWNER-BOUNDED-COMPLETION.json); [remaining accepted counts](docs/development/b64-english-inventory/LANES.json): Privacy0/0 Action28/5 Main30/0; Ask/Read/Chat0/0 owned-source.
+B2 actual writer native8PASS independently scoped d55ad4f6; public pre-Yes/final publication/cold selected-writer/revocation proof still OPEN; fd792 closure integrated b3b1ca60.
+D01 approved kept-out Read link removed and local dedicated PG17 MAINTAIN applied; no job/effect. Source-owner all-writers version fact pending Owner; never infer it.
+Namespace SHARE is catalog-wide; MAINTAIN is maintenance+locking, fixture-only approval. Strict fence stays; portable prototype T0 Oct9 02:29:34Z/capOct10 sameUTC, Tester Slot1.
+Five public arithmetic outcomes NOT ESTABLISHED; retained Source30/50 and ScopeUnproven/import failures separate. No stale-as-limit verdict or expanded Read.
+Initializer source8ab5199d original6PASS/domain34P2F; cold additive completed-staged/compiled association + public route OPEN; B66/Action child owns producer, Main CAS/recovery hooks.
+Workbench db9f repaired R2 accepted unchangedclient7/native6; owner38unique. Integrate bounded port next; fullUI/public qualification OPEN.
+Known-FK field UX7fcd99b7 before4F/after9P independent pending; Main typed next-action before1F/after16P [record](docs/development/b64-english-inventory/MAIN-RELATIONSHIP-NEXT-ACTION.json).
+B62 frozen8 byte-goldens/API ee0515ac awaiting R2 preseal then helper extraction; B53 ee0515 design only; B63 helper2dc41 characterization next; source_db recommendation tests prepared, no migration.
+Approved old sealed copied-doc cleanup27f3e087:15.241277440GB freed,226 retained hashes unchanged; [report](docs/development/storage-cleanup-20261009-reviewer2/REPORT.txt) in helper; future snapshots exclude docs.
+Next: public writer presenter/recheck + R1; initializer live/cold binding; integrate accepted Workbench; remaining typed sites. Globaltypes293/full/installed OPEN;4slots/max8workers/run/0700/8GiBfloors; commit+privatepush.

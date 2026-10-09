@@ -1,0 +1,144 @@
+{
+  "controlling_direction": "Owner 2026-10-08 schema identity/progress/prompts/receipts; bounded work now, paid CLOSED; historical post-demo waits superseded for this scope only",
+  "windows": {
+    "B64": {
+      "T0": "2026-10-08T06:32:23Z",
+      "end": "2026-10-13T06:32:23Z"
+    },
+    "B65": {
+      "T0": "2026-10-08T16:56:15Z",
+      "end": "2026-10-12T16:56:15Z"
+    },
+    "reset": false,
+    "automatic_extension": false
+  },
+  "pins": {
+    "accepted_Main": "42aae87c",
+    "B2_composition": "3798057f",
+    "B2_composition_branch": "codex/b65-namespace-admission-compose-20261009",
+    "candidate3": "preserved; no frozen artifact edits"
+  },
+  "current_support": {
+    "namespace_fence": "unchanged pg_namespace catalog-wide SHARE plus protected relation/effect identity; PG17 MAINTAIN is maintenance and locking authority, not lock-only",
+    "grant": "GRANT MAINTAIN ON TABLE pg_catalog.pg_namespace TO \"b65_s04_writer\";",
+    "grant_scope": "approved owned disposable PG17 fixture only, not customer provisioning approval; never automatically executed by product",
+    "MySQL": "no additional namespace grant; current complete hard-limit Source verifier remains unsupported, separate from ordinary MySQL support",
+    "PG14_16": "strict capability-specific unsupported outcome; not blanket Runner/database rejection"
+  },
+  "owners": {
+    "Main": {
+      "work": "B2 actual lower authority/public confirmation wiring, serial reviewed integration, general relationship next_action hook",
+      "files": [
+        "boundary-commands.ts",
+        "action-rule-authority.ts",
+        "verified-action-review.ts",
+        "hard-limit-authority-admission.ts",
+        "hard-limit-action-review.ts",
+        "boundary-structured-authoring.ts"
+      ]
+    },
+    "Runtime": {
+      "task": "01a112d4-bd54-7441-b272-5932b16e4971",
+      "work": "B2 compiled readiness/grant/selection contract; portable strategy source design separate",
+      "files": [
+        "hard-limit-writer-setup.ts",
+        "hard-limit-writer-selection.ts",
+        "semantic-action-deployment.ts",
+        "writer-provisioning.ts",
+        "packages/postgres/src/hard-limit-source.ts"
+      ]
+    },
+    "native_Tester": {
+      "task": "01a117fd-4600-76a3-baf7-e404eb16d0d3",
+      "work": "public D01/five actual deciding checks when ready; portable native prototype and existing cross-resource matrix in parallel; own scripts/fixtures only"
+    },
+    "R1": {
+      "agent": "/root/early_full_triage",
+      "work": "independent B2/native identity/initializer/relationship counterexamples; no product self-approval"
+    },
+    "Read": {
+      "agent": "/root/b59_regression_fix",
+      "work": "Workbench sender binding repair; capacity/receipt test preparation; local-ui/workbench own files"
+    },
+    "prompt_helper": {
+      "agent": "/root/b64_visibility_retirement",
+      "work": "relationship named-key diagnostic; B62 byte-preserving Read prompt extraction then B53 design/ports; no Action hotspot edits"
+    },
+    "R2": {
+      "task": "01a114f6-d7b7-7103-951e-59bd5959837a",
+      "work": "independent Workbench and Read presentation/step review"
+    },
+    "Action": {
+      "coordinator": "01a11d25-18fd-7b12-aff5-adec1c9679c6",
+      "work": "typed private INSERT initializer; owns action-rule-model.ts, no Main command edits"
+    }
+  },
+  "finite_queue": {
+    "B65_portable": {
+      "T0": "2026-10-09T02:29:34Z",
+      "cap_end": "2026-10-10T02:29:34Z",
+      "scope": "one-working-day prototype, within existing B65 window; transaction-scoped relations plus identity-bound execution, actual parse/replan dependencies; PG14/15/16/17 as resources permit; no product replacement before independent proof",
+      "matrix": [
+        "schema rename/replacement",
+        "table rename/drop-recreate",
+        "constraint/trigger/RLS drift",
+        "stale OIDs",
+        "multiple source/receipt relations",
+        "lock wait/cancel",
+        "narrow credentials",
+        "concurrent DML and independent scopes"
+      ],
+      "optional_helper": "local fixed-operation SECURITY DEFINER only, safe search_path, trusted owner, no PUBLIC/arbitrary SQL/object/mode; no customer deployment"
+    },
+    "B53": {
+      "scope": "existing B51/B48 drafting controllers; typed durable progress/pause and finite operator extension, same job/currentness/CAS; no used-counter/hold resets",
+      "default_pauses": [
+        "3 completed no-advance attempts",
+        "identical invalid after feedback or A-B-A loop",
+        "missing owner meaning/technical prerequisite"
+      ],
+      "progress": "actual validated required components/consumed decisions/validation advancement, not prose/new IDs/dropped requirements/repeated saves/fewer errors",
+      "proofs": [
+        ">12 genuinely progressing replies with finite trusted extension",
+        "loop/oscillation/dropped requirements",
+        "deeper validation",
+        "restart/concurrent extension/decline/EOF",
+        "uncertain transport/save"
+      ],
+      "boundary": "all actual sends counted/paid; prospective completed attempts separate from transport failures; experiment/closed benchmark limits unchanged"
+    },
+    "B62": {
+      "scope": "one owned prompt ID/version + typed contract/context/correction module per touched step, byte-preserving extraction first; no mega-prompt or remote service",
+      "first": "Read assembly at exact379; frozen8 byte pairs5b080d4b; independent preseal before product",
+      "metadata": "existing generation records/settings; pinned operations never silently switched; confirmed meaning unaffected by prose"
+    },
+    "B63": {
+      "scope": "65/128 genuine setup-review-edit-restart via durable agenda/batches; preserve12 changed per submission and8 review page; 4096 technical bound separately, no end-to-end claim",
+      "preparation": "Read 2dc41e16 READ-ONLY-TEST-MAP.json; cross-owner codec caps must be adjudicated explicitly"
+    },
+    "receipts": {
+      "scope": "recommend source_db for new supported production-write setup with actual storage/grants/recovery readback; runner_ledger available, acknowledged success recordable and unknown COMMIT may stay unresolved",
+      "no_change": [
+        "existing Luna/deployment mode",
+        "replay/recovery authority",
+        "matching-row adoption",
+        "receipt backend"
+      ],
+      "proofs": [
+        "atomic source receipt/effect",
+        "original operation/scope/effect binding",
+        "retention and Source identity",
+        "idempotent authorized reconciliation"
+      ]
+    }
+  },
+  "open_prerequisites": [
+    "D01 every-source-writer conflict counter confirmation pending Owner; exact question in Tester64276996",
+    "B2 whole composed production/native independent acceptance pending",
+    "INSERT initializer exact completion carrier/cold restore compatibility under review",
+    "Workbench db9f repair independent verdict pending",
+    "named-key UX addendum currentafter9PASS needs independent review",
+    "global types/full/public installed qualification OPEN; decision counts Main30/0 Action28/5 Privacy0/0"
+  ],
+  "resources": "four heavy slots globally, max8 workers/run, isolated0700 HOME/TMP/DB/ports, RAM and disk >=8GiB; no bulk docs copies; fixed manifests; private backup only; all campaign money/holds unchanged; no automatic release"
+}

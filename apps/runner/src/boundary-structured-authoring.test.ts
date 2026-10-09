@@ -259,6 +259,20 @@ describe("structured boundary authoring", () => {
     expect(mocked.commit).not.toHaveBeenCalled();
   });
 
+  it("provides a safe correction route for a typed unavailable Read relationship without saving", async () => {
+    const root = await project([], [{ resource_id: "billing.accounts", include: true }]);
+    mocked.prepare.mockRejectedValue(Object.assign(new Error(
+      'Relationship "account_customer_fk" is excluded because billing.customers.customer_id is kept out of Read use.'
+    ), { code: "READ_RELATIONSHIP_UNAVAILABLE" }));
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation(chunk => { output += String(chunk); return true; });
+    await expect(run(["--project-root", root, "--draft", "draft.json", "--json"])).resolves.toBe(2);
+    expect(JSON.parse(output)).toMatchObject({ ok: false, code: "READ_RELATIONSHIP_UNAVAILABLE",
+      next_action: expect.stringContaining("separate field review"), source_database_changed: false, active_authority_changed: false });
+    expect(mocked.compile).not.toHaveBeenCalled();
+    expect(mocked.commit).not.toHaveBeenCalled();
+  });
+
   it("refuses a draft reached through a parent symlink before compilation or save", async () => {
     const root = await project(["billing.pause"]);
     const other = await project(["billing.pause"]);

@@ -41,10 +41,10 @@
     }
   },
   "heavy_slots": {
-    "1": "B65 Tester fresh public D01 RELEASED7b13",
-    "2": "Main receipt197PASS END",
-    "3": "free after Main21PASS; initializer focused tests available",
-    "4": "Runtime UPDATE diagnosis complete; no effects"
+    "1": "native Tester public prerequisites/portable matrix; exact no replay",
+    "2": "R1 B2 independent native/composition review",
+    "3": "relationship named-key UX finite END; initializer/prompt allocated explicitly",
+    "4": "R2 Workbench repair independent finite review"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -1427,5 +1427,6 @@
       "delete": 0
     }
   },
-  "snapshot_policy": "Future snapshots exclude docs and unrelated material; included SOURCE-MANIFEST hashes/config/assets required. Prefer fixed worktree reuse. No existing snapshot deletion authorized."
+  "snapshot_policy": "Future snapshots exclude docs and unrelated material; included SOURCE-MANIFEST hashes/config/assets required. Prefer fixed worktree reuse. No existing snapshot deletion authorized.",
+  "controlling_bounded_work": "OWNER-BOUNDED-COMPLETION.json"
 }

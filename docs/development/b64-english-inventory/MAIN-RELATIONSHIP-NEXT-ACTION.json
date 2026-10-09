@@ -1,0 +1,39 @@
+{
+  "scope": "Typed READ_RELATIONSHIP_UNAVAILABLE JSON next_action only; no English error parsing, access change, consent or authority write",
+  "base": "3798057f",
+  "dependency_closure": "b3b1ca60",
+  "before": {
+    "passed": 0,
+    "failed": 1,
+    "filtered_not_run": 15,
+    "failure": "Missing next_action; unchanged no Source/authority/compile/commit assertions"
+  },
+  "after": {
+    "passed": 16,
+    "failed": 0,
+    "skipped": 0
+  },
+  "run": "/var/tmp/synapsor-main-relationship-next-step-ij7b0oak",
+  "profile": {
+    "workers": 1,
+    "testTimeout": 20000,
+    "hookTimeout": 20000,
+    "network": "bwrap --unshare-net",
+    "HOME_TMP": "owned0700 outside repository/home config ancestry",
+    "source_copy_bytes": 0
+  },
+  "files": {
+    "before.json": "e3d50970c0d79668b1c6eff8f86087d9bae7c60a6f1d6fadb70fa93b0daf6144",
+    "before.log": "f16c10da247e2199b1f62ac139999b9ee5c253162511f95f6b46eaed5f1dd39f",
+    "COMMAND.json": "d769e540922dc17c5590d8088b345cca0025c574a84129ac1fea19ad20b2b9b8",
+    "SOURCE-MANIFEST.json": "a1900ade1ae0df8e432484f8e75f45f52e492523056bab2f4b0cd2f6b55ed9f2",
+    "after.json": "bf6e1af33a580516c75068441efd4b5c3be90e8bcf1f66aee50550982e094c51",
+    "AFTER-COMMAND.json": "df4b1ecaa4adad68871784a58158da2731bc074d44d27671da4e4f433d267280",
+    "AFTER-SOURCE-MANIFEST.json": "52a14fe06a4f1ac14ed6aec70ae6082fa3bcd0ef54c6136b02c781cf40d4921d",
+    "AFTER-EXIT.json": "93012f1e1a27990ba7581b0895852a6525cba65a926fa019df0aa04b3bd72401"
+  },
+  "evidence_level": "actual product JSON error adapter with mocked producer; not independent/public native whole setup acceptance",
+  "review": "R2 queued; field UX7fcd99b7 separately pending",
+  "paid": "closed",
+  "process": "ended Slot3"
+}

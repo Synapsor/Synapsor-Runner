@@ -1028,6 +1028,9 @@ function structuredErrorMessage(error: unknown, code: string): string {
 function structuredErrorNextAction(code: string): string | undefined {
   const stopped = planAuthoringRefusal(code);
   if (stopped) return stopped.next_action;
+  if (code === "READ_RELATIONSHIP_UNAVAILABLE") {
+    return "Review the reported relationship and kept-out key in a separate field review, or remove the relationship if this Read task does not need it. Then correct and resubmit the saved draft. This refusal does not expose a field or change active authority.";
+  }
   if (code === "ACTION_VERSION_REVIEW_TERMINAL_REQUIRED") {
     return "Run the counter review in a real operator terminal. The typed draft and --json do not supply source-owner consent; no draft-field correction is required by this refusal.";
   }
