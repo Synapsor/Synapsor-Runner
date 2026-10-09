@@ -1,0 +1,32 @@
+{
+  "base": "42aae87c",
+  "head": "7544b339",
+  "owner_source": [
+    "6bbb501c",
+    "db9f5810"
+  ],
+  "independent": {
+    "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-db9f-workbench-typed-partial-repair-independent-v1.json",
+    "sha256": "44229e25be30daac2c85ddb6cbce379a267ffc188207b139b1f8912addd2b018",
+    "scope": "R2 unchanged client7+native6 accepted bounded partial-progress and browser captured-context repair"
+  },
+  "integration": {
+    "path": "/var/tmp/synapsor-main-workbench-integration-yy4viq5c",
+    "passed": 38,
+    "failed": 0,
+    "skipped": 0,
+    "source_copy_bytes": 0,
+    "slot": "2 END",
+    "commands": "/var/tmp/synapsor-main-workbench-integration-yy4viq5c/COMMAND.json",
+    "source_manifest": "/var/tmp/synapsor-main-workbench-integration-yy4viq5c/SOURCE-MANIFEST.json"
+  },
+  "conflict": "New typed-partial native test did not exist in Main42 (modify/delete ancestry conflict); preserved full reviewed test from owner6bbb, no safety assertion removed",
+  "files": {
+    "vitest.json": "b802888cd039dfacb3a99bb928e791b50ee7a6c38bc0700bf6ff8cfd60957429",
+    "vitest.log": "1d7f27d47d752a97b1745dde0a734e41912dbd0de553a5679bb05ed7d6efed5d",
+    "SOURCE-MANIFEST.json": "fb8828e261ce9206b9e8b4174b47cfd9d7570349f2581c152d1b55cbd1ff86f2",
+    "COMMAND.json": "80ecc25b5c1d0fc2294def8b3126d1b1ce5d68ad428c247a3eff3fa8f328087d",
+    "EXIT.json": "da858c78e60d36293d257e8f6681ae13373d98e83ae5322bfd30b4f14acf4882"
+  },
+  "open": "Full event/public activation/installed/globaltypes/full suite separate OPEN; no B64 site credit"
+}

@@ -1,0 +1,120 @@
+{
+  "updated": "2026-10-09",
+  "accepted_Main": "7544b339",
+  "B2_composition": "65e14750 (unintegrated)",
+  "windows": {
+    "B64": [
+      "2026-10-08T06:32:23Z",
+      "2026-10-13T06:32:23Z"
+    ],
+    "B65": [
+      "2026-10-08T16:56:15Z",
+      "2026-10-12T16:56:15Z"
+    ]
+  },
+  "paid": "CLOSED; Luna35 total, liabilities/holds preserved; no B64 paid approval inferred",
+  "rows": [
+    {
+      "id": "1",
+      "deliverable": "B64 English decision sites \u21920",
+      "owner": "Main/B66",
+      "status": "OPEN: Main30typed/0delete, Action28/5; Read/Ask/Chat/Privacy0/0 owned source; actual English retirement edits queued behind current initializer/admission work",
+      "active_work": false
+    },
+    {
+      "id": "2",
+      "deliverable": "B64 Runner cards + editable fields; Enter keeps suggestion, never confirms",
+      "owner": "Main/B66 presentation",
+      "status": "QUEUED: existing typed cards/initializer partial work; real setup/edit screen acceptance not actively running",
+      "active_work": false
+    },
+    {
+      "id": "3",
+      "deliverable": "B64 /details full per-operation history",
+      "owner": "Main/B66 presentation",
+      "status": "QUEUED: no current implementation/acceptance run",
+      "active_work": false
+    },
+    {
+      "id": "4",
+      "deliverable": "B64 full suite",
+      "owner": "Main",
+      "status": "QUEUED: focused Workbench38PASS; globaltypes293/open fixes and integrated pin must settle first; no full suite running",
+      "active_work": false
+    },
+    {
+      "id": "5",
+      "deliverable": "B64 real-Terra paid run",
+      "owner": "Tester/Owner",
+      "status": "BLOCKED: needs Owner approval and accepted artifact; paid CLOSED",
+      "active_work": false
+    },
+    {
+      "id": "6",
+      "deliverable": "B65 public arithmetic55refused/50/40/45/55refused + races",
+      "owner": "Tester/B66/Main",
+      "status": "BLOCKED public execution on truthful all-writers version fact + initializer/native binding; initializer actively built, no arithmetic/race currently running",
+      "active_work": true
+    },
+    {
+      "id": "7",
+      "deliverable": "B65 pre-activation actual writer capability integrated",
+      "owner": "Main/Runtime/R1",
+      "status": "ACTIVE: PG17 native8 + configured-public4 scopedPASS on65e; composition integration + disabled-selection1119 before/after still open",
+      "active_work": true
+    },
+    {
+      "id": "8",
+      "deliverable": "B65 portable schema identity PG14\u201316",
+      "owner": "Tester/Runtime",
+      "status": "ACTIVE: PG14 owned20controls; schema/function-body gaps retained; PG15/16/17 matrix/prototype in progress, strict fence unchanged",
+      "active_work": true
+    },
+    {
+      "id": "9",
+      "deliverable": "B65 T01\u2013T10 cross-resource verdicts",
+      "owner": "Tester",
+      "status": "QUEUED: old compiler/support matrix retained; current runtime verdicts await exact reviewed public hard-limit pin; no T01\u2013T10 execution active",
+      "active_work": false
+    },
+    {
+      "id": "10",
+      "deliverable": "Step-owned prompts B62",
+      "owner": "Prompt helper/R2/Main",
+      "status": "ACTIVE: Read extractioncb3 golden8+independent6PASS; integrate first owned module, broader correction/prompt families open",
+      "active_work": true
+    },
+    {
+      "id": "11",
+      "deliverable": "Progress-aware continuation B53",
+      "owner": "Prompt helper/R2/Main/Action",
+      "status": "ACTIVE preparation: actual baseline67a/API10029 preseal pending; no pure product/controller binding yet, no allowance resets",
+      "active_work": true
+    },
+    {
+      "id": "12",
+      "deliverable": "65/128-Action programs B63",
+      "owner": "Read helper/R1/Main",
+      "status": "ACTIVE preparation:65 reaches full agenda/paged review/cold reopen;128 blocked by192 export records; bounded capacity representation decision next",
+      "active_work": true
+    },
+    {
+      "id": "13",
+      "deliverable": "source_db recommendation readback",
+      "owner": "Main/Read helper",
+      "status": "QUEUED: read-only receipt test map prepared; no current product/readback implementation; existing deployments untouched",
+      "active_work": false
+    }
+  ],
+  "not_actively_worked": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "9",
+    "13"
+  ],
+  "next": "Main writer/typed binding and integration; R1disabledselection proof; helperB53baseline/capacity representation; existing reviewers independent",
+  "limits": "4heavy/max8workers perrun/0700 isolatedHOME_TMP_DB/8GiB free memory+disk/privatebackup only; no automaticwindow reset"
+}
