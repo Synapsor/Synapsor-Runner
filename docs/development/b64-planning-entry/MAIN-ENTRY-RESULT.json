@@ -1,0 +1,10 @@
+{
+  "preview": "0b8ef630",
+  "before": "c9d02e8b plus corrected fixturecc41950e",
+  "before_result": "0PASS2FAIL real native missing consumption/currentness fences",
+  "fix": "2998b0cd always native capture; b2da stage-ACK/schemaRemove repair included0b8",
+  "after": "16PASS0FAIL0SKIP exactMainentry2+ownerplanning13+actualRemove1",
+  "independent": "c58cd3e1 unchanged8PASS;5db1e02d actual2freshOS public clientwait same/coldprovider0",
+  "evidence": "/var/tmp/synapsor-main-planning-entry-owned/evidence",
+  "acceptance": "Scoped only; other public/compatibility/groups and final full suite open; held MySQL/PG unchanged."
+}

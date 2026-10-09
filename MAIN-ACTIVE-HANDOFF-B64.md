@@ -1,15 +1,15 @@
-REMAINING DELIVERABLES — 1. [ ] English decisions → 0 — Main/B66 separate owners: RESTARTED, Main 30 typed/0 delete; Action 28/5; Read/Ask/Chat/Privacy 0/0 owned source. [Pins, clocks, evidence and next steps](docs/development/b64-english-inventory/REMAINING-DELIVERABLES.json); B64 T0 2026-10-08T06:32:23Z/end 2026-10-13T06:32:23Z; B65 T0 2026-10-08T16:56:15Z/end 2026-10-12T16:56:15Z unchanged.
-2. [ ] Runner cards + editable fields on real setup/edit; Enter keeps, never confirms — Read/Main/R1: ACTIVE; thin native adapter20 controls PASS; Main public hooks and independent real-route proof open.
-3. [ ] /details full per-operation history — helper/Main/R2: source+component ACCEPT bb8/d4 (prior18 +successor14 PASS separate); Main protected loader/access/currentness/real setup-edit proof open.
-4. [ ] Full suite — Main: QUEUED after integrated fixes/types; focused Read36 PASS, global type failures retained.
-5. [ ] Real-Terra run — Tester/Owner: BLOCKED on your approval and accepted artifact; paid CLOSED, frozen artifacts untouched.
-6. [ ] Public hard-limit 55 refused / 50 / 40 / 45 / 55 refused + races — PG Tester ACTIVE Slot1; scope reviews saved inactive, Source30/50 kept; vocabulary consumer repair/R2 active, two interrupted steps fenced; D01 NOTRUN.
-7. [x] Pre-activation actual writer check — Main/Runtime/R1: SCOPED DEV ACCEPT46ed; native/public checks pass, shown-writer drift refused, permissions/runtime rechecks retained; no effect/release claim.
-8. [x] Portable schema-identity prototype PG14–16 — Tester/Runtime: REPORT COMPLETE, PG14–17 native80+4; replacement unproven, strict fence retained.
-9. [ ] T01–T10 cross-resource verdicts — Tester: QUEUED on coherent public proof/free native slot; prior matrix retained.
-10. [ ] Step-owned prompts (B62) — B66 separate implementer DISPATCHED; accepted Read8 golden +6 independent kept; remaining prompt families now assigned.
-11. [ ] Progress-aware continuation (B53) — B66 separate live implementer DISPATCHED; accepted pure12 kept; live CAS/finite extension and two preserved failures in scope.
-12. [ ] 65/128-Action programs (B63) — separate owner requested, QUEUED for next free slot; small13-action native PASS retained, larger proofs open; limits unchanged.
-13. [ ] source_db readback — Runtime/Main/R2: SCOPED SOURCE INTEGRATED02d, informational16 controls +thin display ports accepted; native Keep/full setup QUEUED, no mode/default change.
-14. [ ] MySQL full B65 matrix — native19+adapter2 PASS; Owner APPROVED prospective v4/v3 planning repair+ONE fresh $0 after acceptance; Read7a native10PASS/Main hooks/R1 sealed review ACTIVE; old held job kept; reconcile unsupported7791.
-15. [x] Typed deadlock/timeout — B66/Main/R1: SCOPED DEV ACCEPT integratedbe48873f, Main242 +independent20 +nativeMySQL2 PASS; original stale-cache failures kept. Four heavy slots/eight workers/run/0700 isolation/≥8 GiB free/private backup only.
+B64/B65 ACTIVE — paid CLOSED; frozen candidates/history/holds untouched. [REMAINING DELIVERABLES (18 owned rows)](docs/development/b64-english-inventory/REMAINING-DELIVERABLES.json).
+Pins: accepted scoped product be48873f; working preview0b8ef630 unaccepted. Private backup only. B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z; B65 T0 2026-10-08T16:56:15Z/end2026-10-12T16:56:15Z unchanged.
+#1 English→0: Main boundary+dedicated nonboundary owner30/0, B66 Action owner28/5; separate lanes RUNNING, no independent count credit yet; Read/Ask/Chat/Privacy owned source0/0.
+#2 Cards/editable real screens — Read/Main/R1 OPEN protected public hooks; Enter keeps suggestion, never confirms. #3 /details — helper/Main/R2 source/component accepted, real screens/access hooks OPEN.
+#4 Full suite Main QUEUED on integrated/type corrections. #5 Real Terra Tester/Owner requires new approval+accepted artifact; paid CLOSED.
+#6 Arithmetic/races PG Tester held unchanged30/50; D01 NOTRUN until supported recovery. INSERT initializer Main-open. #7 Actual writer preactivation scoped ACCEPT; #8 portable identity report complete, replacement unproven.
+#9 T01–T10 Tester QUEUED. #10 B62 prompt helperaed25PASS, independent review OPEN. #11 B53 live helper558 exact46 running; Main bounded original-result feedback hook next.
+#12 B63 capacity owner native65/128 PASS +cold restart/exact edits, independent negatives/controller/public proof OPEN; no4096 claim. #13 source_db readback scoped source accepted, native Keep/full setup OPEN.
+#14 MySQL R1 native19+adapter2PASS; Owner-approved planning format repair16owner/Main+8independentPASS; actual cold OS public planner1→0PASS5db; remaining groups/final ONE fresh job OPEN, held job unchanged.
+#15 Specific contention reasons integratedbe488, Main242+independent20+nativeMySQL2PASS; original stale-dependency failures retained.
+#16 D01 vocabulary crash — helper/Main/R2: consumer914 independent6PASS; wire strict-schema a83 actual before3FAIL→after9PASS, independent wire verdict pending.
+#17 Missing Continue/recovery — Main/Read/R2/PG Tester: same-version general held-reader permit closure failing-before next; no uncertain completion, replay, counter reset or v4 on old held PG.
+#18 MySQL source_db lost-COMMIT reconcile — Runtime/Main/R1 OPEN UNSUPPORTED; map actual capability and clear preactivation refusal; unknown remains unresolved, no replay/row adoption/new backend implied.
+EXACT NEXT Main: genuine boundaryGenerationContext held-permit test on0e → smallest shared-reader forwarding → R2 → same saved PG local review; prospective v4/public planning and supplemental wire proofs continue separately.
+Limits:4 heavy slots/max8 workers each; isolated0700 HOME/TMP/DB/ports,≥8GiB memory+disk; no docs snapshots. Commit+backup each checkpoint; no usage stop; one editor/file.
