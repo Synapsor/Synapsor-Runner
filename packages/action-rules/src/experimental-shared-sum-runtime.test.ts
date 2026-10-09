@@ -95,6 +95,10 @@ describe('experimental shared SUM in the existing semantic verifier', () => {
     await expect(verifier.admitSource({ job: f.job, factLoader: f.adapter })).rejects.toMatchObject({ code: 'ACTION_RULE_AUTHORITY_STALE' });
     expect(f.trace).toEqual([]);
   });
+  it('fails closed when UPDATE would erase an original negative Source contribution', async () => {
+    const f = await setup({ oldWaiver: -1 });
+    await expect(f.verifier({ job: f.job, factLoader: f.adapter })).rejects.toMatchObject({ code: 'ACTION_RULE_SCOPE_UNPROVEN', path: 'experimental.shared_sum.facts_integer' });
+  });
   it('keeps the default verifier unmarked and preserves the pre-state behavior', async () => {
     const f = await setup({ committed: 300 }); delete f.adapter.assertExperimentalSharedSumSource;
     const ordinary = createSemanticActionVerifier({ registry: f.registry, clock: () => time });

@@ -1,5 +1,5 @@
 {
-  "status": "COMPILER_RUNTIME_PG_EXPERIMENTAL_IMPLEMENTED; COMPONENT_204PASS; BOUNDED_CORE_BUILD_PASS; INDEPENDENT_REVIEW_NATIVE_PUBLIC_PENDING",
+  "status": "R2_SS05_REPAIRED; COMPONENT_209PASS; BOUNDED_CORE_BUILD_PASS; INDEPENDENT_FINAL_REVIEW_NATIVE_PUBLIC_PENDING",
   "base_pin": "00bdc02f",
   "owner_source": "/home/sandesh-tiwari/.codex/attachments/8b31a779-ca23-490f-bb29-47f7db03c762/Pasted text.txt (read once)",
   "boundary": "One PostgreSQL Source, existing reviewed scoped team/limit row, exactly two complete reviewed contribution populations, same reviewed nonnegative integer unit, only single INSERT/UPDATE; no atomic groups/delegation/delayed work/public default activation/customer DDL.",
@@ -57,7 +57,7 @@
   "grants": "Root will not add grants. Native Tester may reuse only reviewed owned disposable PG recipe; needed team/population/version-row-lock/receipt/namespace rights must be described as exact delta and independently reviewed first. Existing namespace MAINTAIN profile is not a new broader grant.",
   "resources": "Focused1worker/offline initially; native1slot owned by Tester; <=4 heavy jobs/max8 workers; actual >=8GiB RAM/disk at launch.",
   "paid": "CLOSED",
-  "tests": "204PASS0FAIL0SKIP across exact7 files; 22compiler+11runtime+6PGprofile+12namespace+2connection+existingactionrules/index regressions. Corrected baseline2PASS7genuineFAIL. No native/public/whole-repo acceptance.",
+  "tests": "Latest209PASS0FAIL0SKIP exact7files; corrected original runtime baseline2PASS7FAIL; SS05 before33PASS5 genuineFAIL, after209PASS. Earlier204PASS remains historical. No native/public/whole-repo acceptance.",
   "public": "NOT_RUN",
   "component_runs": [
     {
@@ -320,13 +320,71 @@
           "sha256": "1338a52317ec17caec6eef54bb0c18c26410ce1f3ae197195091f519dc2ab069"
         }
       }
+    },
+    {
+      "stage": "ss05-before",
+      "counts": {
+        "numTotalTests": 38,
+        "numPassedTests": 33,
+        "numFailedTests": 5,
+        "numPendingTests": 0
+      },
+      "child_exit": 1,
+      "classification": "33PASS5 genuineFAIL on0e4: negative-old waiver UPDATE kernel+actual verifier pass; bare integers accepted; original negative limit overwritten; unsafe original combined SUM reducing UPDATE incorrectly produces limit false rather than unknown scope.",
+      "raw": {
+        "RUN.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/ss05-before/RUN.json",
+          "sha256": "ccff7389618be21f51236e4e3d2e55164a2799b53e719afc5266df3637d05e85"
+        },
+        "vitest.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/ss05-before/vitest.json",
+          "sha256": "c67906a39a20d4dd8e1b58de83c9b44118c18fc323c4e91c8554afc5a745d469"
+        },
+        "test.log": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/ss05-before/test.log",
+          "sha256": "f3e8a56eaa6a2247ef5d237cd22ed77dde59b01dcb35a806ead71429f337a768"
+        },
+        "SOURCE-MANIFEST.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/ss05-before/SOURCE-MANIFEST.json",
+          "sha256": "10e573dec7f4cdb105836e87d94cfbf19501d5ec9453fe18e545ec1f87302d6c"
+        }
+      }
+    },
+    {
+      "stage": "ss05-after",
+      "counts": {
+        "numTotalTests": 209,
+        "numPassedTests": 209,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      },
+      "child_exit": 0,
+      "classification": "209PASS0FAIL0SKIP exact7files;26compiler+12runtime+6PGprofile+existing165 regressions. Validate original complete numeric state before replacement, explicit reviewed unit required.",
+      "raw": {
+        "RUN.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/ss05-after/RUN.json",
+          "sha256": "89ef9c938256ec7fc7134fab6e70d088fcf4b27f4e98192ae39c74feed169d95"
+        },
+        "vitest.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/ss05-after/vitest.json",
+          "sha256": "f598965d4bd30f0db34e62e92b93ac2248ad0c4ad1f27bb89eed5e3a1654f571"
+        },
+        "test.log": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/ss05-after/test.log",
+          "sha256": "8382f8b09ed7b9968754687a4ba883866a4b59aeae536359d1138c2345a8090b"
+        },
+        "SOURCE-MANIFEST.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/ss05-after/SOURCE-MANIFEST.json",
+          "sha256": "e4a5200b0d9f3d3666aa92a9b8cbd51b1925b8dbdb427943d0f8ee391fb90b77"
+        }
+      }
     }
   ],
   "source_modules": {
-    "packages/action-rules/src/experimental-shared-sum.ts": "9538b79d82c6bbc507be23aca245a38baf580cf12cf24f468dacc2eb9b282350",
-    "packages/action-rules/src/experimental-shared-sum.test.ts": "29fb5ee1c20b022fd8cacbdc3b39fe6681c3901dc20e45aecd3cd94685298cd5",
-    "packages/action-rules/src/testing/experimental-shared-sum-fixture.ts": "6e6aa3f32d1dfde15b4f18891f9a14f3369f3741feb6ed327c28f9ae920f00b5",
-    "packages/action-rules/src/experimental-shared-sum-runtime.test.ts": "a716e81ece2e3b04b015373942b590c58de2eb7d2707e24830d8e3346f4dc630",
+    "packages/action-rules/src/experimental-shared-sum.ts": "fe9c12ecfc037cb3246dc016b2a727729ef843c2db9a1185fdd70489caf05382",
+    "packages/action-rules/src/experimental-shared-sum.test.ts": "d70f569e39ce52b2f8421862c56bb769e5613f8fd91d3df6bb540c444418768b",
+    "packages/action-rules/src/testing/experimental-shared-sum-fixture.ts": "2f827dc750138746d51289654bc3643084154903580cbb8e58468116b5242756",
+    "packages/action-rules/src/experimental-shared-sum-runtime.test.ts": "5acc60932c6c759eead8341363c26057696e5c05def6ccfea4070d96891e4d93",
     "packages/action-rules/src/runtime.ts": "b798116ea9e86d35bb97e26ef504055081a5ccee144681fcd8afced7a1a9f708",
     "packages/action-rules/src/fact-loader.ts": "1164f960e38f44238b0061f06a5961af8329035bfd8a0e0d09446187be27d9f8",
     "packages/action-rules/src/index.ts": "b6fd18ebf3b9ad43be66ef21543ef190127620f9e594a0186056344cf1bbe886",
@@ -448,6 +506,41 @@
           "sha256": "cc9664257bdaa37886ef0982b90ec94bb8b884619a6a5e6aa1b3cbe33c929e5f"
         }
       }
+    },
+    {
+      "stage": "bounded-core-build-4",
+      "child_exit": 0,
+      "packages": [
+        "protocol",
+        "spec",
+        "action-rules",
+        "control-plane-client",
+        "worker-core",
+        "postgres"
+      ],
+      "classification": "Exit0 exact6project PG core closure after R2 SS05; no whole-repo/native acceptance.",
+      "raw": {
+        "RUN.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/bounded-core-build-4/RUN.json",
+          "sha256": "c021fa1bff42180c0d3c8711ff6f420719eade55ddbc5c8a727f08f1a57413d4"
+        },
+        "build.log": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/bounded-core-build-4/build.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "SOURCE-MANIFEST.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/bounded-core-build-4/SOURCE-MANIFEST.json",
+          "sha256": "bca37668dd13fbb9ff5df2e66eefb0591fad6e03d4a25bbd8acbbb0ad58ae5ab"
+        },
+        "DIST-BEFORE.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/bounded-core-build-4/DIST-BEFORE.json",
+          "sha256": "cc9664257bdaa37886ef0982b90ec94bb8b884619a6a5e6aa1b3cbe33c929e5f"
+        },
+        "DIST-AFTER.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/bounded-core-build-4/DIST-AFTER.json",
+          "sha256": "efab50e707ad70f26b497358c35e4c0f6b83baeddb73f9ebf44781186e57ff68"
+        }
+      }
     }
   ],
   "existing_source_profile_body": {
@@ -455,5 +548,20 @@
     "sha256": "1f025d76a828e35b994a4f140c3cf4f8e01d0956ba6e545aa2cd35dc13ddc473",
     "scope": "Factor function only; all existing namespace/relation/column/opaque/RLS/FK/trigger checks unchanged."
   },
-  "one_line_change_record": "Wire explicit compiler-issued shared-SUM plan into existing current-authority verifier and PG native profile; fresh overflow produces exact job-bound hard-limit refusal; old UPDATE contribution is replaced, proposed limit is checked, unknown/missing Source visibility fails closed; same transactions/locks/executor/receipts/default path."
+  "one_line_change_record": "R2 SS05: refuse unknown original numeric state before UPDATE can hide it, require an explicit reviewed common unit; before33PASS5genuineFAIL\u2192after209PASS0FAIL, bounded6projectbuildPASS; no Source/executor/receipt/grant changes.",
+  "review_counterexample_SS05": "R2 via Main: original negative amount can be hidden by UPDATE; require all original limit/pop amounts and safe combined SUM BEFORE projection, and explicitly reviewed common unit. Addressed with numericState before projection and after, explicit unit check; genuine failing-before5cases +passing-after in same fix commit.",
+  "previous_source_modules_0e4": {
+    "packages/action-rules/src/experimental-shared-sum.ts": "9538b79d82c6bbc507be23aca245a38baf580cf12cf24f468dacc2eb9b282350",
+    "packages/action-rules/src/experimental-shared-sum.test.ts": "29fb5ee1c20b022fd8cacbdc3b39fe6681c3901dc20e45aecd3cd94685298cd5",
+    "packages/action-rules/src/testing/experimental-shared-sum-fixture.ts": "6e6aa3f32d1dfde15b4f18891f9a14f3369f3741feb6ed327c28f9ae920f00b5",
+    "packages/action-rules/src/experimental-shared-sum-runtime.test.ts": "a716e81ece2e3b04b015373942b590c58de2eb7d2707e24830d8e3346f4dc630",
+    "packages/action-rules/src/runtime.ts": "b798116ea9e86d35bb97e26ef504055081a5ccee144681fcd8afced7a1a9f708",
+    "packages/action-rules/src/fact-loader.ts": "1164f960e38f44238b0061f06a5961af8329035bfd8a0e0d09446187be27d9f8",
+    "packages/action-rules/src/index.ts": "b6fd18ebf3b9ad43be66ef21543ef190127620f9e594a0186056344cf1bbe886",
+    "packages/postgres/src/experimental-shared-sum.ts": "385b1fa2ec6ef6e60800c80562bd1b7eb0b9a51a776eb76189faca0d6c667714",
+    "packages/postgres/src/experimental-shared-sum.test.ts": "2c6e1ecb2410fd5f233ad106d9ff63883e73693871120d8a6999e6251dfeced4",
+    "packages/postgres/src/hard-limit-source.ts": "15426f4a2b928c28f68b92313851f4414ae689ba1a9836df7b3fd0cf89561602",
+    "packages/postgres/src/index.ts": "657a112109076fddfd13eca50fbe1c0ac7cc0f1a255cc3483b167ab49b5fa199",
+    "packages/postgres/src/namespace-contention.test.ts": "4f4582ca7d2d11c7357b121b31c563f26d8e0975bb476c079b4884a0c7de49ce"
+  }
 }

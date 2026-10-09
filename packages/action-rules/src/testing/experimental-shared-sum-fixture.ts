@@ -6,10 +6,10 @@ import type { ExperimentalSharedSumDesignationV1 } from '../experimental-shared-
 /** Synthetic reviewed native-experiment input. Production compiler/verifier;
  * no public authority, customer grants, ledger edits or activation asserted. */
 export function experimentalSharedSumFixture(options: { credit?: number; waiver?: number; limitChange?: number;
-  schema?: string; engine?: 'postgres' | 'mysql'; creditBinding?: string; waiverBinding?: string } = {}) {
+  schema?: string; unit?: string | null; engine?: 'postgres' | 'mysql'; creditBinding?: string; waiverBinding?: string } = {}) {
   const schema = options.schema ?? 'shared_fixture', source = 'experimental_database';
   const id = { kind: 'string', max_length: 64, comparison: 'exact' } as const;
-  const amount = { kind: 'integer', unit: 'reviewed_credits' } as const;
+  const amount = { kind: 'integer', ...(options.unit === null ? {} : { unit: options.unit ?? 'reviewed_credits' }) } as const;
   const version = { kind: 'integer' } as const;
   const digest = `sha256:${'a'.repeat(64)}` as const, engine = options.engine ?? 'postgres';
   const scope = { mode: 'columns', tenant_field: 'tenant_id', principal_field: 'principal_id' } as const;

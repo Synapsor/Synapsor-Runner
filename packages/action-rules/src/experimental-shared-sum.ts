@@ -91,7 +91,8 @@ function context(compiled: CompiledActionRuleV1, d: ExperimentalSharedSumDesigna
     ...populations.map((binding, i) => ({ binding, field: d.populations[i]!.field }))];
   const units = valueFields.map(({ binding, field }) => {
     const value = binding.verification.fields.find(f => f.name === field);
-    if (!value || value.nullable || value.type.kind !== 'integer') return refuse('unit');
+    if (!value || value.nullable || value.type.kind !== 'integer'
+      || typeof value.type.unit !== 'string' || !value.type.unit) return refuse('unit');
     return canonicalJsonDigest(value.type);
   });
   if (new Set(units).size !== 1) refuse('unit');
@@ -203,6 +204,16 @@ function integer(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return refuse('facts_integer');
   return value;
 }
+function numericState(ctx: Context, designation: ExperimentalSharedSumDesignationV1,
+  facts: ActionRuleFactSetV1): { total: number; limit: number } {
+  const limit = integer(facts.bindings[ctx.parent.binding]!.rows[0]![designation.limit.field]);
+  let total = 0;
+  for (const [i, b] of ctx.populations.entries()) for (const row of facts.bindings[b.binding]!.rows) {
+    total += integer(row[designation.populations[i]!.field]);
+    if (!Number.isSafeInteger(total)) refuse('facts_overflow');
+  }
+  return { total, limit };
+}
 /** Stable physical guard identity for diagnostics/tests. Protection itself is
  * the existing parent-row FOR UPDATE; this digest is never a lock service. */
 export function experimentalSharedSumGuardIdentity(plan: ExperimentalSharedSumProtection,
@@ -217,6 +228,9 @@ export function experimentalSharedSumGuardIdentity(plan: ExperimentalSharedSumPr
 export function checkExperimentalSharedSumPostState(plan: ExperimentalSharedSumProtection,
   compiled: CompiledActionRuleV1, facts: ActionRuleFactSetV1, effect: DerivedActionEffectV1): void {
   const { state, ctx } = stateFor(plan, compiled); validateRows(ctx, facts);
+  // Validate the original complete state before replacement can hide invalid
+  // amounts or unsafe arithmetic; projection must not repair unknown facts.
+  numericState(ctx, state.designation, facts);
   const post = structuredClone(facts);
   if (effect.atomic_updates?.length || effect.source !== compiled.source
     || effect.resource !== compiled.target_resource.name || effect.schema !== compiled.target_resource.schema || effect.table !== compiled.target_resource.table
@@ -256,10 +270,6 @@ export function checkExperimentalSharedSumPostState(plan: ExperimentalSharedSumP
     }
   }
   validateRows(ctx, post);
-  let total = 0;
-  for (const [i, b] of ctx.populations.entries()) for (const row of post.bindings[b.binding]!.rows) {
-    total += integer(row[state.designation.populations[i]!.field]);
-    if (!Number.isSafeInteger(total)) refuse('facts_overflow');
-  }
-  if (total > integer(post.bindings[ctx.parent.binding]!.rows[0]![state.designation.limit.field])) throw new HardLimitPostStateExceeded();
+  const { total, limit } = numericState(ctx, state.designation, post);
+  if (total > limit) throw new HardLimitPostStateExceeded();
 }

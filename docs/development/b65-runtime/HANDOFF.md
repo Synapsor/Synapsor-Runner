@@ -1,7 +1,7 @@
 B65 Runtime workstream4 RUNNING; Owner8b31 supersedes serial HOLD; paid CLOSED; failure/uncertainty history preserved.
 Explicit host-only experimental shared SUM; one PG17 Source/team/two complete populations; no public/default activation.
-Compiler/runtime/PG qualification implemented; existing parent-first locks, executor, Source transaction and atomic receipt reused.
-Corrected runtime before2PASS7genuineFAIL; after204PASS0FAIL0SKIP exact7files; earlier fixture/oracle failures retained separately.
+Compiler/runtime/PG qualification implemented; original numeric state + explicit common unit validated; existing parent-first locks, executor, Source transaction and atomic receipt reused.
+Corrected runtime before2PASS7genuineFAIL; SS05 before33P5F→after209PASS0FAIL0SKIP exact7files; earlier fixture/oracle failures retained separately.
 Bounded PG core dependency closure6projects PASS; first22type diagnostics retained and fixed; no whole-repo type/build claim.
 Native requirement: precreated Source_DB receipt and existing reviewed owned recipe only; no automatic grant/DDL widening.
 R2 sole high-risk queue: complete deliverable source/concurrency review before integration/native claim; Main relays exact pins.

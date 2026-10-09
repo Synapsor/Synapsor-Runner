@@ -112,6 +112,28 @@ describe('experimental shared SUM compiler and whole proposed state', () => {
     expect(() => checkExperimentalSharedSumPostState(f.plan, v.compiled, f.facts, v.effect))
       .toThrow(expect.objectContaining({ code: 'ACTION_RULE_SCOPE_UNPROVEN', path: 'experimental.shared_sum.effect_identity' }));
   });
+  it('refuses replacing an original negative contribution before projection can hide it', () => {
+    const f = setup(); for (const alias of [f.wb, 'waiver']) f.facts.bindings[alias]!.rows[0]!.amount = -1;
+    const v = effect(f, 'waiver');
+    expect(() => checkExperimentalSharedSumPostState(f.plan, v.compiled, f.facts, v.effect))
+      .toThrow(expect.objectContaining({ path: 'experimental.shared_sum.facts_integer' }));
+  });
+  it('requires an explicitly reviewed common unit instead of bare integers', () => {
+    const f = experimentalSharedSumFixture({ unit: null });
+    expect(() => compileExperimentalSharedSumProtection(f)).toThrow(expect.objectContaining({ path: 'experimental.shared_sum.unit' }));
+  });
+  it('checks the original safe combined SUM before a reducing UPDATE', () => {
+    const f = setup({ waiver: 0 }), v = effect(f, 'waiver');
+    f.facts.bindings[f.cb]!.rows.push({ tenant_id: 't1', principal_id: 'p1', team_id: 'team1', credit_id: 'c1', version: 1, amount: Number.MAX_SAFE_INTEGER });
+    for (const alias of [f.wb, 'waiver']) f.facts.bindings[alias]!.rows[0]!.amount = 1;
+    expect(() => checkExperimentalSharedSumPostState(f.plan, v.compiled, f.facts, v.effect))
+      .toThrow(expect.objectContaining({ path: 'experimental.shared_sum.facts_overflow' }));
+  });
+  it('checks the original limit before a replacing limit UPDATE', () => {
+    const f = setup(), v = effect(f, 'limit'); f.facts.bindings.team!.rows[0]!.limit = -1;
+    expect(() => checkExperimentalSharedSumPostState(f.plan, v.compiled, f.facts, v.effect))
+      .toThrow(expect.objectContaining({ path: 'experimental.shared_sum.facts_integer' }));
+  });
   it('refuses an update whose target is outside the complete team population', () => {
     const f = setup(), v = effect(f, 'waiver');
     v.effect.primary_key.value = 'other_team_row';
