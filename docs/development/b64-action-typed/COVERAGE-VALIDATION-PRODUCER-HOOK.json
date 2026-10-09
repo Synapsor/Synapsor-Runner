@@ -1,0 +1,39 @@
+{
+  "status": "source_API_prepared_not_wired_unexecuted_no_retirement_count",
+  "owned_file": "apps/runner/src/authoring-coverage-feedback.ts",
+  "exports": {
+    "CoverageValidationFailureReason": [
+      "reference_missing",
+      "deployment_component_mixed",
+      "counter_reference_overbroad",
+      "field_evidence_unavailable",
+      "structure_invalid",
+      "evidence_value_mismatch",
+      "privacy_conflict",
+      "counter_structure_invalid",
+      "override_unestablished",
+      "obligation_structure_invalid"
+    ],
+    "CoverageValidationError": "new CoverageValidationError(reason: CoverageValidationFailureReason, message: string): Error & {readonly reason:CoverageValidationFailureReason}"
+  },
+  "origin": "Main strict host parser creates real class instances only after unchanged actual validation fails; presentation text stays unchanged, optional localization never creates classification; serialized/provider reason fields are not accepted",
+  "source_scope": "class declaration only; no producer or coverageFinding decision change. Existing English guards retained until actual failing-before and exact producer adoption; class existence is not source completion.",
+  "Main_owned_producer": "apps/runner/src/authoring-policy-coverage.ts",
+  "required_replacements": {
+    "reference_missing": "canonicalDraftPointer missing path:90; wrapped missing reference:351; parsePolicyCoverage missing references:730",
+    "deployment_component_mixed": "deployment prerequisite exact component/ref refusal:384; exact classification failure next to it",
+    "counter_reference_overbroad": "counter exact capability/path reference refusal:421",
+    "field_evidence_unavailable": "missing/incomplete field privacy evidence:449/457",
+    "structure_invalid": "passage object:323; schema/range:340; invalid exact pointer grammar; parsePolicyCoverage envelope:717/718/719",
+    "evidence_value_mismatch": "mechanical evidence value mismatch:405",
+    "privacy_conflict": "field actual exposure disagreement:466",
+    "counter_structure_invalid": "counterRequirementError:276 constructor; keep complete original issue message",
+    "override_unestablished": "invalidOverride factory:473; every return/throw keeps exact original support check",
+    "obligation_structure_invalid": "applicationObligationError:306 constructor; keep complete original issue message"
+  },
+  "coordination": "Main changes only exception constructor+reason, preserving all conditionals/messages/paths and class wrappers; coordinate exact committed pin before owner adoption. Do not use code-only reason extraction or wholesale shared-file replacement.",
+  "owned_consumer_next": "After unchanged plain-text false-positive and localized actual producer controls retain genuine before, coverageFinding handles instanceof CoverageValidationError through exhaustive safe reason mapping; remove each corresponding English branch only with affected actual parser/caller evidence.",
+  "counts": "Held branch41typed5delete/Main43typed5delete unchanged; physical40typed4delete English remain; B65 acceptance pending; no whole Source/native/public lifetime inference",
+  "controls_preseal": "One arbitrary direct Error and one wrapped Error for each legacy wording must stay generic; actual typed errors with localized display preserve exact code/structural/refusal route; exact existing strict parser failures refuse and use finite current correction/pending behavior without altering source checks. All new controls unexecuted.",
+  "heavy_state": "No heavy process; slot2 ACK pending"
+}

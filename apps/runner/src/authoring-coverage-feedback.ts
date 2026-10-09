@@ -9,6 +9,28 @@ export function coverageResponseContext(sourceDigest: string, draft: unknown, me
   return canonicalJsonDigest({ source: sourceDigest, draft, messages });
 }
 
+/** Closed rejection origin supplied only by the strict host coverage validator.
+ * Display text is retained independently; neither text nor a serialized reason
+ * establishes this class or accepts any rejected coverage. */
+export type CoverageValidationFailureReason =
+  | 'reference_missing'
+  | 'deployment_component_mixed'
+  | 'counter_reference_overbroad'
+  | 'field_evidence_unavailable'
+  | 'structure_invalid'
+  | 'evidence_value_mismatch'
+  | 'privacy_conflict'
+  | 'counter_structure_invalid'
+  | 'override_unestablished'
+  | 'obligation_structure_invalid';
+
+export class CoverageValidationError extends Error {
+  constructor(readonly reason: CoverageValidationFailureReason, message: string) {
+    super(message);
+    this.name = 'CoverageValidationError';
+  }
+}
+
 /** Only host-authored text and fixed response coordinates leave this boundary. */
 export class CoverageComponentError extends Error {
   constructor(readonly component: string, readonly cause: unknown) {
