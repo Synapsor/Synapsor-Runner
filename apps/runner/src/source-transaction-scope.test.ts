@@ -199,7 +199,7 @@ describe('per-outcome source transaction scope',()=>{
       const question=sourceTransactionScopeQuestions(f.source,f.draft,f.sources)[0]!;
       const session={chooseOption:vi.fn(async()=> 'pending'),confirm:vi.fn(async()=>true),rememberDetails:vi.fn()};
       const input={projectRoot:root,sources:f.sources,session:session as any,actor:'derived-test-operator',question,
-        currentDraft:()=>f.draft,assertCurrent:async()=>{},
+        currentDraft:()=>f.draft,assertCurrent:async()=>{},assertCurrentHeld:async()=>{},
         coordinated:async(operation:any)=>{await withProjectAuthorityMutation(root,operation);}};
       expect(await localSourceTransactionScopeReview(input)).toMatchObject({state:'pending',changed:false});
       expect((await loadPolicySources(root,f.sources.id)).source_transaction_scope_reviews).toBeUndefined();
@@ -224,7 +224,7 @@ describe('per-outcome source transaction scope',()=>{
       await savePolicySources(root,f.sources);
       await expect(ensurePreparedPolicyCoverage({projectRoot:root,sources:f.sources,modelSession:session,
         operatorSession:{} as any,currentDraft:()=>f.draft,authorityDigest:canonicalJsonDigest('derived authority'),
-        clarifications:[],assertCurrent:async()=>{},state:{},savedReviewEpisode:{job:'derived',subject:'derived'}}))
+        clarifications:[],assertCurrent:async()=>{},assertCurrentHeld:async()=>{},state:{},savedReviewEpisode:{job:'derived',subject:'derived'}}))
         .rejects.toThrow('SOURCE_TRANSACTION_SCOPE_REVIEW_PENDING');
       expect(session.dependencies.requestJson).not.toHaveBeenCalled();
       const saved=await loadPolicySources(root,f.sources.id);

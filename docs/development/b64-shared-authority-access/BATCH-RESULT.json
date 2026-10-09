@@ -68,13 +68,44 @@
     "evidence_root": "/var/tmp/synapsor-b64-real-readback-owned/evidence"
   },
   "latest_types": {
-    "diagnostics": 31,
+    "diagnostics": 43,
     "allocated_files": 0,
     "remaining": {
-      "boundary_commands": 29,
+      "boundary_commands": 41,
       "existing_typed_action_fixture": 1,
       "existing_verified_action_review": 1
     }
   },
-  "one_line_result": "Current-reader/review/receipt/writer class: preserved before failures, scoped groups pass; latest types31/0allocated; Main public migration and independent batch verdict pending."
+  "one_line_result": "Source/Input access: before0P2F\u2192Input72P, privacy/coverage125P+3loopback failures\u2192same3P, final Source/current-subject35P; types43/0allocated; Main hooks and whole-class review pending.",
+  "source_input_successor": {
+    "before": {
+      "passed": 0,
+      "failed": 2,
+      "base": "e0244715",
+      "evidence": "shared-access-input-before.json"
+    },
+    "input_after": {
+      "passed": 72,
+      "failed": 0,
+      "evidence": "shared-access-input-after.json"
+    },
+    "source_privacy_after": {
+      "passed": 125,
+      "failed": 3,
+      "evidence": "shared-access-source-guards-after.json",
+      "failures": "Isolated namespace had loopback down; three unchanged local HTTP tests could not connect."
+    },
+    "same_loopback_cases": {
+      "passed": 3,
+      "failed": 0,
+      "evidence": "shared-access-source-loopback-after.json",
+      "network": "Only lo enabled inside unshare -Urn; no external network."
+    },
+    "final_source_and_current_subject": {
+      "passed": 35,
+      "failed": 0,
+      "evidence": "shared-access-source-final.json"
+    },
+    "qualification": "Separate scoped groups, not summed; full native/public composition and independent security batch verdict remain open."
+  }
 }

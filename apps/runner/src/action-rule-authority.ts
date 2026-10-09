@@ -121,7 +121,16 @@ export type ActionRuleProspectiveWithdrawal = {
 
 /** Both records must still be the actual selected repository pointers. Never
  * substitutes draft absence for publication history or BUSINESS review. */
-export async function readActionRuleProspectiveWithdrawal(projectRoot: string,
+export function readActionRuleProspectiveWithdrawal(projectRoot: string,
+  selected: ActionRuleAuthorityReviewSubjectV1, readDigest: string): Promise<ActionRuleProspectiveWithdrawal | undefined> {
+  return withProjectAuthorityMutation(projectRoot, permit => readProspectiveWithdrawalProtected(permit.projectRoot, selected, readDigest));
+}
+export function readActionRuleProspectiveWithdrawalHeld(projectRoot: string, selected: ActionRuleAuthorityReviewSubjectV1,
+  readDigest: string, permit: ProjectAuthorityMutationPermit): Promise<ActionRuleProspectiveWithdrawal | undefined> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => readProspectiveWithdrawalProtected(held.projectRoot, selected, readDigest));
+}
+
+async function readProspectiveWithdrawalProtected(projectRoot: string,
   selected: ActionRuleAuthorityReviewSubjectV1, readDigest: string): Promise<ActionRuleProspectiveWithdrawal | undefined> {
   if (selected.state !== 'disabled') return undefined;
   return (await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
@@ -145,7 +154,16 @@ export async function readActionRuleProspectiveWithdrawal(projectRoot: string,
   })) ?? undefined;
 }
 
-export async function readActionRuleCoverageLineage(projectRoot: string, selected: ActionRuleAuthorityReviewSubjectV1,
+export function readActionRuleCoverageLineage(projectRoot: string,
+  selected: ActionRuleAuthorityReviewSubjectV1, readDigest: string): Promise<ActionRuleCoverageLineage | undefined> {
+  return withProjectAuthorityMutation(projectRoot, permit => readCoverageLineageProtected(permit.projectRoot, selected, readDigest));
+}
+export function readActionRuleCoverageLineageHeld(projectRoot: string, selected: ActionRuleAuthorityReviewSubjectV1,
+  readDigest: string, permit: ProjectAuthorityMutationPermit): Promise<ActionRuleCoverageLineage | undefined> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => readCoverageLineageProtected(held.projectRoot, selected, readDigest));
+}
+
+async function readCoverageLineageProtected(projectRoot: string, selected: ActionRuleAuthorityReviewSubjectV1,
   readDigest: string): Promise<ActionRuleCoverageLineage | undefined> {
   return (await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
     const activeRevision = current.active.find(r => r.name === selected.authority.name);
@@ -763,6 +781,13 @@ export async function loadActiveActionRuleAuthority(
   }
   const loaded = parseActionRuleAuthority(activation.authority, activation.digest);
   return checkLoadedReadDependencies(projectRoot, loaded, activation, options);
+}
+
+/** Authoring currentness uses the caller's explicit short protected scope.
+ * The ordinary runtime loader continues owning its existing snapshot checks. */
+export function loadActiveActionRuleAuthorityHeld(projectRoot: string, permit: ProjectAuthorityMutationPermit,
+  options: ActiveAuthorityLoadOptions = {}): Promise<LoadedActiveActionRuleAuthorityV1> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => loadActiveActionRuleAuthority(held.projectRoot, options));
 }
 
 type ActiveAuthorityLoadOptions = NonNullable<Parameters<typeof loadActiveActionRuleAuthority>[1]>;

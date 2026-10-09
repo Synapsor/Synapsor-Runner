@@ -1,4 +1,4 @@
-import {readActionRuleCoverageLineage,readActionRuleProspectiveWithdrawal,readActionRuleReviewSubjects} from './action-rule-authority.js';
+import {readActionRuleCoverageLineageHeld,readActionRuleProspectiveWithdrawalHeld,readActionRuleReviewSubjectsHeld} from './action-rule-authority.js';
 import {explorationBoundaryCandidateDigest} from './auto-boundary.js';
 import {prepareRetainedDutyReview, assembleRetainedDutyReview, preflightRetainedDutyEvidence, RetainedDutyApplicabilityError} from './authoring-retained-duties.js';
 import { scopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
@@ -17,7 +17,7 @@ import { retainedSourceRecoveryEpisode } from "./authoring-recovery-source.js";
 import type { CoverageReviewEpisode } from "./authoring-policy-source.js";
 import { reviewClientDutyOwnership, type ClientDutyReviewState } from "./authoring-client-duties.js";
 import { AskError } from "./model-provider-transport.js";
-import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
+import { authoringReceiptConfigurationHeld } from "./authoring-receipt-configuration.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionRuleAuthorityReviewSubjectV1 } from "./action-rule-authority.js";
 import { withCountingOutcomeDomain, type CountingOutcomeDomain } from "./authoring-counting-domain.js";
@@ -25,7 +25,7 @@ import { reviewUnestablishedCounting } from "./authoring-counting-decision-revie
 import { countingSourceRequirements } from "./authoring-counting-requirements.js";
 import { parsePolicyCoverage, reviewPolicyCoverage } from "./authoring-policy-coverage.js";
 import { policyCoverageDraft } from "./authoring-policy-evidence.js";
-import { activePolicySource, authoringDestination, bindPolicyCoverage, loadPolicySources, policySourceSavedDigest, savePolicySources,
+import { activePolicySource, authoringDestination, bindPolicyCoverage, loadPolicySources, policySourceSavedDigest, policySourceSavedDigestHeld, savePolicySources,
   MAX_COUNTING_DECISIONS,
   type PolicyCoverage, type PolicySourceSession } from "./authoring-policy-source.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
@@ -53,7 +53,8 @@ export async function ensurePreparedPolicyCoverage(input: {
   authority?: ActionRuleAuthorityReviewSubjectV1;
   countingDomain?: CountingOutcomeDomain;
   clarifications: unknown[];
-  assertCurrent: (permit?: ProjectAuthorityMutationPermit) => Promise<void>;
+  assertCurrent: () => Promise<void>;
+  assertCurrentHeld: (permit: ProjectAuthorityMutationPermit) => Promise<void>;
   /** Native reader metadata refresh. Only called outside authority locks. */
   assertEvidenceCurrent?: () => Promise<void>;
   progress?: <T>(label: string, operation: () => Promise<T>) => Promise<T>;
@@ -77,14 +78,21 @@ export async function ensurePreparedPolicyCoverage(input: {
   if (canonicalJsonDigest(await loadPolicySources(input.projectRoot, sources.id)) !== canonicalJsonDigest(sources)) {
     pending('currentness','POLICY_SOURCE_CHANGED','The in-memory source is not the current saved source. Reopen its review before continuing.');
   }
-  const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
-    if (!permit) await input.assertEvidenceCurrent?.();
-    await input.assertCurrent(permit);
+  const checkCurrentHeld = async (permit: ProjectAuthorityMutationPermit) => {
     if (authoringDestination(input.modelSession) !== selectedDestination)
       pending('currentness','POLICY_COVERAGE_CONTEXT_CHANGED','The selected model or destination changed during review. Reopen current Review; no stale response was saved.');
-    if (await policySourceSavedDigest(input.projectRoot, sources.id) !== expectedSource) {
+    if (await policySourceSavedDigestHeld(input.projectRoot, sources.id, permit) !== expectedSource) {
       pending('currentness','POLICY_SOURCE_CHANGED','The selected source or its decisions changed during review. Reopen the current saved review; no stale result was saved.');
     }
+  };
+  const assertCurrentHeld = async (permit: ProjectAuthorityMutationPermit) => {
+    await input.assertCurrentHeld(permit);
+    await checkCurrentHeld(permit);
+  };
+  const assertCurrent = async () => {
+    await input.assertEvidenceCurrent?.();
+    await input.assertCurrent();
+    await withProjectAuthorityMutation(input.projectRoot, checkCurrentHeld);
   };
   const coordinated = async (operation: (permit: ProjectAuthorityMutationPermit) => Promise<void>) => {
     if (input.countingDomain && input.authority) {
@@ -151,7 +159,7 @@ export async function ensurePreparedPolicyCoverage(input: {
     // configured limit. Conflicting current meanings remain ambiguous.
     staged.counting_decisions = [...(staged.counting_decisions ?? []), ...decisions];
     await coordinated(async permit => {
-      await assertCurrent(permit);
+      await assertCurrentHeld(permit);
       await savePolicySources(input.projectRoot, staged, { expectedDigest: expectedSource, permit });
       // Later coverage must compare against our own committed snapshot. Reading
       // "latest" after releasing the lock could adopt a competing writer's digest
@@ -161,37 +169,38 @@ export async function ensurePreparedPolicyCoverage(input: {
     Object.assign(sources, staged);
     draftRecord = input.currentDraft();
   }
-  const loadLineage = () => input.authority && sources.coverage ? readActionRuleCoverageLineage(input.projectRoot,
-    input.authority, explorationBoundaryCandidateDigest(draftRecord.read)) : Promise.resolve(undefined);
-  const lineage = await loadLineage();
-  const loadProspective = () => input.authority && sources.coverage ? readActionRuleProspectiveWithdrawal(input.projectRoot,
-    input.authority, explorationBoundaryCandidateDigest(draftRecord.read)) : Promise.resolve(undefined);
-  const prospective = await loadProspective();
-  const loadCounterContext = async () => {
+  const loadLineageHeld = (permit: ProjectAuthorityMutationPermit) => input.authority && sources.coverage ? readActionRuleCoverageLineageHeld(input.projectRoot,
+    input.authority, explorationBoundaryCandidateDigest(draftRecord.read), permit) : Promise.resolve(undefined);
+  const lineage = await withProjectAuthorityMutation(input.projectRoot, loadLineageHeld);
+  const loadProspectiveHeld = (permit: ProjectAuthorityMutationPermit) => input.authority && sources.coverage ? readActionRuleProspectiveWithdrawalHeld(input.projectRoot,
+    input.authority, explorationBoundaryCandidateDigest(draftRecord.read), permit) : Promise.resolve(undefined);
+  const prospective = await withProjectAuthorityMutation(input.projectRoot, loadProspectiveHeld);
+  const loadCounterContextHeld = async (permit: ProjectAuthorityMutationPermit) => {
     if (!sources.coverage || !(sources.coverage.source_digest !== source.digest || sources.coverage.cross_source_counter_reviews?.length)) return undefined;
     const context = {snapshots:sources.snapshots};
     if (!input.authority) return context;
-    const matches = (await readActionRuleReviewSubjects(input.projectRoot))
+    const matches = (await readActionRuleReviewSubjectsHeld(input.projectRoot, permit))
       .filter(subject=>canonicalJsonDigest(subject.authority)===canonicalJsonDigest(input.authority));
     if (matches.length !== 1) return context;
     return {...context,selected:matches[0]!,readDigest:explorationBoundaryCandidateDigest(draftRecord.read),authorityDigest:input.authorityDigest};
   };
-  const counterContext = await loadCounterContext();
+  const counterContext = await withProjectAuthorityMutation(input.projectRoot, loadCounterContextHeld);
   let retainedDutyPlan: ReturnType<typeof prepareRetainedDutyReview>;
   const hostPending = (error: RetainedDutyApplicabilityError): never => { throw new ReviewResolutionError(error.code,
     planCoverageResolution(error.feedback(canonicalJsonDigest(draftRecord))), error.message); };
   try { retainedDutyPlan = prepareRetainedDutyReview(sources.coverage, source, draftRecord, lineage, sources.coverage_authority_digest,prospective,counterContext);
     preflightRetainedDutyEvidence(retainedDutyPlan, source, draftRecord, sources); }
   catch (error) { if (error instanceof RetainedDutyApplicabilityError) hostPending(error); throw error; }
-  const assertRetainedCurrent = async () => {
-    if (canonicalJsonDigest(await loadCounterContext() ?? null) !== canonicalJsonDigest(counterContext ?? null))
+  const assertRetainedCurrentHeld = async (permit: ProjectAuthorityMutationPermit) => {
+    if (canonicalJsonDigest(await loadCounterContextHeld(permit) ?? null) !== canonicalJsonDigest(counterContext ?? null))
       pending('currentness','POLICY_RETAINED_DUTY_CHANGED','The selected immutable Action, store or current Source origin changed; reopen saved Review. No stale transition was saved.');
-    const current = await loadLineage();
+    const current = await loadLineageHeld(permit);
     if (canonicalJsonDigest(current ?? null) !== canonicalJsonDigest(lineage ?? null))
       pending('currentness','POLICY_RETAINED_DUTY_CHANGED','Current Action publication history changed; reopen saved Review. No stale duty reconciliation was saved.');
-    if (canonicalJsonDigest(await loadProspective() ?? null) !== canonicalJsonDigest(prospective ?? null))
+    if (canonicalJsonDigest(await loadProspectiveHeld(permit) ?? null) !== canonicalJsonDigest(prospective ?? null))
       pending('currentness','POLICY_RETAINED_DUTY_CHANGED','The exact proposed withdrawal changed; reopen saved Review. No stale prospective duty review was saved.');
   };
+  const assertRetainedCurrent = () => withProjectAuthorityMutation(input.projectRoot, assertRetainedCurrentHeld);
   const preparedDraftDigest = canonicalJsonDigest(draftRecord);
   const key = canonicalJsonDigest({ source: source.digest, draft: draftRecord, messages: sources.operator_messages ?? [],
     clarifications: input.clarifications, interpretations: sources.read_interpretations ?? [],
@@ -232,8 +241,8 @@ export async function ensurePreparedPolicyCoverage(input: {
     // native reader may have changed during consent or the provider wait.
     await assertCurrent();
     await coordinated(async permit => {
-      await assertCurrent(permit);
-      await assertRetainedCurrent();
+      await assertCurrentHeld(permit);
+      await assertRetainedCurrentHeld(permit);
       if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest)
         pending('currentness','POLICY_COVERAGE_CONTEXT_CHANGED','Reopen current Review; no stale correction was sent.');
       const staged = structuredClone(sources);
@@ -276,8 +285,8 @@ export async function ensurePreparedPolicyCoverage(input: {
       'Prior attempts are preserved; no provider call was started.');
     episode = retained ?? {id:randomUUID(), context:key, started_at:new Date().toISOString(),submissions:[]};
     if (!retained) await coordinated(async permit=>{
-      await assertCurrent(permit);
-      await assertRetainedCurrent();
+      await assertCurrentHeld(permit);
+      await assertRetainedCurrentHeld(permit);
       if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest)
         pending('currentness','POLICY_COVERAGE_CONTEXT_CHANGED','Reopen current Review; no stale episode was allocated.');
       const staged={...sources,coverage_episodes:[...(sources.coverage_episodes??[]),episode]};
@@ -341,8 +350,8 @@ export async function ensurePreparedPolicyCoverage(input: {
   // Ownership menus (including Back) can wait after the response or reuse.
   await assertCurrent();
   await coordinated(async permit => {
-    await assertCurrent(permit);
-    await assertRetainedCurrent();
+    await assertCurrentHeld(permit);
+    await assertRetainedCurrentHeld(permit);
     assembleRetainedDutyReview(report, retainedDutyPlan, source, input.currentDraft(),
       passages => parsePolicyCoverage({passages},source,input.currentDraft(),sources.operator_messages??[],sources));
     if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest) {
@@ -350,8 +359,8 @@ export async function ensurePreparedPolicyCoverage(input: {
         'The prepared candidate or client contract changed during review. Reopen current Review; no stale ownership was saved.');
     }
     const capturedConfiguration = draftRecord.runner_evidence.runtime_contract.receipt_configuration;
-    if (capturedConfiguration && canonicalJsonDigest(capturedConfiguration) !== canonicalJsonDigest(await authoringReceiptConfiguration(
-      input.projectRoot, input.authority?.authority.rules.map(r => r.rule.source) ?? []))) {
+    if (capturedConfiguration && canonicalJsonDigest(capturedConfiguration) !== canonicalJsonDigest(await authoringReceiptConfigurationHeld(
+      input.projectRoot, input.authority?.authority.rules.map(r => r.rule.source) ?? [], permit))) {
       pending('currentness','OBLIGATION_CONFIGURATION_CHANGED',
         'Receipt configuration changed during review. Reopen current Review; no stale result was saved.');
     }

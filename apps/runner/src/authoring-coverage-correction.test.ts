@@ -205,11 +205,11 @@ describe('durable bounded review episodes and actual prepared save',()=>{
       delete f.sources.coverage_context_digest;
     }
     const t=transport(f,mode==='interrupted'?[new Error('transport stopped')]:mode==='complete_refusal'?[completeRefusal]:[f.replies[0],f.corrected]);
-    vi.spyOn(receiptConfiguration,'authoringReceiptConfiguration').mockResolvedValue(f.draft.runner_evidence.runtime_contract.receipt_configuration);
+    vi.spyOn(receiptConfiguration,'authoringReceiptConfigurationHeld').mockResolvedValue(f.draft.runner_evidence.runtime_contract.receipt_configuration);
     const chooseOption=vi.fn(async()=> 'assign'),confirm=vi.fn(async()=>false),onValidated=vi.fn();
     await savePolicySources(root,f.sources);
     const input={projectRoot:root,sources:f.sources,modelSession:t.session,operatorSession:{chooseOption,confirm} as any,currentDraft:()=>f.draft,
-      authorityDigest:f.sources.coverage_authority_digest,clarifications:[],assertCurrent:async()=>{},state:{},onValidated};
+      authorityDigest:f.sources.coverage_authority_digest,clarifications:[],assertCurrent:async()=>{},assertCurrentHeld:async()=>{},state:{},onValidated};
     return {root,f,t,input,chooseOption,confirm,onValidated};
   }
   it('preserves the captured old-source duties as pending before episode allocation or transport',async()=>{

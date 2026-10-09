@@ -206,7 +206,7 @@ describe("digest-bound inspected RLS policy evidence", () => {
     let readerChanged = false;
     await savePolicySources(root, sources);
     const operationInput = { projectRoot: root, sources, source: current.source, destination: authoringDestination(model),
-      currentDraft: () => policyCoverageDraft(current), assertCurrent: async () => {},
+      currentDraft: () => policyCoverageDraft(current), assertCurrent: async () => {}, assertCurrentHeld: async () => {},
       assertMetadataCurrent: async () => { if (readerChanged) throw new Error("READER_CHANGED"); },
       coordinated: (operation: (permit: import("./project-authority-mutation.js").ProjectAuthorityMutationPermit) => Promise<void>) => withProjectAuthorityMutation(root, operation),
       session: { chooseOption: async (title: string) => title === "PRIVACY EVIDENCE FOR AN UNUSED SOURCE" ? "0" : "3",

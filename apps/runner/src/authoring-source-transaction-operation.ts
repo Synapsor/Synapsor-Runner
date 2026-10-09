@@ -1,13 +1,13 @@
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import type { BoundaryReviewInteractiveSession } from './boundary-cli-picker.js';
-import { activePolicySource, loadPolicySources, policySourceSavedDigest, savePolicySources,
+import { activePolicySource, loadPolicySources, policySourceSavedDigest, policySourceSavedDigestHeld, savePolicySources,
   type PolicySourceSession } from './authoring-policy-source.js';
 import { assessReceiptCouplingCapability, receiptCouplingInterpretation, receiptCouplingPaths } from './authoring-obligation-review.js';
 import { currentSourceTransactionReview, makeSourceTransactionReview, sourceTransactionContext,
   sourceTransactionMappings,sourceTransactionPreparedContext,sourceTransactionReviewIdentity } from './authoring-source-transaction-review.js';
 import { makeSourceTransactionScopeReview, sourceTransactionScopeQuestions,
   type SourceTransactionScopeQuestion } from './authoring-source-transaction-scope.js';
-import type { ProjectAuthorityMutationPermit } from './project-authority-mutation.js';
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from './project-authority-mutation.js';
 
 /** The existing saved-source CAS and authority coordination make the local
  * decision attributable. No model request, coverage acceptance or Action edit. */
@@ -15,7 +15,8 @@ export async function localSourceTransactionReview(input: {
   projectRoot: string; sources: PolicySourceSession; session: BoundaryReviewInteractiveSession; actor: string;
   revisitCurrent?: boolean;
   currentDraft: () => unknown;
-  assertCurrent: (permit?: ProjectAuthorityMutationPermit) => Promise<void>;
+  assertCurrent: () => Promise<void>;
+  assertCurrentHeld: (permit: ProjectAuthorityMutationPermit) => Promise<void>;
   coordinated: (operation: (permit: ProjectAuthorityMutationPermit) => Promise<void>) => Promise<void>;
 }) {
   const source = activePolicySource(input.sources);
@@ -23,10 +24,17 @@ export async function localSourceTransactionReview(input: {
   let expected = await policySourceSavedDigest(input.projectRoot, input.sources.id);
   if (canonicalJsonDigest(await loadPolicySources(input.projectRoot, input.sources.id)) !== canonicalJsonDigest(input.sources))
     throw new Error('POLICY_SOURCE_CHANGED: Reopen the current saved source before recording an interpretation.');
-  const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
-    await input.assertCurrent(permit);
-    if (await policySourceSavedDigest(input.projectRoot, input.sources.id) !== expected)
+  const checkCurrentHeld = async (permit: ProjectAuthorityMutationPermit) => {
+    if (await policySourceSavedDigestHeld(input.projectRoot, input.sources.id, permit) !== expected)
       throw new Error('POLICY_SOURCE_CHANGED: A competing source or decision was saved. No interpretation was overwritten.');
+  };
+  const assertCurrentHeld = async (permit: ProjectAuthorityMutationPermit) => {
+    await input.assertCurrentHeld(permit);
+    await checkCurrentHeld(permit);
+  };
+  const assertCurrent = async () => {
+    await input.assertCurrent();
+    await withProjectAuthorityMutation(input.projectRoot, checkCurrentHeld);
   };
   await assertCurrent();
   const draft = input.currentDraft(), context = sourceTransactionContext(draft);
@@ -117,7 +125,7 @@ export async function localSourceTransactionReview(input: {
   const prepared=canonicalJsonDigest(draft), staged=structuredClone(input.sources);
   staged.source_transaction_reviews=[...(staged.source_transaction_reviews??[]),record];
   await input.coordinated(async permit=>{
-    await assertCurrent(permit);
+    await assertCurrentHeld(permit);
     if (canonicalJsonDigest(input.currentDraft())!==prepared)
       throw new Error('SOURCE_TRANSACTION_REVIEW_CONTEXT_CHANGED: The selected Action, source or receipt context changed. No stale decision was saved.');
     await savePolicySources(input.projectRoot,staged,{expectedDigest:expected,permit});
@@ -132,7 +140,8 @@ export async function localSourceTransactionReview(input: {
 export async function localSourceTransactionScopeReview(input: {
   projectRoot:string; sources:PolicySourceSession; session:BoundaryReviewInteractiveSession; actor:string;
   question:SourceTransactionScopeQuestion; currentDraft:()=>unknown;
-  assertCurrent:(permit?:ProjectAuthorityMutationPermit)=>Promise<void>;
+  assertCurrent:()=>Promise<void>;
+  assertCurrentHeld:(permit:ProjectAuthorityMutationPermit)=>Promise<void>;
   coordinated:(operation:(permit:ProjectAuthorityMutationPermit)=>Promise<void>)=>Promise<void>;
 }) {
   const source=activePolicySource(input.sources);
@@ -140,10 +149,17 @@ export async function localSourceTransactionScopeReview(input: {
   let expected=await policySourceSavedDigest(input.projectRoot,input.sources.id);
   if(canonicalJsonDigest(await loadPolicySources(input.projectRoot,input.sources.id))!==canonicalJsonDigest(input.sources))
     throw new Error('POLICY_SOURCE_CHANGED: Reopen current source and decisions before reviewing scope.');
-  const assertCurrent=async(permit?:ProjectAuthorityMutationPermit)=>{
-    await input.assertCurrent(permit);
-    if(await policySourceSavedDigest(input.projectRoot,input.sources.id)!==expected)
+  const checkCurrentHeld=async(permit:ProjectAuthorityMutationPermit)=>{
+    if(await policySourceSavedDigestHeld(input.projectRoot,input.sources.id,permit)!==expected)
       throw new Error('POLICY_SOURCE_CHANGED: A competing source or decision was saved. No scope decision was overwritten.');
+  };
+  const assertCurrentHeld = async (permit: ProjectAuthorityMutationPermit) => {
+    await input.assertCurrentHeld(permit);
+    await checkCurrentHeld(permit);
+  };
+  const assertCurrent = async () => {
+    await input.assertCurrent();
+    await withProjectAuthorityMutation(input.projectRoot, checkCurrentHeld);
   };
   await assertCurrent();
   const draft=input.currentDraft(),questions=sourceTransactionScopeQuestions(source,draft,input.sources);
@@ -192,7 +208,7 @@ export async function localSourceTransactionScopeReview(input: {
   const staged=structuredClone(input.sources);
   staged.source_transaction_scope_reviews=[...(staged.source_transaction_scope_reviews??[]),record];
   await input.coordinated(async permit=>{
-    await assertCurrent(permit);
+    await assertCurrentHeld(permit);
     if(canonicalJsonDigest(input.currentDraft())!==canonicalJsonDigest(draft))
       throw new Error('SOURCE_TRANSACTION_SCOPE_CONTEXT_CHANGED: No stale scope answer was saved.');
     await savePolicySources(input.projectRoot,staged,{expectedDigest:expected,permit});

@@ -3,8 +3,8 @@ import type { PolicySourceInspection } from "./action-rule-source-evidence.js";
 import type { policyCoverageDraft } from "./authoring-policy-evidence.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { excludedFieldReview, excludedFieldReviewBinding } from "./authoring-excluded-field-records.js";
-import { activePolicySource, policySourceSavedDigest, savePolicySources, type PolicySourceSession } from "./authoring-policy-source.js";
-import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { activePolicySource, policySourceSavedDigest, policySourceSavedDigestHeld, savePolicySources, type PolicySourceSession } from "./authoring-policy-source.js";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { safeTerminalText } from "./terminal-syntax.js";
 
 /** Local metadata administration, not a business-meaning question or a model
@@ -13,7 +13,8 @@ export async function reviewExcludedFieldMetadata(input: {
   projectRoot: string; sources: PolicySourceSession; destination: string;
   source: PolicySourceInspection; currentDraft(): ReturnType<typeof policyCoverageDraft>;
   session: BoundaryReviewInteractiveSession;
-  assertCurrent(permit?: ProjectAuthorityMutationPermit): Promise<void>;
+  assertCurrent(): Promise<void>;
+  assertCurrentHeld(permit: ProjectAuthorityMutationPermit): Promise<void>;
   assertMetadataCurrent(): Promise<void>;
   coordinated(operation: (permit: ProjectAuthorityMutationPermit) => Promise<void>): Promise<void>;
 }): Promise<{ changed: boolean; summary: string }> {
@@ -30,12 +31,19 @@ export async function reviewExcludedFieldMetadata(input: {
   if (!tables.length) return { changed: false, summary: "No wholly unused inspected source needs this additional metadata proof." };
   if (tables.length > 64 || tables.some(table => table.columns.length > 160))
     throw new Error("EXCLUDED_FIELD_REVIEW_TOO_LARGE: Keep the review pending; no metadata inventory was truncated or sent.");
-  const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
-    await input.assertCurrent(permit);
-    if (await policySourceSavedDigest(input.projectRoot, input.sources.id) !== expectedSource
+  const checkCurrentHeld = async (permit: ProjectAuthorityMutationPermit) => {
+    if (await policySourceSavedDigestHeld(input.projectRoot, input.sources.id, permit) !== expectedSource
       || canonicalJsonDigest(binding) !== canonicalJsonDigest(excludedFieldReviewBinding({ draft: input.currentDraft(), source: input.source,
         sourceSession: input.sources.id, sourceDigest: activePolicySource(input.sources)!.digest as `sha256:${string}`, destination: input.destination })))
       throw new Error("EXCLUDED_FIELD_REVIEW_CHANGED: Source, recipient or selected program changed. No stale metadata decision was saved.");
+  };
+  const assertCurrentHeld = async (permit: ProjectAuthorityMutationPermit) => {
+    await input.assertCurrentHeld(permit);
+    await checkCurrentHeld(permit);
+  };
+  const assertCurrent = async () => {
+    await input.assertCurrent();
+    await withProjectAuthorityMutation(input.projectRoot, checkCurrentHeld);
   };
   await input.assertMetadataCurrent(); await assertCurrent();
   const description = (text: string | undefined) => text?.trim()
@@ -75,11 +83,11 @@ export async function reviewExcludedFieldMetadata(input: {
   if (yes !== true) return { changed: false, summary: "Exact metadata transfer was not confirmed; the privacy requirement remains pending." };
   await input.assertMetadataCurrent(); await assertCurrent();
   await input.coordinated(async permit => {
-    await assertCurrent(permit);
+    await assertCurrentHeld(permit);
     const staged = structuredClone(input.sources);
     staged.excluded_field_reviews = [...(staged.excluded_field_reviews ?? []), excludedFieldReview(binding, [target])];
     await savePolicySources(input.projectRoot, staged, { expectedDigest: expectedSource, permit });
-    if (await policySourceSavedDigest(input.projectRoot, staged.id) !== canonicalJsonDigest(staged))
+    if (await policySourceSavedDigestHeld(input.projectRoot, staged.id, permit) !== canonicalJsonDigest(staged))
       throw new Error("EXCLUDED_FIELD_SAVE_UNCONFIRMED: The metadata decision was not confirmed on disk. Preserve the current review for inspection; no transfer was authorized by an in-memory result.");
     Object.assign(input.sources, staged);
   });

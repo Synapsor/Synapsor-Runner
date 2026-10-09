@@ -3,7 +3,7 @@ import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   readActionRuleAuthorityActivation, readActionRuleAuthorityDraft, readActionRuleAuthorityRevisionBaselineHeld, readActionRuleReviewSubjectsHeld,
-  readActionRuleProspectiveWithdrawal,
+  readActionRuleProspectiveWithdrawalHeld,
   type ActionRuleAuthorityDraftV1, type ActionWithdrawalReview,
 } from "./action-rule-authority.js";
 import { proveExactActionWithdrawal } from "./action-rule-withdrawal-proof.js";
@@ -72,7 +72,7 @@ async function assessWithdrawalHeld(input: AssessActionWithdrawalInput, permit: 
     const session = await loadPolicySourcesHeld(projectRoot, resume.value.policy_source_session, permit);
     const source = activePolicySource(session);
     if (!source || !session.coverage || session.coverage.source_digest !== source.digest) return refuse("Complete current source coverage is unavailable.");
-    try {assertPendingWithdrawalDutyProofs(session.coverage,await readActionRuleProspectiveWithdrawal(projectRoot,draft,readDigest));}
+    try {assertPendingWithdrawalDutyProofs(session.coverage,await readActionRuleProspectiveWithdrawalHeld(projectRoot,draft,readDigest,permit));}
     catch {return refuse('The exact prospective Source-duty audit needs current validation.');}
     const pending = resume.value.pending_policy_review;
     const subject = (await readActionRuleReviewSubjectsHeld(projectRoot, permit)).find(s => s.identity.location === "disabled"

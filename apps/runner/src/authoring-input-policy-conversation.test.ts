@@ -5,14 +5,14 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionModelSuggestionSession } from "./action-tui.js";
-import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState,
+import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState, readBoundaryAuthoringResumeStateHeld,
   type BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { createOwnerHandoff, answerOwnerHandoff, ownerHandoffCheckpoint } from "./authoring-owner-handoff.js";
 import { authoringQuestionAnswerCheckpoint, authoringQuestionCheckpoint, authoringTransportCheckpoint,
   configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery } from "./authoring-generation-recovery.js";
 import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, presentOperatorQuestion,
   reopenOperatorQuestion, leaveOperatorQuestionPending, parseOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
-import { activePolicySource, loadPolicySources, newPolicySourceSession, policySourceSavedDigest,
+import { activePolicySource, loadPolicySources, newPolicySourceSession, policySourceSavedDigest, policySourceSavedDigestHeld,
   policyTextSnapshot, savePolicySources } from "./authoring-policy-source.js";
 import { makeSourceInputReview } from "./authoring-input-policy.js";
 import { AskError, type AskProviderDependencies } from "./model-ask.js";
@@ -59,21 +59,22 @@ async function fixture(replies: Reply[] = [proposal], outcomes = ["work.hold"], 
   const selected = () => [...resume.operator_questions!].sort((a, b) => b.revision - a.revision)[0]!;
   const prompt = vi.fn(async (_text: string, _options: { preserveWhitespace: true }): Promise<string | null> => "  one through 64 — 😀\t ");
   const confirm = vi.fn(async (_readback: string[], _options: { defaultValue: false }): Promise<boolean | null> => true);
-  const assertCurrent: SourceInputConversationPorts["assertCurrent"] = async (_permit, recovery) => {
-    const loaded = await readBoundaryAuthoringResumeState(projectRoot, binding);
+  const assertCurrentHeld: SourceInputConversationPorts["assertCurrentHeld"] = async (permit, recovery) => {
+    const loaded = await readBoundaryAuthoringResumeStateHeld(projectRoot, binding, permit);
     if (loaded.status !== "ready" || loaded.value.revision_digest !== resume.revision_digest) throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED");
     if (schemaDrift) throw new AskError("OPERATOR_INPUT_CONTEXT_CHANGED", "Controlled schema drift.", 409);
     if (recovery?.mode === "append_recovery") {
       expect(canonicalJsonDigest(recovery.sourceBeforeAppend)).toBe(root.context_digest);
-    } else if (!recovery && await policySourceSavedDigest(projectRoot, sources.id) !== root.context_digest) throw new Error("POLICY_SOURCE_CHANGED");
+    } else if (!recovery && await policySourceSavedDigestHeld(projectRoot, sources.id, permit) !== root.context_digest) throw new Error("POLICY_SOURCE_CHANGED");
     if (failBeforeWrite && selected().confirmation && !recovery) throw new Error("Controlled pre-write interruption.");
   };
+  const assertCurrent: SourceInputConversationPorts["assertCurrent"] = recovery => withProjectAuthorityMutation(projectRoot, permit => assertCurrentHeld(permit, recovery));
   const saveQuestion: SourceInputConversationPorts["saveQuestion"] = async (next, expected, options) => {
     expect(resume.operator_questions!.find(q => q.id === next.id)!.digest).toBe(expected);
     await persist({ operatorQuestions: resume.operator_questions!.map(q => q.id === next.id ? next : q),
       ...(options.completion ? { generationRecovery: authoringTransportCheckpoint(resume.generation_recovery) } : {}) }, options.permit);
   };
-  const ports: SourceInputConversationPorts = { readQuestions, assertCurrent, saveQuestion, prompt, confirm,
+  const ports: SourceInputConversationPorts = { readQuestions, assertCurrent, assertCurrentHeld, saveQuestion, prompt, confirm,
     createMissingQuestion: async (currentRoot, question, completion, options) => {
       expect(readQuestions().root.digest).toBe(options.expectedRootDigest);
       const h = createOwnerHandoff({ consumer: "input_policy", question, scope_digest: currentRoot.scope_digest,
@@ -95,7 +96,8 @@ async function fixture(replies: Reply[] = [proposal], outcomes = ["work.hold"], 
           { digest: canonicalJsonDigest(answered), operator_messages: [raw] }) : resume.generation_recovery }, options.permit);
     },
     acknowledge: async (q, review, saved, permit) => {
-      expect(await policySourceSavedDigest(projectRoot, sources.id)).toBe(canonicalJsonDigest(saved));
+      if (!permit) throw new Error("Expected the actual acknowledgement permit.");
+      expect(await policySourceSavedDigestHeld(projectRoot, sources.id, permit)).toBe(canonicalJsonDigest(saved));
       expect(review.question_reference!.digest).toBe(q.digest);
       if (failAck) throw new Error("Controlled acknowledgement interruption.");
       if (!acknowledged.has(review.digest)) { await persist({}, permit); acknowledged.add(review.digest); acknowledgementCount++; }
@@ -134,7 +136,7 @@ async function fixture(replies: Reply[] = [proposal], outcomes = ["work.hold"], 
       expect(options).toEqual({ defaultValue: false });
       if (choice === "keep") return choice;
       await withProjectAuthorityMutation(projectRoot, async permit => {
-        await assertCurrent(permit);
+        await assertCurrentHeld(permit);
         if (choice === "reopen") await saveQuestion(reopenOperatorQuestion(q), q.digest, { permit });
         else {
           const oldH = resume.owner_handoffs!.find(h => h.id === q.handoff_id)!;

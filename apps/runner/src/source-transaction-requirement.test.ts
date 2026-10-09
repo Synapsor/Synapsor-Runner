@@ -62,7 +62,7 @@ describe('source-bound transaction interpretation',()=>{
       const prompts:any[]=[], session={promptText:vi.fn(async(_label:string,options:any)=>{prompts.push(options);return '18';}),
         chooseOption:vi.fn(async()=> 'confirmed'),confirm:vi.fn(async()=>true),rememberDetails:vi.fn()};
       const result=await localSourceTransactionReview({projectRoot:root,sources:f.sources,session:session as any,
-        actor:'local-fixture-operator',currentDraft:()=>prepared(f),assertCurrent:async()=>{},
+        actor:'local-fixture-operator',currentDraft:()=>prepared(f),assertCurrent:async()=>{},assertCurrentHeld:async()=>{},
         coordinated:async operation=>withProjectAuthorityMutation(root,operation)});
       expect(result).toMatchObject({state:'confirmed',changed:true});
       expect(prompts[0].context).toContain(`18: ${f.source.text.split('\n')[17]}`);
@@ -76,7 +76,7 @@ describe('source-bound transaction interpretation',()=>{
       expect(currentSourceTransactionReview(f.source,f.draft,f.sources)?.digest).toBe(record!.digest);
       expect(()=>assertRequiredReceiptCoupling([passage(f)],f.source,f.draft,[],f.sources)).not.toThrow();
       const again=await localSourceTransactionReview({projectRoot:root,sources:f.sources,session:session as any,
-        actor:'local-fixture-operator',currentDraft:()=>prepared(f),assertCurrent:async()=>{},
+        actor:'local-fixture-operator',currentDraft:()=>prepared(f),assertCurrent:async()=>{},assertCurrentHeld:async()=>{},
         coordinated:async operation=>withProjectAuthorityMutation(root,operation)});
       expect(again).toMatchObject({state:'confirmed',changed:false});
       expect((await loadPolicySources(root,f.sources.id)).source_transaction_reviews).toHaveLength(1);
@@ -94,7 +94,7 @@ describe('source-bound transaction interpretation',()=>{
       const before=await loadPolicySources(root,f.sources.id);
       const session={promptText:vi.fn(async()=>undefined),chooseOption:vi.fn(),confirm:vi.fn()};
       const result=await localSourceTransactionReview({projectRoot:root,sources:f.sources,session:session as any,
-        actor:'local-fixture-operator',currentDraft:()=>prepared(f),assertCurrent:async()=>{},
+        actor:'local-fixture-operator',currentDraft:()=>prepared(f),assertCurrent:async()=>{},assertCurrentHeld:async()=>{},
         coordinated:async operation=>withProjectAuthorityMutation(root,operation)});
       expect(result).toMatchObject({state:'pending',changed:false});
       expect(await loadPolicySources(root,f.sources.id)).toEqual(before);
@@ -111,7 +111,7 @@ describe('source-bound transaction interpretation',()=>{
       const session={promptText:vi.fn(async()=> '18'),chooseOption:vi.fn(async()=> 'deferred'),
         confirm:vi.fn(async()=>true),rememberDetails:vi.fn()};
       const input:Parameters<typeof localSourceTransactionReview>[0]={projectRoot:root,sources:f.sources,session:session as any,actor:'local-fixture-operator',
-        currentDraft:()=>prepared(f),assertCurrent:async()=>{},
+        currentDraft:()=>prepared(f),assertCurrent:async()=>{},assertCurrentHeld:async()=>{},
         coordinated:async operation=>{await withProjectAuthorityMutation(root,operation);}};
       expect(await localSourceTransactionReview(input)).toMatchObject({state:'confirmed',changed:false});
       expect(session.chooseOption).not.toHaveBeenCalled();
@@ -133,7 +133,7 @@ describe('source-bound transaction interpretation',()=>{
       const session={promptText:vi.fn(async()=> '18'),chooseOption:vi.fn(async()=>selected),
         confirm:vi.fn(async()=>true),rememberDetails:vi.fn()};
       const input:Parameters<typeof localSourceTransactionReview>[0]={projectRoot:root,sources:f.sources,session:session as any,
-        actor:'local-fixture-operator',revisitCurrent:true,currentDraft:()=>prepared(f),assertCurrent:async()=>{},
+        actor:'local-fixture-operator',revisitCurrent:true,currentDraft:()=>prepared(f),assertCurrent:async()=>{},assertCurrentHeld:async()=>{},
         coordinated:async operation=>{await withProjectAuthorityMutation(root,operation);}};
       expect(await localSourceTransactionReview(input)).toMatchObject({state:'confirmed',changed:false});
       expect((session.chooseOption as any).mock.calls[0]?.[2]).toMatchObject({initialValue:'cancel'});
@@ -161,7 +161,7 @@ describe('source-bound transaction interpretation',()=>{
       const session={promptText:vi.fn(async()=> '18'),chooseOption:vi.fn(async()=> 'confirmed'),
         confirm:vi.fn(async()=>true),rememberDetails:vi.fn()};
       const input:Parameters<typeof localSourceTransactionReview>[0]={projectRoot:root,sources:f.sources,session:session as any,
-        actor:'local-fixture-operator',currentDraft:()=>prepared(f),assertCurrent:async()=>{},
+        actor:'local-fixture-operator',currentDraft:()=>prepared(f),assertCurrent:async()=>{},assertCurrentHeld:async()=>{},
         coordinated:async operation=>{await withProjectAuthorityMutation(root,operation);}};
       await expect(localSourceTransactionReview(input)).rejects.toThrow('SOURCE_TRANSACTION_REVIEW_CONFLICT');
       expect((await loadPolicySources(root,f.sources.id)).source_transaction_reviews).toEqual([conflict]);
@@ -183,7 +183,7 @@ describe('source-bound transaction interpretation',()=>{
       await savePolicySources(root,f.sources);
       const session={promptText:vi.fn(),chooseOption:vi.fn(),confirm:vi.fn()};
       const result=await localSourceTransactionReview({projectRoot:root,sources:f.sources,session:session as any,
-        actor:'local-fixture-operator',currentDraft:()=>prepared(f),assertCurrent:async()=>{},
+        actor:'local-fixture-operator',currentDraft:()=>prepared(f),assertCurrent:async()=>{},assertCurrentHeld:async()=>{},
         coordinated:async operation=>withProjectAuthorityMutation(root,operation)});
       expect(result).toMatchObject({state:'capability_unavailable',changed:false});
       expect(session.promptText).not.toHaveBeenCalled();
@@ -199,7 +199,7 @@ describe('source-bound transaction interpretation',()=>{
         confirm:vi.fn(async()=>{await savePolicySources(root,{...f.sources,
           operator_messages:[...(f.sources.operator_messages??[]),'competing decision']});return true;})};
       await expect(localSourceTransactionReview({projectRoot:root,sources:f.sources,session:session as any,
-        actor:'local-fixture-operator',currentDraft:()=>prepared(f),assertCurrent:async()=>{},
+        actor:'local-fixture-operator',currentDraft:()=>prepared(f),assertCurrent:async()=>{},assertCurrentHeld:async()=>{},
         coordinated:async operation=>withProjectAuthorityMutation(root,operation)})).rejects.toThrow('POLICY_SOURCE_CHANGED');
       expect((await loadPolicySources(root,f.sources.id)).source_transaction_reviews).toBeUndefined();
     } finally {await fs.rm(root,{recursive:true,force:true});}
@@ -296,7 +296,7 @@ describe('source-bound transaction interpretation',()=>{
       expect(currentSourceTransactionReview(source,f.draft,f.sources)).toBeUndefined();
       await expect(ensurePreparedPolicyCoverage({projectRoot:root,sources:f.sources,modelSession:session,
         operatorSession:{} as any,currentDraft:()=>f.draft,authorityDigest:canonicalJsonDigest('derived authority'),
-        clarifications:[],assertCurrent:async()=>{},state:{}})).rejects.toThrow('SOURCE_TRANSACTION_REVIEW_PENDING');
+        clarifications:[],assertCurrent:async()=>{},assertCurrentHeld:async()=>{},state:{}})).rejects.toThrow('SOURCE_TRANSACTION_REVIEW_PENDING');
     } finally {await fs.rm(root,{recursive:true,force:true});}
   });
 
@@ -319,7 +319,7 @@ describe('source-bound transaction interpretation',()=>{
       await savePolicySources(root,f.sources);
       await expect(ensurePreparedPolicyCoverage({projectRoot:root,sources:f.sources,modelSession:session,
         operatorSession:{} as any,currentDraft:()=>f.draft,authorityDigest:canonicalJsonDigest('derived authority'),
-        clarifications:[],assertCurrent:async()=>{},state:{}})).rejects.toThrow('complete Action effect and receipt mapping');
+        clarifications:[],assertCurrent:async()=>{},assertCurrentHeld:async()=>{},state:{}})).rejects.toThrow('complete Action effect and receipt mapping');
       expect(session.dependencies.requestJson).not.toHaveBeenCalled();
       expect((await loadPolicySources(root,f.sources.id)).coverage_episodes).toEqual(f.sources.coverage_episodes);
     } finally {await fs.rm(root,{recursive:true,force:true});}

@@ -6,7 +6,7 @@ import { assertOperatorQuestionsAdvance, confirmOperatorAnswer, leaveOperatorQue
   parseOperatorQuestion, proposeOperatorAnswer, retainOperatorQuestionWording, stopOperatorInputQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import { consumedOperatorInputFailure, runOperatorQuestionModel } from "./authoring-operator-question-model.js";
 import { presentOperatorClarification, type OperatorBusinessContext } from "./authoring-operator-presentation.js";
-import { activePolicySource, loadPolicySources, policySourceSavedDigest, savePolicySources,
+import { activePolicySource, loadPolicySourcesHeld, policySourceSavedDigestHeld, savePolicySources,
   PolicySourceChangedError, type PolicySourceSession } from "./authoring-policy-source.js";
 import { AskError, type completedAuthoringQuestionSequence } from "./model-ask.js";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
@@ -22,7 +22,8 @@ export type SourceInputConversationRecovery = {
  * to invent a handoff, answer actor, consumed completion or acknowledgement. */
 export type SourceInputConversationPorts = {
   readQuestions(): { root: OperatorQuestion; children: readonly OperatorQuestion[] };
-  assertCurrent(permit?: ProjectAuthorityMutationPermit, recovery?: SourceInputConversationRecovery): Promise<void>;
+  assertCurrent(recovery?: SourceInputConversationRecovery): Promise<void>;
+  assertCurrentHeld(permit: ProjectAuthorityMutationPermit, recovery?: SourceInputConversationRecovery): Promise<void>;
   saveQuestion(next: OperatorQuestion, expectedDigest: Digest, options: {
     permit?: ProjectAuthorityMutationPermit; completion?: Completion; rawCheckpoint?: true;
   }): Promise<void>;
@@ -89,8 +90,8 @@ export async function runSourceInputConversation(input: {
 }): Promise<SourceInputConversationResult> {
   const ports = input.ports;
   const selected = () => selectedInputQuestions(ports.readQuestions(), input.outcomes);
-  const loadCurrent = async () => {
-    const sources = await loadPolicySources(input.projectRoot, input.sources.id), source = activePolicySource(sources);
+  const loadCurrentHeld = async (permit: ProjectAuthorityMutationPermit) => {
+    const sources = await loadPolicySourcesHeld(input.projectRoot, input.sources.id, permit), source = activePolicySource(sources);
     const { root } = selected(), binding = root.source_binding!;
     if (!source || binding.source_session !== sources.id || binding.source_digest !== source.digest
       || binding.lines !== source.lines || binding.store_digest !== input.store
@@ -98,17 +99,19 @@ export async function runSourceInputConversation(input: {
         store_digest: input.store, outcomes: input.outcomes })) invalid();
     return { sources, source };
   };
-  const pendingCurrent = async (permit?: ProjectAuthorityMutationPermit, expected?: OperatorQuestion) => {
-    const current = await loadCurrent();
-    if (await policySourceSavedDigest(input.projectRoot, input.sources.id) !== canonicalJsonDigest(input.sources)
+  const pendingCurrentHeld = async (permit: ProjectAuthorityMutationPermit, expected?: OperatorQuestion) => {
+    const current = await loadCurrentHeld(permit);
+    if (await policySourceSavedDigestHeld(input.projectRoot, input.sources.id, permit) !== canonicalJsonDigest(input.sources)
       || canonicalJsonDigest(current.sources) !== canonicalJsonDigest(input.sources)) throw new PolicySourceChangedError();
     if (expected && semanticDigest(selected().question) !== semanticDigest(expected)) invalid();
-    await ports.assertCurrent(permit);
+    await ports.assertCurrentHeld(permit);
     return current;
   };
+  const pendingCurrent = (expected?: OperatorQuestion) => withProjectAuthorityMutation(input.projectRoot,
+    permit => pendingCurrentHeld(permit, expected), { signal: input.signal });
   const saveQuestion = async (next: OperatorQuestion, expected: OperatorQuestion, completion?: Completion, rawCheckpoint?: true) => {
     await withProjectAuthorityMutation(input.projectRoot, async permit => {
-      await pendingCurrent(permit, expected);
+      await pendingCurrentHeld(permit, expected);
       if (selected().question.digest !== expected.digest) invalid();
       await ports.saveQuestion(next, expected.digest, { permit, ...(completion ? { completion } : {}), ...(rawCheckpoint ? { rawCheckpoint } : {}) });
     }, { signal: input.signal });
@@ -121,7 +124,7 @@ export async function runSourceInputConversation(input: {
   };
   const episode = operatorQuestionEpisode({ read: () => selected().root, save: async (next, expected) => {
     await withProjectAuthorityMutation(input.projectRoot, async permit => {
-      await pendingCurrent(permit);
+      await pendingCurrentHeld(permit);
       if (selected().root.digest !== expected) invalid();
       await ports.saveQuestion(next, expected, { permit });
     }, { signal: input.signal });
@@ -152,7 +155,7 @@ export async function runSourceInputConversation(input: {
         const result = await interpret({ question, stage: "source-review", session: input.session,
           businessContext: input.businessContext,
           episodeBudget: episode, reserveCorrection: episode.reserveCorrection,
-          authorityGuard: async expected => { await pendingCurrent(undefined, original); return expected; },
+          authorityGuard: async expected => { await pendingCurrent(original); return expected; },
           policyText: source.text, validateProposal: validateDomain, env: input.env,
           egressAcknowledged: input.egressAcknowledged, signal: input.signal });
         original = result.expectedQuestion;
@@ -161,7 +164,7 @@ export async function runSourceInputConversation(input: {
           if (!result.completion) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The missing-business question has no current consumed generation. Preserve it for inspection; no handoff was fabricated.", 409);
           const sourcePassages = parseActionRuleSourceQuestionPassages(result.source_passages, selected().root, source);
           await withProjectAuthorityMutation(input.projectRoot, async permit => {
-            await pendingCurrent(permit, original);
+            await pendingCurrentHeld(permit, original);
             const { root } = selected();
             await ports.createMissingQuestion(root, result.question, result.completion!, { expectedRootDigest: root.digest, sourcePassages, permit });
           }, { signal: input.signal });
@@ -178,23 +181,23 @@ export async function runSourceInputConversation(input: {
         if (!question.presentation) invalid();
         if (!question.raw_answer) {
           const before = question;
-          await pendingCurrent(undefined, before);
+          await pendingCurrent(before);
           const raw = await ports.prompt(presentOperatorClarification(question.presentation.text,
             { stage: "input", context: input.businessContext, target: question.target }), { preserveWhitespace: true });
           if (raw === null) return pending(before, "cancelled");
           await withProjectAuthorityMutation(input.projectRoot, async permit => {
-            await pendingCurrent(permit, before);
+            await pendingCurrentHeld(permit, before);
             await ports.recordRawAnswer(before, raw, before.digest, { permit });
           }, { signal: input.signal });
           question = selected().question;
           if (question.id !== before.id || question.raw_answer?.text !== raw) invalid();
         }
         if (!question.raw_answer!.text.trim()) return pending(question, "unknown");
-        const original = question, current = await pendingCurrent(undefined, question);
+        const original = question, current = await pendingCurrent(question);
         const result = await interpret({ question, stage: "answer-map", session: input.session,
           businessContext: input.businessContext,
           episodeBudget: episode, reserveCorrection: episode.reserveCorrection,
-          authorityGuard: async expected => { await pendingCurrent(undefined, original); return expected; },
+          authorityGuard: async expected => { await pendingCurrent(original); return expected; },
           inputContext: { root: selected().root, policyText: current.source.text },
           validateProposal: validateDomain, env: input.env, egressAcknowledged: input.egressAcknowledged, signal: input.signal });
         if (result.state === "question") invalid();
@@ -206,7 +209,7 @@ export async function runSourceInputConversation(input: {
     }
     if (question.proposal?.disposition !== "proposed") return pending(question, "unknown");
     validateDomain(question);
-    await pendingCurrent(undefined, question);
+    await pendingCurrent(question);
     const accepted = await ports.confirm(operatorQuestionReadback(question), { defaultValue: false });
     if (!accepted) return pending(question, accepted === null ? "cancelled" : "declined");
     await saveQuestion(confirmOperatorAnswer(question), question); question = selected().question;
@@ -214,7 +217,7 @@ export async function runSourceInputConversation(input: {
   // Confirmation alone is not a Source save. A restart may finish this same
   // exact write without another generation or another operator confirmation.
   return withProjectAuthorityMutation(input.projectRoot, async (permit): Promise<SourceInputConversationResult> => {
-    const { sources, source } = await loadCurrent(), { root, question: q } = selected();
+    const { sources, source } = await loadCurrentHeld(permit), { root, question: q } = selected();
     const saved = matchingReview(sources, q, root, source.digest, input.store, input.actor);
     if (saved) {
       const before = structuredClone(sources);
@@ -225,12 +228,12 @@ export async function runSourceInputConversation(input: {
         if (!before.input_policy_reviews.length && input.sources.input_policy_reviews === undefined) delete before.input_policy_reviews;
       }
       const exactAppend = removedLastAppend && canonicalJsonDigest(before) === canonicalJsonDigest(input.sources);
-      await ports.assertCurrent(permit, { mode: exactAppend ? "append_recovery" : "completed_review", review: saved,
+      await ports.assertCurrentHeld(permit, { mode: exactAppend ? "append_recovery" : "completed_review", review: saved,
         ...(exactAppend ? { sourceBeforeAppend: before } : {}) });
       await ports.acknowledge(q, saved, sources, permit);
       return { state: "reused", question: q, review: saved, sources, source_database_changed: false, authority_granted: false };
     }
-    await pendingCurrent(permit, q);
+    await pendingCurrentHeld(permit, q);
     const value = q.proposal?.value;
     if (!q.confirmation || value?.kind !== "input_bounds") invalid();
     const review = makeSourceInputReview({ source, session: sources, store: input.store, outcomes: input.outcomes,
@@ -238,7 +241,7 @@ export async function runSourceInputConversation(input: {
     const next = structuredClone(sources);
     next.input_policy_reviews = [...(next.input_policy_reviews ?? []), review];
     await savePolicySources(input.projectRoot, next, { expectedDigest: canonicalJsonDigest(sources), permit });
-    await ports.assertCurrent(permit, { mode: "append_recovery", review, sourceBeforeAppend: sources });
+    await ports.assertCurrentHeld(permit, { mode: "append_recovery", review, sourceBeforeAppend: sources });
     await ports.acknowledge(q, review, next, permit);
     return { state: "saved", question: q, review, sources: next, source_database_changed: false, authority_granted: false };
   }, { signal: input.signal });
@@ -247,9 +250,9 @@ export async function runSourceInputConversation(input: {
     let expected = modelInput.question;
     try {
       const result = await runOperatorQuestionModel({ ...modelInput,
-        authorityGuard: async digest => { await pendingCurrent(undefined, expected); return digest; },
+        authorityGuard: async digest => { await pendingCurrent(expected); return digest; },
         onWordingState: async state => {
-          await pendingCurrent(undefined, expected);
+          await pendingCurrent(expected);
           const previous = selected().question;
           if (semanticDigest(previous) !== semanticDigest(expected)) invalid();
           const next = retainOperatorQuestionWording(previous, state);

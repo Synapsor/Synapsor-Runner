@@ -174,7 +174,7 @@ describe('source-established disclosure requirement through local review, strict
    const x=await setup();await x.run();const requestJson=vi.fn(async()=>{throw new Error('Provider must not run');});
    await expect(ensurePreparedPolicyCoverage({projectRoot:x.root,sources:x.f.sources,currentDraft:x.currentDraft as any,
      modelSession:{provider:'openrouter',model:'openai/gpt-5.6-terra',dependencies:{requestJson}},operatorSession:x.input.session,
-     authorityDigest:x.input.authorityDigest,clarifications:[],state:{},assertCurrent:async()=>{}})).rejects.toThrow('SCOPED_DISCLOSURE_REVIEW_PENDING');
+     authorityDigest:x.input.authorityDigest,clarifications:[],state:{},assertCurrent:async()=>{},assertCurrentHeld:async()=>{}})).rejects.toThrow('SCOPED_DISCLOSURE_REVIEW_PENDING');
    expect(requestJson).not.toHaveBeenCalled();
  });
 });

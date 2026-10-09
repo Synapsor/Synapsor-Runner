@@ -5,7 +5,7 @@ import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type Au
 import { authoringQuestionAnswerCheckpoint, authoringQuestionCheckpoint, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { captureOperatorAnswer, createOperatorQuestion, leaveOperatorQuestionPending, presentOperatorQuestion,
   reopenOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
-import { activePolicySource, loadPolicySources, policySourceSavedDigest, PolicySourceChangedError,
+import { activePolicySource, loadPolicySourcesHeld, policySourceSavedDigest, policySourceSavedDigestHeld, PolicySourceChangedError,
   type PolicySourceSession } from "./authoring-policy-source.js";
 import { reusableSourceInputConversationReview, type SourceInputConversationPorts,
   type SourceInputConversationRecovery } from "./authoring-input-policy-conversation.js";
@@ -13,7 +13,7 @@ import { assertInputInteractionResponse, inputInteractionBinding, type InputInte
   type InputInteractionResponse } from "./authoring-input-interaction.js";
 import { rememberModelAuthoringTurn } from "./model-authoring-conversation.js";
 import { AskError, type AskHistoryTurn } from "./model-ask.js";
-import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
 type Digest = `sha256:${string}`;
 /** Only records owned by this Input transition. The enclosing workflow installs
@@ -32,10 +32,13 @@ export type SourceInputHostAccess = {
   readConversationTurns(): readonly AskHistoryTurn[] | undefined;
   readOutcomes(): readonly string[] | undefined;
   scopeDigest(): Digest;
-  contextDigest(permit?: ProjectAuthorityMutationPermit, sourceContext?: PolicySourceSession,
+  contextDigest(sourceContext?: PolicySourceSession, savedSourceContext?: PolicySourceSession): Promise<Digest>;
+  contextDigestHeld(permit: ProjectAuthorityMutationPermit, sourceContext?: PolicySourceSession,
     savedSourceContext?: PolicySourceSession): Promise<Digest>;
-  assertResumeCurrent(permit?: ProjectAuthorityMutationPermit): Promise<void>;
+  assertResumeCurrent(): Promise<void>;
+  assertResumeCurrentHeld(permit: ProjectAuthorityMutationPermit): Promise<void>;
   loadContext(): Promise<{ store: string; inspectReader(): Promise<void> }>;
+  loadContextHeld(permit: ProjectAuthorityMutationPermit): Promise<{ store: string; inspectReader(): Promise<void> }>;
   mutate<T>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>, parentPermit?: ProjectAuthorityMutationPermit): Promise<T>;
   commit(update: SourceInputRecordUpdate, options: { permit: ProjectAuthorityMutationPermit;
     acknowledgeGeneration: boolean; subject: string }): Promise<void>;
@@ -104,7 +107,7 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
   let root = input.savedRoot ?? access.readQuestions().find(q => q.kind === "input_bounds" && q.source_binding?.agenda_digest === agenda);
   if (!root) await access.mutate(async permit => {
     if (access.readHandoffs().at(-1)?.state === "waiting") throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Inspect the saved question before reviewing another input decision.");
-    const contextDigest = await access.contextDigest(permit);
+    const contextDigest = await access.contextDigestHeld(permit);
     root = createOperatorQuestion({ id: randomUUID(), revision: 1, kind: "input_bounds", scope_digest: access.scopeDigest(), context_digest: contextDigest,
       target: { phase: "input_policy", outcomes }, source_binding: { source_session: sources.id, source_digest: source.digest as Digest,
         store_digest: store as Digest, agenda_digest: agenda, lines: source.lines },
@@ -122,27 +125,29 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
     if (!currentRoot) throw access.checkpointFailure("The retained input-policy question");
     return { root: currentRoot, children: questions.filter(q => q.budget_owner_id === currentRoot.id) };
   };
-  const assertCurrent = async (permit?: ProjectAuthorityMutationPermit, recovery?: SourceInputConversationRecovery) => {
-    await access.assertResumeCurrent(permit);
+  const assertCurrentHeld = async (permit: ProjectAuthorityMutationPermit, recovery?: SourceInputConversationRecovery) => {
+    await access.assertResumeCurrentHeld(permit);
     let savedSources = sources;
     if (recovery?.mode === "append_recovery") {
       if (!recovery.sourceBeforeAppend || canonicalJsonDigest(recovery.sourceBeforeAppend) !== canonicalJsonDigest(sources)) throw new PolicySourceChangedError();
       const expected = structuredClone(recovery.sourceBeforeAppend);
       expected.input_policy_reviews = [...(expected.input_policy_reviews ?? []), recovery.review];
-      const actual = await loadPolicySources(input.projectRoot, sources.id);
+      const actual = await loadPolicySourcesHeld(input.projectRoot, sources.id, permit);
       if (canonicalJsonDigest(actual) !== canonicalJsonDigest(expected)) throw new PolicySourceChangedError();
       savedSources = actual;
     }
-    if (await policySourceSavedDigest(input.projectRoot, sources.id) !== canonicalJsonDigest(savedSources)) throw new PolicySourceChangedError();
-    const fresh = await access.loadContext();
+    if (await policySourceSavedDigestHeld(input.projectRoot, sources.id, permit) !== canonicalJsonDigest(savedSources)) throw new PolicySourceChangedError();
+    const fresh = await access.loadContextHeld(permit);
     if (fresh.store !== store || activePolicySource(sources)?.digest !== source.digest
       || canonicalJsonDigest(access.readOutcomes()) !== canonicalJsonDigest(outcomes)) throw new PolicySourceChangedError();
     await fresh.inspectReader();
     if (recovery?.mode === "completed_review") return;
     const records = readQuestions(), q = records.children.at(-1) ?? records.root;
     if (q.scope_digest !== access.scopeDigest()
-      || q.context_digest !== await access.contextDigest(permit, recovery?.sourceBeforeAppend, savedSources)) throw new PolicySourceChangedError();
+      || q.context_digest !== await access.contextDigestHeld(permit, recovery?.sourceBeforeAppend, savedSources)) throw new PolicySourceChangedError();
   };
+  const assertCurrent = (recovery?: SourceInputConversationRecovery) =>
+    withProjectAuthorityMutation(input.projectRoot, permit => assertCurrentHeld(permit, recovery));
   const exchange = async (view: InputInteraction) => {
     const response = await input.interact(structuredClone(view), () => assertCurrent());
     assertInputInteractionResponse(view, response);
@@ -153,15 +158,15 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
     return inputInteractionBinding(records.root, records.children.at(-1) ?? records.root);
   };
   const ports: SourceInputConversationPorts = {
-    readQuestions, assertCurrent,
+    readQuestions, assertCurrent, assertCurrentHeld,
     saveQuestion: async (next, expected, options) => access.mutate(async permit => {
-      await assertCurrent(permit);
+      await assertCurrentHeld(permit);
       const questions = access.readQuestions(), old = questions.find(q => q.id === next.id);
       if (!old || old.digest !== expected) throw new PolicySourceChangedError();
       await commit({ questions: questions.map(q => q.id === old.id ? next : q) }, permit, "The exact input-policy question", !options.rawCheckpoint);
     }, options.permit),
     createMissingQuestion: async (currentRoot, text, completion, options) => access.mutate(async permit => {
-      await assertCurrent(permit);
+      await assertCurrentHeld(permit);
       const records = readQuestions();
       if (records.root.digest !== options.expectedRootDigest || records.root.id !== currentRoot.id
         || access.readHandoffs().at(-1)?.state === "waiting") throw new PolicySourceChangedError();
@@ -176,7 +181,7 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
       await commit({ questions: [...access.readQuestions(), q], handoffs: [...access.readHandoffs(), h], recovery }, permit, "The missing input-policy question");
     }, options.permit),
     recordRawAnswer: async (q, raw, expected, options) => access.mutate(async permit => {
-      await assertCurrent(permit);
+      await assertCurrentHeld(permit);
       const current = readQuestions().children.at(-1), handoffs = access.readHandoffs(), h = handoffs.at(-1);
       if (!current || !h || current.id !== q.id || current.digest !== expected || h.id !== q.handoff_id || h.state !== "waiting") throw new PolicySourceChangedError();
       let captured = captureOperatorAnswer(current, raw);
@@ -199,7 +204,7 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
     }, options.permit),
     acknowledge: async (_q, review, staged, permit) => access.mutate(async held => {
       Object.assign(sources, staged);
-      await assertCurrent(held, { mode: "completed_review", review });
+      await assertCurrentHeld(held, { mode: "completed_review", review });
       await commit({}, held, "The saved input-policy interpretation");
     }, permit),
     resumePending: async (q, currentRoot) => {
@@ -211,7 +216,7 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
           "Earlier questions and answers stay recorded. This choice grants no permission and does not renew the allowance."] });
       if (response.kind !== "pending" || response.choice !== "answer") return "keep";
       return access.mutate(async permit => {
-        await assertCurrent(permit);
+        await assertCurrentHeld(permit);
         const records = readQuestions(), latest = records.children.at(-1) ?? records.root;
         if (latest.digest !== q.digest || records.root.digest !== currentRoot.digest || !q.disposition || q.confirmation) throw new PolicySourceChangedError();
         if (!q.raw_answer) {
