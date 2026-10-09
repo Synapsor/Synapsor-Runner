@@ -1,10 +1,11 @@
+import { boundaryAuthoringResumeBinding } from "./authoring-resume-binding.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { BoundaryAuthoringResumeAction, BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import type { ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import type { ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
 import type { ReadPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
 import { loadBoundaryReviewContextHeld } from "./boundary-review-context.js";
-import { boundaryAuthoringResumeBinding, readBoundaryAuthoringResumeStateHeld } from "./boundary-authoring-resume.js";
+import { readBoundaryAuthoringResumeStateHeld } from "./boundary-authoring-resume.js";
 import { readActionRuleAuthorityRevisionBaselineHeld } from "./action-rule-authority.js";
 import { policySourceSavedDigestHeld } from "./authoring-policy-source.js";
 import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
@@ -51,7 +52,7 @@ export async function readAuthoringGenerationContextHeld(projectRoot: string, re
   return withHeldProjectAuthorityAccess(projectRoot, permit, async access => {
   const context = await loadBoundaryReviewContextHeld(projectRoot, access);
   const current = await readBoundaryAuthoringResumeStateHeld(projectRoot, boundaryAuthoringResumeBinding(context.bundle), access);
-  if (!current || current.revision_digest !== resume.revision_digest) {
+  if (current.status !== "ready" || current.value.revision_digest !== resume.revision_digest) {
     throw Object.assign(new Error("The saved setup changed before its generation context could be read. Reopen current saved work; no later revision was adopted."), { code: "BOUNDARY_AUTHORING_RESUME_CHANGED" });
   }
   const actions = await readActionRuleAuthorityRevisionBaselineHeld(projectRoot, access);

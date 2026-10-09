@@ -1451,5 +1451,10 @@
   "snapshot_policy": "Future snapshots exclude docs and unrelated material; included SOURCE-MANIFEST hashes/config/assets required. Prefer fixed worktree reuse. No existing snapshot deletion authorized.",
   "controlling_bounded_work": "OWNER-BOUNDED-COMPLETION.json",
   "standing_ceremony_rule": "Standing ceremony: small fixes = tests in the commit + one-line record; independent review batched per deliverable; full preseal/seal only for format, security/permission, concurrency semantics, paid runs or customer data. Handoffs \u226415 lines; status replies short.",
-  "dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
+  "dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md",
+  "main_access_wiring_checkpoint": {
+    "status": "development; independent class/public acceptance open",
+    "record": "Main required Entry/Held wiring + owned Read-currentness extraction; scoped tsc exit0; actual currentness controls4PASS (original3PASS/1 fixture DataCloneError retained, corrected obsolete commit argument only); BC19066 vs19069; no English count credit; evidence /var/tmp/synapsor-b64-main-access-owned/evidence/{currentness-after.json,main-types-final.log}.",
+    "next": "Compose writer fixture migration0c73; run affected actual native/Source controls and public continuation; batch SA independent review; then public initializer/D01."
+  }
 }

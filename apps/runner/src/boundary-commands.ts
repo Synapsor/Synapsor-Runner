@@ -1,3 +1,5 @@
+import { reloadReadReviewForModelRevision, reloadReadReviewForModelRevisionHeld } from "./authoring-read-review-currentness.js";
+export { reloadReadReviewForModelRevision, reloadReadReviewForModelRevisionHeld } from "./authoring-read-review-currentness.js";
 import { actionRuleDraftFailureView } from "./action-rule-diagnostic-view.js";
 import { boundaryAuthoringResumeBinding } from "./authoring-resume-binding.js";
 export { boundaryAuthoringResumeBinding } from "./authoring-resume-binding.js";
@@ -61,7 +63,7 @@ import { AuthoringReviewSubjectError, resolveAuthoringReviewSubject } from "./au
 import { actionRuleEffectLines } from "@synapsor-runner/action-rules";
 import { actionRuleDisclosureReconciliation, actionRuleEditDifferenceLines } from "./action-rule-disclosure-review.js";
 import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
-import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
+import { authoringReceiptConfiguration, authoringReceiptConfigurationHeld } from "./authoring-receipt-configuration.js";
 import type { PolicySourceSession } from "./authoring-policy-source.js";
 import { ensurePreparedPolicyCoverage, type PreparedPolicyReviewState } from "./authoring-prepared-policy-review.js";
 import { assessActionWorkUnitSource, reconstructOriginalActionWorkUnitSourceAssessment } from "./action-work-unit-source-assessment.js";
@@ -238,6 +240,7 @@ import {
   updateBoundaryPolicyReview,
   type BoundaryPolicyReviewRequest,
   assertBoundaryAuthoringResumeCurrent,
+  assertBoundaryAuthoringResumeCurrentHeld,
   boundaryAuthoringVersionReviews,
   prepareBoundaryActionRevision,
   prepareBoundaryActionEditDisposition,
@@ -314,6 +317,7 @@ import {
   readActionRuleAuthorityActivation,
   readActionRuleAuthorityDraft,
   readActionRuleAuthorityRevisionBaseline,
+  readActionRuleAuthorityRevisionBaselineHeld,
   writeActionRuleAuthorityDraftIfCurrent,
   type ActionRuleAuthorityActivationV1,
   type ActionRuleAuthorityDraftV1,
@@ -376,7 +380,7 @@ import { automaticApprovalBusinessSummary } from "./authoring-business-review.js
 import { authoringClientChoices, authoringClientLabel, authoringClientSetupFacts, isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
 import { renderReviewFacts } from "./review-facts.js";
 import { renderRunnerResultPanel } from "./runner-result-panel.js";
-import { newPolicySourceSession, loadPolicySources, activePolicySource, authoringDestination, savePolicySources, policySourceSavedDigest, bindPolicyCoverage, recordReadInterpretation, confirmedReadFieldMeanings, PolicySourceChangedError } from "./authoring-policy-source.js";
+import { newPolicySourceSession, loadPolicySources, activePolicySource, authoringDestination, savePolicySources, policySourceSavedDigest, policySourceSavedDigestHeld, bindPolicyCoverage, recordReadInterpretation, confirmedReadFieldMeanings, PolicySourceChangedError } from "./authoring-policy-source.js";
 import { BoundaryJobPlanningError, planningDiagnosticLines, saveBoundaryJobPlanningDiagnostic } from "./boundary-job-diagnostics.js";
 import { appendPolicySourceOperatorMessage, installPolicySourceCommands } from "./authoring-policy-source-ui.js";
 import { reviewPolicyCoverage, parsePolicyCoverage, policyCoverageSection, policyCoverageSummary, unresolvedPolicyPassages, isMechanicalApprovalCounterPassage, isReadOnlyPolicyPassage, referencesReadPolicy, actionablePolicyRequirements, prioritizePolicyRepairs, type PolicyCoverage } from "./authoring-policy-coverage.js";
@@ -770,7 +774,7 @@ type ProductionActivationReadiness = {
 };
 
 type BoundaryActivateCommandOptions = {
-  assessReadScope?: ReturnType<typeof createNativeReadScope>["assess"];
+  assessReadScope?: ReturnType<typeof createNativeReadScope>["assessHeld"];
   inspectProductionReadiness?: (input: {
     args: string[];
     projectRoot: string;
@@ -3666,7 +3670,7 @@ type BoundaryAssistOutcome = {
 type ReadBoundaryReviewDisposition = "activated" | "finish" | "manual_editor";
 
 type ReadBoundaryReviewOptions = {
-  assessReadScope?: ReturnType<typeof createNativeReadScope>["assess"];
+  assessReadScope?: ReturnType<typeof createNativeReadScope>["assessHeld"];
   businessSummary?: () => string[];
   deploymentReadiness?: () => Promise<{ summary: string[]; details: string[] }>;
   confirmedFieldMeanings?: (readDigest: string) => ReadonlySet<string>;
@@ -3874,10 +3878,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if ((!checkpointWrite && resumePersistenceBlocked) || !activeResume || activeResume.revision_digest !== savedResumeRevision) {
       throw checkpointSaveFailure("The current saved job");
     }
-    await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, action, {permit});
+    if (permit) await assertBoundaryAuthoringResumeCurrentHeld(input.projectRoot, activeResume, permit, action);
+    else await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, action);
   };
-  const inputPolicyContext = async () => {
-    const context=await loadBoundaryReviewContext(input.projectRoot);
+  const inputPolicyContext = async (permit?: ProjectAuthorityMutationPermit) => {
+    const context=permit ? await loadBoundaryReviewContextHeld(input.projectRoot,permit) : await loadBoundaryReviewContext(input.projectRoot);
     const store=scopedDisclosureStoreDigest(undefined,context.bundle.mutation_bindings.authoring);
     if(!store)throw new Error('SOURCE_INPUT_REQUIREMENT_PENDING: Establish the current local project binding before reviewing input meaning.');
     return {context,store};
@@ -3899,10 +3904,16 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           readConversationTurns:()=>authoringConversation?.turns,
           readOutcomes:()=>currentProgramAction()?.intended_outcomes,
           scopeDigest:ownerQuestionScope,
-          contextDigest:(permit,sourceContext,savedSourceContext)=>ownerQuestionContext(permit,'input_policy',sourceContext,savedSourceContext),
-          assertResumeCurrent:permit=>assertAuthoringResumeCurrent(undefined,false,permit),
+          contextDigest:(sourceContext,savedSourceContext)=>ownerQuestionContext(undefined,'input_policy',sourceContext,savedSourceContext),
+          contextDigestHeld:(permit,sourceContext,savedSourceContext)=>ownerQuestionContext(permit,'input_policy',sourceContext,savedSourceContext),
+          assertResumeCurrent:()=>assertAuthoringResumeCurrent(undefined,false),
+          assertResumeCurrentHeld:permit=>assertAuthoringResumeCurrent(undefined,false,permit),
           loadContext:async()=>{
             const fresh=await inputPolicyContext();
+            return {store:fresh.store,inspectReader:async()=>{await inspectPolicyReviewSource(fresh.context.lock,input.schemaInspector);}};
+          },
+          loadContextHeld:async permit=>{
+            const fresh=await inputPolicyContext(permit);
             return {store:fresh.store,inspectReader:async()=>{await inspectPolicyReviewSource(fresh.context.lock,input.schemaInspector);}};
           },
           mutate:mutateOwnerHandoff,
@@ -3929,7 +3940,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     assertSourceInputRootBinding({sources,store,outcomes,...(savedRoot?{savedRoot}:{})},operatorQuestions);
     await reviewSourceInputPolicy({projectRoot:input.projectRoot,sources,session:input.session,outcomes,store,actor:localInteractiveActor(),
-      assertCurrent:async permit=>{await assertAuthoringResumeCurrent(undefined,true,permit);const fresh=await inputPolicyContext();if(fresh.store!==store)throw new PolicySourceChangedError();}});
+      assertCurrent:async permit=>{await assertAuthoringResumeCurrent(undefined,true,permit);const fresh=await inputPolicyContext(permit);if(fresh.store!==store)throw new PolicySourceChangedError();}});
   };
   const assessInputPolicyDraft = async (draft: ActionRuleModelDraftV1) => {
     const sources=authoringConversation?.policySources,source=activePolicySource(sources);
@@ -4042,28 +4053,29 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     model: selectedResumeModel && { provider: selectedResumeModel.provider, model: selectedResumeModel.model,
       destination: authoringDestination(selectedResumeModel) } });
   const ownerQuestionContext = async (permit?: ProjectAuthorityMutationPermit,
-    consumer?: AuthoringOwnerHandoff["consumer"], sourceContext?:PolicySourceSession, savedSourceContext?:PolicySourceSession) => {
+    consumer?: AuthoringOwnerHandoff["consumer"], sourceContext?:PolicySourceSession, savedSourceContext?:PolicySourceSession): Promise<`sha256:${string}`> => {
+    if (!permit) return withProjectAuthorityMutation(input.projectRoot, held => ownerQuestionContext(held, consumer, sourceContext, savedSourceContext));
     await assertAuthoringResumeCurrent(undefined, false, permit);
-    const current = (permit ? await loadBoundaryReviewContextHeld(input.projectRoot, permit) : await loadBoundaryReviewContext(input.projectRoot));
+    const current = await loadBoundaryReviewContextHeld(input.projectRoot, permit);
     const sources = authoringConversation?.policySources;
-    if (sources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, sources.id) !== canonicalJsonDigest(savedSourceContext??sources)) {
+    if (sources?.snapshots.length && await policySourceSavedDigestHeld(input.projectRoot, sources.id, permit) !== canonicalJsonDigest(savedSourceContext??sources)) {
       throw new PolicySourceChangedError();
     }
     const reader = await inspectPolicyReviewSource(current.lock, input.schemaInspector);
     // A pending Input interpretation covers the saved program, including peer
     // edits/removals that leave the attached Source and intended names unchanged.
     const inputActions = consumer === "input_policy"
-      ? await readActionRuleAuthorityRevisionBaseline(input.projectRoot, permit) : undefined;
+      ? (permit ? await readActionRuleAuthorityRevisionBaselineHeld(input.projectRoot, permit) : await readActionRuleAuthorityRevisionBaseline(input.projectRoot)) : undefined;
     // Policy clarification is bound to the complete saved program and freshly
     // inspected reader/Action posture. An old coverage result is not current
     // Source meaning after an Action, role or attachment change.
     let policyContext: AuthoringOwnerQuestionContextInput["policy"];
     if (consumer === "policy_clarification" || consumer?.startsWith("read_revision_")) {
-      await reloadReadReviewForModelRevision(input.projectRoot, current, semanticActionAuthorityDraft);
+      await reloadReadReviewForModelRevisionHeld(input.projectRoot, current, permit, semanticActionAuthorityDraft);
       // Resume may reuse a completed Action without rebuilding its in-memory
       // draft. Bind the question to the exact durable program under this permit,
       // rather than an absent draft or newly generated activation timestamp.
-      const authority = await readActionRuleAuthorityRevisionBaseline(input.projectRoot, permit);
+      const authority = (permit ? await readActionRuleAuthorityRevisionBaselineHeld(input.projectRoot, permit) : await readActionRuleAuthorityRevisionBaseline(input.projectRoot));
       const action = Object.keys(authority.drafts).length || authority.active
         ? await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env) : undefined;
       policyContext = { authority,
@@ -4264,7 +4276,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if (!activeResume || activeResume.revision_digest !== savedResumeRevision || resumePersistenceBlocked) throw checkpointSaveFailure("Transport history");
     const next = await saveAuthoringRecoveryResume({ resume: activeResume, expectedRevision: savedResumeRevision,
       recovery: state, permit,
-      assertCurrent: currentPermit => assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume!, undefined, { permit: currentPermit }),
+      assertCurrent: currentPermit => assertAuthoringResumeCurrent(undefined, false, currentPermit),
       write: (next, options) => writeBoundaryAuthoringResumeState(input.projectRoot, next, options) });
     activeResume = next; savedResumeRevision = next.revision_digest; generationRecovery = next.generation_recovery;
   };
@@ -4326,7 +4338,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       await assertAuthoringResumeCurrent(undefined, false, generationRecoveryPermit);
       if (!activeResume) throw checkpointSaveFailure("The generation context");
       const source = activeResume.policy_source_session
-        ? await policySourceSavedDigest(input.projectRoot, activeResume.policy_source_session) : null;
+        ? (generationRecoveryPermit ? await policySourceSavedDigestHeld(input.projectRoot, activeResume.policy_source_session, generationRecoveryPermit)
+          : await policySourceSavedDigest(input.projectRoot, activeResume.policy_source_session)) : null;
       if (authoringConversation?.policySources?.snapshots.length && source !== canonicalJsonDigest(authoringConversation.policySources)) throw new PolicySourceChangedError();
       return generationRecoveryPermit
         ? boundaryGenerationContextHeld(input.projectRoot, activeResume, generationRecoveryPermit)
@@ -4338,15 +4351,16 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if (!activeResume || activeResume.revision_digest !== savedResumeRevision || revalidateSavedJob)
       throw checkpointSaveFailure("The interrupted business step review");
     const reviewedResume = activeResume;
-    const inspectCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
+    const inspectCurrent = async (permit?: ProjectAuthorityMutationPermit): Promise<`sha256:${string}`> => {
+      if (!permit) return withProjectAuthorityMutation(input.projectRoot, held => inspectCurrent(held));
       await assertAuthoringResumeCurrent(undefined, false, permit);
       const current = (permit ? await loadBoundaryReviewContextHeld(input.projectRoot, permit) : await loadBoundaryReviewContext(input.projectRoot));
       const reader = await inspectPolicyReviewSource(current.lock, input.schemaInspector);
-      const actions = await readActionRuleAuthorityRevisionBaseline(input.projectRoot, permit);
+      const actions = (permit ? await readActionRuleAuthorityRevisionBaselineHeld(input.projectRoot, permit) : await readActionRuleAuthorityRevisionBaseline(input.projectRoot));
       return canonicalJsonDigest({ binding: boundaryAuthoringResumeBinding(current.bundle), candidate: current.candidate,
         reader_schema: schemaFingerprintForInspection(reader.inspection), reader_role: rolePostureFingerprint(reader.inspection),
         actions, source: reviewedResume.policy_source_session
-          ? await policySourceSavedDigest(input.projectRoot, reviewedResume.policy_source_session) : null,
+          ? await policySourceSavedDigestHeld(input.projectRoot, reviewedResume.policy_source_session, permit) : null,
         resume: reviewedResume.revision_digest });
     };
     const record = async (inspected: `sha256:${string}`, run: () => Promise<void>) =>
@@ -5340,9 +5354,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     try {
       await withProjectAuthorityMutation(input.projectRoot, async permit => {
         if (!activeResume) throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: The exact saved request is unavailable; no disposition was recorded.");
-        await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, { revision: pending }, { permit });
-        if (sources && await policySourceSavedDigest(input.projectRoot, sources.id) !== sourceDigest) throw new PolicySourceChangedError();
-        const current = await reloadReadReviewForModelRevision(input.projectRoot, context, baseline.subject);
+        await assertBoundaryAuthoringResumeCurrentHeld(input.projectRoot, activeResume, permit, { revision: pending });
+        if (sources && await policySourceSavedDigestHeld(input.projectRoot, sources.id, permit) !== sourceDigest) throw new PolicySourceChangedError();
+        const current = await reloadReadReviewForModelRevisionHeld(input.projectRoot, context, permit, baseline.subject);
         const exact = await loadActionRuleRevisionBaseline({ projectRoot: input.projectRoot,
           boundaryName: context.candidate.pack.name, outcome: pending.outcome, preserveVerificationFields: true,
           expectedReadDigest: baseline.sourceRule.read_boundary_digest });
@@ -5876,7 +5890,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         ? "read_mapping" : jobPlan.action_mode === "create" || jobPlan.action_mode === "revise" ? "action_drafting" : "authority_review";
       if (confirmedProgramSource) {
         await withProjectAuthorityMutation(input.projectRoot, async permit => {
-          if (await policySourceSavedDigest(input.projectRoot, confirmedProgramSource!.id) !== confirmedProgramSource!.digest) throw new PolicySourceChangedError();
+          if (await policySourceSavedDigestHeld(input.projectRoot, confirmedProgramSource!.id, permit) !== confirmedProgramSource!.digest) throw new PolicySourceChangedError();
           await persistAuthoringResume(plannedStage, permit);
           if (resumePersistenceBlocked) throw checkpointSaveFailure("The confirmed program inventory");
         });
@@ -6141,11 +6155,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       await assertAuthoringResumeCurrent(settings.freshness, true, permit);
       const inspected = await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env);
       if (schemaFingerprintForInspection(inspected) !== schema || rolePostureFingerprint(inspected) !== role) throw stale();
-      const fresh = await loadBoundaryReviewContext(input.projectRoot);
+      const fresh = permit ? await loadBoundaryReviewContextHeld(input.projectRoot, permit) : await loadBoundaryReviewContext(input.projectRoot);
       if (fresh.candidate.generation_lock_fingerprint !== canonicalJsonDigest(settings.generationLock)) throw stale();
       if (authoringConversation?.policySources?.snapshots.length
-        && await policySourceSavedDigest(input.projectRoot, authoringConversation.policySources.id)
-          !== canonicalJsonDigest(authoringConversation.policySources)) throw new PolicySourceChangedError();
+        && (permit ? await policySourceSavedDigestHeld(input.projectRoot, authoringConversation.policySources.id, permit)
+          : await policySourceSavedDigest(input.projectRoot, authoringConversation.policySources.id)) !== canonicalJsonDigest(authoringConversation.policySources)) throw new PolicySourceChangedError();
     };
     const coordinated = async <T,>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>): Promise<T> => {
       const before = settings.read(), oldReviews = reviewedVersionFields, oldCatalog = semanticActionCatalog;
@@ -6275,11 +6289,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   const saveSemanticActionDraft = async (draft: ActionRuleAuthorityDraftV1, expectedSource?: { id: string; digest: string; reader_schema: string; reader_role: string; action_schema: string; action_role: string }): Promise<void> => {
     if (!semanticActionPublicationBaseline) throw new Error("ACTION_RULE_REVISION_BASELINE_MISSING: reload the saved job before saving Action rules.");
     semanticActionPublicationBaseline = await withProjectAuthorityMutation(input.projectRoot, async permit => {
-      if (expectedSource && await policySourceSavedDigest(input.projectRoot, expectedSource.id) !== expectedSource.digest) {
+      if (expectedSource && await policySourceSavedDigestHeld(input.projectRoot, expectedSource.id, permit) !== expectedSource.digest) {
         throw new PolicySourceChangedError();
       }
       if (expectedSource) {
-        if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
+        if (activeResume) await assertBoundaryAuthoringResumeCurrentHeld(input.projectRoot, activeResume, permit);
         const reader = await inspectPolicyReviewSource(context.lock, input.schemaInspector);
         const action = await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env);
         if (schemaFingerprintForInspection(reader.inspection) !== expectedSource.reader_schema
@@ -6291,11 +6305,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       }
       const expectedRead = pendingActionRevision?.preparation?.read_digest ?? plannedEditReadDigest;
       if (expectedRead) {
-        const fresh = await loadBoundaryReviewContext(input.projectRoot);
+        const fresh = await loadBoundaryReviewContextHeld(input.projectRoot, permit);
         if (fresh.bundle.candidate_digest !== expectedRead) {
           throw new Error("ACTION_RULE_REVISION_STALE: Read changed during edit preparation; no replacement was saved.");
         }
-        if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
+        if (activeResume) await assertBoundaryAuthoringResumeCurrentHeld(input.projectRoot, activeResume, permit);
       }
       return writeActionRuleAuthorityDraftIfCurrent(input.projectRoot, draft, semanticActionPublicationBaseline!, permit);
     });
@@ -6450,10 +6464,15 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           subject: proposedAuthority
             ? `${proposedAuthority.state === "active" ? "published" : "disabled"} Action ${proposedAuthority.authority.name} with Read ${context.candidate.pack.name}`
             : `Read candidate ${context.candidate.pack.name}` } } : {}),
-        assertCurrent: async permit => {
+        assertCurrent: async () => {
           assertRunning();
-          if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
+          if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume);
           await reloadReadReviewForModelRevision(input.projectRoot, context, currentAuthority);
+        },
+        assertCurrentHeld: async permit => {
+          assertRunning();
+          if (activeResume) await assertBoundaryAuthoringResumeCurrentHeld(input.projectRoot, activeResume, permit);
+          await reloadReadReviewForModelRevisionHeld(input.projectRoot, context, permit, currentAuthority);
         },
         onValidated: async (_result, permit) => {
           // A committed canonical report acknowledges only this live response;
@@ -6518,8 +6537,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         refreshEvidence: () => refreshPolicyCoverageEvidence(proposed),
         assertEvidenceCurrent: () => assertPolicyReviewSourceCurrent(policySourceInspection, input.schemaInspector),
         assertReviewCurrent: async permit => {
-          if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, {permit});
-          await reloadReadReviewForModelRevision(input.projectRoot, context, currentAuthority);
+          await assertAuthoringResumeCurrent(undefined, false, permit);
+          if (permit) await reloadReadReviewForModelRevisionHeld(input.projectRoot, context, permit, currentAuthority);
+          else await reloadReadReviewForModelRevision(input.projectRoot, context, currentAuthority);
         },
       }),
     });
@@ -6812,11 +6832,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       readCheckpoint: () => readAssistanceCheckpoint, readHandoffs: () => ownerHandoffs,
       scopeInventory: async permit => {
         await assertAuthoringResumeCurrent(undefined, false, permit);
-        const current = (permit ? await loadBoundaryReviewContextHeld(input.projectRoot, permit) : await loadBoundaryReviewContext(input.projectRoot)), scope = await typedReadContext(current.candidate, undefined, permit);
+        const current = (permit ? await loadBoundaryReviewContextHeld(input.projectRoot, permit) : await loadBoundaryReviewContext(input.projectRoot)), scope = await readScopeReview.contextHeld(current.candidate, permit);
         return { ...scope, questions: operatorQuestions, handoffs: ownerHandoffs, generation: generationRecovery };
       },
       readQuestions: () => operatorQuestions, readRecovery: () => generationRecovery, readPreparedRead: () => resumeRead,
-      readPendingPlanning: permit => readScopeReview.pendingPlanning(mappingBoundary, permit),
+      readPendingPlanning: permit => readScopeReview.pendingPlanningHeld(mappingBoundary, permit),
       readConversation: () => authoringConversation, readReviewedRelationshipAnswer: () => reviewedRelationshipAnswer,
       install: update => {
         if (Object.prototype.hasOwnProperty.call(update, "checkpoint")) readAssistanceCheckpoint = update.checkpoint;
@@ -7435,7 +7455,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                   await assertAuthoringResumeCurrent(actionFreshness, true, permit);
                   const priorQuestion = (preserveProgramRevisionAgenda ? pendingActionRevision?.checkpoint : resumeAction?.checkpoint)?.pending_question;
                   if (checkpoint.pending_question || priorQuestion) await assertQuestionSourceCurrent();
-                  if (authoringConversation?.policySources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, authoringConversation.policySources.id)
+                  if (authoringConversation?.policySources?.snapshots.length && await policySourceSavedDigestHeld(input.projectRoot, authoringConversation.policySources.id, permit)
                     !== canonicalJsonDigest(authoringConversation.policySources)) throw new PolicySourceChangedError();
                   const previousAction = resumeAction, previousRevision = pendingActionRevision, previousRecovery = generationRecovery;
                   try {
@@ -7589,7 +7609,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                     await assertAuthoringResumeCurrent(actionFreshness, false, permit);
                     await assertQuestionSourceCurrent();
                     if ((authoringConversation?.policySources ? canonicalJsonDigest(authoringConversation.policySources) : undefined) !== displayedPolicyDigest
-                      || (authoringConversation?.policySources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, authoringConversation.policySources.id) !== displayedPolicyDigest)) {
+                      || (authoringConversation?.policySources?.snapshots.length && (permit ? await policySourceSavedDigestHeld(input.projectRoot, authoringConversation.policySources.id, permit)
+                        : await policySourceSavedDigest(input.projectRoot, authoringConversation.policySources.id)) !== displayedPolicyDigest)) {
                       throw new PolicySourceChangedError();
                     }
                   };
@@ -10280,10 +10301,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           const history = reconciledActionRevisions;
           try {
             await withProjectAuthorityMutation(input.projectRoot, async permit => {
-              if (await policySourceSavedDigest(input.projectRoot, authoringConversation!.policySources!.id) !== expectedSourceDigest) {
+              if (await policySourceSavedDigestHeld(input.projectRoot, authoringConversation!.policySources!.id, permit) !== expectedSourceDigest) {
                 throw new Error("POLICY_SOURCE_CHANGED: The attached policy or its accepted decisions changed during routing review. Reopen this job; the instruction remains pending and newer work was not overwritten.");
               }
-              await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft!);
+              await reloadReadReviewForModelRevisionHeld(input.projectRoot, context, permit, semanticActionAuthorityDraft!);
               const record: BoundaryActionReconciliation = { pending: structuredClone(pending), source_digest: current.source.digest,
                 report_digest: canonicalJsonDigest(reviewedReport), draft_digest: reviewedReport.draft_digest,
                 reason: "current_review_requires_no_action_edit", confirmed_by: provenGenerated ? "current_coverage" : "operator" };
@@ -10450,7 +10471,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if (input.authoringChat) input.authoringChat.rememberDetails("NEXT AUTHORITY REVIEW - READ BOUNDARY", nextReadReviewDetails);
     else await writeRunner("NEXT AUTHORITY REVIEW - READ BOUNDARY", nextReadReviewDetails);
     const reviewResult = await input.completeReadReview("activate", input.session, {
-      assessReadScope: readScopeReview.assess,
+      assessReadScope: readScopeReview.assessHeld,
       businessSummary: () => [...readRevisionRecovery,
         ...semanticActionDrafts.flatMap((entry) => semanticActionBusinessReviewLines(entry.result.compiled, context.candidate))],
       deploymentReadiness: draftWriterReadiness,
@@ -11533,12 +11554,13 @@ async function reviewSavedBoundaryPolicyInner(input: {
   const reviewSelection: SavedPolicyReviewPreselection = {resume_revision_digest:resume.revision_digest,
     sources_digest:canonicalJsonDigest(input.sources),source_session:input.sources.id,
     source_digest:source.digest,read_digest:readDigest,selected,request};
-  const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
+  const assertCurrent = async (permit?: ProjectAuthorityMutationPermit): Promise<void> => {
+    if (!permit) return withProjectAuthorityMutation(input.projectRoot, held => assertCurrent(held));
     input.assertRunning?.(); currentResume();
-    await assertBoundaryAuthoringResumeCurrent(input.projectRoot, resume, undefined, { permit });
-    await reloadReadReviewForModelRevision(input.projectRoot, context);
-    await selected.assertCurrent();
-    if (await policySourceSavedDigest(input.projectRoot,input.sources.id)!==canonicalJsonDigest(input.sources))
+    await assertBoundaryAuthoringResumeCurrentHeld(input.projectRoot, resume, permit);
+    await reloadReadReviewForModelRevisionHeld(input.projectRoot, context, permit);
+    await selected.assertCurrentHeld(permit);
+    if (await policySourceSavedDigestHeld(input.projectRoot,input.sources.id,permit)!==canonicalJsonDigest(input.sources))
       throw new PolicySourceChangedError();
   };
   // The model-free transaction preflight may simply return control to the
@@ -11598,7 +11620,7 @@ async function reviewSavedBoundaryPolicyInner(input: {
       if (!input.modelSession) throw new Error("EXCLUDED_FIELD_RECIPIENT_UNAVAILABLE: Review the exact saved model destination before consenting to metadata transfer.");
       const result = await reviewExcludedFieldMetadata({ projectRoot: input.projectRoot, sources: input.sources,
         destination: authoringDestination(input.modelSession), source: sourceInspection, currentDraft, session: input.session,
-        assertCurrent, assertMetadataCurrent: () => assertPolicyReviewSourceCurrent(sourceInspection, input.schemaInspector),
+        assertCurrent, assertCurrentHeld:assertCurrent, assertMetadataCurrent: () => assertPolicyReviewSourceCurrent(sourceInspection, input.schemaInspector),
         coordinated: operation => withProjectAuthorityMutation(input.projectRoot, async permit => {
           await assertPolicyReviewSourceCurrent(sourceInspection, input.schemaInspector);
           await assertCurrent(permit);
@@ -11623,7 +11645,7 @@ async function reviewSavedBoundaryPolicyInner(input: {
       if(resolution.recommended!=='source_transaction_review')throw new ReviewResolutionError(
         'SOURCE_TRANSACTION_REVIEW_PENDING',resolution,'The registered local source review is unavailable; saved work remains pending.');
       const result=await localSourceTransactionReview({projectRoot:input.projectRoot,sources:input.sources,session:input.session,
-        actor:localInteractiveActor(),revisitCurrent:input.revisitTransaction,currentDraft,assertCurrent,
+        actor:localInteractiveActor(),revisitCurrent:input.revisitTransaction,currentDraft,assertCurrent,assertCurrentHeld:assertCurrent,
         coordinated:async operation=>{
           const currentInspection=await inspectPolicyReviewSource(context.lock,input.schemaInspector);
           if(schemaFingerprintForInspection(currentInspection.inspection)!==schemaFingerprintForInspection(sourceInspection.inspection)
@@ -11631,7 +11653,7 @@ async function reviewSavedBoundaryPolicyInner(input: {
             throw new Error('SOURCE_TRANSACTION_METADATA_CHANGED: Reopen the exact current reader review; no decision was saved.');
           const check=async(permit:ProjectAuthorityMutationPermit)=>{
             await assertCurrent(permit);
-            const currentReceipt=await authoringReceiptConfiguration(input.projectRoot,authority?.authority.rules.map(r=>r.rule.source)??[],process.env);
+            const currentReceipt=await authoringReceiptConfigurationHeld(input.projectRoot,authority?.authority.rules.map(r=>r.rule.source)??[],permit,process.env);
             if(canonicalJsonDigest(currentReceipt)!==canonicalJsonDigest(receiptConfiguration))
               throw new Error('SOURCE_TRANSACTION_CONFIGURATION_CHANGED: Reopen current Review; no stale interpretation was saved.');
             await operation(permit);
@@ -11668,7 +11690,7 @@ async function reviewSavedBoundaryPolicyInner(input: {
       if(resolution.recommended!=='source_transaction_scope_review')throw new ReviewResolutionError(
         'SOURCE_TRANSACTION_SCOPE_REVIEW_PENDING',resolution,'The registered local scope review is unavailable; saved work remains pending.');
       const result=await localSourceTransactionScopeReview({projectRoot:input.projectRoot,sources:input.sources,
-        session:input.session,actor:localInteractiveActor(),question:scopeQuestion,currentDraft,assertCurrent,
+        session:input.session,actor:localInteractiveActor(),question:scopeQuestion,currentDraft,assertCurrent,assertCurrentHeld:assertCurrent,
         coordinated:async operation=>{
           const currentInspection=await inspectPolicyReviewSource(context.lock,input.schemaInspector);
           if(schemaFingerprintForInspection(currentInspection.inspection)!==schemaFingerprintForInspection(sourceInspection.inspection)
@@ -11676,7 +11698,7 @@ async function reviewSavedBoundaryPolicyInner(input: {
             throw new Error('SOURCE_TRANSACTION_METADATA_CHANGED: Reopen current reader review; no scope answer was saved.');
           const check=async(permit:ProjectAuthorityMutationPermit)=>{
             await assertCurrent(permit);
-            const currentReceipt=await authoringReceiptConfiguration(input.projectRoot,authority?.authority.rules.map(r=>r.rule.source)??[],process.env);
+            const currentReceipt=await authoringReceiptConfigurationHeld(input.projectRoot,authority?.authority.rules.map(r=>r.rule.source)??[],permit,process.env);
             if(canonicalJsonDigest(currentReceipt)!==canonicalJsonDigest(receiptConfiguration))
               throw new Error('SOURCE_TRANSACTION_CONFIGURATION_CHANGED: Reopen current Review; no stale scope answer was saved.');
             await operation(permit);
@@ -11712,7 +11734,7 @@ async function reviewSavedBoundaryPolicyInner(input: {
       const result=await localScopedDisclosureReview({projectRoot:input.projectRoot,sources:input.sources,session:input.session,
         actor:localInteractiveActor(),register,location:authority?.state === 'active'?'active':'draft',currentDraft,
         authorityDigest:canonicalJsonDigest({read:readDigest,action:authority?.digest??null}),
-        clarifications:resume.conversation.filter(turn=>turn.kind==='clarification'),assertCurrent,
+        clarifications:resume.conversation.filter(turn=>turn.kind==='clarification'),assertCurrent,assertCurrentHeld:assertCurrent,
         onValidated:async(sources,permit)=>{
           const next=updateBoundaryPolicyReview(resume,{pending:null,completion:{request,
             report_digest:canonicalJsonDigest(sources.coverage!),context_digest:sources.coverage_context_digest as `sha256:${string}`,
@@ -11727,7 +11749,7 @@ async function reviewSavedBoundaryPolicyInner(input: {
             || rolePostureFingerprint(currentInspection.inspection)!==rolePostureFingerprint(sourceInspection.inspection))throw new Error('SCOPED_DISCLOSURE_METADATA_CHANGED: Reopen the exact current reader review; no decision was saved.');
           const check=async(permit:ProjectAuthorityMutationPermit)=>{
             await assertCurrent(permit);
-            const currentReceipt=await authoringReceiptConfiguration(input.projectRoot,authority?.authority.rules.map(r=>r.rule.source)??[],process.env);
+            const currentReceipt=await authoringReceiptConfigurationHeld(input.projectRoot,authority?.authority.rules.map(r=>r.rule.source)??[],permit,process.env);
             if(canonicalJsonDigest(currentReceipt)!==canonicalJsonDigest(receiptConfiguration))throw new Error('OBLIGATION_CONFIGURATION_CHANGED: Reopen current review; no stale classification was saved.');
             await operation(permit);
           };
@@ -11760,7 +11782,7 @@ async function reviewSavedBoundaryPolicyInner(input: {
     const check = () => ensurePreparedPolicyCoverage({ projectRoot: input.projectRoot, sources: input.sources,
       modelSession: reviewModel, operatorSession: input.session, currentDraft, authority,
       authorityDigest: canonicalJsonDigest({ read: readDigest, action: authority?.digest ?? null }), countingDomain: domain,
-      clarifications: resume.conversation.filter(turn => turn.kind === "clarification"), assertCurrent,
+      clarifications: resume.conversation.filter(turn => turn.kind === "clarification"), assertCurrent, assertCurrentHeld:assertCurrent,
       assertEvidenceCurrent: () => assertPolicyReviewSourceCurrent(sourceInspection,input.schemaInspector),
       progress: input.progress, state, requireCountingChoice: true, subjectLocation:authority?.state === "active" ? "active" : "draft",
       savedReviewEpisode: { job: resume.job_intent,
@@ -11830,31 +11852,6 @@ async function reviewSavedBoundaryPolicyInner(input: {
   }
 }
 
-export async function reloadReadReviewForModelRevision(
-  projectRoot: string,
-  previous: Awaited<ReturnType<typeof loadBoundaryReviewContext>>,
-  expectedAction?: ActionRuleAuthorityReviewSubjectV1,
-): Promise<Awaited<ReturnType<typeof loadBoundaryReviewContext>>> {
-  const current = await loadBoundaryReviewContext(projectRoot);
-  const readIdentity = ({ authoring, ...bindings }: BoundaryReviewMutationBindings) => ({
-    ...bindings,
-    ...(authoring ? { authoring: { ...authoring, epoch: 0 } } : {}),
-  });
-  if (canonicalJsonDigest(readIdentity(previous.bundle.mutation_bindings))
-    !== canonicalJsonDigest(readIdentity(current.bundle.mutation_bindings))) {
-    throw new Error("READ_BOUNDARY_REVISION_CHANGED: The selected Read revision changed. Reopen its current review; your requested revision has not been applied.");
-  }
-  if (expectedAction) {
-    const currentAction = expectedAction.state === "active"
-      ? await readActionRuleAuthorityActivation(projectRoot)
-      : await readActionRuleAuthorityDraft(projectRoot, expectedAction.authority.name);
-    if (currentAction?.digest !== expectedAction.digest
-      || (expectedAction.state === "active" && canonicalJsonDigest(currentAction) !== canonicalJsonDigest(expectedAction))) {
-      throw new Error("ACTION_BOUNDARY_REVISION_CHANGED: The dependent Action revision changed. Reopen the saved job to review its current rules; no Read revision was applied.");
-    }
-  }
-  return current;
-}
 
 export async function prepareModelReadBoundaryExposureRevision(
   input: ModelReadBoundaryExposureRevisionInput & { revision: { read_prerequisite?: undefined } },
@@ -14347,7 +14344,7 @@ async function confirmAndActivateFocusedBoundary(input: {
     await readOptionalExplorationDraft(input.projectRoot));
   const assessReadScope = input.reviewOptions?.assessReadScope
     ?? createSavedReadActivationAssessment(input.projectRoot, input.schemaInspector);
-  const scopeAssessment = await assessReadScope(context.candidate);
+  const scopeAssessment = await withProjectAuthorityMutation(input.projectRoot, permit => assessReadScope(context.candidate, permit));
   const readScopeReady = readScopeReadyForActivation(context.candidate, scopeAssessment);
   const scopeLines = readScopeReady ? [] : [
     "The current Read meaning still needs its saved scope review or confirmation.",
@@ -14412,7 +14409,7 @@ async function confirmAndActivateFocusedBoundary(input: {
         "EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF",
         "Source database changed: no",
       ];
-      if (input.session.present) input.session.present("READ DRAFT SAVED - NOT ACTIVE", reviewedLines, "info");
+      if (input.session.present) input.session.present("READ DRAFT SAVED - NOT ACTIVE", reviewedLines, "normal");
       else process.stdout.write(["READ DRAFT SAVED - NOT ACTIVE", ...reviewedLines, ""].join("\n"));
       return 0;
     }
@@ -17857,7 +17854,7 @@ async function formatBoundaryReviewSummary(
 
 function boundaryReviewOverview(bundle: BoundaryReviewBundle): BoundaryReviewOverview {
   const outstanding = bundle.decisions.filter((decision) => !decision.confirmed);
-  const resourceDecisions = outstanding.filter((decision) => Boolean(decision.resource_id));
+  const resourceDecisions = outstanding.filter((decision) => "resource_id" in decision);
   return {
     confirmed_decisions: bundle.decisions.length - outstanding.length,
     outstanding_decisions: outstanding.length,
@@ -17884,7 +17881,7 @@ function formatReviewLeft(overview: BoundaryReviewOverview): string {
 function formatBoundaryFinalReview(bundle: BoundaryReviewBundle): string {
   const outstanding = bundle.decisions.filter((decision) => !decision.confirmed);
   const rows: string[][] = [];
-  if (outstanding.some((decision) => !decision.resource_id)) {
+  if (outstanding.some((decision) => !("resource_id" in decision))) {
     rows.push([
       "Boundary settings",
       "-",
@@ -17896,7 +17893,7 @@ function formatBoundaryFinalReview(bundle: BoundaryReviewBundle): string {
     ]);
   }
   for (const resource of bundle.candidate.pack.resources) {
-    if (!outstanding.some((decision) => decision.resource_id === resource.id)) continue;
+    if (!outstanding.some((decision) => "resource_id" in decision && decision.resource_id === resource.id)) continue;
     const principalScope = reviewedPrincipalScopeLabel(resource);
     rows.push([
       resource.id,
