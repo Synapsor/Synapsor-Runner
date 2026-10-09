@@ -41,10 +41,10 @@
     }
   },
   "heavy_slots": {
-    "1": "Read helper SC04 focused before/fix",
-    "2": "Action Source-answer/typed producers",
-    "3": "R2 independent Runtime6ee diagnostic review",
-    "4": "Privacy Main runtime decision retirement"
+    "1": "B65 Tester Source review END; fresh public case held for coherent Main consumer pin",
+    "2": "Action receipt component before/fix",
+    "3": "R1 independent Read consumers",
+    "4": "Main runtime integration85 END; free"
   },
   "limits": "4 heavy jobs globally; max8workers/run; isolated HOME/TMP/DB/ports; MemAvailable>=8GiB and disk>=8GiB; keepallstorage; no paid; backup only; B64 clock unchanged",
   "counts": {
@@ -1294,10 +1294,10 @@
       "source": "R2scoped178PASS/build0:all57originalRead11typed+46deleteclosed onownedbranch. Last6 notMainintegrated; native/public11Mainhook sites separate."
     },
     "main": {
-      "pin": "7e0760fe",
-      "typed": 34,
+      "pin": "2b5553e0",
+      "typed": 30,
       "delete": 0,
-      "source": "I03527 deleted host target/prose classification fbeb9440; R1 4036ff74 unchanged10PASS from5PASS5FAIL. Existing broadpublic fixture NOT_REACHED; historical display-only expectations ported by independent contract, no counts/authority guards changed.",
+      "source": "I03527 fbeb R1 tenPASS; four runtime IDs I03547/I03548/I03552/I03568 R2 scoped7715 accepted, exactMain2b integration85PASS0FAIL0SKIP. InitialMR3 finding preserved/fixed; no globaltype/publicauthorityPASS.",
       "reclassified_provisional": [],
       "audit_reclassified_ids": [
         "I02087",
@@ -1310,15 +1310,19 @@
         "I03594"
       ],
       "with_reclassifications": {
-        "typed": 34,
+        "typed": 30,
         "delete": 0
       },
       "audit_closed_ids": [
         "I02087",
         "I02100",
-        "I02097"
+        "I02097",
+        "I03547",
+        "I03548",
+        "I03552",
+        "I03568"
       ],
-      "active_task": "Read activation native assessment under same writer permit065ad independently4PASS; public options/native hydration and deletion of label-derived gates next. No unverified decrement."
+      "active_task": "SC04 accepted core+public bundle hook integrated; consumer proof pending; remaining boundary sites and resume privacy-origin decision."
     }
   },
   "exit_criterion": "Zero remaining English decision sites. All original250typed+66delete and independently reclassified sites must close; no deferral. Syntactic regex/candidate counts are not this metric.",
@@ -1385,7 +1389,7 @@
       "delete": 5
     },
     "main": {
-      "typed": 34,
+      "typed": 30,
       "delete": 0
     },
     "read": {

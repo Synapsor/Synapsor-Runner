@@ -1,0 +1,26 @@
+{
+  "pin": "2b5553e0",
+  "accepted_product": [
+    "8bc603d8",
+    "7715c478"
+  ],
+  "Main_product": [
+    "a797f12b",
+    "52cf8f14"
+  ],
+  "independent_report_sha256": "67ee4e6d5482b2ea717e264cf325f328b93a9726494511fec518ac45a5197006",
+  "actual_result": {
+    "pass": 85,
+    "fail": 0,
+    "skip": 0
+  },
+  "report": "/var/tmp/synapsor-main-runtime4-integration-owned.P6vugM/result.json",
+  "report_sha256": "cdeb753a28ecaf76cb4ae841b9574dcf1258c7976cfa1f39948a6d5ea749e7d7",
+  "command": "bwrap --bind / / --dev /dev --unshare-net --die-with-parent env -i PATH=/usr/bin:/bin HOME=<owned0700>/home TMPDIR=<owned0700>/tmp node node_modules/vitest/vitest.mjs run mcp-runtime-sample.test.ts mcp-runtime-boundary-retirement.test.ts contract-testing.test.ts contract-command-disposable.test.ts worker-runtime.test.ts --maxWorkers=1 --minWorkers=1 --testTimeout=20000 --hookTimeout=20000 --reporter=json",
+  "scope": "actual Main integration, five named apps/runner/src files; no globaltypes/fullsuite/liveDB qualification",
+  "preserved": "ownerbefore14FAIL65PASS, CLI1FAIL, doctor3FAIL; original independentMR3 failure; fixednew2FAIL\u21929PASS; reports remain separate",
+  "remaining_Main": {
+    "typed": 30,
+    "delete": 0
+  }
+}
