@@ -172,9 +172,11 @@ describe("Read post-review replacement producer", () => {
         expect(questions.every(q => !q.confirmation)).toBe(true); return;
       }
       let reviewed = false;
+      const loadGroup = async (question_id: string) => ({ ...current().native!, question_id, expectedBinding: f.binding, references: references(), catalog: f.inventory.catalog,
+          resume_revision_digest: f.state().revision_digest, context_digest: contextDigest, scope_digest: scopeDigest });
       const group = createReadScopeHost({ access: { mutate,
-        load: async question_id => ({ ...current().native!, question_id, expectedBinding: f.binding, references: references(), catalog: f.inventory.catalog,
-          resume_revision_digest: f.state().revision_digest, context_digest: contextDigest, scope_digest: scopeDigest }),
+        load: loadGroup,
+        loadHeld: async questionId => { expect(locked).toBe(true); return loadGroup(questionId); },
         save: async (question, { expected }) => { expect(expected.resume_revision_digest).toBe(f.state().revision_digest); await saveQuestion(question); },
       }, interact: async view => { expect(view.kind).toBe("readback"); expect(view.defaultValue).toBe(false); reviewed = true;
         return { kind: "decision", binding: view.binding, accepted: true }; } });

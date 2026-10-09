@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withHeldProjectAuthorityAccess, withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import type { ControlPolicyCommit, ControlPolicyRevision, ControlPolicyScopeSnapshot, AutomaticApprovalActionRevision } from "@synapsor-runner/proposal-store";
 import { publishPolicyConfiguration } from "./control-policy-config-publication.js";
 import { openBoundProjectControlPolicies, assertProjectControlPolicyBinding, commitImmutableControlPolicies,
@@ -473,7 +473,7 @@ export async function writeActionRuleAuthorityDraft(
   draft: ActionRuleAuthorityDraftV1,
   permit?: ProjectAuthorityMutationPermit,
 ): Promise<string> {
-  return withProjectAuthorityMutation(projectRootInput, (held) => writeActionRuleAuthorityDraftUnlocked(held.projectRoot, draft), { permit });
+  return withProjectAuthorityMutation(projectRootInput, (held) => writeActionRuleAuthorityDraftUnlocked(held.projectRoot, draft, undefined, held), { permit });
 }
 
 function actionRevisionBaseline(projectRoot: string, drafts: ActionRuleAuthorityDraftV1[],
@@ -489,14 +489,18 @@ function storedActionRevisionBaseline(projectRoot: string, current: ControlPolic
     current.active[0] ? parseStoredActionActivation(current.active[0]).activation : undefined);
 }
 
-export async function readActionRuleAuthorityRevisionBaseline(projectRoot: string,
-  permit?: ProjectAuthorityMutationPermit): Promise<ActionRuleAuthorityRevisionBaseline> {
-  return withProjectAuthorityMutation(projectRoot, async (held) => {
-    const stored = await withStoredActionPolicies(held.projectRoot, undefined, async (_binding, current) =>
-      storedActionRevisionBaseline(held.projectRoot, current));
-    return stored ?? actionRevisionBaseline(held.projectRoot, await listActionRuleAuthorityDrafts(held.projectRoot),
-      await readActionRuleAuthorityActivation(held.projectRoot));
-  }, { permit });
+export async function readActionRuleAuthorityRevisionBaseline(projectRoot: string): Promise<ActionRuleAuthorityRevisionBaseline> {
+  return withProjectAuthorityMutation(projectRoot, held => readActionBaselineHeld(held.projectRoot));
+}
+export async function readActionRuleAuthorityRevisionBaselineHeld(projectRoot: string,
+  permit: ProjectAuthorityMutationPermit): Promise<ActionRuleAuthorityRevisionBaseline> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => readActionBaselineHeld(held.projectRoot));
+}
+async function readActionBaselineHeld(projectRoot: string): Promise<ActionRuleAuthorityRevisionBaseline> {
+  const stored = await withStoredActionPolicies(projectRoot, undefined, async (_binding, current) =>
+    storedActionRevisionBaseline(projectRoot, current));
+  return stored ?? actionRevisionBaseline(projectRoot, await listActionRuleAuthorityDrafts(projectRoot),
+    await readActionRuleAuthorityActivation(projectRoot));
 }
 
 export async function writeActionRuleAuthorityDraftIfCurrent(projectRoot: string, draft: ActionRuleAuthorityDraftV1,
@@ -518,7 +522,7 @@ function assertActionRevisionBaseline(current: ActionRuleAuthorityRevisionBaseli
 }
 
 async function writeActionRuleAuthorityDraftUnlocked(projectRootInput: string, draft: ActionRuleAuthorityDraftV1,
-  expected?: ActionRuleAuthorityRevisionBaseline, permit?: ProjectAuthorityMutationPermit): Promise<string> {
+  expected: ActionRuleAuthorityRevisionBaseline | undefined, permit: ProjectAuthorityMutationPermit): Promise<string> {
   const projectRoot = path.resolve(projectRootInput);
   parseDraft(draft);
   const target = draftPath(projectRoot, draft.authority.name);
@@ -536,7 +540,7 @@ async function writeActionRuleAuthorityDraftUnlocked(projectRootInput: string, d
     });
     return projectRelativePath(projectRoot, target);
   }
-  if (expected) assertActionRevisionBaseline(await readActionRuleAuthorityRevisionBaseline(projectRoot, permit), expected);
+  if (expected) assertActionRevisionBaseline(await readActionRuleAuthorityRevisionBaselineHeld(projectRoot, permit), expected);
   await writePrivateJsonAtomic(target, draft);
   return projectRelativePath(projectRoot, target);
 }
@@ -601,6 +605,13 @@ export async function readActionRuleAuthorityActivation(
  * History work is bounded by the existing repository page limit; unavailable
  * lineage never falls back to a guessed draft or a different active revision. */
 export async function readActionRuleReviewSubjects(projectRoot: string): Promise<ActionRuleReviewSubject[]> {
+  return withProjectAuthorityMutation(projectRoot, held => readActionSubjectsHeld(held.projectRoot));
+}
+export async function readActionRuleReviewSubjectsHeld(projectRoot: string,
+  permit: ProjectAuthorityMutationPermit): Promise<ActionRuleReviewSubject[]> {
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => readActionSubjectsHeld(held.projectRoot));
+}
+async function readActionSubjectsHeld(projectRoot: string): Promise<ActionRuleReviewSubject[]> {
   const stored = await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
     const store = canonicalJsonDigest({ project: path.resolve(projectRoot), repository: binding.repository_id,
       deployment: binding.deployment_id, project_id: binding.project_id });
@@ -859,7 +870,7 @@ async function checkLoadedReadDependencies(
 }
 
 export async function deactivateActionRuleAuthority(projectRootInput: string, permit?: ProjectAuthorityMutationPermit): Promise<boolean> {
-  return withProjectAuthorityMutation(projectRootInput, (held) => deactivateActionRuleAuthorityUnlocked(held.projectRoot), { permit });
+  return withProjectAuthorityMutation(projectRootInput, (held) => deactivateActionRuleAuthorityUnlocked(held.projectRoot, undefined, held), { permit });
 }
 
 /** Retiring a reviewed final outcome must not disable a concurrently replaced bundle. */
@@ -871,7 +882,7 @@ export async function deactivateActionRuleAuthorityIfCurrent(projectRoot: string
 }
 
 async function deactivateActionRuleAuthorityUnlocked(projectRootInput: string,
-  expected?: ActionRuleAuthorityRevisionBaseline, permit?: ProjectAuthorityMutationPermit): Promise<boolean> {
+  expected: ActionRuleAuthorityRevisionBaseline | undefined, permit: ProjectAuthorityMutationPermit): Promise<boolean> {
   const stored = await withStoredActionPolicies(projectRootInput, undefined, async (binding, current) => {
     if (expected) assertActionRevisionBaseline(storedActionRevisionBaseline(projectRootInput, current), expected);
     const active = current.active[0];
@@ -884,7 +895,7 @@ async function deactivateActionRuleAuthorityUnlocked(projectRootInput: string,
     return { deactivated: true };
   });
   if (stored) return stored.deactivated;
-  if (expected) assertActionRevisionBaseline(await readActionRuleAuthorityRevisionBaseline(projectRootInput, permit), expected);
+  if (expected) assertActionRevisionBaseline(await readActionRuleAuthorityRevisionBaselineHeld(projectRootInput, permit), expected);
   const target = activePath(path.resolve(projectRootInput));
   if (!await exists(target)) return false;
   await fs.rm(target, { force: true });

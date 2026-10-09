@@ -3,7 +3,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { inspectDatabase } from "@synapsor-runner/schema-inspector";
 import { compareGenerationLock, explorationBoundaryCandidateDigest, loadActivatedExplorationBoundaries,
   loadGenerationLockSnapshot, type ActivatedExplorationBoundary } from "./auto-boundary.js";
-import { buildActionRuleAuthorityDraft, readActionRuleAuthorityRevisionBaseline, writeActionRuleAuthorityDraftIfCurrent,
+import { buildActionRuleAuthorityDraft, readActionRuleAuthorityRevisionBaselineHeld, writeActionRuleAuthorityDraftIfCurrent,
   type ActionRuleAuthorityActivationV1, type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 import { prepareActionRuleReadRevision } from "./action-rule-read-revision.js";
 import { readProjectReadAuthoring, readProjectReadAuthoringHeld } from "./control-policy-read-authoring-project.js";
@@ -31,7 +31,7 @@ export async function revalidateSavedActionReadDependencies(input: {
 }): Promise<ActionRuleAuthorityDraftV1> {
   return withProjectAuthorityMutation(input.projectRoot, async held => {
     const fail = (reason: string): never => { throw new Error(`ACTION_READ_RECOVERY_REQUIRED: ${reason} Saved rules and active permissions are unchanged.`); };
-    const baseline = await readActionRuleAuthorityRevisionBaseline(held.projectRoot, held);
+    const baseline = await readActionRuleAuthorityRevisionBaselineHeld(held.projectRoot, held);
     const expected = "activated_at" in input.current ? baseline.active : baseline.drafts[input.current.authority.name];
     if (expected !== canonicalJsonDigest(input.current)) fail("The selected Action revision changed. Reopen its review.");
     if ("activated_at" in input.current && baseline.drafts[input.current.authority.name]) {

@@ -1,5 +1,5 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { readActionRuleReviewSubjects } from "./action-rule-authority.js";
+import { readActionRuleReviewSubjectsHeld } from "./action-rule-authority.js";
 import type { CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import type { ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import type { ActionParameterInteractionPorts } from "./authoring-action-parameter-interaction.js";
@@ -9,7 +9,7 @@ import type { OperatorQuestion } from "./authoring-operator-question.js";
 import { createTypedParameterHost } from "./authoring-typed-parameter-host.js";
 import { resolveTypedParameterSourceRecords, type TypedParameterCompilerContext } from "./authoring-typed-parameter-source.js";
 import type { TypedParameterBinding } from "./authoring-typed-parameter-binding.js";
-import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
 type Digest = `sha256:${string}`;
 /** Detached projection of ONE current native read. The native owner resolves
@@ -23,10 +23,10 @@ export type NativeTypedParameterSnapshot = {
   compiler_context: TypedParameterCompilerContext;
 };
 export type NativeTypedParameterPorts = {
-  loadCurrent(permit?: ProjectAuthorityMutationPermit): Promise<NativeTypedParameterSnapshot>;
+  loadCurrent(permit: ProjectAuthorityMutationPermit): Promise<NativeTypedParameterSnapshot>;
   /** Native owner verifies revision, selected question applicability/current
    * Source/Read/schema/role and trusted local operator scope. */
-  assertCurrent(expected: { resume_revision: Digest; binding: TypedParameterBinding }, permit?: ProjectAuthorityMutationPermit): Promise<void>;
+  assertCurrent(expected: { resume_revision: Digest; binding: TypedParameterBinding }, permit: ProjectAuthorityMutationPermit): Promise<void>;
   mutate<T>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>): Promise<T>;
   /** Native owner alone writes protected Resume/CAS and updates its memory.
    * Return only after durable save; never acknowledge a staged memory write. */
@@ -48,7 +48,7 @@ export function createNativeTypedParameterAdapter(input: {
   /** Runner-owned canonical business projector, never model narration. */
   businessLines(compiled: CompiledActionRuleModelDraftV1): readonly string[];
 }): ActionParameterInteractionPorts {
-  const withHost = async <T>(operation: (host: ActionParameterInteractionPorts) => Promise<T>, permit?: ProjectAuthorityMutationPermit): Promise<T> => {
+  const withHost = async <T>(operation: (host: ActionParameterInteractionPorts) => Promise<T>, permit: ProjectAuthorityMutationPermit, writable: boolean): Promise<T> => {
     const snapshot = structuredClone(await input.ports.loadCurrent(permit));
     if (!digest(snapshot.resume_revision)) acknowledgementChanged();
     const originalQuestionsDigest = canonicalJsonDigest(snapshot.questions);
@@ -62,7 +62,7 @@ export function createNativeTypedParameterAdapter(input: {
       resolve: async binding => {
         await assertCurrent(binding);
         const subjects = [binding.baseline, binding.origin].some(ref => ref.kind === "saved_authority")
-          ? await readActionRuleReviewSubjects(input.projectRoot) : [];
+          ? await readActionRuleReviewSubjectsHeld(input.projectRoot, permit) : [];
         const resolved = resolveTypedParameterSourceRecords({ binding,
           records: { subjects, checkpoints: snapshot.checkpoints, generation: snapshot.generation },
           context: snapshot.compiler_context, businessLines: input.businessLines });
@@ -72,12 +72,12 @@ export function createNativeTypedParameterAdapter(input: {
       // Mutations enter through the outer native owner exactly once. The host's
       // existing callback reuses that permit, without a second lease/queue.
       mutate: async operation => {
-        if (!permit) throw new Error("TYPED_PARAMETER_NATIVE_PERMIT_REQUIRED: Reopen the protected field operation; no question was saved.");
+        if (!writable) throw new Error("TYPED_PARAMETER_NATIVE_PERMIT_REQUIRED: Reopen the protected field operation; no question was saved.");
         return operation(permit);
       },
       installQuestions: next => { questions = structuredClone(next); },
       save: async held => {
-        if (!permit || held !== permit) acknowledgementChanged();
+        if (!writable || held !== permit) acknowledgementChanged();
         const expected = canonicalJsonDigest(questions);
         const ack = await input.ports.saveQuestions({ expected_resume_revision: snapshot.resume_revision,
           expected_questions_digest: originalQuestionsDigest, questions: structuredClone(questions) }, held);
@@ -91,9 +91,9 @@ export function createNativeTypedParameterAdapter(input: {
     return operation(host);
   };
   return {
-    loadCurrent: () => withHost(host => host.loadCurrent()),
-    assertCurrent: expected => withHost(host => host.assertCurrent(expected)),
-    submitField: request => input.ports.mutate(permit => withHost(host => host.submitField(request), permit)),
-    recordDecision: request => input.ports.mutate(permit => withHost(host => host.recordDecision(request), permit)),
+    loadCurrent: () => withProjectAuthorityMutation(input.projectRoot, permit => withHost(host => host.loadCurrent(), permit, false)),
+    assertCurrent: expected => withProjectAuthorityMutation(input.projectRoot, permit => withHost(host => host.assertCurrent(expected), permit, false)),
+    submitField: request => input.ports.mutate(permit => withHeldProjectAuthorityAccess(input.projectRoot, permit, held => withHost(host => host.submitField(request), held, true))),
+    recordDecision: request => input.ports.mutate(permit => withHeldProjectAuthorityAccess(input.projectRoot, permit, held => withHost(host => host.recordDecision(request), held, true))),
   };
 }

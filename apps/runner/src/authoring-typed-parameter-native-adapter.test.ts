@@ -1,3 +1,4 @@
+import { STRUCTURED_AUTHORING_PROTOCOL_VERSION } from "./authoring-protocol.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -9,8 +10,8 @@ import { manualSemanticActionDraft } from "./manual-semantic-action-editor.js";
 import { actionRuleModelDraftFromAuthority, compileActionRuleModelDraft } from "./action-rule-draft.js";
 import { semanticActionBusinessReviewLines } from "./boundary-commands.js";
 import { buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, readActionRuleReviewSubjects } from "./action-rule-authority.js";
-import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState, assertBoundaryAuthoringResumeCurrent } from "./boundary-authoring-resume.js";
-import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, readBoundaryAuthoringResumeStateHeld, writeBoundaryAuthoringResumeState, assertBoundaryAuthoringResumeCurrentHeld } from "./boundary-authoring-resume.js";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { createTypedParameterQuestion } from "./authoring-typed-parameter-host.js";
 import { resolveTypedParameterSourceRecords } from "./authoring-typed-parameter-source.js";
 import { createNativeTypedParameterAdapter, type NativeTypedParameterPorts } from "./authoring-typed-parameter-native-adapter.js";
@@ -34,16 +35,18 @@ async function fixture(){
  const question=createTypedParameterQuestion({id:randomUUID(),revision:1,scope_digest:digest("scope"),context_digest:digest("context"),binding,resolved});
  const nativeBinding={boundary_name:"warehouse",generation_lock_fingerprint:digest("lock"),schema_fingerprint:digest("schema"),role_posture_fingerprint:digest("role")};
  const base={binding:nativeBinding,stage:"authority_review" as const,jobIntent:"Change required warehouse reviewers from one to two; keep other rules.",provider:"openai" as const,model:"unused-local-only"};
- await writeBoundaryAuthoringResumeState(root,buildBoundaryAuthoringResumeState({...base,authoringProtocol:{version:"synapsor.structured-authoring.v2"},operatorQuestions:[question]}),{expectedRevisionDigest:null});
- const load=async()=>{const loaded=await readBoundaryAuthoringResumeState(root,nativeBinding);if(loaded.status!=="ready")throw new Error("Exact native state missing");return loaded.value;};
+ await writeBoundaryAuthoringResumeState(root,buildBoundaryAuthoringResumeState({...base,authoringProtocol:{version:STRUCTURED_AUTHORING_PROTOCOL_VERSION},operatorQuestions:[question]}),{expectedRevisionDigest:null});
+ const readState=async(loaded:Awaited<ReturnType<typeof readBoundaryAuthoringResumeState>>)=>{if(loaded.status!=="ready")throw new Error("Exact native state missing");return loaded.value;};
+ const load=()=>readBoundaryAuthoringResumeState(root,nativeBinding).then(readState);
+ const loadHeld=(permit:ProjectAuthorityMutationPermit)=>readBoundaryAuthoringResumeStateHeld(root,nativeBinding,permit).then(readState);
  let held=0,saveFault=false,ackFault=false;
  const ports:NativeTypedParameterPorts={
-  loadCurrent:async()=>{const saved=await load();return{resume_revision:saved.revision_digest,questions:saved.operator_questions??[],handoffs:saved.owner_handoffs??[],generation:saved.generation_recovery,checkpoints:[],compiler_context:context};},
-  assertCurrent:async(expected,permit)=>{const current=await load();if(current.revision_digest!==expected.resume_revision||digest(expected.binding)!==digest(binding))throw new Error("NATIVE_ADAPTER_CONTEXT_STALE");await assertBoundaryAuthoringResumeCurrent(root,current,undefined,{permit});},
+  loadCurrent:async permit=>{const saved=await loadHeld(permit);return{resume_revision:saved.revision_digest,questions:saved.operator_questions??[],handoffs:saved.owner_handoffs??[],generation:saved.generation_recovery,checkpoints:[],compiler_context:context};},
+  assertCurrent:async(expected,permit)=>{const current=await loadHeld(permit);if(current.revision_digest!==expected.resume_revision||digest(expected.binding)!==digest(binding))throw new Error("NATIVE_ADAPTER_CONTEXT_STALE");await assertBoundaryAuthoringResumeCurrentHeld(root,current,permit);},
   mutate:operation=>withProjectAuthorityMutation(root,async permit=>{held++;try{return await operation(permit);}finally{held--;}}),
   saveQuestions:async(request,permit)=>{
    expect(held).toBe(1);if(saveFault)throw new Error("CONTROLLED_NATIVE_CAS_FAILURE");
-   const current=await load();expect(digest(current.operator_questions??[])).toBe(request.expected_questions_digest);
+   const current=await loadHeld(permit);expect(digest(current.operator_questions??[])).toBe(request.expected_questions_digest);
    const next=buildBoundaryAuthoringResumeState({...base,previous:current,operatorQuestions:request.questions});
    await writeBoundaryAuthoringResumeState(root,next,{expectedRevisionDigest:request.expected_resume_revision,permit});
    return{resume_revision:next.revision_digest,questions_digest:ackFault?digest("wrong acknowledgement"):digest(next.operator_questions??[])};

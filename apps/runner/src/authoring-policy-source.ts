@@ -11,7 +11,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { AskHistoryTurn } from "./model-ask.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withHeldProjectAuthorityAccess, withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
 /** The coordinated save detected a competing source/decision revision. This
  * reason is kept typed for saved Review/Resume diagnostics. */
@@ -438,14 +438,20 @@ function sourcePath(root: string, id: string): string {
 }
 
 export async function policySourceSavedDigest(root: string, id: string): Promise<string | null> {
+  return withProjectAuthorityMutation(root, held => sourceSavedDigest(held.projectRoot, id));
+}
+export async function policySourceSavedDigestHeld(root: string, id: string, permit: ProjectAuthorityMutationPermit): Promise<string | null> {
+  return withHeldProjectAuthorityAccess(root, permit, held => sourceSavedDigest(held.projectRoot, id));
+}
+async function sourceSavedDigest(root: string, id: string): Promise<string | null> {
   try { return canonicalJsonDigest(JSON.parse(await fs.readFile(sourcePath(root, id), "utf8"))); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
 }
 
 export async function savePolicySources(root: string, session: PolicySourceSession,
   options?: { expectedDigest?: string | null; permit?: ProjectAuthorityMutationPermit }): Promise<void> {
-  return withProjectAuthorityMutation(root, async () => {
-    const file = sourcePath(root, session.id), temporary = `${file}.${randomUUID()}.tmp`;
+  return withProjectAuthorityMutation(root, async held => {
+    const file = sourcePath(held.projectRoot, session.id), temporary = `${file}.${randomUUID()}.tmp`;
     assertSourceInputReviews(session.input_policy_reviews);
     assertScopedDisclosureReviews(session.scoped_disclosure_reviews);
     assertExcludedFieldReviews(session.excluded_field_reviews);
@@ -497,7 +503,7 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
       throw new Error('POLICY_RETAINED_DUTY_PENDING: Invalid host-retained duty audit; no report was saved.');
     const serialized = JSON.stringify(session);
     if (Buffer.byteLength(serialized) > 2 * 1024 * 1024) throw new Error("Saved policy sources exceed the supported size. The previous snapshot remains unchanged; remove older sources explicitly before adding more context.");
-    if (options?.expectedDigest !== undefined && await policySourceSavedDigest(root, session.id) !== options.expectedDigest) {
+    if (options?.expectedDigest !== undefined && await policySourceSavedDigestHeld(held.projectRoot, session.id, held) !== options.expectedDigest) {
       throw new PolicySourceChangedError();
     }
     await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
@@ -508,6 +514,12 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
 }
 
 export async function loadPolicySources(root: string, id: string): Promise<PolicySourceSession> {
+  return withProjectAuthorityMutation(root, held => loadSourceHeld(held.projectRoot, id));
+}
+export async function loadPolicySourcesHeld(root: string, id: string, permit: ProjectAuthorityMutationPermit): Promise<PolicySourceSession> {
+  return withHeldProjectAuthorityAccess(root, permit, held => loadSourceHeld(held.projectRoot, id));
+}
+async function loadSourceHeld(root: string, id: string): Promise<PolicySourceSession> {
   const file = sourcePath(root, id);
   if ((await fs.stat(file)).size > 2 * 1024 * 1024) throw new Error("Saved policy sources exceed the supported size. Draft preserved; restore or remove this source explicitly.");
   const value = JSON.parse(await fs.readFile(file, "utf8")) as PolicySourceSession;

@@ -15,7 +15,7 @@ import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionCheckpoint, re
 import { readPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
 import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import type { AskHistoryTurn } from "./model-ask.js";
-import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { withHeldProjectAuthorityAccess, withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
 import { parseActionRuleAuthoringCheckpoint, parseReviewedActionVersionFields, type ActionRuleAuthoringCheckpoint, type ReviewedActionVersionField } from "./action-rule-authoring-checkpoint.js";
 import {
@@ -478,10 +478,10 @@ export async function writeBoundaryAuthoringResumeState(
   return withProjectAuthorityMutation(projectRootInput, async held => {
     // Legacy explicit replacement still serializes; public continuations must
     // supply the last acknowledged revision (null means the file was absent).
-    const previous = options ? await compareResumeRevision(held.projectRoot, frozen.binding, expected!) : undefined;
+    const previous = options ? await compareResumeRevision(held.projectRoot, frozen.binding, expected!, held) : undefined;
     // Even explicit replacement without a CAS option must not erase a pinned
     // protocol. It is not permission to reinterpret saved evidence as legacy.
-    const observed = previous ?? await readBoundaryAuthoringResumeState(held.projectRoot, frozen.binding);
+    const observed = previous ?? await readBoundaryAuthoringResumeStateHeld(held.projectRoot, frozen.binding, held);
     const prior = "status" in observed ? observed.status === "ready" || observed.status === "stale" ? observed.value : undefined : observed;
     if (prior) assertAuthoringProtocolUnchanged(prior.authoring_protocol, frozen.authoring_protocol);
     if ("status" in observed && observed.status === "invalid")
@@ -507,7 +507,7 @@ export async function writeBoundaryAuthoringResumeState(
     await assertReadScopeAnalysisRecord(held.projectRoot, frozen);
     const filePath = resumePath(held.projectRoot);
     await writeAtomic(filePath, `${JSON.stringify(frozen, null, 2)}\n`);
-    const saved = await readBoundaryAuthoringResumeState(held.projectRoot, frozen.binding);
+    const saved = await readBoundaryAuthoringResumeStateHeld(held.projectRoot, frozen.binding, held);
     if (saved.status !== "ready" || saved.value.revision_digest !== frozen.revision_digest) {
       const code = "BOUNDARY_AUTHORING_RESUME_NOT_SAVED";
       throw Object.assign(new Error(`${code}: The exact checkpoint write could not be verified. The last acknowledged revision remains the save baseline; reopen the saved job before assuming this review was retained.`), { code });
@@ -523,18 +523,29 @@ export type BoundaryAuthoringActionFreshness =
 /** Point-in-time consent guard, not a lease across an operator/model turn.
  * The following checkpoint save must independently compare the same revision. */
 export async function assertBoundaryAuthoringResumeCurrent(
-  projectRoot: string,
-  expected: BoundaryAuthoringResumeState,
-  action?: BoundaryAuthoringActionFreshness,
-  options?: { permit?: ProjectAuthorityMutationPermit },
+  projectRoot: string, expected: BoundaryAuthoringResumeState, action?: BoundaryAuthoringActionFreshness,
 ): Promise<void> {
+  const frozen = structuredClone(expected), target = structuredClone(action);
+  return withProjectAuthorityMutation(projectRoot, held => assertResumeCurrentHeld(frozen, target, held));
+}
+
+export async function assertBoundaryAuthoringResumeCurrentHeld(
+  projectRoot: string, expected: BoundaryAuthoringResumeState, permit: ProjectAuthorityMutationPermit,
+  action?: BoundaryAuthoringActionFreshness,
+): Promise<void> {
+  const frozen = structuredClone(expected), target = structuredClone(action);
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => assertResumeCurrentHeld(frozen, target, held));
+}
+
+async function assertResumeCurrentHeld(expected: BoundaryAuthoringResumeState,
+  action: BoundaryAuthoringActionFreshness | undefined, held: ProjectAuthorityMutationPermit): Promise<void> {
   assertBoundaryAuthoringResumeState(expected);
   const frozen = structuredClone(expected);
   const target: BoundaryAuthoringActionFreshness | undefined = action && ("revision" in action ? { revision: normalizeActionRevision(action.revision) }
     : { intent: reviewedText(action.intent, "Action intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS),
       ...(action.outcome ? { outcome: reviewedName(action.outcome, "Action outcome", 200) } : {}) });
-  await withProjectAuthorityMutation(projectRoot, async held => {
-    const current = await compareResumeRevision(held.projectRoot, frozen.binding, frozen.revision_digest);
+  {
+    const current = await compareResumeRevision(held.projectRoot, frozen.binding, frozen.revision_digest, held);
     if (!current || canonicalJsonDigest(current.binding) !== canonicalJsonDigest(frozen.binding)) throw resumeChanged();
     if (!target) return;
     const outcome = "revision" in target ? target.revision.outcome : target.outcome;
@@ -547,12 +558,12 @@ export async function assertBoundaryAuthoringResumeCurrent(
     } else if (!(current.action?.intents ?? (current.action ? [current.action.intent] : [])).includes(target.intent)) {
       throw resumeChanged();
     }
-  }, { permit: options?.permit });
+  }
 }
 
 async function compareResumeRevision(projectRoot: string, binding: BoundaryAuthoringResumeBinding,
-  expected: BoundaryAuthoringResumeState["revision_digest"] | null): Promise<BoundaryAuthoringResumeState | undefined> {
-  const loaded = await readBoundaryAuthoringResumeState(projectRoot, binding);
+  expected: BoundaryAuthoringResumeState["revision_digest"] | null, permit: ProjectAuthorityMutationPermit): Promise<BoundaryAuthoringResumeState | undefined> {
+  const loaded = await readBoundaryAuthoringResumeStateHeld(projectRoot, binding, permit);
   if (expected === null && loaded.status === "none") return undefined;
   if (typeof expected !== "string" || (loaded.status !== "ready" && loaded.status !== "stale")
     || loaded.value.revision_digest !== expected) throw resumeChanged();
@@ -580,7 +591,17 @@ export async function readBoundaryAuthoringResumeState(
   projectRootInput: string,
   binding: BoundaryAuthoringResumeBinding,
 ): Promise<BoundaryAuthoringResumeLoad> {
-  const projectRoot = path.resolve(projectRootInput);
+  const expected = structuredClone(binding);
+  return withProjectAuthorityMutation(projectRootInput, held => readResumeHeld(held.projectRoot, expected));
+}
+
+export async function readBoundaryAuthoringResumeStateHeld(projectRoot: string,
+  binding: BoundaryAuthoringResumeBinding, permit: ProjectAuthorityMutationPermit): Promise<BoundaryAuthoringResumeLoad> {
+  const expected = structuredClone(binding);
+  return withHeldProjectAuthorityAccess(projectRoot, permit, held => readResumeHeld(held.projectRoot, expected));
+}
+
+async function readResumeHeld(projectRoot: string, binding: BoundaryAuthoringResumeBinding): Promise<BoundaryAuthoringResumeLoad> {
   let source: string;
   try {
     source = await fs.readFile(resumePath(projectRoot), "utf8");

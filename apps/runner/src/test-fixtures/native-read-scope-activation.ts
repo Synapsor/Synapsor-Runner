@@ -24,7 +24,7 @@ import { readScopeConsumption } from "../authoring-read-scope-binding.js";
 import { captureOperatorAnswer, presentOperatorQuestion, leaveOperatorQuestionPending, parseOperatorQuestions } from "../authoring-operator-question.js";
 import { authoringReadCheckpoint, configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery } from "../authoring-generation-recovery.js";
 import { completedAuthoringQuestion, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, type AskToolDefinition } from "../model-ask.js";
-import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState, type BoundaryAuthoringResumeState } from "../boundary-authoring-resume.js";
+import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, readBoundaryAuthoringResumeStateHeld, writeBoundaryAuthoringResumeState, type BoundaryAuthoringResumeState } from "../boundary-authoring-resume.js";
 
 // Actual controlled provider -> native generation consumption -> Resume CAS.
 // This is not an OS/public CLI restart; reconstruction below uses disk records.
@@ -116,12 +116,12 @@ import { projectAuthoringReadScopeContext } from "../authoring-read-scope-contex
 import { authoringDestination } from "../authoring-policy-source.js";
 import { storeReadWorkloadAnalysis } from "../read-workloads.js";
 import { createReadScopeHost } from "../authoring-read-scope-host.js";
-import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess } from "../project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "../project-authority-mutation.js";
 
 export async function reviewNativeReadScopeActivationFixture(f: Awaited<ReturnType<typeof nativeReadScopeActivationFixture>>, accepted: boolean | null) {
   const q=await f.produce();
-  const loadSnapshot=async (questionId:string)=>{
-      const disk=await readBoundaryAuthoringResumeState(f.dir,f.nativeBinding);
+  const loadSnapshot=async (questionId:string, permit:ProjectAuthorityMutationPermit)=>{
+      const disk=await readBoundaryAuthoringResumeStateHeld(f.dir,f.nativeBinding,permit);
       if(disk.status!=="ready")throw new Error("Expected genuine native state");
       return {questions:disk.value.operator_questions!,handoffs:disk.value.owner_handoffs??[],generation:disk.value.generation_recovery,
         question_id:questionId,expectedBinding:f.binding,...f.inventory,analysis:f.analysis(),resume_revision_digest:disk.value.revision_digest,
@@ -129,10 +129,10 @@ export async function reviewNativeReadScopeActivationFixture(f: Awaited<ReturnTy
     };
   const host=createReadScopeHost({access:{
     mutate:operation=>withProjectAuthorityMutation(f.dir,operation),
-    load:questionId=>withProjectAuthorityMutation(f.dir,()=>loadSnapshot(questionId)),
-    loadHeld:(questionId,permit)=>withHeldProjectAuthorityAccess(f.dir,permit,()=>loadSnapshot(questionId)),
+    load:questionId=>withProjectAuthorityMutation(f.dir,held=>loadSnapshot(questionId,held)),
+    loadHeld:(questionId,permit)=>withHeldProjectAuthorityAccess(f.dir,permit,held=>loadSnapshot(questionId,held)),
     save:async(next,{permit})=>{
-      const loaded=await readBoundaryAuthoringResumeState(f.dir,f.nativeBinding);
+      const loaded=await readBoundaryAuthoringResumeStateHeld(f.dir,f.nativeBinding,permit);
       if(loaded.status!=="ready")throw new Error("Saved review is unavailable");
       const prior=loaded.value;
       const state=buildBoundaryAuthoringResumeState({...f.input,previous:prior,read:prior.read,operatorQuestions:prior.operator_questions!.map(q=>q.id===next.id?next:q)});

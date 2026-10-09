@@ -1,10 +1,10 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { rolePostureFingerprint, schemaFingerprintForInspection, type SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { explorationBoundaryCandidateDigest, type ExplorationBoundaryDraft } from "./auto-boundary.js";
-import { assertBoundaryAuthoringResumeCurrent, readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import { assertBoundaryAuthoringResumeCurrentHeld, readBoundaryAuthoringResumeStateHeld } from "./boundary-authoring-resume.js";
 import { loadBoundaryReviewContextHeld } from "./boundary-review-context.js";
 import { boundaryAuthoringResumeBinding } from "./authoring-resume-binding.js";
-import { authoringDestination, loadPolicySources, policySourceSavedDigest, type AuthoringDestination } from "./authoring-policy-source.js";
+import { authoringDestination, loadPolicySourcesHeld, policySourceSavedDigestHeld, type AuthoringDestination } from "./authoring-policy-source.js";
 import { ownerQuestionContextDigest, ownerQuestionScopeDigest } from "./authoring-owner-question-binding.js";
 import { createNativeReadScope, type NativeReadScopeAssessment } from "./authoring-read-scope-native.js";
 import { withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
@@ -39,16 +39,16 @@ export async function assessReadScopeForActivation(input: ReadScopeActivationAss
       || expected.reader.engine !== context.lock.engine || readerSchema !== context.lock.schema_fingerprint
       || readerRole !== context.lock.role_posture_fingerprint)
       throw unavailable("The selected candidate or reader inspection changed.");
-    const loaded = await readBoundaryAuthoringResumeState(input.projectRoot, boundaryAuthoringResumeBinding(context.bundle));
+    const loaded = await readBoundaryAuthoringResumeStateHeld(input.projectRoot, boundaryAuthoringResumeBinding(context.bundle), permit);
     if (loaded.status === "none") return { kind: "missing", status: "pending", candidate_digest: candidateDigest };
     if (loaded.status !== "ready") throw unavailable(`The saved setup is ${loaded.status}: ${loaded.reason}.`);
     const resume = structuredClone(loaded.value);
-    const sources = resume.policy_source_session ? await loadPolicySources(input.projectRoot, resume.policy_source_session) : undefined;
+    const sources = resume.policy_source_session ? await loadPolicySourcesHeld(input.projectRoot, resume.policy_source_session, permit) : undefined;
     const sourceDigest = sources ? canonicalJsonDigest(sources) : undefined;
     const assertCurrent = async (held: ProjectAuthorityMutationPermit) => {
       if (!held) throw unavailable("The current activation permit is required.");
-      await assertBoundaryAuthoringResumeCurrent(input.projectRoot, resume, undefined, { permit: held });
-      if (sources && await policySourceSavedDigest(input.projectRoot, sources.id) !== sourceDigest)
+      await assertBoundaryAuthoringResumeCurrentHeld(input.projectRoot, resume, held);
+      if (sources && await policySourceSavedDigestHeld(input.projectRoot, sources.id, held) !== sourceDigest)
         throw unavailable("The exact saved Source changed.");
       const current = await loadBoundaryReviewContextHeld(input.projectRoot, held);
       if (explorationBoundaryCandidateDigest(current.candidate) !== candidateDigest
