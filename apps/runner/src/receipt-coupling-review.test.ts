@@ -52,9 +52,9 @@ describe('typed source transaction coupling capability', () => {
     'refuses %s instead of inferring a source-atomic conclusion', kind => {
       const f = fixture(), p = f.p as any, c = f.contract, raw = f.draft.actions[0].effect, effect = f.host.effect;
       switch (kind) {
-        case 'prose_receipt': p.interpretation += ' A historical receipt was observed.'; break;
-        case 'prose_readback': p.interpretation = 'Independent source readback verified both changes.'; break;
-        case 'prose_provisioning': p.interpretation += ' Receipt objects and writer grants are provisioned.'; break;
+        case 'prose_receipt': p.interpretation += ' A historical receipt was observed.'; c.receipt_configuration.modes[0].authority='runner_ledger'; break;
+        case 'prose_readback': p.interpretation = 'Independent source readback verified both changes.'; f.source.digest=canonicalJsonDigest('changed current Source'); break;
+        case 'prose_provisioning': p.interpretation += ' Receipt objects and writer grants are provisioned.'; c.deployment_prerequisites.runner_execution_setup.supported=false; break;
         case 'next_step': p.next_step = 'An actual receipt was observed.'; break;
         case 'topic': p.topic = 'An actual receipt was observed'; break;
         case 'wrong_responsibility': p.responsibility = 'deployment'; break;

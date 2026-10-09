@@ -45,7 +45,7 @@ function separated(f:any){
  const meanings=receiptComponentMeanings(f.draft),outcome=f.draft.actions[0].outcome;
  args.passages.splice(i,1,
   {start:p.start,end:p.end,disposition:'implemented',responsibility:'runner',issue_kind:'coverage_link',receipt_component:'source_transaction_coupling',interpretation:receiptCouplingInterpretation(outcome),draft_paths:receiptCouplingPaths(outcome)},
-  {start:p.start,end:p.end,disposition:'implemented',responsibility:'runner',issue_kind:'coverage_link',interpretation:meanings.receipt_configuration![0],draft_paths:[CONFIG]},
+  {start:p.start,end:p.end,disposition:'implemented',responsibility:'runner',issue_kind:'coverage_link',receipt_component:'receipt_configuration',interpretation:meanings.receipt_configuration![0],draft_paths:[CONFIG]},
   {start:p.start,end:p.end,topic:'Receipt setup and production',disposition:'needs_decision',responsibility:'deployment',issue_kind:'missing_configuration',interpretation:'Keep the required source-atomic receipt guarantee. Applicable writer/provisioning review, execution permission and a performed receipt require their own evidence; no new receipt is observed here.',draft_paths:[CONFIG]});
  return args;
 }
@@ -70,8 +70,8 @@ function scopeFromWire(body:any){
 function derivedScopedResponse(body:any,candidate:any,f:any){
  const scope=scopeFromWire(body);if(!scope)return candidate;
  const category=(passage:any,target:any)=>!target.receipt_region?'ordinary':passage.receipt_component==='source_transaction_coupling'
-  ||(passage.receipt_component===undefined&&passage.interpretation===receiptCouplingInterpretation(f.draft.actions[0].outcome)
-   &&JSON.stringify(passage.draft_paths)===JSON.stringify(receiptCouplingPaths(f.draft.actions[0].outcome)))?'source_transaction_coupling'
+  ||(passage.receipt_component===undefined&&passage.draft_paths.length===receiptCouplingPaths(f.draft.actions[0].outcome).length
+   &&receiptCouplingPaths(f.draft.actions[0].outcome).every(path=>passage.draft_paths.includes(path)))?'source_transaction_coupling'
   :passage.disposition==='needs_decision'&&passage.responsibility==='deployment'?'setup'
   :passage.draft_paths.includes(READ)?'receipt_read_exclusion':passage.draft_paths.includes(CONFIG)?'receipt_configuration'
   :passage.draft_paths.includes(RECEIPTS)?'receipt_observation':'compiled_effect';
@@ -82,7 +82,14 @@ function derivedScopedResponse(body:any,candidate:any,f:any){
     member_path:member.path,fragments:candidate.passages
      .filter((p:any)=>p.start>=member.start&&p.end<=member.end
       &&!target.required_retained.some((r:any)=>r.raw_digest===`sha256:${createHash('sha256').update(JSON.stringify(p)).digest('hex')}`))
-     .map((passage:any)=>({category:category(passage,target),passage})),
+     .map((passage:any)=>{
+      const component=category(passage,target);
+      // Only newly generated nominated fragments get their declared ID. Never
+      // tag byte-identical protected history; coupling omission controls retain
+      // the existing exact typed-category host-field completion path.
+      return {category:component,passage:['compiled_effect','receipt_configuration','receipt_read_exclusion'].includes(component)
+       ?{...passage,receipt_component:component}:passage};
+     }),
    })),
    counter_replacements:target.findings.filter((f:any)=>/\/counter_requirements\/\d+$/u.test(f.component)).map((f:any)=>{
     const parentIndex=Number(/^\/passages\/(\d+)/u.exec(f.component)![1]);
@@ -204,6 +211,7 @@ describe('complete captured configuration correction chain',()=>{
   const f=fixture(),valid=separated(f),invalid=engineQualifiedCouplingShape(f,valid),repeated=structuredClone(valid);
   repeated.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling').interpretation=
    'The source_db receipt was performed and independently read back.';
+  { const p=repeated.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling'); p.draft_paths=p.draft_paths.filter((path:string)=>!path.endsWith('/execution')); }
   f.arguments=invalid;
   const t=transport(f,[invalid,repeated,valid]);
   await expect(t.run()).rejects.toThrow('POLICY_COVERAGE_INVALID');
@@ -555,6 +563,7 @@ describe('current-proof complete save and restart',()=>{
     'A source receipt has already been written and independently read back.';
    repeated.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling').interpretation=
     'The source_db receipt was performed and independently read back.';
+   { const p=repeated.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling'); p.draft_paths=p.draft_paths.filter((path:string)=>!path.endsWith('/execution')); }
    return [initial,repeated,valid];
   });
   const original=structuredClone(x.f.sources.coverage),ownership=structuredClone(x.f.sources.application_assignments);
