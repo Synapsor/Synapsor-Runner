@@ -4,7 +4,7 @@ import { parseOperatorQuestion } from "./authoring-operator-question.js";
 import { READ_SCOPE_PROTOCOL, resolveReadScopeProposal, readScopeProposalSchema, type ReadScopeRecord } from "./read-structured-scope.js";
 import { READ_WORKLOAD_ANALYSIS_VERSION, type ReadWorkloadAnalysis } from "./read-workload-assist.js";
 
-import { prepareReviewedReadScope } from "./reviewed-read-scope.js";
+import { prepareReviewedReadScope } from "./test-fixtures/reviewed-read-scope.js";
 import { projectReadSubjectContext } from "./authoring-read-subject-context.js";
 import { projectReadScopeHostContext } from "./read-current-evidence.js";
 import { readWorkloadCatalog } from "./read-workload-model.js";
@@ -149,7 +149,7 @@ describe("standalone activation native Read assessment hydration",()=>{
   it("refuses a different actual candidate without adopting it",async()=>{
     const f=await activationFixture();await review(f,true);
     await expect(withProjectAuthorityMutation(f.dir,permit=>assessReadScopeForActivation({projectRoot:f.dir,
-      candidate:{...f.prepared.context.candidate,description:"changed"},readerInspection:f.prepared.inspection,permit}))).rejects.toThrow("selected candidate");
+      candidate:{...f.prepared.context.candidate,pack:{...f.prepared.context.candidate.pack,name:"changed"}},readerInspection:f.prepared.inspection,permit}))).rejects.toThrow("selected candidate");
   });
   it("requires a valid live mutation permit",async()=>{
     const f=await activationFixture();let expired: any;
