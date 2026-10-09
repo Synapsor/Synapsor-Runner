@@ -312,27 +312,43 @@ export async function runManualSemanticActionEditor(input: {
         "Review this exact disabled Verified Action Boundary separately before activation. No source data changed.",
       ] };
     } catch (error) {
-      const diagnostics = actionRuleDraftDiagnostics(error, { builtCatalog: built, verification: draft.verification });
-      const details = diagnostics.flatMap((diagnostic) => [
-        `${diagnostic.code}${diagnostic.path ? ` at ${diagnostic.path}` : ""}: ${diagnostic.message}`,
-        `Repair owner: ${diagnostic.repair}.`,
-        ...(diagnostic.correction ? [
-          `Reviewed correction: ${diagnostic.correction.operation} at ${diagnostic.correction.path}.`,
-          `Evidence: ${diagnostic.correction.resource} (${diagnostic.correction.binding}); catalog ${diagnostic.correction.catalog_digest}.`,
-        ] : []),
-        `Next: ${diagnostic.next_action}.`,
+      const recovery = await reviewManualActionFailure(error, { builtCatalog: built, verification: draft.verification }, input.prompter);
+      if (recovery === "inspect") return manualNotice("Manual semantic ActionRule needs inspection.", [
+        "The local compile or save did not finish normally. Reopen and inspect the saved revision before another save.",
+        "No source database change was made by this editor.",
       ]);
-      await input.prompter.message("MANUAL ACTIONRULE NEEDS REPAIR", details, "Review repair options");
-      const recovery = await input.prompter.choose("MANUAL ACTIONRULE NEEDS REPAIR", [
-        { value: "edit", label: "Edit collected answers", detail: "Return to the supported manual fields. Runner will compile again; no authority is granted." },
-        { value: "back", label: "Keep draft unchanged", detail: "Preserve current authority and leave this correction unresolved." },
-      ], ["The diagnostic is evidence, not an automatic authority change."], "edit");
       if (recovery !== "edit") return manualNotice("Manual semantic ActionRule was not saved.", ["The current authority and source data are unchanged."]);
       const revised = await collectManualActionEdit(input.prompter, built, values, mode === "edit");
       if (!revised) return manualNotice("Manual semantic ActionRule kept unchanged.", ["No Action authority or source data changed."]);
       edit = revised;
     }
   }
+}
+
+/** A local failure view owns no compile, save, retry or database authority. */
+export async function reviewManualActionFailure(error: unknown,
+  context: Parameters<typeof actionRuleDraftDiagnostics>[1], prompter: ManualSemanticActionPrompter): Promise<string | undefined> {
+  const diagnostics = actionRuleDraftDiagnostics(error, context);
+  const details = diagnostics.flatMap((diagnostic) => [
+    `${diagnostic.code}${diagnostic.path ? ` at ${diagnostic.path}` : ""}: ${diagnostic.message}`,
+    `Repair owner: ${diagnostic.repair}.`,
+    ...(diagnostic.correction ? [
+      `Reviewed correction: ${diagnostic.correction.operation} at ${diagnostic.correction.path}.`,
+      `Evidence: ${diagnostic.correction.resource} (${diagnostic.correction.binding}); catalog ${diagnostic.correction.catalog_digest}.`,
+    ] : []),
+    ...(diagnostic.next_action ? [`Next: ${diagnostic.next_action}.`] : []),
+  ]);
+  if (!diagnostics.length || diagnostics.some(diagnostic => diagnostic.presentation !== "reviewed_grammar")) {
+    await prompter.message("MANUAL ACTIONRULE NEEDS INSPECTION", details,
+      "Reopen the saved revision before another save. This failure is not a collected-answer repair.");
+    return "inspect";
+  }
+  await prompter.message("MANUAL ACTIONRULE NEEDS REPAIR", details, "Review repair options");
+  return await prompter.choose("MANUAL ACTIONRULE NEEDS REPAIR", [
+    { value: "edit", label: "Edit collected answers", detail: "Return to the supported manual fields. Runner will compile again; no authority is granted." },
+    { value: "back", label: "Keep draft unchanged", detail: "Preserve current authority and leave this correction unresolved." },
+  ], ["The diagnostic is evidence, not an automatic authority change."], "edit");
+
 }
 
 async function selectManualIntent(prompter: ManualSemanticActionPrompter,

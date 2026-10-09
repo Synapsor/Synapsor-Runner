@@ -92,13 +92,13 @@ describe("structured Action draft schema", () => {
     expect(validate(draft), JSON.stringify(validate.errors)).toBe(true);
     const { verification, effect, approval, ...rule } = draft;
     const { target_binding: _target, ...withoutTarget } = effect;
+    expect(validate({ ...draft, effect: withoutTarget })).toBe(true);
     const invalid = [
       { ...rule, ...verification, ...approval, ...effect },
       { ...draft, status: "draft" },
       { ...draft, verification: { ...verification, status: "draft" } },
       { ...draft, effect: { ...effect, status: "draft" } },
       { ...draft, approval: { ...approval, actor: "external_actor" } },
-      { ...draft, effect: withoutTarget },
       { ...draft, effect: { ...effect, operation: "insert" } },
       { ...draft, effect: { ...effect, set: { status: {
         kind: "literal", value: "paused", value_type: { kind: "unsupported_type" },
@@ -2480,7 +2480,7 @@ describe("model-guided Action Rule authoring", () => {
     }>;
     const updateVariant = effectVariants.find((variant) => variant.properties?.operation?.const === "update");
     const insertVariant = effectVariants.find((variant) => variant.properties?.operation?.const === "insert");
-    expect(updateVariant?.required).toContain("target_binding");
+    expect(updateVariant?.required).not.toContain("target_binding");
     expect(insertVariant?.required).not.toContain("target_binding");
     expect(insertVariant?.properties).not.toHaveProperty("target_binding");
     expect(requestBodies[1]).toContain("An UPDATE draft must include target_binding");
@@ -2543,7 +2543,7 @@ describe("model-guided Action Rule authoring", () => {
     }>;
     const updateVariant = variants.find((variant) => variant.properties?.operation?.const === "update");
     const insertVariant = variants.find((variant) => variant.properties?.operation?.const === "insert");
-    expect(updateVariant?.required).toContain("target_binding");
+    expect(updateVariant?.required).not.toContain("target_binding");
     expect(insertVariant?.required).not.toContain("target_binding");
     expect(insertVariant?.properties).not.toHaveProperty("target_binding");
     expect(JSON.stringify(requestJson.mock.calls.map(([request]) => request.body)))
@@ -3241,12 +3241,12 @@ describe("model-guided Action Rule authoring", () => {
         return { ...payloadFor(name), changed_fields: [], name: "model.renamed_verification" };
       }
       if (name.endsWith("submit_effect_envelope_draft")) {
+        const { target_binding: _ignoredInsertBinding, ...effectPayload } = payloadFor(name);
         return {
-          ...payloadFor(name),
+          ...effectPayload,
           name: "model.renamed_effect",
           operation: "insert",
           target_resource: "model.unreviewed_target",
-          target_binding: "other",
           changed_fields: [],
         };
       }

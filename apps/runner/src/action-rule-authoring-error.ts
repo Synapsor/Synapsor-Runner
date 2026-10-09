@@ -2,6 +2,7 @@ import { ActionRuleError, type ActionRuleErrorCode } from "@synapsor-runner/acti
 
 /** Only codes emitted by the local Action authoring producers. Not a wire schema. */
 const AUTHORING_CODES = [
+  "ACTION_EXECUTION_INTENT_UNMET",
   "ACTION_RULE_ATOMIC_BOUNDS",
   "ACTION_RULE_ATOMIC_SHAPE",
   "ACTION_RULE_ATOMIC_TARGET_DUPLICATED",

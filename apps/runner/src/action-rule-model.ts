@@ -1568,21 +1568,17 @@ function assertExplicitApprovalIntentPreserved(
   const limits = approval.shared_limits;
   const required = explicitApprovalPolicyRequirements(statements);
   if (required.ambiguous.length) {
-    throw new Error("ACTION_RULE_DRAFT_INVALID: the operator's approval scope contains unresolved alternatives. Ask the existing bounded clarification question about which scope applies; do not invent both quotas or discard the original requirement.");
+    throw new ActionRuleAuthoringError("ACTION_RULE_DRAFT_INVALID", "ACTION_RULE_DRAFT_INVALID: the operator's approval scope contains unresolved alternatives. Ask the existing bounded clarification question about which scope applies; do not invent both quotas or discard the original requirement.", { presentation: "reviewed_grammar", phase: "approval" });
   }
   const missingScope = required.scopes.find((required) =>
     !limits.some((limit) => limit.scope === required.scope || joint && required.scope === "capability" && limit.scope === "boundary"));
   if (missingScope) {
-    throw new Error(
-      `ACTION_RULE_DRAFT_INVALID: approval.shared_limits must preserve the operator's explicit ${missingScope.scope} accounting (${missingScope.phrase}); repair the model draft from the existing intent without asking the operator to repeat it.`,
-    );
+    throw new ActionRuleAuthoringError("ACTION_RULE_DRAFT_INVALID", `ACTION_RULE_DRAFT_INVALID: approval.shared_limits must preserve the operator's explicit ${missingScope.scope} accounting (${missingScope.phrase}); repair the model draft from the existing intent without asking the operator to repeat it.`, { presentation: "reviewed_grammar", phase: "approval" });
   }
   const missingDuration = required.durations.find((required) =>
     !limits.some((limit) => limit.window_seconds === required.seconds));
   if (missingDuration) {
-    throw new Error(
-      `ACTION_RULE_DRAFT_INVALID: approval.shared_limits must preserve the operator's explicit rolling ${formatPolicyDuration(missingDuration.seconds)} window (${JSON.stringify(missingDuration.phrase)}); repair the model draft from the existing intent without asking the operator to repeat it.`,
-    );
+    throw new ActionRuleAuthoringError("ACTION_RULE_DRAFT_INVALID", `ACTION_RULE_DRAFT_INVALID: approval.shared_limits must preserve the operator's explicit rolling ${formatPolicyDuration(missingDuration.seconds)} window (${JSON.stringify(missingDuration.phrase)}); repair the model draft from the existing intent without asking the operator to repeat it.`, { presentation: "reviewed_grammar", phase: "approval" });
   }
   const missingLimit = required.limits.find((required) =>
     !limits.some((limit) => limit.kind === required.kind
@@ -1590,9 +1586,7 @@ function assertExplicitApprovalIntentPreserved(
       && limit.maximum === required.maximum
       && limit.window_seconds === required.window_seconds));
   if (missingLimit) {
-    throw new Error(
-      `ACTION_RULE_DRAFT_INVALID: approval.shared_limits must preserve the operator's exact ${missingLimit.scope} count limit of ${missingLimit.maximum} in a rolling ${formatPolicyDuration(missingLimit.window_seconds)} window (${missingLimit.phrase}); repair the model draft from the existing intent without asking the operator to repeat it.`,
-    );
+    throw new ActionRuleAuthoringError("ACTION_RULE_DRAFT_INVALID", `ACTION_RULE_DRAFT_INVALID: approval.shared_limits must preserve the operator's exact ${missingLimit.scope} count limit of ${missingLimit.maximum} in a rolling ${formatPolicyDuration(missingLimit.window_seconds)} window (${missingLimit.phrase}); repair the model draft from the existing intent without asking the operator to repeat it.`, { presentation: "reviewed_grammar", phase: "approval" });
   }
 }
 
@@ -2871,7 +2865,7 @@ function parsePhaseSubmission(
     }
     return { state: "clarification", question: boundedText(value.question, "model clarification", 500) };
   }
-  if (value.status !== "draft") throw new Error("status must be draft or clarification.");
+  if (value.status !== "draft") throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_INVALID", "status must be draft or clarification.", { presentation: "reviewed_grammar", phase });
   // This retained invariant is outside the phase model's edit surface. Only
   // actual host checkpoint restoration may transport it; Runtime still owns
   // complete designation validation when the whole candidate is recompiled.

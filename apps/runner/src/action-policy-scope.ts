@@ -1,3 +1,4 @@
+import { ActionRuleAuthoringError } from "./action-rule-authoring-error.js";
 export type ExplicitTrustedPolicyScope = {
   scope: "boundary" | "capability" | "tenant" | "tenant_principal" | "tenant_object";
   phrase: string;
@@ -62,7 +63,7 @@ export function assertJointApprovalLimitsPreserved(messages: readonly string[], 
   for (const required of explicitJointApprovalLimits(messages)) {
     if (!approval.shared_limits.some((limit) => limit.kind === required.kind && limit.scope === required.scope
       && limit.maximum === required.maximum && limit.window_seconds === required.window_seconds && limit.capability === undefined)) {
-      throw new Error(`ACTION_RULE_DRAFT_INVALID: the operator requested JOINT automatic approval limits across the actions, not separate counters. Preserve ${required.scope} count ${required.maximum} / ${required.window_seconds}s with NO capability filter. Keep eligibility, human fallback and execution unchanged; repair this draft without asking the operator to repeat the rule.`);
+      throw new ActionRuleAuthoringError("ACTION_RULE_DRAFT_INVALID", `ACTION_RULE_DRAFT_INVALID: the operator requested JOINT automatic approval limits across the actions, not separate counters. Preserve ${required.scope} count ${required.maximum} / ${required.window_seconds}s with NO capability filter. Keep eligibility, human fallback and execution unchanged; repair this draft without asking the operator to repeat the rule.`, { presentation: "reviewed_grammar", phase: "approval" });
     }
   }
 }

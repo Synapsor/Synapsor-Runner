@@ -734,8 +734,8 @@ describe("Safe Action terminal control plane", () => {
       .mockResolvedValueOnce({ state: "resolved", decisions: { numeric_bounds: { credit_cents: { minimum: 0, maximum: 900 } } },
         summary: "credit_cents: 0 through 900", correction_used: false, authority_granted: false, source_database_changed: false });
     const replacement = "Why not make the reviewed ceiling nine hundred cents?";
-    const prompter = scriptedPrompter({ choices: ["replace", "accept", "human"],
-      texts: ["Use five hundred cents.", replacement], confirms: [] });
+    const prompter = scriptedPrompter({ choices: ["human"],
+      texts: ["Use five hundred cents.", replacement, "yes"], confirms: [] });
     const result = await collectQuickProposalActionInput(options, prompter, "Propose a bounded order credit.", [], {
       initialDecisions: { resource: orders.id, operation: "update", fields: ["credit_cents"] },
       modelInterview: { session: { provider: "openai", model: "offline-component" }, egressAcknowledged: true, decisionInterpreter },

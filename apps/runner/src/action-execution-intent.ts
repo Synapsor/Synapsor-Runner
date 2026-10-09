@@ -1,3 +1,4 @@
+import { ActionRuleAuthoringError } from "./action-rule-authoring-error.js";
 /** Conservative mismatch detection, never an execution grant or a draft rewrite. */
 export function explicitActionExecutionIntent(messages: readonly string[]): "automatic" | "proposal_only" | undefined {
   let intent: "automatic" | "proposal_only" | undefined;
@@ -33,9 +34,9 @@ function requestsProposalOnly(sentence: string): boolean {
 export function assertActionExecutionIntentPreserved(messages: readonly string[], writeback: "proposal_only" | "supervised"): void {
   const intent = explicitActionExecutionIntent(messages);
   if (intent === "automatic" && writeback !== "supervised") {
-    throw new Error("ACTION_EXECUTION_INTENT_UNMET: The operator requested automatic completion, not approval alone. Prepare effect.writeback=supervised as DISABLED configuration for separate operator execution review. This enables no writes. Preserve the business rule, fields and approval limits. If unsupported, explain the concrete blocker instead of claiming the proposal-only draft fulfils the job.");
+    throw new ActionRuleAuthoringError("ACTION_EXECUTION_INTENT_UNMET", "ACTION_EXECUTION_INTENT_UNMET: The operator requested automatic completion, not approval alone. Prepare effect.writeback=supervised as DISABLED configuration for separate operator execution review. This enables no writes. Preserve the business rule, fields and approval limits. If unsupported, explain the concrete blocker instead of claiming the proposal-only draft fulfils the job.", { presentation: "reviewed_grammar", phase: "effect" });
   }
   if (intent === "proposal_only" && writeback !== "proposal_only") {
-    throw new Error("ACTION_EXECUTION_INTENT_UNMET: The operator requested proposal-only operation. Keep effect.writeback=proposal_only; do not prepare execution authority.");
+    throw new ActionRuleAuthoringError("ACTION_EXECUTION_INTENT_UNMET", "ACTION_EXECUTION_INTENT_UNMET: The operator requested proposal-only operation. Keep effect.writeback=proposal_only; do not prepare execution authority.", { presentation: "reviewed_grammar", phase: "effect" });
   }
 }
