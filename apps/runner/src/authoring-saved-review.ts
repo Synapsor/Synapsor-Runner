@@ -6,6 +6,7 @@ import { authoringReceiptConfigurationHeld } from "./authoring-receipt-configura
 import { deferredReviewObligation } from "./authoring-obligation-review.js";
 import { boundaryAuthoringVersionReviews } from "./boundary-authoring-resume.js";
 import { actionRuleModelDraftFromAuthority } from "./action-rule-draft.js";
+import { policyCountingInterpretations } from "./authoring-counting-review.js";
 import { countingConfigurationDigest, countingSourceRequirements } from "./authoring-counting-requirements.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { listActionRuleAuthorityDrafts } from "./action-rule-authority.js";
@@ -100,6 +101,10 @@ async function savedPolicyReviewHeld(input: SavedAuthoringPolicyReviewInput,
     }
     const requirements = countingSourceRequirements(source, { actions: countingActions, runner_evidence: {
       counting_decisions: session.counting_decisions ?? [],
+      counting_interpretations: policyCountingInterpretations(session, source,
+        canonicalJsonDigest({ read: input.readDigest, action: matchingAuthority?.digest ?? null }),
+        saved.conversation.filter(turn => turn.kind === "clarification" && session.operator_messages?.includes(turn.answer))
+          .map(({ question, answer }) => ({ question, answer }))),
       actions: Object.fromEntries(countingActions.map(action => [action.outcome, { automatic_limits: action.approval.shared_limits }])) } }, session.operator_messages ?? []);
     if (requirements.some(r => r.state !== "established" || !session.coverage!.passages.some(p => p.disposition === "implemented"
       && (p.counting_requirement_bindings?.some(b => b.path === r.path && b.state === "established" && b.required_capability === r.required_capability)
