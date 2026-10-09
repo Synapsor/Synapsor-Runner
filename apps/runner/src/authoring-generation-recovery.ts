@@ -655,6 +655,26 @@ export function authoringQuestionCompletion(results: readonly ProviderHttpResult
   return completion;
 }
 
+/** Observe only the exact live native decoder association. This projection
+ * grants no save/retry right and cannot be reconstructed from an operation ID. */
+export function authoringCompletedTurnReferences(completion: AuthoringQuestionCompletion): Array<{
+  operation_id: string; request_digest: Digest; context_digest: Digest; attempt_id: string;
+}> {
+  const frame = storage.getStore(), refs = frame?.completedTurns.get(canonicalJsonDigest(completion));
+  if (!frame?.host?.available() || !refs?.length) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION",
+    "The completed decoder has no live operation association.", 409);
+  for (const ref of refs) {
+    const op = frame.host.read()?.operations.find(op => op.id === ref.id);
+    if (!op || disposedOperation(frame.host.read()!, op.id) || !frame.owned.has(op.id)
+      || op.request_digest !== ref.request_digest || op.context_digest !== ref.context_digest
+      || op.attempts.at(-1)?.id !== ref.attempt_id || op.attempts.at(-1)?.outcome !== "response"
+      || !["handled", "checkpointed", "refused"].includes(op.state)) throw new AskError(
+        "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The completed decoder association changed.", 409);
+  }
+  return refs.map(ref => ({ operation_id: ref.id, request_digest: ref.request_digest,
+    context_digest: ref.context_digest, attempt_id: ref.attempt_id }));
+}
+
 /** Associate only explicitly consumed turns of one bounded producer with its
  * final question. The caller obtains these completions from actual decoded
  * result identities. No saved operation scan or generic checkpoint promotion. */

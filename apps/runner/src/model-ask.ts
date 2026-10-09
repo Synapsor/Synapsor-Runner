@@ -2,6 +2,7 @@ import { AskError, completedContentError, completedProviderContentError, recordA
   type AuthoringTransportObservation, type ProviderHttpInput, type ProviderHttpResult, type AskProviderStreamEvent, type AskAuthoringEpisodeBudget } from "./model-provider-transport.js";
 export { AskError, completedContentError, completedProviderContentError, authoringTransportObservation,
   type AuthoringTransportObservation, type ProviderHttpInput, type ProviderHttpResult, type AskProviderStreamEvent, type AskAuthoringEpisodeBudget } from "./model-provider-transport.js";
+import { AsyncLocalStorage } from "node:async_hooks";
 import dns from "node:dns/promises";
 import http, { type IncomingMessage } from "node:http";
 import https from "node:https";
@@ -12,7 +13,7 @@ import { openaiToolNameAlias, toolNameExposures } from "@synapsor-runner/mcp-ser
 import type { AskIntentCheckMode } from "./ask-intent-preferences.js";
 import { askPlanSyntaxRepair, matchesAskPlanSyntaxRepair, type AskPlanSyntaxRepair } from "./ask-plan-recovery.js";
 import { isFixedOpenRouterModel, OPENROUTER_CHAT_ENDPOINT } from "./hosted-provider-settings.js";
-import { recoverAuthoringGeneration, authoringGenerationHandled, authoringGenerationFailed, authoringQuestionCompletion, authoringQuestionSequenceCompletion, createAuthoringHostEpisodeBudget, suspendAuthoringHostEpisodeBudget, authoringFallbackProducerInput, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
+import { recoverAuthoringGeneration, authoringGenerationHandled, authoringGenerationFailed, authoringQuestionCompletion, authoringQuestionSequenceCompletion, authoringCompletedTurnReferences, createAuthoringHostEpisodeBudget, suspendAuthoringHostEpisodeBudget, authoringFallbackProducerInput, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { coverageToolDeclarationIssue } from "./authoring-coverage-tool-profile.js";
 
 const DEFAULT_REMOTE_TIMEOUT_SECONDS = 30;
@@ -161,7 +162,63 @@ export type AskTurnResult = {
 const questionCompletions = new WeakMap<AskTurnResult, {
   completion: AuthoringQuestionCompletion;
   authorityDigest: `sha256:${string}`;
+  decoded: AuthoringDecodedTurn;
 }>();
+export type AuthoringDecodedTurn = {
+  completion: AuthoringQuestionCompletion;
+  authority_digest: `sha256:${string}`;
+  operations: ReturnType<typeof authoringCompletedTurnReferences>;
+  received_response_digests: `sha256:${string}`[];
+  submissions: Array<{ tool: string; arguments: Record<string, unknown>; ok: boolean;
+    error_code?: string; result: Record<string, unknown> }>;
+};
+/** Immutable observations of the actual decoder boundary. Returned trace JSON
+ * is presentation material; neither changing it nor copying a result can mint
+ * this association. Original arguments are captured before a host callback. */
+export function completedAuthoringDecodedTurn(result: AskTurnResult): AuthoringDecodedTurn | undefined {
+  const value = questionCompletions.get(result);
+  return value && structuredClone(value.decoded);
+}
+declare const actionSequenceBrand: unique symbol;
+export type ActionAuthoringDecodedSequence = { readonly [actionSequenceBrand]: true };
+type ActionSequenceFrame = { active: boolean; started: number; results: AskTurnResult[] };
+const actionSequences = new AsyncLocalStorage<ActionSequenceFrame>();
+const actionSequenceTokens = new WeakMap<ActionAuthoringDecodedSequence, { frame: ActionSequenceFrame; length: number }>();
+const unavailableActionSequence = () => new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION",
+  "The exact completed Action producer sequence is unavailable or changed. No stage consumption was authorized.", 409);
+/** One live Action producer invocation, never an imported checkpoint or scan of
+ * historical operations. Every genuine completed Action turn is recorded here
+ * by the provider boundary, not by a caller selecting convenient result IDs. */
+export async function withActionAuthoringDecodedSequence<T>(run: (sequence: {
+  current(): ActionAuthoringDecodedSequence;
+}) => Promise<T>): Promise<T> {
+  if (actionSequences.getStore()?.active) throw unavailableActionSequence();
+  const frame: ActionSequenceFrame = { active: true, started: 0, results: [] };
+  return actionSequences.run(frame, async () => {
+    try { return await run({ current: () => {
+      if (!frame.active || !frame.results.length || frame.started !== frame.results.length) throw unavailableActionSequence();
+      const token = Object.freeze({}) as ActionAuthoringDecodedSequence;
+      actionSequenceTokens.set(token, { frame, length: frame.results.length });
+      return token;
+    } }); } finally { frame.active = false; }
+  });
+}
+/** Exact ordered original submissions and native operation/attempt bindings.
+ * New turns invalidate an older projection. No JSON token, subset, closed
+ * producer, different invocation or partial response can establish a stage. */
+export function inspectActionAuthoringDecodedSequence(token: ActionAuthoringDecodedSequence): {
+  turns: AuthoringDecodedTurn[]; completion: AuthoringQuestionCompletion;
+} {
+  const known = actionSequenceTokens.get(token), frame = actionSequences.getStore();
+  if (!known || known.frame !== frame || !frame?.active || known.length !== frame.results.length
+    || frame.started !== frame.results.length) throw unavailableActionSequence();
+  const turns = frame.results.map(result => completedAuthoringDecodedTurn(result));
+  if (turns.some(turn => !turn)) throw unavailableActionSequence();
+  const completion = completedAuthoringQuestionSequence(frame.results);
+  if (!completion) throw unavailableActionSequence();
+  return { turns: turns as AuthoringDecodedTurn[], completion };
+}
+
 /** Available only for a successfully decoded real authoring turn. The typed
  * Action consumer decides whether this result is an owner-question boundary. */
 export function completedAuthoringQuestion(result: AskTurnResult): AuthoringQuestionCompletion | undefined {
@@ -663,7 +720,15 @@ export async function runAskProviderTurn(input: {
       conversational: input.conversationalAuthoring === true,
     }) : undefined;
   const admissionBudget = input.actionLogicalTurnBudget ?? input.episodeBudget ?? hostEpisode;
+  const actionSequence = actionSequences.getStore();
+  if (actionSequence?.active && (input.gateway.mode !== "authoring"
+    || input.authoringInput?.consumer !== "action_rule_components")) throw unavailableActionSequence();
+  if (actionSequence?.active) {
+    if (++actionSequence.started > 16) throw unavailableActionSequence();
+  }
   const generationResults: ProviderHttpResult[] = [];
+  const receivedResponseDigests: `sha256:${string}`[] = [];
+  const decodedSubmissions: AuthoringDecodedTurn["submissions"] = [];
   let reservedCallbacks = 0;
   const reserveToolBatch = async (count: number) => {
     if (!admissionBudget) return;
@@ -684,6 +749,7 @@ export async function runAskProviderTurn(input: {
     const result = await recoverAuthoringGeneration(preparedInput, request,
       admissionBudget ? () => checked(() => admissionBudget.admitIteration()) : undefined);
     generationResults.push(result);
+    receivedResponseDigests.push(canonicalJsonDigest(result.body));
     return result;
   });
   const gateway: AskToolGateway = {
@@ -701,7 +767,11 @@ export async function runAskProviderTurn(input: {
         reservedCallbacks--;
       }
       currentCallbackMayHaveRun = true;
-      return input.gateway.callTool(name, args);
+      const originalArguments = structuredClone(args);
+      const result = await input.gateway.callTool(name, args);
+      decodedSubmissions.push({ tool: name, arguments: originalArguments, ok: result.ok,
+        ...(result.error_code ? { error_code: result.error_code } : {}), result: structuredClone(result.value) });
+      return result;
     }),
     ...(input.gateway.describeOperatorMetadata ? { describeOperatorMetadata: input.gateway.describeOperatorMetadata.bind(input.gateway) } : {}),
     ...(input.gateway.resolveAskIntentCheck ? { resolveAskIntentCheck: input.gateway.resolveAskIntentCheck.bind(input.gateway) } : {}),
@@ -744,7 +814,14 @@ export async function runAskProviderTurn(input: {
   if (input.gateway.mode === "authoring") {
     await authoringGenerationHandled(generationResults);
     const completion = authoringQuestionCompletion(generationResults);
-    if (completion) questionCompletions.set(result, { completion, authorityDigest: producerAuthorityDigest });
+    if (completion) {
+      if (receivedResponseDigests.at(-1) !== completion.response_digest) throw unavailableActionSequence();
+      const decoded = { completion: structuredClone(completion), authority_digest: producerAuthorityDigest,
+        operations: authoringCompletedTurnReferences(completion), received_response_digests: [...receivedResponseDigests],
+        submissions: structuredClone(decodedSubmissions) };
+      questionCompletions.set(result, { completion, authorityDigest: producerAuthorityDigest, decoded });
+      if (actionSequence?.active) actionSequence.results.push(result);
+    }
   }
   return result;
   } finally { hostEpisode?.release(); restoreEpisode?.(); }
