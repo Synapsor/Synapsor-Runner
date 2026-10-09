@@ -1,0 +1,35 @@
+{
+  "scope": "I01944 exact existing compiler refusal diagnostic only",
+  "base": "d82c5300724257cd2158beb66b850c94481aaa16",
+  "accepted_product_comparison": "be48873feaff68942d9de9a390d90712fca22272 compile.ts byte-identical to actual d82 base; Main shorthand 9ae not a resolvable Git revision here; actual pin recorded",
+  "before": {
+    "files": [
+      "packages/action-rules/src/collection-diagnostic-path.test.ts"
+    ],
+    "cases": 2,
+    "expected": "Actual compiler must refuse inherited collection scope with existing ActionRuleError, code and exact message before missing-path assertion fails. No synthetic throw/mock."
+  },
+  "after": {
+    "files": [
+      "packages/action-rules/src/collection-diagnostic-path.test.ts",
+      "packages/action-rules/src/complete-collections.test.ts",
+      "packages/action-rules/src/required-singleton.test.ts"
+    ],
+    "cases": 35,
+    "expected": "Same two new assertions plus unchanged 14 complete-collection and 19 required-singleton scope/proof/visibility negatives and positives."
+  },
+  "product_change": "Only optional third argument on existing ACTION_RULE_UNBOUNDED Complete collection inverse-FK branch: verification_boundary.resources.${binding.binding}.collection_consistency",
+  "restrictions": [
+    "No condition/code/message change",
+    "No namespace/hard-limit/effect/API/grant change",
+    "No Source DB/native/provider/build/types launch",
+    "Independent R2/PGTester review required before Main integration"
+  ],
+  "source_hashes": {
+    "packages/action-rules/src/compile.ts": "d55919aa1c1536a1810ad63a0201e6c5da7b6bd93dfd08fd41ff32b7cd61d0e6",
+    "packages/action-rules/src/collection-diagnostic-path.test.ts": "161fab216092d6026e2e4e40a733cd74122fcd47a3e669714485eac7f10c2a2e",
+    "packages/action-rules/src/complete-collections.test.ts": "5349f06063a35a3e29618d092d09cf998764ac9d4957bedf63dd9058636d3d31",
+    "packages/action-rules/src/required-singleton.test.ts": "71321a3f046c7b6ec9ea58519b9ea441fbb76506cb727c5dbfcf367dcfad6a7b"
+  },
+  "execution": "NOT_RUN; exact Slot4 finite max1 allocation requested"
+}
