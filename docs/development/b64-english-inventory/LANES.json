@@ -1511,7 +1511,7 @@
     ]
   },
   "serial_current_item": 7,
-  "serial_state": "SERIAL7 MySQL sole Tester active; item6 Action scoped SOURCE/component ACCEPT, whole integration BLOCKED and held, accepted counts unchanged. Main bookkeeping only; R2 final checkpoint then HOLD; paid CLOSED.",
+  "serial_state": "OVERNIGHT SERIAL PASS CLOSED: all7 finished at scoped level or clearlyblocked. Every lane HOLD, paid CLOSED; no active tests/Runner/model/worker. Main accepted00bd unchanged, ActionWIP private/unintegrated.",
   "serial_main_retirement": {
     "status": "INTEGRATED_SCOPED_SOURCE_COMPONENT_ACCEPT_PUBLIC_OPEN",
     "base": "2392f7df",
@@ -1531,12 +1531,17 @@
     "open": "I01951 Quick Replace English classification is real existing decision; nine safe terminal-oracle migrations not silently greened; four B35 durable no-response prerequisites NOTREACHED; initializer newformat decision BLOCKED; public/full gates OPEN",
     "next": "HOLD; current product WIP not integrated. Serial7 MySQL on accepted00bd only. Main1/0 and Action28/5 unchanged.",
     "test_docs_head": "a9a87003acf6543b47cbebd113f2f3027580978d",
-    "review": "R2 final c8 exact23blobs; eligible candidates only after explicit unchanged adoption/reconciliation I01944,I01947-50,I04457,I01928; no accepted counter decrement; I01961/62 fixes separate."
+    "review": "R2 final c8 exact23blobs; eligible candidates only after explicit unchanged adoption/reconciliation I01944,I01947-50,I04457,I01928; no accepted counter decrement; I01961/62 fixes separate.",
+    "review_sha256": "f5a4de4b2a23554e63dfe7ce3218ef9faf6a31d258019c5a4b98d5a02583c8c2"
   },
   "serial_mysql_matrix": {
     "owner_thread": "01a117fd-4600-76a3-baf7-e404eb16d0d3",
-    "status": "DISPATCHED_SOLE_ITEM7",
+    "status": "CLOSED_BLOCKED_HELD",
     "accepted_Main": "00bdc02f869378f0704e0006f0b761e7c35eaf67",
-    "next": "Inspect exact engine-native current supported fixture/manifests; full matrix independent MySQL results; hard-limit public cases remain gated by blockedPG6; no old-effect replay or authority seed."
+    "next": "Actual PG/MySQL saved-scope failing-before reproduction/production binding repair; no further old operation replay or fake currentness/format/authority.",
+    "head": "12111c4b15f1e83b9062da86d1250185b6e83ee4",
+    "report": "b65-native-review/docs/development/b65-serial7-mysql/RESULTS.json",
+    "report_sha256": "780c6c7241fabc858331cd2102c03146dc0dc430a1ced813c7c89b6217acfe49",
+    "cases": "38:31NOTREACHED publicsetup +5PGgate/engineunsupported +1backendunsupported +1bounded reader-refusalPASS"
   }
 }
