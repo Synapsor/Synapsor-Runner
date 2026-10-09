@@ -1455,7 +1455,7 @@ async function commitBoundaryResourceReviewMutationUnlocked(projectRoot: string,
   assertVerifiedMutationPreview(preview, preview.request.actor, verifiedDecision);
   if (preview.partial_scope_resolution) {
     if (preview.candidate.pack.resources.length === 0) {
-      const current = await loadBoundaryReviewFiles(projectRoot);
+      const current = await loadBoundaryReviewFiles(projectRoot, permit);
       assertBindingsEqual(preview.bindings, reviewBindings(current));
       if (current.authoring) {
         const result = await commitPreparedBoundaryReviewMutation({ projectRoot, bindings: preview.bindings,
@@ -1696,7 +1696,7 @@ async function commitPreparedBoundaryReviewMutation(input: {
 
 async function commitPreparedBoundaryReviewMutationUnlocked(input: Parameters<typeof commitPreparedBoundaryReviewMutation>[0],
   permit: ProjectAuthorityMutationPermit): Promise<BoundaryReviewMutationCommit> {
-  const current = await loadBoundaryReviewFiles(input.projectRoot);
+  const current = await loadBoundaryReviewFiles(input.projectRoot, permit);
   assertBindingsEqual(input.bindings, reviewBindings(current));
   assertReadPrerequisiteRetained(current.candidate, input.candidate);
 
@@ -2570,7 +2570,7 @@ function semanticDiff(
   };
 }
 
-async function loadBoundaryReviewFiles(projectRoot: string): Promise<BoundaryReviewFiles> {
+async function loadBoundaryReviewFiles(projectRoot: string, permit?: ProjectAuthorityMutationPermit): Promise<BoundaryReviewFiles> {
   const resolvedRoot = path.resolve(projectRoot);
   const journey = await readGuidedOnboardingState(resolvedRoot);
   const boundaryRoot = path.resolve(
@@ -2578,7 +2578,7 @@ async function loadBoundaryReviewFiles(projectRoot: string): Promise<BoundaryRev
     journey?.artifacts.boundary_root ?? "synapsor/generated",
   );
   assertInsideProject(resolvedRoot, boundaryRoot);
-  const stored = await readProjectReadAuthoring(resolvedRoot);
+  const stored = await readProjectReadAuthoring(resolvedRoot, undefined, permit);
   if (stored && !stored.selected) throw new Error("No saved Read boundary is selected for editing.");
   if (stored && !stored.selected!.catalog) throw Object.assign(new Error(
     "This saved review needs its metadata catalog refreshed. Rescan before editing; file exports cannot replace its exact catalog."),
@@ -2597,7 +2597,7 @@ async function loadBoundaryReviewFiles(projectRoot: string): Promise<BoundaryRev
       "boundary review report",
     ),
   ]);
-  const progress = stored?.selected?.progress ?? await readBoundaryReviewProgress(resolvedRoot, draft);
+  const progress = stored?.selected?.progress ?? await readBoundaryReviewProgress(resolvedRoot, draft, permit);
   return {
     boundary_root: boundaryRoot,
     draft,

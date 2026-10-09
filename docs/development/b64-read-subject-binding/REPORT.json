@@ -1,0 +1,77 @@
+{
+  "scope": "Existing native Read subject projection and held-permit loader propagation; no new authority or meaning store",
+  "base": "c88339f3",
+  "test_pin": "ed9460f6",
+  "subject_fix": "c3e55292",
+  "main_dependency": {
+    "source": "c361a4a0",
+    "composed": "a344c6b8",
+    "note": "Retained exact new public test absent on base; no other conflict"
+  },
+  "before": {
+    "original_fixture": "setup failure: explicit reviewed field exposure absent; 11 skipped",
+    "explicit_field_fixture": "setup failure: Main public confirmedDecisions legacy port; 11 skipped",
+    "constant_main_hook_old_subject": {
+      "passed": 8,
+      "failed": 3,
+      "failures": [
+        "prose cache removed genuine typed subject acknowledgment",
+        "claimed immutable origin Source mismatch ignored",
+        "metadata edit nested permit reacquired"
+      ]
+    }
+  },
+  "after_subject_only": {
+    "passed": 10,
+    "failed": 1,
+    "remaining": "same metadata-edit nested permit failure"
+  },
+  "after_permit": {
+    "subject_controls": 11,
+    "authority_mutation_controls": 15,
+    "passed": 26,
+    "failed": 0
+  },
+  "contract": "Existing applicability owner accepts exact-input subject confirmations without origin; preserve it. Claimed resolved origins are validated by that owner. Exact typed advertised references and actor/status/date remain required; prose/cache flags cannot grant or remove acknowledgment.",
+  "permit_hook": "Pass existing held permit through both unlocked mutation call sites, loadBoundaryReviewFiles, native authoring reader and progress reader; no new lease or latest-state adoption",
+  "constraints": {
+    "network": "bwrap --unshare-net",
+    "workers": 1,
+    "minimum_observed_MemAvailable_bytes": 19258855424,
+    "minimum_observed_available_disk_bytes": 62063906816,
+    "private_fixture_storage": "preserved",
+    "paid": false
+  },
+  "validation_limits": {
+    "types": "not run in this bounded grant",
+    "independent_R2": "pending",
+    "Main_integration": "pending"
+  },
+  "privacy_remaining_acceptance": {
+    "typed": 23,
+    "delete": 2,
+    "counts_unchanged": true
+  },
+  "evidence": [
+    {
+      "path": "/var/tmp/b64-privacy-evidence/read-subject-binding-before.log",
+      "sha256": "6daeeb7950722e0cb583dcc624bf1529a0c7a0a8a9b98a64f606c7cf6ad37897"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/read-subject-binding-before-explicit-field.log",
+      "sha256": "23a40131e564152fa395210d7465157ceb627bb0b62a4115d034e22b0929211b"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/read-subject-binding-before-public-hook.log",
+      "sha256": "e211a4d1813c78c17680f10acaa366eb3c70a3fbb424b2f9db85c2fb72fffb64"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/read-subject-binding-after-public-hook.log",
+      "sha256": "faced586ed4ec9b5337432bfe793b416cba92dc2ad3458300cc91e60cac16996"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/read-subject-binding-after-permit.log",
+      "sha256": "9172814122207e297b45e2fcb9291559efa759183b3cb8b8aac5d66d1a71024d"
+    }
+  ]
+}
