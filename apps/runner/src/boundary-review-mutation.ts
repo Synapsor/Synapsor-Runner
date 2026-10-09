@@ -92,6 +92,24 @@ import { synchronizeBoundaryLibrary } from "./boundary-library.js";
 
 type JsonRecord = Record<string, unknown>;
 
+type PreparationFailure = import("./authoring-native-failure.js").NativeAuthoringFailure<
+  "boundary_review", "READ_REVIEW_BATCH_CONFLICT" | "READ_REVIEW_CANDIDATE_INVALID"
+>;
+const preparationFailures = new WeakMap<Error, PreparationFailure>();
+class BoundaryReviewPreparationError extends Error {
+  readonly code: PreparationFailure["code"];
+  constructor(code: PreparationFailure["code"], display: string, cause?: unknown) {
+    super(display, cause === undefined ? undefined : { cause });
+    this.name = "BoundaryReviewPreparationError";
+    this.code = code;
+    preparationFailures.set(this, Object.freeze({ domain: "boundary_review", code, display, local_outcome: "not_attempted" }));
+  }
+}
+/** Native owner origin only: serialized or model-supplied lookalikes are not failures. */
+export function projectBoundaryReviewPreparationFailure(error: unknown): PreparationFailure | undefined {
+  return error instanceof Error ? preparationFailures.get(error) : undefined;
+}
+
 type ReviewedBoundaryFieldResource = ExplorationBoundaryDraft["pack"]["resources"][number];
 
 export type ReviewedBoundaryFieldTier = "visible" | "withheld_from_model" | "kept_out";
@@ -894,6 +912,7 @@ export async function prepareBoundaryResourceReviewMutation(
   request: BoundaryResourceReviewRequest,
   schemaInspector: typeof inspectDatabase = inspectDatabase,
 ): Promise<BoundaryReviewMutationPreview> {
+  request = structuredClone(request);
   const { preview, partialScopeResolution } = await prepareBoundaryReviewRequests(
     projectRoot, [request], schemaInspector,
   );
@@ -962,7 +981,7 @@ async function prepareBoundaryReviewRequests(
     .map((request) => request.resource_id)
     .filter((resource, index, values) => values.indexOf(resource) !== index);
   if (duplicateResources.length) {
-    throw new Error(`Boundary-review decision file repeats resource(s): ${[...new Set(duplicateResources)].sort().join(", ")}.`);
+    throw new BoundaryReviewPreparationError("READ_REVIEW_BATCH_CONFLICT", `Boundary-review decision file repeats resource(s): ${[...new Set(duplicateResources)].sort().join(", ")}.`);
   }
   const state = await loadBoundaryReviewFiles(projectRoot);
   const configuredTrustedContext = await configuredTrustedContextForReviewMutation(
@@ -977,10 +996,6 @@ async function prepareBoundaryReviewRequests(
   }
   const removedResources = requests.filter(request => request.exclude).map(request => request.resource_id);
   const jobStatus = removedResources.length ? await removalJobStatus(projectRoot, state) : "unknown";
-  const removalImpacts = removedResources.map(resourceId => boundaryResourceRemovalImpact(
-    state.candidate, resourceId, { also_removing: removedResources, job_status: jobStatus },
-  ));
-  for (const impact of removalImpacts) assertBoundaryResourceRemovalAllowed(impact);
   for (const request of requests) {
     validateBoundaryRequestAgainstResource(
       request,
@@ -1059,12 +1074,15 @@ async function prepareBoundaryReviewRequests(
     state.candidate,
     boundaryWideSettings,
   );
-  let candidate = buildReviewedCandidate({
+  const prospective = buildReviewedCandidate({
     previous: state.candidate,
     generated: build.exploration_boundary,
     inspectedResources: build.graph.resources,
     requests: requests.map(request => ({ ...request, ...boundaryWideSettings })),
+    removalJobStatus: jobStatus,
   });
+  let candidate = prospective.candidate;
+  const removalImpacts = prospective.removalImpacts;
   if (privateCondition) {
     assertReviewedReadCurrentStatePrerequisite(privateCondition, inspection);
     candidate = { ...candidate, read_prerequisite: structuredClone(privateCondition) };
@@ -1084,7 +1102,7 @@ async function prepareBoundaryReviewRequests(
   }
   const reviewed = scopeOnlyPreparation
     ? { candidate, digest: explorationBoundaryCandidateDigest(candidate) }
-    : reviewExplorationBoundaryCandidate(build.exploration_boundary, candidate);
+    : reviewCompleteBoundaryCandidate(build.exploration_boundary, candidate);
   // Every request must survive later resource rebuilds and final normalization.
   // The generated baseline already includes the whole batch, so intermediate
   // candidates cannot serve as the "before" side of each resource's diff.
@@ -1129,6 +1147,14 @@ async function prepareBoundaryReviewRequests(
   } };
 }
 
+function reviewCompleteBoundaryCandidate(envelope: ExplorationBoundaryDraft, candidate: ExplorationBoundaryDraft) {
+  try { return reviewExplorationBoundaryCandidate(envelope, candidate); }
+  catch (cause) {
+    throw new BoundaryReviewPreparationError("READ_REVIEW_CANDIDATE_INVALID",
+      cause instanceof Error ? cause.message : "The complete disabled Read candidate is invalid.", cause);
+  }
+}
+
 function consistentBoundaryWideReviewSettings(
   requests: BoundaryResourceReviewRequest[],
 ): Partial<BoundaryResourceReviewRequest> {
@@ -1139,7 +1165,7 @@ function consistentBoundaryWideReviewSettings(
       return value === undefined ? [] : [value];
     }))];
     if (values.length > 1) {
-      throw new Error(
+      throw new BoundaryReviewPreparationError("READ_REVIEW_BATCH_CONFLICT",
         `Boundary-review decision file gives conflicting boundary-wide values for ${key}.`,
       );
     }
@@ -1839,16 +1865,12 @@ function buildReviewedCandidate(input: {
   generated: ExplorationBoundaryDraft;
   inspectedResources: AutoBoundaryResource[];
   requests: BoundaryResourceReviewRequest[];
-}): ExplorationBoundaryDraft {
+  removalJobStatus: "pending" | "unknown";
+}): { candidate: ExplorationBoundaryDraft; removalImpacts: BoundaryResourceRemovalImpact[] } {
   const candidate = structuredClone(input.generated);
   if (input.previous.read_prerequisite) candidate.read_prerequisite = structuredClone(input.previous.read_prerequisite);
   candidate.pack.name = input.previous.pack.name;
-  candidate.budgets = preserveReviewedBudgets(input.generated, input.previous);
-  const settings = consistentBoundaryWideReviewSettings(input.requests);
-  for (const key of BOUNDARY_WIDE_REVIEW_REQUEST_KEYS) {
-    const value = settings[key];
-    if (value !== undefined) candidate.budgets[key] = value;
-  }
+  alignGeneratedReviewBudgets(candidate, input.previous, consistentBoundaryWideReviewSettings(input.requests));
   const maximum = reviewedAnalysisRelationshipHopLimit(candidate.budgets);
   for (const resource of candidate.pack.resources) {
     resource.relationships = resource.relationships.filter(relationship => (relationship.path_depth ?? 1) <= maximum);
@@ -1883,12 +1905,19 @@ function buildReviewedCandidate(input: {
     }
     applyReviewedResourceRequest(resource, request);
   }
+  // Dependencies are evaluated after every explicit edit but before pruning
+  // unavailable paths or normalizing derived measures. A retained dependent
+  // metric/scope still refuses; an explicit same-batch removal can resolve it.
+  const removedResources = input.requests.filter(request => request.exclude).map(request => request.resource_id);
+  const removalImpacts = removedResources.map(resourceId => boundaryResourceRemovalImpact(candidate, resourceId,
+    { also_removing: removedResources, job_status: input.removalJobStatus }));
+  for (const impact of removalImpacts) assertBoundaryResourceRemovalAllowed(impact);
   pruneRelationshipsOutsideBoundary(candidate);
   for (const request of input.requests) {
     if (request.private_model_fields?.length) restrictPrivateFieldAnalysis(candidate, request.resource_id, request.private_model_fields);
     assertRequestedRelationshipsRetained(request, input.generated, candidate, input.inspectedResources);
   }
-  return candidate;
+  return { candidate, removalImpacts };
 }
 
 function applyReviewedResourceRequest(resource: ReviewedBoundaryResource, request: BoundaryResourceReviewRequest): void {
