@@ -1,0 +1,33 @@
+{
+  "annotation": "I02064",
+  "product": "b14c523e",
+  "test_port": "03bd57ea",
+  "independent_verdict": "Testerb87d107e source1a47 at3bbe",
+  "independent_report_sha256": "aceaae6e3e0654899ae4bda3da7a40639cc97e52844fa3c48cbc83cdbf82f2df",
+  "Main_context_patch_sha256": "b30396c759a6c07121a16fbe27181a960a797a55be98bd97acd5834ba3498eb3",
+  "adaptation": "Keep all unrelated Main typed guards; no unaccepted Action constraints brought in. Accepted Source additions retained.",
+  "actual_reports": [
+    {
+      "path": "/var/tmp/synapsor-main-source-passage-owned.KhFzeE/result.json",
+      "sha256": "10e106fe6e40283d7ed49598f7d0ccea36328814c62d7f1044ec3dd973364b72",
+      "passed": 106,
+      "failed": 0,
+      "skipped": 0
+    },
+    {
+      "path": "/var/tmp/synapsor-main-source-passage-owned.KhFzeE/question-record.json",
+      "sha256": "6f0e0354054414adca9ec28816c73e9a97f2ea31b227efef7f60cfd1a73939c9",
+      "passed": 26,
+      "failed": 0,
+      "skipped": 0
+    }
+  ],
+  "unique_tests": 132,
+  "launch_correction": "Initial six-filter command included nonexistent authoring-input-host.test.ts, so actual five files106PASS. Run only previously omitted authoring-operator-question.test.ts26PASS; no completed child replay.",
+  "cold_process": "Seven original genuine process controls pass; captures retained under evidence root/captures, no provider/network/SourceDB.",
+  "limits": "No wholeSource/public activation/DB/remainingannotation acceptance; global types not rerun or claimed clean",
+  "remaining_Action": {
+    "typed": 32,
+    "delete": 5
+  }
+}

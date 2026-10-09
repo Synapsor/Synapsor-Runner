@@ -1254,10 +1254,10 @@
       ]
     },
     "action": {
-      "pin": "c942b1a0",
-      "typed": 31,
+      "pin": "b14c523e",
+      "typed": 30,
       "delete": 5,
-      "source": "Ten closed coverage-error decisions Mainc942 +strictproducer4ea +realconstructorinventoryc909; independentR2source/ownerartifact ACCEPT, Main50PASS. Existing Read inventory failure/one optin skip outside50 retained. Remaining units/Source ranges work active; no wholecaller/public acceptance.",
+      "source": "Ten coverage IDs plus I02064 typed Source naming integrated; independentTesterb87d accepted; Main exact6files106+26=132uniquePASS,7actualcold included. Only I02064 additionally closed. Receipt4 successor pending review; units/other IDs open.",
       "reclassified_open": {
         "typed": [
           "I01961"
@@ -1265,14 +1265,14 @@
         "delete": []
       },
       "with_reclassifications": {
-        "typed": 33,
+        "typed": 32,
         "delete": 5
       },
       "audit_reclassified_ids": [
         "I01961",
         "I01962"
       ],
-      "active_task": "Source answer3bbe/1a47 owner132PASS/types0 now independent B65 Tester review; receipt typedcomponent successor source-only; units compatibility design only.",
+      "active_task": "Receipt c19 197ownerPASS/types0 in R2 independent review; no selfapproval",
       "accepted_coverage_ids": [
         "I04444",
         "I04446",
@@ -1284,6 +1284,9 @@
         "I04460",
         "I04461",
         "I04462"
+      ],
+      "accepted_source_ids": [
+        "I02064"
       ]
     },
     "read": {
@@ -1385,7 +1388,7 @@
       "delete": 0
     },
     "action": {
-      "typed": 33,
+      "typed": 32,
       "delete": 5
     },
     "main": {
