@@ -80,3 +80,7 @@ export { ACTION_AUTHORITY_LIMITS } from "./limits.js";
 export { actionRuleEffectInventory, actionRuleEffectLines, actionRulePublicEffects } from "./effect-inventory.js";
 
 export type { HardLimitDesignationV1, CompiledHardLimitV1 } from "./types.js";
+
+/** Host-only experiment, never enabled by the ordinary activation path. */
+export { compileExperimentalSharedSumProtection, type ExperimentalSharedSumDesignationV1,
+  type ExperimentalSharedSumProtection } from './experimental-shared-sum.js';

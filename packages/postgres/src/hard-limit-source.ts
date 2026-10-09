@@ -91,6 +91,13 @@ async function resolveReceipt(client: PostgresApplyClient, table: string, origin
 export async function assertPostgresHardLimitSource(client: PostgresApplyClient, compiled: CompiledActionRuleV1,
   scope: HardLimitScopeSettings | undefined, receipt?: Receipt): Promise<void> {
   if (!compiled.hard_limit) return;
+  await assertPostgresBoundedInvariantSource(client, compiled, scope, receipt);
+}
+
+/** Existing native profile only. Experimental callers must first establish
+ * their compiler-owned bounded plan; this function grants no effect authority. */
+export async function assertPostgresBoundedInvariantSource(client: PostgresApplyClient, compiled: CompiledActionRuleV1,
+  scope: HardLimitScopeSettings | undefined, receipt?: Receipt): Promise<void> {
   await protectPostgresHardLimitNames(client);
   if (qualified.get(client)?.has(compiled.compiled_plan_digest)) return;
   if (!scope || !scope.principalSetting || receipt?.provisioning === 'auto_migrate') unsupported('source.hard_limit.scope_receipt_mode');

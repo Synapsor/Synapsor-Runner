@@ -49,6 +49,8 @@ async function applyNamespaceComponent(client: NamespaceClient) {
     { admitSource: async () => protectPostgresHardLimitNames(client) });
   const store = new IntentStore();
   const result = await applyPostgresJobWithClient(job, { runnerId: "namespace-component-runner", databaseUrl: "postgresql://unused/component",
+    controlPlaneUrl: "http://127.0.0.1", runnerToken: "component-only", sourceId: job.source_id, engine: "postgres",
+    pollIntervalMs: 1000, logLevel: "info", dryRun: false, stateDir: ".component-unused",
     receipts: { authority: "runner_ledger" }, writebackIntentStore: store, semanticActionVerifier: verifier }, client);
   expect(verifier).not.toHaveBeenCalled();
   expect(client.sql.filter(sql => sql === namespaceLock)).toHaveLength(1);
@@ -76,7 +78,7 @@ describe("early hard-limit namespace contention", () => {
     expect(store.calls).toEqual(["claim", "applying", "reconciliation"]);
   });
   it.each([{ message: "40P01 deadlock, lock timeout" }, { code: "40P01_private" }, { code: "57014" },
-    { code: { toString: () => "55P03" } }])("keeps untyped or unrelated namespace failure %j unsupported", async failure => {
+    { code: { toString: (): string => "55P03" } }])("keeps untyped or unrelated namespace failure %j unsupported", async failure => {
     await expect(protectPostgresHardLimitNames(new NamespaceClient(failure))).rejects.toMatchObject({
       code: "ACTION_RULE_SCOPE_UNPROVEN", path: "source.hard_limit.namespace_lock" });
   });

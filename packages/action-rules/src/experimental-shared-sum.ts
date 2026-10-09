@@ -28,10 +28,10 @@ type Context = { parent: CompiledRuleBindingV1; populations: [CompiledRuleBindin
 type Built = { designation: ExperimentalSharedSumDesignationV1; contexts: Map<string, Context>;
   participants: Array<{ outcome: string; compiled_plan_digest: string }>; meaning: string };
 const issued = new WeakMap<ExperimentalSharedSumProtection, Built>();
-const refuse = (stage: string): never => {
+function refuse(stage: string): never {
   throw new ActionRuleError('ACTION_RULE_SCOPE_UNPROVEN',
     'The experimental shared limit cannot be inspected with the supported guarantees.', `experimental.shared_sum.${stage}`);
-};
+}
 function closed(value: unknown, keys: readonly string[]): asserts value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)
     || Object.keys(value).length !== keys.length || Object.keys(value).some(key => !keys.includes(key))) refuse('designation');
@@ -221,8 +221,8 @@ export function checkExperimentalSharedSumPostState(plan: ExperimentalSharedSumP
   if (effect.atomic_updates?.length || effect.source !== compiled.source
     || effect.resource !== compiled.target_resource.name || effect.schema !== compiled.target_resource.schema || effect.table !== compiled.target_resource.table
     || effect.primary_key.column !== compiled.target_resource.primary_key || effect.primary_key.value === undefined
-    || effect.tenant_guard?.column !== compiled.target_resource.tenant_key || effect.tenant_guard.value !== facts.trusted.tenant
-    || effect.principal_scope?.column !== compiled.target_resource.principal_scope_key || effect.principal_scope.value !== facts.trusted.principal) refuse('effect_identity');
+    || !effect.tenant_guard || effect.tenant_guard.column !== compiled.target_resource.tenant_key || effect.tenant_guard.value !== facts.trusted.tenant
+    || !effect.principal_scope || effect.principal_scope.column !== compiled.target_resource.principal_scope_key || effect.principal_scope.value !== facts.trusted.principal) refuse('effect_identity');
   const population = ctx.populations.find(b => b.resource.name === effect.resource);
   const target = population ?? ctx.parent;
   if (effect.operation === 'single_row_insert') {

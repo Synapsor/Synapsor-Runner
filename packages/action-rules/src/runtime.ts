@@ -11,6 +11,8 @@ import {
 } from "@synapsor-runner/protocol";
 import { checkHardLimitPostState, HardLimitPostStateExceeded, assertHardLimitWriterInventory } from "./hard-limit.js";
 import { ActionRuleHardLimitRefusal } from "./hard-limit-refusal.js";
+import { resolveExperimentalSharedSumProtection, checkExperimentalSharedSumPostState,
+  type ExperimentalSharedSumProtection } from './experimental-shared-sum.js';
 import { ActionRuleError } from "./errors.js";
 import { validateActionRuleInputs } from "./inputs.js";
 import {
@@ -338,7 +340,10 @@ export function createSemanticActionVerifier(input: {
   clock?: () => string;
   check_delegation?: SemanticExecutionDelegationCheck;
   allow_delayed_work?: (job: NormalizedWritebackJobV5, checkedAt: string) => Promise<void>;
+  /** Compiler-issued host experiment only; no public activation/profile change. */
+  experimental_shared_sum?: ExperimentalSharedSumProtection;
 }): CurrentSemanticActionVerifier {
+  const experimentalPlan = input.experimental_shared_sum;
   const verifier: CurrentSemanticActionVerifier = Object.assign(async ({ job, factLoader }: { job: NormalizedWritebackJobV5; factLoader: ActionRuleFactLoaderAdapterV1 }) => {
     // Refuse before loading rows when the execution path cannot enforce the
     // proof extension, or when a delegated deployment receives an unbound job.
@@ -357,6 +362,17 @@ export function createSemanticActionVerifier(input: {
     } else if (Date.parse(job.semantic_authority.proof.valid_until) <= Date.parse(checkedAt)) {
       throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The semantic proposal proof has expired.");
     }
+    const preliminary = assertSemanticActionAuthorityCurrent(registry, job);
+    const experimentalBefore = experimentalPlan && resolveExperimentalSharedSumProtection(experimentalPlan, registry, preliminary.activated.compiled);
+    if (experimentalBefore) {
+      if (job.delayed_work || job.semantic_authority.proof.delegation || !factLoader.assertExperimentalSharedSumSource) {
+        throw new ActionRuleError('ACTION_RULE_SCOPE_UNPROVEN', 'Experimental native Source protection is unavailable.', 'experimental.shared_sum.source_capability');
+      }
+      await factLoader.assertExperimentalSharedSumSource(preliminary.activated.compiled);
+      const afterProtection = typeof input.registry === 'function' ? await input.registry(job.semantic_authority.proof.outcome) : input.registry;
+      const after = assertSemanticActionAuthorityCurrent(afterProtection, job);
+      resolveExperimentalSharedSumProtection(experimentalPlan!, afterProtection, after.activated.compiled);
+    }
     const verified = await reverifySemanticOperation({ registry, job, factLoader, checkedAt, mode: "transaction_reverify" });
     await input.check_delegation?.({ job, activated: verified.activated, evaluation: verified.evaluation,
       facts: verified.facts, inputs: verified.inputs, checked_at: checkedAt });
@@ -367,33 +383,46 @@ export function createSemanticActionVerifier(input: {
     if (!job.delayed_work && Date.parse(job.semantic_authority.proof.valid_until) <= Date.parse(canonicalTimestamp(input.clock?.(), "Post-wait verification time"))) {
       throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The semantic proposal proof has expired.");
     }
-    if (verified.activated.compiled.hard_limit) {
-      if (!factLoader.assertHardLimitSource) unsupportedHardLimitCapability("source.hard_limit.effect_capability");
-      await factLoader.assertHardLimitSource(verified.activated.compiled);
-      try { checkHardLimitPostState(verified.activated.compiled, verified.facts, verified.evaluation.effect, verified.inputs); }
-      catch (error) {
+    const experimental = experimentalPlan && resolveExperimentalSharedSumProtection(experimentalPlan, current, verified.activated.compiled);
+    if (verified.activated.compiled.hard_limit || experimental) {
+      if (verified.activated.compiled.hard_limit) {
+        if (!factLoader.assertHardLimitSource) unsupportedHardLimitCapability("source.hard_limit.effect_capability");
+        await factLoader.assertHardLimitSource(verified.activated.compiled);
+      }
+      try {
+        if (verified.activated.compiled.hard_limit) checkHardLimitPostState(verified.activated.compiled, verified.facts, verified.evaluation.effect, verified.inputs);
+        if (experimental) checkExperimentalSharedSumPostState(experimentalPlan!, verified.activated.compiled, verified.facts, verified.evaluation.effect);
+      } catch (error) {
         if (!(error instanceof HardLimitPostStateExceeded)) throw error;
         const proof = job.semantic_authority.proof;
         throw new ActionRuleHardLimitRefusal({ job_digest: canonicalJsonDigest(job),
           proof_digest: validatedDigest(proof.proof_digest, "Proof"), action_boundary_digest: validatedDigest(proof.action_boundary_digest, "Boundary"),
           compiled_plan_digest: validatedDigest(proof.compiled_plan_digest, "Plan"), effect_digest: validatedDigest(proof.derived_effect_digest, "Effect"),
-          invariant_digest: verified.activated.compiled.hard_limit.digest });
+          invariant_digest: verified.activated.compiled.hard_limit?.digest ?? experimental!.digest });
       }
     }
     return verified.result;
   }, { async admitSource({ job, factLoader }: { job: NormalizedWritebackJobV5; factLoader: ActionRuleFactLoaderAdapterV1 }) {
     const registry = typeof input.registry === "function" ? await input.registry(job.semantic_authority.proof.outcome) : input.registry;
     const { activated } = assertSemanticActionAuthorityCurrent(registry, job);
-    if (!activated.compiled.hard_limit) return;
+    const experimental = experimentalPlan && resolveExperimentalSharedSumProtection(experimentalPlan, registry, activated.compiled);
+    if (!activated.compiled.hard_limit && !experimental) return;
     assertHardLimitWriterInventory(registry, activated.compiled);
-    // Initial bounded hard-invariant capability excludes delayed/delegated work.
-    if (job.delayed_work || job.semantic_authority.proof.delegation || !factLoader.assertHardLimitSource) {
-      unsupportedHardLimitCapability("source.hard_limit.admission_capability");
+    if (job.delayed_work || job.semantic_authority.proof.delegation) unsupportedHardLimitCapability("source.hard_limit.admission_capability");
+    if (activated.compiled.hard_limit) {
+      if (!factLoader.assertHardLimitSource) unsupportedHardLimitCapability("source.hard_limit.admission_capability");
+      await factLoader.assertHardLimitSource(activated.compiled);
     }
-    await factLoader.assertHardLimitSource(activated.compiled);
+    if (experimental) {
+      if (!factLoader.assertExperimentalSharedSumSource) {
+        throw new ActionRuleError('ACTION_RULE_SCOPE_UNPROVEN', 'Experimental native Source protection is unavailable.', 'experimental.shared_sum.source_capability');
+      }
+      await factLoader.assertExperimentalSharedSumSource(activated.compiled);
+    }
     const after = typeof input.registry === "function" ? await input.registry(job.semantic_authority.proof.outcome) : input.registry;
-    assertSemanticActionAuthorityCurrent(after, job);
+    const current = assertSemanticActionAuthorityCurrent(after, job);
     assertHardLimitWriterInventory(after, activated.compiled);
+    if (experimental) resolveExperimentalSharedSumProtection(experimentalPlan!, after, current.activated.compiled);
     if (Date.parse(job.semantic_authority.proof.valid_until) <= Date.parse(canonicalTimestamp(input.clock?.(), "Source admission time"))) {
       throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The semantic proposal proof has expired.");
     }

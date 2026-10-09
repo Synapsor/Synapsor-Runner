@@ -2,6 +2,7 @@ export { assertPostgresHardLimitSource } from "./hard-limit-source.js";
 import { sourceRollbackBinding, sourceCompletionBinding } from "@synapsor-runner/worker-core";
 import crypto from "node:crypto";
 import { assertPostgresHardLimitSource, resetHardLimitQualification, hardLimitReceiptTable, inspectPostgresSourceReceiptRead } from "./hard-limit-source.js";
+import { assertPostgresExperimentalSharedSumSource } from "./experimental-shared-sum.js";
 import { observePostgresClientErrors, postgresClientConnectionFailed } from "./connection-lifetime.js";
 import { isCompleteCollectionScopeExpression } from "./complete-collection-scope.js";
 import { assertPostgresRequiredSingletonRelationship } from "./required-singleton.js";
@@ -205,6 +206,7 @@ export function createPostgresActionRuleFactLoader(
   return {
     engine: "postgres",
     assertHardLimitSource: compiled => assertPostgresHardLimitSource(client, compiled, databaseScope, admission?.receipt),
+    assertExperimentalSharedSumSource: compiled => assertPostgresExperimentalSharedSumSource(client, compiled, databaseScope, admission?.receipt),
     async assertResourceCompatible(binding: CompiledRuleBindingV1): Promise<void> {
       const scope = databaseScope && postgresActionRuleVerificationScope(binding, databaseScope);
       const key = JSON.stringify([binding.resource.schema, binding.resource.table, scope]);

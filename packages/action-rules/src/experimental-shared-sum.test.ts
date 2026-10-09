@@ -106,6 +106,12 @@ describe('experimental shared SUM compiler and whole proposed state', () => {
     expect(() => checkExperimentalSharedSumPostState(f.plan, v.compiled, f.facts, v.effect))
       .toThrow(expect.objectContaining({ code: 'ACTION_RULE_SCOPE_UNPROVEN' }));
   });
+  it.each(['tenant_guard', 'principal_scope'] as const)('refuses a missing %s on the proposed effect', field => {
+    const f = setup(), v = effect(f, 'credit');
+    delete v.effect[field];
+    expect(() => checkExperimentalSharedSumPostState(f.plan, v.compiled, f.facts, v.effect))
+      .toThrow(expect.objectContaining({ code: 'ACTION_RULE_SCOPE_UNPROVEN', path: 'experimental.shared_sum.effect_identity' }));
+  });
   it('refuses an update whose target is outside the complete team population', () => {
     const f = setup(), v = effect(f, 'waiver');
     v.effect.primary_key.value = 'other_team_row';

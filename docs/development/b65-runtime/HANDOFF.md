@@ -1,13 +1,13 @@
-B65 Runtime workstream4 RUNNING; latest Owner8b31 supersedes serial HOLD; paid CLOSED; frozen/uncertain history preserved.
-Own experimental shared-SUM compiler/PG strategy only; existing verifier/locks/receipts/executor reused; Main owns BC/Resume/initializer.
-Namespace product7c1376e9; evidence dcdd0cbf: corrected before8P4F, owner after27P0F; R2 independent8P0F, combined scoped ACCEPT; Main integration pending.
-One current crosswalk: docs/development/b65-cross-resource/SUPPORT-MATRIX.json; original56rows unchanged; current public arithmetic/races NOT_RUN.
-Writer identity source59f5ef99/test71cfcba8: before0P8F, after44P0F; independent batch review/Main integration pending; no native/public transfer.
-Next: independent identity batch review → Main integration → qualified public30+25 refuse/10 pass/races; Main owns public adapters.
-Small fixes: focused failing-before and passing-after tests in SAME product commit plus one-line record; no per-test seals/archive docs.
-Independent review per complete deliverable/batch; full preseal/seal only format/security-permission/concurrency/paid/customer-data.
-Parallel streams:1 declarative batches;2 saved applicability/Resume;3 typed provenance/initializer/Action/cards;4 B65 shared invariant/native prep.
-Use assigned finite resource allocation, netoff/0700/floors and exact source/asset hashes; no source/docs copies for routine tests.
-Canonical shared dispatch: Main consents6c/docs/development/AGENT-DISPATCH-TEMPLATE.md (b19c2235).
-Children remain completed/idle; no new child lane. R2 sole high-risk review queue; Tester01a117fd sole independent native operator.
-Current experimental compiler20PASS; two fixture failures preserved; next existing verifier/PG qualification hooks, then independent native proof.
+B65 Runtime workstream4 RUNNING; Owner8b31 supersedes serial HOLD; paid CLOSED; failure/uncertainty history preserved.
+Explicit host-only experimental shared SUM; one PG17 Source/team/two complete populations; no public/default activation.
+Compiler/runtime/PG qualification implemented; existing parent-first locks, executor, Source transaction and atomic receipt reused.
+Corrected runtime before2PASS7genuineFAIL; after204PASS0FAIL0SKIP exact7files; earlier fixture/oracle failures retained separately.
+Bounded PG core dependency closure6projects PASS; first22type diagnostics retained and fixed; no whole-repo type/build claim.
+Native requirement: precreated Source_DB receipt and existing reviewed owned recipe only; no automatic grant/DDL widening.
+R2 sole high-risk queue: complete deliverable source/concurrency review before integration/native claim; Main relays exact pins.
+Tester01a117fd sole native operator: both order races, standalone effects, independent teams, fresh small/excess, limit change, hidden deps, unknown COMMIT.
+Current public30+25/10/30-40 and five arithmetic cases NOT_RUN; Main owns Bug2/D2/native public-route repair.
+Canonical crosswalk docs/development/b65-cross-resource/SUPPORT-MATRIX.json; original56rows unchanged; no acceptance transfer.
+Earlier namespace7c1376e9 integrated29ad3be7; writer identity1c835fbf integrateddd6381b9, scoped source/component acceptance only.
+Children completed/idle; <=4heavyjobs/max8workers; root1offline slot, Tester1native slot; actual>=8GiB floors/netoff/0700 custody.
+Small changes include tests+this existing DEV record in same commit; one complete batch review; no per-test seals/source-doc copies.
