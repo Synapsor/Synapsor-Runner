@@ -13,6 +13,7 @@ import { actionRuleModelDraftFromAuthority } from "./action-rule-draft.js";
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { readSavedExecutionRequirements } from "./saved-execution-requirements.js";
+import { semanticReceiptSetupReadback } from "./semantic-receipt-presentation.js";
 
 const identifier = z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/u);
 export const semanticReceiptModeSchema = z.discriminatedUnion("authority", [
@@ -87,7 +88,10 @@ export async function inspectSemanticReceiptSetup(input: SemanticReceiptSetupInp
       outcome: rule.compiled.outcome, action_digest: active.authority.action_boundary.digest,
       binding_digest: bindingDigest, requirements, selection, selection_current: selectionCurrent,
       revision_id: revision?.revision_id ?? null, epoch: snapshot?.epoch,
-      project_id: binding?.project_id, deployment_id: binding?.deployment_id };
+      project_id: binding?.project_id, deployment_id: binding?.deployment_id,
+      receipt_readback: semanticReceiptSetupReadback({ source_name: rule.compiled.source, source, storage: config.storage,
+        selection, selection_state: selectionCurrent ? "current" : "stale",
+        ...(rule.compiled.hard_limit && source.engine === "mysql" ? { support_reason: "hard_limit_engine_unsupported" as const } : {}) }) };
   } finally { await binding?.close(); }
 }
 
@@ -115,7 +119,9 @@ export async function previewSemanticReceiptSelection(input: Parameters<typeof i
   if (selection.write_url_env === setup.source.read_url_env) fail("SEMANTIC_RECEIPT_WRITER_REQUIRED", "Select a dedicated write environment reference, keeping the reader unchanged.");
   const digest = canonicalJsonDigest({ selection, config_path: setup.config_path, epoch: setup.epoch,
     previous_revision: setup.revision_id, action_digest: setup.action_digest });
-  return { ...setup, selection, digest, confirmation: `SAVE RECEIPT SETUP ${digest}` };
+  return { ...setup, selection, digest, confirmation: `SAVE RECEIPT SETUP ${digest}`,
+    receipt_readback: semanticReceiptSetupReadback({ source_name: setup.source_name, source: setup.source, storage: setup.config.storage,
+      selection, selection_state: "proposed", support_reason: setup.receipt_readback.support.reason ?? undefined }) };
 }
 
 export async function saveSemanticReceiptSelection(input: Parameters<typeof previewSemanticReceiptSelection>[0] & { confirmation: string }) {
@@ -166,7 +172,11 @@ export async function reviewSemanticReceiptSetup(input: {
         : "Selection binding is stale. Review it explicitly for the current source/effect; fresh writer and receipt verification is required."] : ["No prior reviewed receipt selection exists."]),
     "Receipt storage is a deployment requirement, not a public Read resource.",
     ...setup.requirements.passages,
-    "Runner ledger records evidence outside the source transaction. Source database mode requires a precreated receipt relation in the same database transaction as the guarded effects.",
+    setup.receipt_readback.recommendation,
+    ...(setup.receipt_readback.selection.origin === "existing_configuration"
+      ? [`Existing configured receipt intent (unverified): ${JSON.stringify(setup.source.receipts)}. This is not a new setup or a reviewed native selection.`] : []),
+    setup.receipt_readback.runner_ledger_meaning, setup.receipt_readback.source_db_recovery_meaning,
+    setup.receipt_readback.storage.requirements,
     "Selecting a mode changes no source objects, active execution configuration or business authority. Administrator setup and execution review remain separate."];
   if (setup.selection_current) {
     const choice = await input.session.chooseOption?.("Review saved receipt setup", [
@@ -178,8 +188,8 @@ export async function reviewSemanticReceiptSetup(input: {
     if (choice !== "change") return undefined;
   }
   const mode = await input.session.chooseOption?.("Select receipt storage for this outcome", [
-    { value: "runner_ledger", label: "Runner ledger", detail: "Receipt evidence in Runner; not atomic with the source transaction." },
-    { value: "source_db", label: "Source database", detail: "Precreated receipt in the same source transaction; separate administrator provisioning required." },
+    { value: "runner_ledger", label: "Runner ledger", detail: setup.receipt_readback.runner_ledger_meaning },
+    { value: "source_db", label: "Source database", detail: setup.receipt_readback.source_db_choice_detail },
     { value: "pause", label: "Set up later" },
   ], { initialValue: prior?.receipts.authority ?? "runner_ledger", context, displayContext: true });
   if (mode !== "runner_ledger" && mode !== "source_db") return undefined;
@@ -261,7 +271,10 @@ async function inspectDisabledSemanticReceiptSetup(input: SemanticReceiptSetupIn
         authority: authority.authority, outcome: entry.rule.outcome, review: authority.reviews.find(r => r.outcome === entry.rule.outcome)!, preserveVerificationFields: true })),
       outcome: entry.rule.outcome, action_digest: authority.digest, binding_digest: bindingDigest,
       requirements, selection, selection_current: selectionCurrent, revision_id: revision?.revision_id ?? null,
-      epoch: snapshot.epoch, project_id: binding.project_id, deployment_id: binding.deployment_id };
+      epoch: snapshot.epoch, project_id: binding.project_id, deployment_id: binding.deployment_id,
+      receipt_readback: semanticReceiptSetupReadback({ source_name: candidate.source, source, storage: config.storage,
+        selection, selection_state: selectionCurrent ? "current" : "stale",
+        ...(entry.hard_limit && source.engine === "mysql" ? { support_reason: "hard_limit_engine_unsupported" as const } : {}) }) };
   } finally { await binding.close(); }
 }
 
