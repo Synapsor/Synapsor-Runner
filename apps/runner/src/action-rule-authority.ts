@@ -670,7 +670,8 @@ async function activateActionRuleAuthorityUnlocked(input: Parameters<typeof acti
     const activation = await reviewedActionActivation(input, draft, () => loadActivatedExplorationBoundaries(projectRoot, binding));
     attachWithdrawal(activation, draft!, current.active[0] ? parseStoredActionActivation(current.active[0]).activation : undefined, input.withdrawal);
     if (!activation.publication) await assertHardLimitAuthorityWriterAdmission({ projectRoot, registry: parseActionRuleAuthority(draft!.authority, draft!.digest).registry,
-      authorityDigest: draft!.digest, publication: input.runtimePublication, binding, env: input.env });
+      authorityDigest: draft!.digest, publication: input.runtimePublication, binding, env: input.env,
+      mutationPermit: input.mutationPermit });
     const active = storedActionRecord(activation);
     const change: Omit<ControlPolicyCommit, "deployment_id"> = { expected_epoch: current.epoch, revisions: [active],
       active: [...current.active.filter((entry) => entry.name !== active.name).map((entry) => ({ ...actionKey(entry.name), revision_id: null })), actionPointer(active)],
@@ -686,7 +687,7 @@ async function activateActionRuleAuthorityUnlocked(input: Parameters<typeof acti
   const activation = await reviewedActionActivation(input, draft, () => loadActivatedExplorationBoundaries(projectRoot));
   attachWithdrawal(activation, draft!, await readActionRuleAuthorityActivation(projectRoot), input.withdrawal);
   if (!activation.publication) await assertHardLimitAuthorityWriterAdmission({ projectRoot, registry: parseActionRuleAuthority(draft!.authority, draft!.digest).registry,
-    authorityDigest: draft!.digest, env: input.env });
+    authorityDigest: draft!.digest, env: input.env, mutationPermit: input.mutationPermit });
   const active = activePath(projectRoot);
   const revision = revisionPath(projectRoot, activation.digest);
   const previousActive = await readOptionalText(active);

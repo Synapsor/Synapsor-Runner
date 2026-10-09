@@ -6,6 +6,7 @@ import type { BoundProjectPolicyStore } from "./control-policy-store.js";
 import { executionConfigForReview, SEMANTIC_ACTION_RUNTIME_CONFIG } from "./semantic-execution-state.js";
 import { assertHardLimitWriterSetup } from "./hard-limit-writer-setup.js";
 import { projectHardLimitActivationWriterSelections } from "./hard-limit-writer-selection.js";
+import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
 /** The authority writer owns publication. This adapter supplies its current
  * governed configuration to the same native prerequisite used by deployment;
@@ -17,6 +18,7 @@ export async function assertHardLimitAuthorityWriterAdmission(input: {
   publication?: { configPath: string; after: string };
   binding?: BoundProjectPolicyStore;
   env?: NodeJS.ProcessEnv;
+  mutationPermit?: ProjectAuthorityMutationPermit;
 }): Promise<void> {
   if (!input.registry.rules.some(({ compiled }) => compiled.hard_limit)) return;
   const root = path.resolve(input.projectRoot);
@@ -47,7 +49,8 @@ export async function assertHardLimitAuthorityWriterAdmission(input: {
   const review = await executionConfigForReview(root, configPath, raw, input.binding, input.env);
   const config = await projectHardLimitActivationWriterSelections({ projectRoot: root, registry: input.registry,
     authorityDigest: input.authorityDigest,
-    config: resolveRuntimeConfig(review.config as RuntimeConfig, path.dirname(configPath)), env: input.env });
+    config: resolveRuntimeConfig(review.config as RuntimeConfig, path.dirname(configPath)), env: input.env,
+    permit: input.mutationPermit });
   await assertHardLimitWriterSetup({ registry: input.registry,
     config, env: input.env });
 }
