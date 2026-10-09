@@ -1,7 +1,7 @@
 {
   "updated": "2026-10-09T03:24:28Z",
   "accepted_Main": "0ea9c097 (product7544b339)",
-  "B2_composition": "2084d87e (unaccepted; displayed-writer currentness DP09 still open)",
+  "B2_composition": "7723ee4b (affected36PASS; unaccepted whole B2, DP09 open)",
   "windows": {
     "B64": [
       "2026-10-08T06:32:23Z",
@@ -81,8 +81,8 @@
       "id": "10",
       "deliverable": "Step-owned prompts B62",
       "owner": "Prompt helper/R2/Main",
-      "status": "ACTIVE Main integration: accepted Readcb3 extraction, frozen8 byte-goldens and independent6PASS. Broader step-owned prompt/context/correction migration remains open.",
-      "active_work": true
+      "status": "PARTIAL COMPLETE: accepted Readcb3 prompt extraction integrated7723 with eight golden controls inside affected36PASS; independent six controls accepted. Remaining step-owned prompt/context/correction families QUEUED with no active worker.",
+      "active_work": false
     },
     {
       "id": "11",
@@ -95,7 +95,7 @@
       "id": "12",
       "deliverable": "65/128-Action programs B63",
       "owner": "Read helper/R1/Main",
-      "status": "ACTIVE bounded representation design:65 reaches agenda/paged review/fresh-process reopen but complete acceptance open.128 fails192 export-record cap; helper designing bounded pages/references within unchanged cap, not increasing disclosure limits or claiming4096.",
+      "status": "ACTIVE implementation: R1 transient paged design/preseal d46e0bf4 accepted with explicit complete-index/currentness/old-reader-rejection safeguards. Helper implementing within unchanged192/bytes/parts/12changes/8review limits.65 partial;128 before blocker preserved; no complete after qualification.",
       "active_work": true
     },
     {
@@ -114,9 +114,10 @@
     "5",
     "8",
     "9",
+    "10",
     "13"
   ],
-  "next": "Main shared writer-currentness/native initializer and accepted Read-prompt integration; R2 B53 pure review; Read bounded capacity design; R1 lower permit verdict. No new paid admission.",
+  "next": "Main writer currentness/native initializer; Runtime Slot1 producer controls; B53 helper Slot2 two pure counterexample repairs/R2 review; Read Slot3 bounded capacity implementation/R1 preseal. Step-owned Read integration36PASS; broader prompt families queued. Paid CLOSED.",
   "limits": "4heavy/max8workers perrun/0700 isolatedHOME_TMP_DB/8GiB free memory+disk/privatebackup only; no automaticwindow reset",
   "not_actively_worked_open_items": [
     "1",
@@ -125,6 +126,7 @@
     "4",
     "5",
     "9",
+    "10",
     "13"
   ],
   "completed_with_reported_boundary": [

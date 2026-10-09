@@ -1,0 +1,79 @@
+{
+  "profile": "compact DEV integration",
+  "source_pin": "7723ee4b7634354314fde05150b7beaef4fb79c7",
+  "commands": "/var/tmp/synapsor-main-read-presentation-integration-iskuinzy/COMMAND.json",
+  "files": [
+    {
+      "file": "apps/runner/src/boundary-review-excluded-relationship.test.ts",
+      "passed": 9,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/runner/src/boundary-structured-authoring.test.ts",
+      "passed": 16,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/runner/src/hard-limit-action-review.test.ts",
+      "passed": 3,
+      "failed": 0,
+      "pending": 0
+    },
+    {
+      "file": "apps/runner/src/read-workload-prompt.test.ts",
+      "passed": 8,
+      "failed": 0,
+      "pending": 0
+    }
+  ],
+  "result": {
+    "exit_code": 0,
+    "wall_seconds": 29.879270353005268,
+    "changed_source": [],
+    "slot": "2 END",
+    "numPassedTests": 36,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "numTotalTests": 36,
+    "numPassedTestSuites": 7,
+    "numFailedTestSuites": 0
+  },
+  "evidence": {
+    "COMMAND.json": {
+      "path": "/var/tmp/synapsor-main-read-presentation-integration-iskuinzy/COMMAND.json",
+      "sha256": "9cf82b70f895caf1ec55b3dd6dd5d383d9d06cc315135832194365a2ea266df2"
+    },
+    "SOURCE-MANIFEST.json": {
+      "path": "/var/tmp/synapsor-main-read-presentation-integration-iskuinzy/SOURCE-MANIFEST.json",
+      "sha256": "8939a0040e80a893696ada5ccc1f9f188d05d884395857631ffba0fd5441f5a7"
+    },
+    "vitest.json": {
+      "path": "/var/tmp/synapsor-main-read-presentation-integration-iskuinzy/vitest.json",
+      "sha256": "5c3225e04f72b529ed08ce6a88c398810087ea92a326c8255c67e1cec1917b8a"
+    },
+    "vitest.log": {
+      "path": "/var/tmp/synapsor-main-read-presentation-integration-iskuinzy/vitest.log",
+      "sha256": "09eb022cd831410389e2910fe86f89ae3ff4e63faebe5635c9d6a37386a2c0f1"
+    },
+    "EXIT.json": {
+      "path": "/var/tmp/synapsor-main-read-presentation-integration-iskuinzy/EXIT.json",
+      "sha256": "06c01e76d3ede1ca4fdcd3c7900813c132aebfbd7596a29b10e71b3f7d2f6990"
+    }
+  },
+  "scope": "Accepted Read prompt extraction and kept-out relationship diagnostics plus typed next-action/actual writer screen affected regressions. All native fixture setup is synthetic; no provider/network. No full/type/installed or whole B2 acceptance.",
+  "independent_reviews": {
+    "Read_prompt": "R2 cb3 scoped six independent controls, accepted; own eight exact predecessor byte goldens",
+    "relationship_keys": "R2 7fcd scoped five independent native controls, accepted; original fixture correction explicitly retained",
+    "lower_writer_permit": "R1 104335b1 LOWER-2084-VERDICT: DP10 plus required DP01 2PASS; DP09 concurrent undisplayed writer change remains OPEN"
+  },
+  "floors_and_isolation": {
+    "free_memory_bytes": 22931947520,
+    "free_disk_bytes": 67096281088,
+    "workers": 1,
+    "slot": 2,
+    "network": "OS-disabled"
+  },
+  "unaccepted_composition": "DP09 writer currentness, native initializer/owner fact and global type/full gates remain open."
+}
