@@ -673,7 +673,7 @@ export async function activateActionRuleAuthority(input: {
     projectRoot: held.projectRoot, mutationPermit: held }), { permit: input.mutationPermit });
 }
 
-async function activateActionRuleAuthorityUnlocked(input: Parameters<typeof activateActionRuleAuthority>[0]): Promise<ActionRuleAuthorityActivationV1> {
+async function activateActionRuleAuthorityUnlocked(input: Parameters<typeof activateActionRuleAuthority>[0] & { mutationPermit: ProjectAuthorityMutationPermit }): Promise<ActionRuleAuthorityActivationV1> {
   const projectRoot = path.resolve(input.projectRoot);
   const stored = await withStoredActionPolicies(projectRoot, input.runtimePublication?.binding, async (binding, current) => {
     const revision = current.drafts.find((entry) => entry.name === safeName(input.name));

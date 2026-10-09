@@ -53,5 +53,28 @@
     },
     "evidence_root": "/var/tmp/synapsor-b64-real-readback-owned/evidence/",
     "qualification": "Component/current-file scope; no public whole-deliverable or independent acceptance claim"
-  }
+  },
+  "writer_only_admission": {
+    "before": {
+      "passed": 0,
+      "failed": 1,
+      "reason": "No-requirement early return accepted foreign access"
+    },
+    "after": {
+      "passed": 1,
+      "failed": 0
+    },
+    "qualification": "Live mutex/component access proof only; no publication/readiness positive",
+    "evidence_root": "/var/tmp/synapsor-b64-real-readback-owned/evidence"
+  },
+  "latest_types": {
+    "diagnostics": 31,
+    "allocated_files": 0,
+    "remaining": {
+      "boundary_commands": 29,
+      "existing_typed_action_fixture": 1,
+      "existing_verified_action_review": 1
+    }
+  },
+  "one_line_result": "Current-reader/review/receipt/writer class: preserved before failures, scoped groups pass; latest types31/0allocated; Main public migration and independent batch verdict pending."
 }

@@ -5,8 +5,8 @@ import type { RuntimeActionRuleRegistryV1 } from "@synapsor-runner/action-rules"
 import type { BoundProjectPolicyStore } from "./control-policy-store.js";
 import { executionConfigForReview, SEMANTIC_ACTION_RUNTIME_CONFIG } from "./semantic-execution-state.js";
 import { assertHardLimitWriterSetup } from "./hard-limit-writer-setup.js";
-import { projectHardLimitActivationWriterSelections } from "./hard-limit-writer-selection.js";
-import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+import { projectHardLimitActivationWriterSelectionsHeld } from "./hard-limit-writer-selection.js";
+import { withHeldProjectAuthorityAccess, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
 /** The authority writer owns publication. This adapter supplies its current
  * governed configuration to the same native prerequisite used by deployment;
@@ -18,8 +18,13 @@ export async function assertHardLimitAuthorityWriterAdmission(input: {
   publication?: { configPath: string; after: string };
   binding?: BoundProjectPolicyStore;
   env?: NodeJS.ProcessEnv;
-  mutationPermit?: ProjectAuthorityMutationPermit;
+  mutationPermit: ProjectAuthorityMutationPermit;
 }): Promise<void> {
+  const captured = { ...input, registry: structuredClone(input.registry), publication: structuredClone(input.publication), env: structuredClone(input.env) };
+  return withHeldProjectAuthorityAccess(input.projectRoot, input.mutationPermit,
+    held => assertWriterAdmissionHeld({ ...captured, projectRoot: held.projectRoot, mutationPermit: held }));
+}
+async function assertWriterAdmissionHeld(input: Parameters<typeof assertHardLimitAuthorityWriterAdmission>[0]): Promise<void> {
   if (!input.registry.rules.some(({ compiled }) => compiled.hard_limit)) return;
   const root = path.resolve(input.projectRoot);
   let configPath = path.join(root, SEMANTIC_ACTION_RUNTIME_CONFIG);
@@ -47,10 +52,9 @@ export async function assertHardLimitAuthorityWriterAdmission(input: {
     raw = parsed as Record<string, unknown>;
   }
   const review = await executionConfigForReview(root, configPath, raw, input.binding, input.env);
-  const config = await projectHardLimitActivationWriterSelections({ projectRoot: root, registry: input.registry,
+  const config = await projectHardLimitActivationWriterSelectionsHeld({ projectRoot: root, registry: input.registry,
     authorityDigest: input.authorityDigest,
-    config: resolveRuntimeConfig(review.config as RuntimeConfig, path.dirname(configPath)), env: input.env,
-    permit: input.mutationPermit });
+    config: resolveRuntimeConfig(review.config as RuntimeConfig, path.dirname(configPath)), env: input.env }, input.mutationPermit);
   await assertHardLimitWriterSetup({ registry: input.registry,
     config, env: input.env });
 }
