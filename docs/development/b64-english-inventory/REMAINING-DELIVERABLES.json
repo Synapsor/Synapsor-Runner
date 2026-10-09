@@ -1,7 +1,7 @@
 {
-  "updated": "2026-10-09T04:23:06.656545+00:00",
-  "accepted_Main": "0ea9c097 (product7544b339)",
-  "B2_composition": "02d59251: accepted203typed caller + receipt13 informational source/RP12thinport scopedaccept + independently accepted Read held-permit class closure. Native PG/MySQL full public arithmetic/races pending.",
+  "updated": "2026-10-09T04:46:54.179782+00:00",
+  "accepted_Main": "be48873feaff68942d9de9a390d90712fca22272 (scoped DEV integration; whole types/full suite remain open)",
+  "B2_composition": "be48873f: accepted02d structured caller/receipt ports/Read held-permit closure + independently accepted exact-code contention fix. Public PG/MySQL arithmetic/races pending; no release acceptance.",
   "windows": {
     "B64": [
       "2026-10-08T06:32:23Z",
@@ -16,7 +16,7 @@
   "rows": [
     {
       "id": "1",
-      "deliverable": "B64 English decision sites \u21920",
+      "deliverable": "B64 English decision sites →0",
       "owner": "Main/B66",
       "status": "OPEN: Main30 typed/0 delete and Action28 typed/5 delete; other Read/Ask/Chat/Privacy owned-source counts0/0. No remaining-site retirement editing underway.",
       "active_work": false
@@ -32,7 +32,7 @@
       "id": "3",
       "deliverable": "B64 /details full per-operation history",
       "owner": "Main/B66 presentation",
-      "status": "ACTIVE history helper/Main/R2: DR01\u201303 and DH01\u201310 presealed; focused unchanged9 before controls in Slot4, protected current-record resolver and real CLI binding Main-owned/open. No historical authority or generation association invented.",
+      "status": "ACTIVE Main/R2 integration review: parent successorbb8fb5a5 scoped source accepted; prior18PASS and successor14PASS separate, zero new owned product/test type diagnostics (globalexit2 remains). Main fresh protected loader/nested access/currentness/real setup-edit route open.",
       "active_work": true
     },
     {
@@ -53,7 +53,7 @@
       "id": "6",
       "deliverable": "B65 public arithmetic55refused/50/40/45/55refused + races",
       "owner": "Tester/B66/Main",
-      "status": "ACTIVE Tester/Main: actual PG203 counter confirmation +disabled save PASS, native Read meaning correctlypending on structured-onlyflow; no effects/arithmetic verdict. R1 prepared ordinary sameproject actual-request program saves realplanning but droppedpermit beforemapping; accepted02d class closure now lets same checkpoint Resume. PG prepared-program port pending. Scoped b65_s04 Owner counter fact retained; INSERTinitializer open.",
+      "status": "ACTIVE PG Tester/Main: genuine disabled Action saved; Read inactive/native scope pending, no native planning yet. Exact actual-request B48 prepared program port requested from R1; no PG slot/resource dependency on MySQL. Source unchanged30/50, scoped Owner counter assertion retained, Main INSERT initializer open; no arithmetic/effect PASS.",
       "active_work": true
     },
     {
@@ -65,14 +65,14 @@
     },
     {
       "id": "8",
-      "deliverable": "B65 portable schema identity PG14\u201316",
+      "deliverable": "B65 portable schema identity PG14–16",
       "owner": "Tester/Runtime",
       "status": "PROTOTYPE REPORT COMPLETE: PG14.23/15.18/16.14/17.11 main80 + supplemental4 native cases sealed e57abace. One original PG14 OID-type checker failure retained; independent full post-state80 verified without effect replay. Portable replacement not established; schema/function-body/statement-trigger gaps reported; strict strategy retained. No active further prototype implementation.",
       "active_work": false
     },
     {
       "id": "9",
-      "deliverable": "B65 T01\u2013T10 cross-resource verdicts",
+      "deliverable": "B65 T01–T10 cross-resource verdicts",
       "owner": "Tester",
       "status": "QUEUED Tester: T01-T10 current native cross-resource verdicts after coherent PG public proof/slot; prior matrix retained. MySQL14 separate cannot transfer PG results.",
       "active_work": false
@@ -102,22 +102,22 @@
       "id": "13",
       "deliverable": "source_db recommendation readback",
       "owner": "Runtime/Main/R2",
-      "status": "SCOPED SOURCE INTEGRATION02d: exact owner1f36 informational module/setup16controls +Main2c92 JSON/executionpureview ports independentlysourceaccepted. Native currentKeep/priorstale/wholepublicsetup remainOPEN, no mode/default/token/save change and no actualsetupcapability claim.",
-      "active_work": true
+      "status": "SCOPED SOURCE INTEGRATED02d: owner informational16 controls and Main JSON/execution ports independently accepted; native Keep/stale/full setup proof QUEUED. No mode/default/token/save change or setup capability claim.",
+      "active_work": false
     },
     {
       "id": "14",
       "deliverable": "MySQL full B65 race matrix plus post-change hard-limit cases after PG6",
       "owner": "R1 independent MySQL native tester",
-      "status": "ACTIVE R1 Slot2: 19 scoped MySQLnative controls PASS; publiccounter/disabledsave +12typedstructural decisions PASS on203. Native Readscope correctlypending on structured-onlyflow; ordinary scripted publichandler/B48 flow saved genuine planning1call then droppedpermit blocked; zero-call supportedResume reproduced. Accepted02d shared classclosure now supplied for same savedcheckpoint continuation. Fullpublicmatrix NOT_REACHED yet; noPGtransfer, hard-limit casesafterPG6.",
+      "status": "ACTIVE R1 Slot2 native lost-COMMIT-ACK control; full public matrix NOT_REACHED. Existing native19 loader/lock/scope controls +2 actual adapter contentionPASS; duplicate/stale worker,time-boundary,changed-rule public rows unestablished. Separate production-handler/B48 synthetic reproduces acknowledged planning losing typed result on restart. Held MySQL completed+partial operations preserved; prospective existing-Resume versioned-plan design pending, no trace import/replay/reset. Hard-limit arithmetic after PG6; no PG transfer.",
       "active_work": true
     },
     {
       "id": "15",
       "deliverable": "Specific typed deadlock/lock-timeout reasons instead of generic retry",
       "owner": "B66 implementer/R1 independent native reviewer",
-      "status": "ACTIVE B66/R1: owner79d affected240PASS0skip and PG/MySQL/scopedworker types pass, wholetypesnotgreen. Independent19P1F +nativeMySQL2PASS; code-objectcoercion counterexample CHANGES_REQUIRED9a4543d6. Narrow primitive-only newmapping repair underway; no accepted contentionintegration yet. UnknownCOMMIT/rollback precedence preserved.",
-      "active_work": true
+      "status": "COMPLETE SCOPED DEV integratedbe48873f: owner242+independent20PASS; exact six-file integration ACK and Main unchanged affected242PASS0skip with fresh current-source Action dependency. First Main223P19F stale emitted dependency retained. NativeMySQL adapter2PASS; no PG native/public-worker transfer. UnknownCOMMIT/rollback precedence and finite retry/current authority intact.",
+      "active_work": false
     }
   ],
   "not_actively_worked": [
@@ -129,9 +129,11 @@
     "9",
     "10",
     "11",
-    "12"
+    "12",
+    "13",
+    "15"
   ],
-  "next": "R1 MySQLsamegenuinecheckpointResume on02d, PGpreparedrequest-program port; B66 primitivecontentionrepair\u2192unchangedindependentcontrols\u2192integration. Main initializer/card/history protectedhooks; no paid runs.",
+  "next": "PG prepared actual-request program port remains independent; R1 native lost-COMMIT-ACK; Read owner completes prospective versioned planning-result compatibility proposal for decision. Main initializer/card/protected history hooks open; paid CLOSED.",
   "limits": "4heavy/max8workers perrun/0700 isolatedHOME_TMP_DB/8GiB free memory+disk/privatebackup only; no automaticwindow reset",
   "not_actively_worked_open_items": [
     "1",
@@ -140,11 +142,13 @@
     "9",
     "10",
     "11",
-    "12"
+    "12",
+    "13"
   ],
   "completed_with_reported_boundary": [
     "7 (scoped native/public DEV integration, not release or effect proof)",
-    "8 (prototype report; portable replacement guarantee unproven)"
+    "8 (prototype report; portable replacement guarantee unproven)",
+    "15 (typed contention scoped DEV; full public matrix remains open)"
   ],
   "owner_assertion": "OWNER-B65-COUNTER-ASSERTION.json: b65_s04/b65_public.credits ONLY; counter business blocker closed by direct Owner assertion, not a general/customer claim.",
   "future_post_B65": "Optional separately reviewed enforcing counter trigger; not current product/fixture change or customer recommendation."

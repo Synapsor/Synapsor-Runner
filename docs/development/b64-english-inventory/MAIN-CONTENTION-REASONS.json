@@ -1,0 +1,31 @@
+{
+  "product": "be48873feaff68942d9de9a390d90712fca22272",
+  "status": "SCOPED_DEV_ACCEPT_INTEGRATED",
+  "owner_source": "e7a2b663cc6656aa4aa2f6f4aacdf9f5217d37fe",
+  "independent": "b65-mysql-matrix-review@7581bf0e; unchangedCT20 20PASS; six product/test files byte-identical, scoped integration acknowledgment",
+  "reasons": {
+    "postgres_40P01": "SOURCE_DEADLOCK",
+    "postgres_55P03": "SOURCE_LOCK_UNAVAILABLE (NOWAIT also; not necessarily timeout)",
+    "mysql_1213": "SOURCE_DEADLOCK",
+    "mysql_1205": "SOURCE_LOCK_TIMEOUT"
+  },
+  "main_regression": {
+    "pin": "be48873feaff68942d9de9a390d90712fca22272",
+    "actual_exit": 0,
+    "wall_seconds": 107.16,
+    "dependency": "fresh current-source action-rules emit, scoped0 diagnostics; same original4tests/242 assertions",
+    "numPassedTests": 242,
+    "numFailedTests": 0,
+    "numPendingTests": 0,
+    "success": true
+  },
+  "retained_first_run": {
+    "pass": 223,
+    "fail": 19,
+    "cause": "Stale local action-rules/dist/index.js omitted ActionRuleHardLimitRefusal export; instanceof undefined masks existing semantic verifier refusals. Actual source exports it. No product or assertion change.",
+    "isolated": "one unchanged refusal fails with stale dependency, passes with fresh actual current-source emission",
+    "artifacts": "/var/tmp/synapsor-main-be488-contention-owned/evidence"
+  },
+  "build_scope": "Fresh current-source action-rules non-test module emit has0 diagnostics; own manifest. Whole Runner types/global gates remain unqualified. Native MySQL adapter2 rollback tests accepted separately; no full public worker/PG native transfer.",
+  "fences": "Primitive exact driver identifiers only; unknown COMMIT/ROLLBACK and terminal queue state take precedence. Finite retry/current authority/idempotency/receipt rules unchanged. No provider, paid, Source effects or grants from Main regression."
+}
