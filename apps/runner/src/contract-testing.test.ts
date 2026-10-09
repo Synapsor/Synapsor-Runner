@@ -200,6 +200,21 @@ describe("adopter contract tests", () => {
     ]);
   });
 
+  it.each(["test", "demo", "fixture", "synapsor"])("requires an explicit disposable Source declaration even for local %s", async database => {
+    const fixture = await writeFixture();
+    await fs.writeFile(fixture.manifestPath, JSON.stringify({ version: 1, tests: [{ id: "static", kind: "hide_fields", capability: "support.propose", fields: ["private_notes"] }] }));
+    await expect(runContractTests({ ...fixture, live: true, env: { TEST_DATABASE_URL: `postgresql://user:pass@localhost/${database}` } })).rejects.toThrow("CONTRACT_TEST_DISPOSABLE_SOURCE_REQUIRED");
+  });
+
+  it("accepts an exact operator-declared local Source regardless of database spelling", async () => {
+    const fixture = await writeFixture();
+    await fs.writeFile(fixture.manifestPath, JSON.stringify({ version: 1, tests: [{ id: "static", kind: "hide_fields", capability: "support.propose", fields: ["private_notes"] }] }));
+    const input = { ...fixture, live: true, disposableSources: ["source"], env: { TEST_DATABASE_URL: "postgresql://user:pass@localhost/q7" } };
+    await expect(runContractTests(input)).resolves.toMatchObject({ ok: true });
+    await expect(runContractTests({ ...input, disposableSources: ["other"] })).rejects.toThrow("CONTRACT_TEST_DISPOSABLE_SOURCE_REQUIRED");
+    await expect(runContractTests({ ...input, env: { TEST_DATABASE_URL: "postgresql://user:pass@remote.invalid/q7" } })).rejects.toThrow("CONTRACT_TEST_REMOTE_DATABASE_REFUSED");
+  });
+
   it("refuses live tests against a remote or non-disposable database by default", async () => {
     const fixture = await writeFixture();
     await fs.writeFile(fixture.manifestPath, JSON.stringify({ version: 1, tests: [{

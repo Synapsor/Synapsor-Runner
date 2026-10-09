@@ -406,3 +406,39 @@ describe("supervised worker current execution policy", () => {
     expect(claim).not.toHaveBeenCalled(); expect(applyProposal).not.toHaveBeenCalled();
   });
 });
+
+describe("B64 worker structured error classification", () => {
+  it.each([
+    [new Error("timeout in unrelated diagnostic text"), "WORKER_EXECUTION_ERROR"],
+    [new Error("ordinary failure"), "WORKER_EXECUTION_ERROR"],
+    [Object.assign(new Error("délai dépassé"), { code: "HANDLER_TIMEOUT" }), "HANDLER_TIMEOUT"],
+  ])("persists the explicit error code independently of prose %#", async (error, expected) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-worker-delegation-diagnostic-")); roots.push(root);
+    const storePath = path.join(root, "local.db"), configPath = path.join(root, "missing.runner.json");
+    const config: RuntimeConfig = { version: 1, mode: "review", capabilities: [], storage: { sqlite_path: storePath } };
+    vi.mocked(readRuntimeConfig).mockResolvedValue(config);
+    vi.mocked(applyProposal).mockRejectedValue(error);
+    const initial = new ProposalStore(storePath);
+    try {
+      initial.createProposal({ schema_version: "synapsor.change-set.v1", proposal_id: "wrp_diagnostic", proposal_version: 1,
+        action: "inventory.correct", mode: "review_required", principal: { id: "private-principal", source: "trusted_session" },
+        scope: { tenant_id: "private-tenant", business_object: "item", object_id: "item-1" },
+        source: { kind: "external_postgres", source_id: "fixture", schema: "inventory", table: "items", primary_key: { column: "id", value: "item-1" } },
+        before: { quantity: 1 }, patch: { quantity: 2 }, after: { quantity: 2 },
+        guards: { tenant: { column: "tenant_id", value: "private-tenant" }, allowed_columns: ["quantity"], expected_version: { column: "version", value: 1 } },
+        evidence: { bundle_id: "ev_diagnostic", query_fingerprint: "sha256:evidence", items: [] },
+        approval: { status: "pending", required_role: "reviewer" }, writeback: { status: "not_applied", mode: "trusted_worker_required" },
+        source_database_mutated: false, integrity: { proposal_hash: "sha256:diagnostic" }, created_at: new Date().toISOString() });
+      initial.approveProposal("wrp_diagnostic", { approver: "reviewer", proposal_hash: "sha256:diagnostic", proposal_version: 1 });
+    } finally { initial.close(); }
+    const logs = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const args = ["run", "--once", "--batch-quiet", "--yes", "--worker-id", "diagnostic_worker", "--config", configPath, "--store", storePath];
+    expect(await workerCommand(args)).toBe(0);
+    const store = new ProposalStore(storePath);
+    try {
+      expect(store.getWorkerQueueItem("wrp_diagnostic")).toMatchObject({ last_error_code: expected, attempts: 1 });
+      expect(store.receipts("wrp_diagnostic")).toEqual([]);
+    } finally { store.close(); }
+  });
+});
