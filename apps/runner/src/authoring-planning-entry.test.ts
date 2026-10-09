@@ -33,7 +33,8 @@ async function fixture() {
   const request: BoundaryJobPlanningInput = { session: { provider: "openai", model: "inert", apiKey: "unused-local" },
     jobIntent: state.job_intent, availableResourceIds: ["work.items"], egressAcknowledged: true,
     currentState: { read: { boundary_name: context.candidate.pack.name, authority: "disabled", fully_reviewed: false,
-      resource_ids: ["work.items"], exact_reusable_revision_count: 0 }, actions: [] } };
+      resource_ids: ["work.items"], exact_reusable_revision_count: 0 }, actions: [], control_plane: { trusted_scope: "runner_injected",
+      approval_history: "runner_proposal_ledger", model_may_supply_scope_values: false, model_may_supply_approval_history: false } } };
   // This deliberately lacks live consumption; it is never imported as evidence.
   const unconsumed: BoundaryJobPlan = { state: "planned", read_mode: "none", action_mode: "none",
     summary: "A response without a genuine completion cannot advance.", correction_used: false,
