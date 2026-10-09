@@ -1,3 +1,4 @@
+import { STRUCTURED_AUTHORING_PROTOCOL_VERSION } from "../authoring-protocol.js";
 import type { BoundaryResourceReviewRequest } from "../read-authoring-contract-types.js";
 import type { ProjectAuthorityMutationPermit } from "../project-authority-mutation.js";
 import { randomUUID } from "node:crypto";
@@ -30,7 +31,7 @@ export async function nativeFixture(noRead = false, withoutAnalysis = false,
   const nativeBinding={boundary_name:context.candidate.pack.name,generation_lock_fingerprint:context.candidate.generation_lock_fingerprint,
     schema_fingerprint:context.lock.schema_fingerprint,role_posture_fingerprint:context.lock.role_posture_fingerprint};
   const input = { binding: nativeBinding, stage: "read_mapping" as const, jobIntent: noRead ? "Prepare the program without any customer data access" : declared?.request ?? "Show the signed-in person their item labels", provider: "openai" as const, model: "controlled" };
-  let state = buildBoundaryAuthoringResumeState({ ...input, authoringProtocol: { version: "synapsor.structured-authoring.v2" } });
+  let state = buildBoundaryAuthoringResumeState({ ...input, authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION } });
   // Use the production context owner, including its protocol/job identities;
   // a manually hashed approximation would be stale at nativeScope.assess.
   const projected=projectAuthoringReadScopeContext({ resume: state, boundary: context.candidate,
@@ -46,8 +47,8 @@ export async function nativeFixture(noRead = false, withoutAnalysis = false,
   const persist = async (next: BoundaryAuthoringResumeState, permit?: ProjectAuthorityMutationPermit) => {
     await writeBoundaryAuthoringResumeState(dir, next, { expectedRevisionDigest: state.revision_digest, permit }); state = next;
   };
-  const save = async (q: ReturnType<typeof parseOperatorQuestion>) => persist(buildBoundaryAuthoringResumeState({ ...input, previous: state,
-    operatorQuestions: state.operator_questions!.map(old => old.id === q.id ? q : old) }));
+  const save = async (q: ReturnType<typeof parseOperatorQuestion>, permit?: ProjectAuthorityMutationPermit) => persist(buildBoundaryAuthoringResumeState({ ...input, previous: state,
+    operatorQuestions: state.operator_questions!.map(old => old.id === q.id ? q : old) }), permit);
   const produce = async (predecessor?: ReturnType<typeof parseOperatorQuestion>) => withAuthoringGenerationRecovery(async () => {
     configureAuthoringGenerationRecovery({ available: () => true, read: () => state.generation_recovery, current: async () => contextDigest,
       progress: () => {}, write: generationRecovery => persist(buildBoundaryAuthoringResumeState({ ...input, previous: state, generationRecovery })) });

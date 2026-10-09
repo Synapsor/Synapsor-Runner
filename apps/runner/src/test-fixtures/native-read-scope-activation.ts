@@ -1,3 +1,4 @@
+import { STRUCTURED_AUTHORING_PROTOCOL_VERSION } from "../authoring-protocol.js";
 /** Actual declared structural review -> controlled provider -> stored compiler analysis
  * -> generation consumption -> Resume CAS -> separately displayed scope decision.
  * No activation, imported confirmation, assessment boolean or seeded mapping.
@@ -36,7 +37,7 @@ export async function nativeReadScopeActivationFixture(custom = false) {
   const initial = { binding: nativeBinding, stage: "read_mapping" as const, jobIntent: "Show the signed-in person their item labels", provider: custom ? "openai_compatible" as const : "openai" as const, model: "controlled" };
   const destination = { provider: initial.provider, model: initial.model, ...(custom ? {baseUrl:"http://localhost:9876/v1"} : {}) };
   const input={...initial,...(custom ? {metadataDestinationDigest:d(authoringDestination(destination))} : {})};
-  let state = buildBoundaryAuthoringResumeState({ ...input, authoringProtocol: { version: "synapsor.structured-authoring.v2" } });
+  let state = buildBoundaryAuthoringResumeState({ ...input, authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION } });
   const projected=projectAuthoringReadScopeContext({resume:state,boundary:context.candidate,structuralReview:context,
     records:{questions:[],handoffs:[]}});
   const request=projected.references.find(ref=>ref.kind==="request")!;
@@ -115,19 +116,21 @@ import { projectAuthoringReadScopeContext } from "../authoring-read-scope-contex
 import { authoringDestination } from "../authoring-policy-source.js";
 import { storeReadWorkloadAnalysis } from "../read-workloads.js";
 import { createReadScopeHost } from "../authoring-read-scope-host.js";
-import { withProjectAuthorityMutation } from "../project-authority-mutation.js";
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess } from "../project-authority-mutation.js";
 
 export async function reviewNativeReadScopeActivationFixture(f: Awaited<ReturnType<typeof nativeReadScopeActivationFixture>>, accepted: boolean | null) {
   const q=await f.produce();
-  const host=createReadScopeHost({access:{
-    mutate:operation=>withProjectAuthorityMutation(f.dir,operation),
-    load:async questionId=>{
+  const loadSnapshot=async (questionId:string)=>{
       const disk=await readBoundaryAuthoringResumeState(f.dir,f.nativeBinding);
       if(disk.status!=="ready")throw new Error("Expected genuine native state");
       return {questions:disk.value.operator_questions!,handoffs:disk.value.owner_handoffs??[],generation:disk.value.generation_recovery,
         question_id:questionId,expectedBinding:f.binding,...f.inventory,analysis:f.analysis(),resume_revision_digest:disk.value.revision_digest,
         context_digest:f.contextDigest,scope_digest:f.scopeDigest};
-    },
+    };
+  const host=createReadScopeHost({access:{
+    mutate:operation=>withProjectAuthorityMutation(f.dir,operation),
+    load:questionId=>withProjectAuthorityMutation(f.dir,()=>loadSnapshot(questionId)),
+    loadHeld:(questionId,permit)=>withHeldProjectAuthorityAccess(f.dir,permit,()=>loadSnapshot(questionId)),
     save:async(next,{permit})=>{
       const loaded=await readBoundaryAuthoringResumeState(f.dir,f.nativeBinding);
       if(loaded.status!=="ready")throw new Error("Saved review is unavailable");

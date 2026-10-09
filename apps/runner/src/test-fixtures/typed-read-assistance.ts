@@ -1,3 +1,4 @@
+import { STRUCTURED_AUTHORING_PROTOCOL_VERSION } from "../authoring-protocol.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -28,7 +29,7 @@ export async function typedReadAssistanceFixture(request: string, answer: (() =>
   const input = { binding: { boundary_name: boundary.pack.name, generation_lock_fingerprint: boundary.generation_lock_fingerprint,
     schema_fingerprint: prepared.context.lock.schema_fingerprint, role_posture_fingerprint: boundary.role_posture_fingerprint },
     stage: "read_mapping" as const, jobIntent: request, provider: "openai" as const, model };
-  let state = buildBoundaryAuthoringResumeState({ ...input, authoringProtocol: { version: "synapsor.structured-authoring.v2" } });
+  let state = buildBoundaryAuthoringResumeState({ ...input, authoringProtocol: { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION } });
   await writeBoundaryAuthoringResumeState(root, state, { expectedRevisionDigest: null });
   const persist = async (next: typeof state) => { await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: state.revision_digest }); state = next; };
   let staged: ReadAssistanceCheckpointUpdate & ReadMeaningRecordUpdate = {}, locked = false;
@@ -88,14 +89,18 @@ export async function typedReadAssistanceFixture(request: string, answer: (() =>
   };
   const reviewScope = (interact: (view: ReadScopeInteraction) => Promise<ReadScopeInteractionResponse>,
     controls: { failSave?: boolean; changedSource?: boolean } = {}) => {
-    const host = createReadScopeHost({ access: { mutate,
-      load: async questionId => {
+    const loadSnapshot = async (questionId: string) => {
         const current = await currentReview();
         if (current.native.question_id !== questionId) throw new Error("Wrong actual scope question");
         return { ...current.native, references: current.references, catalog: current.catalog,
           expectedBinding: { ...current.binding, ...(controls.changedSource ? { source_digest: d("unacknowledged Source change") } : {}) },
           resume_revision_digest: current.resume_revision_digest, context_digest: current.context_digest, scope_digest: current.scope_digest };
-      },
+      };
+    const host = createReadScopeHost({ access: { mutate,
+      load: loadSnapshot,
+      // This fixture's existing mutation port models ownership, not a real mutex.
+      // Genuine held-access proof is in the native scope/activation fixtures.
+      loadHeld: async questionId => { if (!locked) throw new Error("Missing modeled protected owner"); return loadSnapshot(questionId); },
       save: async (question, { expected }) => {
         if (!locked || state.revision_digest !== expected.resume_revision_digest) throw new Error("Unacknowledged native revision");
         if (controls.failSave) throw new Error("NATIVE_REVIEW_SAVE_FAILED");

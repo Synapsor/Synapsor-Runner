@@ -1,3 +1,4 @@
+import { withProjectAuthorityMutation, withHeldProjectAuthorityAccess } from "./project-authority-mutation.js";
 import fs from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest as digest } from "@synapsor-runner/protocol";
@@ -16,20 +17,22 @@ async function setup(options: { pending?: boolean; noRead?: boolean } = {}) {
     duringWait: undefined as (() => Promise<void>) | undefined };
   let locked = false;
   const views: ReadScopeInteraction[] = [], responses: Array<boolean | null | "keep" | "review" | "replace"> = [];
-  const host = createReadScopeHost({ access: {
-    load: async questionId => {
+  const loadSnapshot = async (questionId: string) => {
       const disk = await readBoundaryAuthoringResumeState(f.dir, f.nativeBinding);
       if (disk.status !== "ready") throw new Error("Actual native fixture unavailable");
       return { questions: disk.value.operator_questions!, handoffs: disk.value.owner_handoffs ?? [], generation: disk.value.generation_recovery,
         question_id: questionId, expectedBinding: controls.currentBinding, ...inventory,
         ...(!options.pending && !options.noRead ? { analysis: analysis() } : {}),
         resume_revision_digest: disk.value.revision_digest, context_digest: q.context_digest, scope_digest: q.scope_digest };
-    },
-    mutate: async operation => { locked = true; try { return await operation({ testPermit: true } as never); } finally { locked = false; } },
-    save: async (next, { expected }) => {
+    };
+  const host = createReadScopeHost({ access: {
+    load: questionId => withProjectAuthorityMutation(f.dir, () => loadSnapshot(questionId)),
+    loadHeld: (questionId, permit) => withHeldProjectAuthorityAccess(f.dir, permit, () => loadSnapshot(questionId)),
+    mutate: operation => withProjectAuthorityMutation(f.dir, async permit => { locked = true; try { return await operation(permit); } finally { locked = false; } }),
+    save: async (next, { expected, permit }) => {
       expect(locked).toBe(true); expect(expected.resume_revision_digest).toBe(f.state().revision_digest);
       if (controls.failSave) throw new Error("NATIVE_REVIEW_SAVE_FAILED");
-      await f.save(next);
+      await f.save(next, permit);
     },
   }, interact: async view => {
     expect(locked).toBe(false); views.push(view); await controls.duringWait?.();
