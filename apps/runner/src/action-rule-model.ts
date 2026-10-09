@@ -17,6 +17,7 @@ import { Buffer } from "node:buffer";
 import { assertActionExecutionIntentPreserved } from "./action-execution-intent.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { ACTION_RULE_MATH_GUIDANCE, ACTION_RULE_MATH_OPERATIONS, ACTION_RULE_MATH_MIN_INPUTS, ACTION_RULE_MATH_MAX_INPUTS } from "@synapsor-runner/action-rules";
+import { parseSharedSumDesignation } from "@synapsor-runner/action-rules";
 import type {
   ActionRuleBooleanExpressionV1,
   ActionRuleScalarExpressionV1,
@@ -53,6 +54,7 @@ import {
 } from "./action-rule-authoring.js";
 import {
   ACTION_RULE_MODEL_DRAFT_VERSION,
+  SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION,
   actionRuleDraftDiagnostics,
   compactActionRuleAuthoringCatalog,
   compileActionRuleModelDraft,
@@ -122,6 +124,7 @@ type EffectSubmission = {
 };
 
 type RuleSubmission = {
+  shared_sum_proposal?: ActionRuleModelDraftV1["shared_sum_proposal"];
   /** Exact host baseline/checkpoint designation; provider phase edits cannot change it. */
   hard_limit?: ActionRuleModelDraftV1["hard_limit"];
   name: string;
@@ -940,6 +943,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           businessWordingIssue = undefined;
           return { ok: true, value: { status: "needs_operator_answer", question: clarification, authority_granted: false } };
         }
+        if (phase === "rule") parsed.submission = retainRuleSharedSumProposal(submissions.rule as RuleSubmission | undefined, parsed.submission as RuleSubmission);
         let submission = baseline
           ? mergeRevisionSubmission({ phase, candidate: parsed.submission, current: submissions[phase]!, baseline, changedFields: parsed.changed_fields, allowPendingSelectorReview: !!input.reviewHistorySelectors })
           : parsed.submission;
@@ -2030,7 +2034,7 @@ async function runFocusedPhase(input: {
             });
             submission = revision ? parsed.submission : resolved;
           } else {
-            submission = parsed.submission;
+            submission = input.phase === "rule" ? retainRuleSharedSumProposal(input.submissions.rule as RuleSubmission | undefined, parsed.submission as RuleSubmission) : parsed.submission;
           }
           changedFields = parsed.changed_fields;
         }
@@ -2241,6 +2245,7 @@ export function actionRuleModelDraftJsonSchema(options?: { purpose: "compiled_ch
     return { ...branch, required: (branch.required as string[]).filter((key) => key !== "status"), properties };
   };
   const rule = withoutStatus(drafts("rule")[0]!);
+  const { shared_sum_proposal: _sharedSumProposal, ...legacyRuleProperties } = rule.properties as Record<string, unknown>;
   const approval = withoutStatus(drafts("approval")[0]!);
   const definitions = Object.assign({}, ...[...schemas.values()].map((schema) => schema.$defs ?? {}));
   const result: Record<string, unknown> = {
@@ -2249,7 +2254,7 @@ export function actionRuleModelDraftJsonSchema(options?: { purpose: "compiled_ch
     required: ["schema_version", ...rule.required, "verification", "effect", "approval"],
     properties: {
       schema_version: { const: ACTION_RULE_MODEL_DRAFT_VERSION },
-      ...rule.properties,
+      ...legacyRuleProperties,
       hard_limit: objectVariant(["kind", "scope", "population", "limit", "time", "external_writers"], {
         kind: { const: "hard_invariant" },
         scope: objectVariant(["tenant_field", "principal_field"], {
@@ -2285,7 +2290,30 @@ export function actionRuleModelDraftJsonSchema(options?: { purpose: "compiled_ch
     properties.review = { ...review, properties: { ...reviewProperties,
       examples: { ...reviewProperties.examples, minItems: 0 } } };
   }
-  return result;
+  const sharedSumBranch: Record<string, unknown> = { ...result,
+    required: [...result.required as string[], "shared_sum_proposal"],
+    properties: { ...result.properties as Record<string, unknown>, schema_version: { const: SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION },
+      shared_sum_proposal: sharedSumProposalJsonSchema() },
+  };
+  // The shared-SUM shape has no legacy hard-limit designation or reviewed
+  // record. Its native operator confirmation is a separate host interaction.
+  delete (sharedSumBranch.properties as Record<string, unknown>).hard_limit;
+  const { $schema, $defs, ...legacy } = result;
+  const { $schema: _schema, $defs: _defs, ...shared } = sharedSumBranch;
+  return { $schema, ...($defs ? { $defs } : {}), oneOf: [legacy, shared] };
+}
+
+function sharedSumProposalJsonSchema(): Record<string, unknown> {
+  const name = { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$" };
+  const field = objectVariant(["resource", "field"], { resource: name, field: name });
+  return objectVariant(["schema_version", "kind", "source", "scope", "limit", "populations", "unit", "time", "external_writers"], {
+    schema_version: { const: "synapsor.shared-sum-designation.v1" }, kind: { const: "shared_sum" }, source: name,
+    scope: objectVariant(["tenant_field", "principal_field"], { tenant_field: name, principal_field: name }),
+    limit: field, populations: { type: "array", minItems: 2, maxItems: 2, items: field },
+    unit: objectVariant(["kind", "unit", "meaning"], { kind: { const: "integer" },
+      unit: { type: "string", minLength: 1, maxLength: 256 }, meaning: { type: "string", minLength: 1, maxLength: 2000 } }),
+    time: { const: "current_state" }, external_writers: { const: "participating_only" },
+  });
 }
 
 function phaseTool(
@@ -2359,11 +2387,12 @@ function phaseTool(
   if (phase === "rule") return {
     name: TOOL_RULE,
     title: "Draft one deterministic Action Rule",
-    description: "Submit exact WHEN, derivation, TTL, and human-readable examples using the prior reviewed drafts. Use the Runner default TTL of 300 seconds when the operator did not specify one.",
+    description: "Submit exact WHEN, derivation, TTL, and human-readable examples using the prior reviewed drafts. Use the Runner default TTL of 300 seconds when the operator did not specify one. A shared_sum_proposal proposes one Source, a scoped limit and two populations with integer unit meaning for separate operator review; it is not confirmation or protection. Never supply reviewed records, actor, Yes, approval or provenance.",
     input_schema: phaseInputSchema(
       ["name", "outcome", "require", "derive", "ttl_seconds", "review"],
       {
         name: qualifiedNameSchema(), outcome: qualifiedNameSchema(),
+        shared_sum_proposal: sharedSumProposalJsonSchema(),
         discovery: {
           type: "object", additionalProperties: false, required: ["title", "summary"],
           description: "Public client catalog wording, reviewed with this rule. Use only established business meaning; never private facts or identity values. Does not grant eligibility.",
@@ -2875,6 +2904,10 @@ function parsePhaseSubmission(
   if (Object.hasOwn(value, "hard_limit") && !isRecord(value.hard_limit)) {
     throw new ActionRuleAuthoringError("ACTION_RULE_HARD_LIMIT_CHECKPOINT_INVALID", "ACTION_RULE_HARD_LIMIT_CHECKPOINT_INVALID: The retained hard invariant must be an exact typed designation; no removal was inferred.", { presentation: "terminal" });
   }
+  if (Object.hasOwn(value, "shared_sum_proposal") && phase !== "rule")
+    throw new ActionRuleAuthoringError("ACTION_RULE_SHARED_SUM_PHASE_INVALID", "The unreviewed shared-SUM proposal belongs only to the Rule component.", { presentation: "terminal" });
+  if (Object.hasOwn(value, "shared_sum_proposal") && origin === "model" && !structuredClarification)
+    throw new ActionRuleAuthoringError("ACTION_RULE_SHARED_SUM_PROTOCOL_REQUIRED", "The shared-SUM proposal requires the current structured Action protocol; no legacy fallback was selected.", { presentation: "terminal" });
   if (origin === "model" && phase === "effect") assertEffectModelDraft(value, revision);
   if (origin === "model" && phase === "approval") assertApprovalModelDraft(value, revision);
   if (origin === "model" && phase === "rule") assertRuleModelDraft(value, revision);
@@ -2912,6 +2945,7 @@ function parsePhaseSubmission(
     if (value.discovery !== undefined && !isRecord(value.discovery)) throw new Error("discovery must contain a reviewed title, summary and aliases.");
     return { state: "submitted", submission: {
       ...(value.hard_limit === undefined ? {} : { hard_limit: structuredClone(value.hard_limit) as ActionRuleModelDraftV1["hard_limit"] }),
+      ...(value.shared_sum_proposal === undefined ? {} : { shared_sum_proposal: parseSharedSumDesignation(value.shared_sum_proposal) }),
       name: boundedText(value.name, "rule name", 256),
       outcome: boundedText(value.outcome, "outcome", 256),
       ...(value.inputs === undefined ? {} : { inputs: structuredClone(value.inputs) as ActionRuleModelDraftV1["inputs"] }),
@@ -2952,6 +2986,16 @@ export function actionRuleModelDraftFromCheckpoint(value: ActionRuleAuthoringChe
   return assembleDraft(structuredClone(checkpoint.components) as Partial<Record<PhaseName, PhaseSubmission>>);
 }
 
+/** Retain the disabled/native baseline on model omission. A change to an
+ * existing designation requires the separate owning review; no original
+ * received producer bytes or journal marker are rewritten here. */
+function retainRuleSharedSumProposal(current: RuleSubmission | undefined, next: RuleSubmission): RuleSubmission {
+  if (!current?.shared_sum_proposal) return next;
+  if (next.shared_sum_proposal && canonicalJsonDigest(next.shared_sum_proposal) !== canonicalJsonDigest(current.shared_sum_proposal))
+    throw new ActionRuleAuthoringError("ACTION_SHARED_SUM_REVIEW_REQUIRED", "ACTION_SHARED_SUM_REVIEW_REQUIRED: Preserve the existing shared-SUM designation until its owning review approves a change.", { presentation: "reviewed_grammar" });
+  return { ...next, shared_sum_proposal: structuredClone(current.shared_sum_proposal) };
+}
+
 function assembleDraft(submissions: Partial<Record<PhaseName, PhaseSubmission>>): ActionRuleModelDraftV1 {
   const verification = submissions.verification as VerificationSubmission | undefined;
   const effect = submissions.effect as EffectSubmission | undefined;
@@ -2959,10 +3003,11 @@ function assembleDraft(submissions: Partial<Record<PhaseName, PhaseSubmission>>)
   const approval = submissions.approval as ApprovalSubmission | undefined;
   if (!verification || !effect || !rule || !approval) throw new ActionRuleAuthoringError("ACTION_RULE_MODEL_DRAFT_INCOMPLETE", "ACTION_RULE_MODEL_DRAFT_INCOMPLETE", { presentation: "terminal" });
   return {
-    schema_version: ACTION_RULE_MODEL_DRAFT_VERSION,
+    schema_version: rule.shared_sum_proposal ? SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION : ACTION_RULE_MODEL_DRAFT_VERSION,
     name: rule.name,
     outcome: rule.outcome,
     ...(rule.hard_limit === undefined ? {} : { hard_limit: structuredClone(rule.hard_limit) }),
+    ...(rule.shared_sum_proposal === undefined ? {} : { shared_sum_proposal: structuredClone(rule.shared_sum_proposal) }),
     ...(rule.inputs ? { inputs: structuredClone(rule.inputs) } : {}),
     ...(rule.discovery === undefined ? {} : { discovery: structuredClone(rule.discovery) }),
     verification,
@@ -2985,6 +3030,7 @@ function phaseSubmissionsFromDraft(
       name: draft.name,
       outcome: draft.outcome,
       ...(draft.hard_limit === undefined ? {} : { hard_limit: structuredClone(draft.hard_limit) }),
+      ...(draft.shared_sum_proposal === undefined ? {} : { shared_sum_proposal: structuredClone(draft.shared_sum_proposal) }),
       ...(draft.inputs ? { inputs: structuredClone(draft.inputs) } : {}),
       ...(draft.discovery === undefined ? {} : { discovery: structuredClone(draft.discovery) }),
       require: structuredClone(draft.require),
@@ -3068,7 +3114,8 @@ function mergeRevisionSubmission(input: {
   }
   if (input.phase === "rule") {
     const current = structuredClone(input.current as RuleSubmission);
-    const candidate = input.candidate as RuleSubmission;
+    const candidate = retainRuleSharedSumProposal(current, input.candidate as RuleSubmission);
+    if (candidate.shared_sum_proposal) current.shared_sum_proposal = structuredClone(candidate.shared_sum_proposal);
     if (input.changedFields.includes("inputs")) {
       if (candidate.inputs === undefined) delete current.inputs;
       else current.inputs = structuredClone(candidate.inputs);

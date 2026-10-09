@@ -12,8 +12,11 @@ import {
   type ActionRuleCatalogV1,
   type LoadedActionRuleAuthorityV1,
   type HardLimitDesignationV1,
+  parseSharedSumDesignation,
+  type SharedSumDesignationV1,
 } from "@synapsor-runner/action-rules";
 import type { ActionBoundarySharedLimitV1 } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type {
   ActionRuleBooleanExpressionV1,
   ActionRuleInputSpecV1,
@@ -32,6 +35,7 @@ import type {
 } from "./action-rule-authoring.js";
 
 export const ACTION_RULE_MODEL_DRAFT_VERSION = "synapsor.action-rule-model-draft.v1" as const;
+export const SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION = "synapsor.action-rule-model-draft.v2" as const;
 
 export type ActionRuleVerificationDraftResourceV1 = {
   binding: string;
@@ -47,7 +51,9 @@ export type ActionRuleVerificationDraftResourceV1 = {
 };
 
 export type ActionRuleModelDraftV1 = {
-  schema_version: typeof ACTION_RULE_MODEL_DRAFT_VERSION;
+  schema_version: typeof ACTION_RULE_MODEL_DRAFT_VERSION | typeof SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION;
+  /** Unreviewed proposal DATA; never the authoritative reviewed record. */
+  shared_sum_proposal?: SharedSumDesignationV1;
   name: string;
   outcome: string;
   discovery?: { title: string; summary: string; aliases?: string[] };
@@ -161,7 +167,8 @@ export function actionRuleModelDraftFromAuthority(input: {
     collectActionRuleFieldReferences(expression, referencedFields);
   }
   return normalizeDraft({
-    schema_version: ACTION_RULE_MODEL_DRAFT_VERSION,
+    schema_version: input.authority.shared_sum ? SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION : ACTION_RULE_MODEL_DRAFT_VERSION,
+    ...(input.authority.shared_sum ? { shared_sum_proposal: structuredClone(input.authority.shared_sum.designation) } : {}),
     ...(source.rule.inputs ? { inputs: structuredClone(source.rule.inputs) } : {}),
     name: source.rule.name,
     outcome: source.rule.outcome,
@@ -864,9 +871,16 @@ function inferredInsertDeduplication(resource: ActionRuleCatalogResourceV1): Non
   };
 }
 
+export function parseActionRuleModelDraftProposal(value: ActionRuleModelDraftV1): ActionRuleModelDraftV1 {
+  return normalizeDraft(value);
+}
 function normalizeDraft(value: ActionRuleModelDraftV1): ActionRuleModelDraftV1 {
-  if (!value || value.schema_version !== ACTION_RULE_MODEL_DRAFT_VERSION) {
-    invalid(`schema_version must be ${ACTION_RULE_MODEL_DRAFT_VERSION}.`);
+  if (!value || ![ACTION_RULE_MODEL_DRAFT_VERSION, SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION].includes(value.schema_version)) {
+    invalid("The Action model draft version is unsupported.");
+  }
+  if (value.schema_version === ACTION_RULE_MODEL_DRAFT_VERSION ? Object.hasOwn(value, "shared_sum_proposal") : value.shared_sum_proposal === undefined
+    || Object.keys(value).some(key => !["schema_version", "name", "outcome", "discovery", "inputs", "shared_sum_proposal", "verification", "effect", "require", "derive", "approval", "ttl_seconds", "review"].includes(key))) {
+    invalid("The shared-SUM proposal requires its closed v2 Action draft; reviewed authority and provenance are not model fields.");
   }
   const resourceBindings = value.verification?.resources;
   if (!Array.isArray(resourceBindings) || resourceBindings.length < 1 || resourceBindings.length > 12) {
@@ -878,7 +892,18 @@ function normalizeDraft(value: ActionRuleModelDraftV1): ActionRuleModelDraftV1 {
   if (!value.review || !Array.isArray(value.review.refused) || !Array.isArray(value.review.examples)) {
     invalid("Action Rule review summaries and examples are required.");
   }
-  return structuredClone(value);
+  return { ...structuredClone(value), ...(value.shared_sum_proposal ? { shared_sum_proposal: parseSharedSumDesignation(value.shared_sum_proposal) } : {}) };
+}
+
+/** An omitted phased field retains the existing invariant's proposal. A model
+ * cannot remove/change its meaning; the host's ordinary explicit owner review
+ * must precede a different native baseline. */
+export function retainSharedSumProposal(baseline: ActionRuleModelDraftV1 | undefined, next: ActionRuleModelDraftV1): ActionRuleModelDraftV1 {
+  const original = baseline?.shared_sum_proposal;
+  if (!original) return normalizeDraft(next);
+  if (next.shared_sum_proposal && canonicalJsonDigest(parseSharedSumDesignation(next.shared_sum_proposal)) !== canonicalJsonDigest(parseSharedSumDesignation(original)))
+    invalid("A phased model edit cannot change the existing shared-SUM meaning. Keep it and use its owning explicit review.");
+  return normalizeDraft({ ...next, schema_version: SHARED_SUM_ACTION_RULE_MODEL_DRAFT_VERSION, shared_sum_proposal: structuredClone(original) });
 }
 
 function boundedInteger(value: unknown, minimum: number, maximum: number, label: string): number {

@@ -842,7 +842,7 @@ function parseProgramExportReferences(root: JsonRecord, actions: ActionRuleModel
  * language. This structural check uses the same schema supplied in the export,
  * rejects unknown fields and never coerces, defaults or removes input values.
  */
-function parseStructuredActionDraft(value: unknown, index: number): ActionRuleModelDraftV1 {
+export function parseStructuredActionDraft(value: unknown, index: number): ActionRuleModelDraftV1 {
   const label = `actions[${index}]`;
   const draft = record(value, label);
   const validator = structuredActionDraftValidator ??= new Ajv2020({ strict: false, allErrors: true })
@@ -852,14 +852,14 @@ function parseStructuredActionDraft(value: unknown, index: number): ActionRuleMo
       const location = error.instancePath || "/";
       return `${location} ${error.message ?? error.keyword}`.replace(/[\u0000-\u001f\u007f]/gu, " ").slice(0, 180);
     });
-    throw new Error(`ACTION_RULE_DRAFT_SHAPE_INVALID: ${label} does not match the exported ActionRuleModelDraftV1 schema${errors.length ? ` (${errors.join("; ")})` : "."}`);
+    throw new Error(`ACTION_RULE_DRAFT_SHAPE_INVALID: ${label} does not match the exported versioned Action draft schema${errors.length ? ` (${errors.join("; ")})` : "."}`);
   }
   assertKeys(draft, [
     "schema_version", "name", "outcome", "discovery", "inputs", "verification", "effect",
-    "require", "derive", "approval", "hard_limit", "ttl_seconds", "review",
+    "require", "derive", "approval", "hard_limit", "shared_sum_proposal", "ttl_seconds", "review",
   ], label);
-  if (draft.schema_version !== "synapsor.action-rule-model-draft.v1") {
-    throw new Error(`${label}.schema_version must be synapsor.action-rule-model-draft.v1.`);
+  if (!["synapsor.action-rule-model-draft.v1", "synapsor.action-rule-model-draft.v2"].includes(draft.schema_version as string)) {
+    throw new Error(`${label}.schema_version is unsupported.`);
   }
   const approval = record(draft.approval, `${label}.approval`);
   assertKeys(approval, [
