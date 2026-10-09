@@ -21,8 +21,10 @@ import { presentAuthoringRecovery } from "./authoring-interrupted-step-review.js
 import { retainedRecoveryOwner } from "./authoring-recovery-owner.js";
 import { saveAuthoringRecoveryResume } from "./authoring-recovery-resume.js";
 import { createAuthoringRecoveryHost } from "./authoring-recovery-host.js";
-import { BOUNDARY_REVIEW_BUNDLE_VERSION, loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
-export { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
+import { BOUNDARY_REVIEW_BUNDLE_VERSION, loadBoundaryReviewContext, loadBoundaryReviewContextHeld, type BoundaryReviewBundle } from "./boundary-review-context.js";
+export { loadBoundaryReviewContext, loadBoundaryReviewContextHeld, type BoundaryReviewBundle } from "./boundary-review-context.js";
+import { readAuthoringGenerationContext as boundaryGenerationContext, readAuthoringGenerationContextHeld as boundaryGenerationContextHeld } from "./authoring-generation-context.js";
+export { readAuthoringGenerationContext as boundaryGenerationContext, readAuthoringGenerationContextHeld as boundaryGenerationContextHeld } from "./authoring-generation-context.js";
 import { authoringConsumedTurnCheckpoint, type AuthoringQuestionCompletion, authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringQuestionSequenceCompletion, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, prepareAuthoringInterruptedRecovery, permitAuthoringInterruptedRecovery, authoringInterruptedRecoveryNeeded, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import { projectActionQuestionCheckpoint } from "./authoring-action-subject-save.js";
@@ -3694,57 +3696,6 @@ function boundaryAuthoringCancelled(error: unknown, chat?: BoundaryAuthoringChat
     || error instanceof Error && error.message === "ACTION_RULE_MODEL_DRAFT_CANCELLED";
 }
 
-/** Recovery targets business state, while the existing Resume CAS separately
- * guards admission counters. Reserving the next iteration must not turn a
- * reviewed continuation into another business target. */
-function generationActionMeaning(action: BoundaryAuthoringResumeAction | undefined) {
-  if (!action?.checkpoint) return action ?? null;
-  const { digest: _digest, logical_turns, ...checkpoint } = action.checkpoint;
-  return { ...action, checkpoint: { ...checkpoint, ...(logical_turns ? { logical_turns: logical_turns.map(turn => {
-    const { iterations_used: _iterations, tool_calls_used: _tools, used_version_corrections: _corrections,
-      wording_correction_used: _wording, ...identity } = turn;
-    return identity;
-  }) } : {}) } };
-}
-function generationRevisionMeaning(revision: BoundaryAuthoringResumeState["pending_action_revision"]) {
-  if (!revision?.checkpoint) return revision ?? null;
-  return { ...revision, checkpoint: generationActionMeaning({ intent: revision.instruction, checkpoint: revision.checkpoint })!.checkpoint };
-}
-/** Controller reservations are protected by Resume CAS and their durable
- * allowance, not a new business identity. Retain all actual inputs, answers,
- * selections and the producer's exact dispatch question in that identity. */
-function generationReadControllerMeaning(checkpoint: ReadWorkloadAssistanceCheckpoint | ReadBoundaryRevisionCheckpoint | ReadPrerequisiteCheckpoint | undefined): unknown {
-  if (!checkpoint) return null;
-  const { digest: _digest, state, ...body } = checkpoint;
-  const meaning = { ...state } as Record<string, unknown>;
-  for (const key of ["call_count", "attempt", "correction_used", "relationship_reviews",
-    "naming_evidence_correction_used", "clarification_count", "new_questions", "metrics", "usage"])
-    delete meaning[key];
-  const pending = "pending_question" in body ? body.pending_question : undefined;
-  return { ...body, state: meaning, ...(pending?.kind === "private_prerequisite" && pending.nested_checkpoint
-    ? { pending_question: { ...pending, nested_checkpoint: generationReadControllerMeaning(pending.nested_checkpoint) } } : {}) };
-}
-export async function boundaryGenerationContext(projectRoot: string, resume: BoundaryAuthoringResumeState,
-  permit?: ProjectAuthorityMutationPermit): Promise<`sha256:${string}`> {
-  const context = await loadBoundaryReviewContext(projectRoot, permit);
-  const actions = await readActionRuleAuthorityRevisionBaseline(projectRoot, permit);
-  return canonicalJsonDigest({ binding: boundaryAuthoringResumeBinding(context.bundle), candidate: context.candidate,
-    actions, source: resume.policy_source_session ? await policySourceSavedDigest(projectRoot, resume.policy_source_session) : null,
-    job: resume.job_intent, stage: resume.stage, model: resume.model,
-    permission: { private: resume.private_read_metadata_digest ?? null, destination: resume.metadata_destination_digest ?? null },
-    action: generationActionMeaning(resume.action), revision: generationRevisionMeaning(resume.pending_action_revision),
-    request: resume.pending_job_revision ?? null, removal: resume.pending_action_removal ?? null,
-    addition: resume.pending_action_addition ?? null, read: resume.read ?? null,
-    read_assistance: generationReadControllerMeaning(resume.read_assistance),
-    read_revision: resume.pending_read_revision_state ? { ...resume.pending_read_revision_state,
-      ...(resume.pending_read_revision_state.checkpoint ? { checkpoint: generationReadControllerMeaning(resume.pending_read_revision_state.checkpoint) } : {}) } : null,
-    pending_policy_review: resume.pending_policy_review ?? null, owner_handoffs: resume.owner_handoffs ?? [],
-    questions: (resume.operator_questions ?? []).map(question => {
-      if (!question.budget) return question;
-      const { digest: _digest, budget: _budget, ...meaning } = question;
-      return meaning;
-    }) });
-}
 
 async function interactiveReadWorkloadAssist(
   input: InteractiveReadWorkloadAssistInput,
@@ -3997,7 +3948,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       || !modelEgressAcknowledged) return;
     const expectedRevisionDigest = savedResumeRevision;
     currentResumeBinding = boundaryAuthoringResumeBinding(
-      (await loadBoundaryReviewContext(input.projectRoot, permit)).bundle,
+      ((permit ? await loadBoundaryReviewContextHeld(input.projectRoot, permit) : await loadBoundaryReviewContext(input.projectRoot))).bundle,
     );
     try {
       const clientRead = stage === "client_setup"
@@ -4093,7 +4044,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   const ownerQuestionContext = async (permit?: ProjectAuthorityMutationPermit,
     consumer?: AuthoringOwnerHandoff["consumer"], sourceContext?:PolicySourceSession, savedSourceContext?:PolicySourceSession) => {
     await assertAuthoringResumeCurrent(undefined, false, permit);
-    const current = await loadBoundaryReviewContext(input.projectRoot, permit);
+    const current = (permit ? await loadBoundaryReviewContextHeld(input.projectRoot, permit) : await loadBoundaryReviewContext(input.projectRoot));
     const sources = authoringConversation?.policySources;
     if (sources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, sources.id) !== canonicalJsonDigest(savedSourceContext??sources)) {
       throw new PolicySourceChangedError();
@@ -4377,7 +4328,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       const source = activeResume.policy_source_session
         ? await policySourceSavedDigest(input.projectRoot, activeResume.policy_source_session) : null;
       if (authoringConversation?.policySources?.snapshots.length && source !== canonicalJsonDigest(authoringConversation.policySources)) throw new PolicySourceChangedError();
-      return boundaryGenerationContext(input.projectRoot, activeResume, generationRecoveryPermit);
+      return generationRecoveryPermit
+        ? boundaryGenerationContextHeld(input.projectRoot, activeResume, generationRecoveryPermit)
+        : boundaryGenerationContext(input.projectRoot, activeResume);
     },
     progress: message => input.authoringChat?.runner("AUTHORING CONNECTION", [message]),
   });
@@ -4387,7 +4340,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const reviewedResume = activeResume;
     const inspectCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
       await assertAuthoringResumeCurrent(undefined, false, permit);
-      const current = await loadBoundaryReviewContext(input.projectRoot, permit);
+      const current = (permit ? await loadBoundaryReviewContextHeld(input.projectRoot, permit) : await loadBoundaryReviewContext(input.projectRoot));
       const reader = await inspectPolicyReviewSource(current.lock, input.schemaInspector);
       const actions = await readActionRuleAuthorityRevisionBaseline(input.projectRoot, permit);
       return canonicalJsonDigest({ binding: boundaryAuthoringResumeBinding(current.bundle), candidate: current.candidate,
@@ -6855,11 +6808,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         } } : input.session;
     const { persist: persistReadAssistance } = createReadAssistanceCheckpointHost({ access: {
       mutate: mutateOwnerHandoff, contextDigest: ownerQuestionContext, scopeDigest: ownerQuestionScope,
-      currentCandidate: async permit => (await loadBoundaryReviewContext(input.projectRoot, permit)).bundle,
+      currentCandidate: async permit => ((permit ? await loadBoundaryReviewContextHeld(input.projectRoot, permit) : await loadBoundaryReviewContext(input.projectRoot))).bundle,
       readCheckpoint: () => readAssistanceCheckpoint, readHandoffs: () => ownerHandoffs,
       scopeInventory: async permit => {
         await assertAuthoringResumeCurrent(undefined, false, permit);
-        const current = await loadBoundaryReviewContext(input.projectRoot, permit), scope = await typedReadContext(current.candidate, undefined, permit);
+        const current = (permit ? await loadBoundaryReviewContextHeld(input.projectRoot, permit) : await loadBoundaryReviewContext(input.projectRoot)), scope = await typedReadContext(current.candidate, undefined, permit);
         return { ...scope, questions: operatorQuestions, handoffs: ownerHandoffs, generation: generationRecovery };
       },
       readQuestions: () => operatorQuestions, readRecovery: () => generationRecovery, readPreparedRead: () => resumeRead,
@@ -8832,7 +8785,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let latestReadRevisionDiff: ReviewSection | undefined;
   const { persist: persistReadRevision } = createReadRevisionCheckpointHost({ access: {
     mutate: mutateOwnerHandoff, contextDigest: permit => ownerQuestionContext(permit, "read_revision_clarification"),
-    scopeDigest: ownerQuestionScope, currentCandidate: async permit => (await loadBoundaryReviewContext(input.projectRoot, permit)).bundle,
+    scopeDigest: ownerQuestionScope, currentCandidate: async permit => ((permit ? await loadBoundaryReviewContextHeld(input.projectRoot, permit) : await loadBoundaryReviewContext(input.projectRoot))).bundle,
     readRevision: () => pendingReadRevisionState, readInstruction: () => pendingReadRevision,
     readHandoffs: () => ownerHandoffs, readRecovery: () => generationRecovery,
     readConversation: () => authoringConversation,

@@ -186,7 +186,7 @@
       "decision": "Owner approved bounded format repair and ONE fresh $0 MySQL public job AFTER independent acceptance. Resumev4/protocolv3 prospective; existing Resume store; safely refuse older setups; held job/accounting/history untouched; no migration/replay or receipt capability implied."
     }
   ],
-  "working_preview": "6fd1f938dde854daac0825e21aea5f0451b24767 on codex/b64-d01-controls-compose-20261009; scoped D01 composition64+UI6+MR6 separate PASS, acceptedcompiler path+regression Main2PASS. Whole types/full/public integration OPEN.",
+  "working_preview": "codex/b64-shared-access-main-hooks-20261009 development preview95548279 + Main explicit entry/Held generation context WIP; agreed phase2 Source/Resume/Action exports pending. Accepted basebe488 untouched. Required type/native/public batch acceptance OPEN.",
   "controlling_addendum": {
     "path": "/home/sandesh-tiwari/.codex/attachments/624dcdf9-3d8f-47d2-a0f2-7f3e595e2ccd/Pasted text.txt",
     "sha256": "92a1073fac2e036874a66d1f15a6475db4c51424a084382c95e349521d1cba7a",
@@ -206,5 +206,7 @@
       "Existing windows/resources/frozen candidates/paid CLOSED unchanged; no file-count goal/new capability/framework."
     ]
   },
-  "compiler_typed_path_integration": "MAIN-I01944-TYPED-PATH-INTEGRATION.json"
+  "compiler_typed_path_integration": "MAIN-I01944-TYPED-PATH-INTEGRATION.json",
+  "standing_ceremony_rule": "Standing ceremony: small fixes = tests in the commit + one-line record; independent review batched per deliverable; full preseal/seal only for format, security/permission, concurrency semantics, paid runs or customer data. Handoffs \u226415 lines; status replies short.",
+  "dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
 }

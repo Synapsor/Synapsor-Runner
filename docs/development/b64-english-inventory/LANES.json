@@ -1428,5 +1428,7 @@
     }
   },
   "snapshot_policy": "Future snapshots exclude docs and unrelated material; included SOURCE-MANIFEST hashes/config/assets required. Prefer fixed worktree reuse. No existing snapshot deletion authorized.",
-  "controlling_bounded_work": "OWNER-BOUNDED-COMPLETION.json"
+  "controlling_bounded_work": "OWNER-BOUNDED-COMPLETION.json",
+  "standing_ceremony_rule": "Standing ceremony: small fixes = tests in the commit + one-line record; independent review batched per deliverable; full preseal/seal only for format, security/permission, concurrency semantics, paid runs or customer data. Handoffs \u226415 lines; status replies short.",
+  "dispatch_template": "../AGENT-DISPATCH-TEMPLATE.md"
 }
