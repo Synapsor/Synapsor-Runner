@@ -1,4 +1,7 @@
 import { AuthoringResumeMaterialError } from "./authoring-checkpoint-save-error.js";
+import { AuthoringMaterialContextError, assertAuthoringMaterial, resolveAuthoringMaterialContext,
+  snapshotAuthoringMaterial } from "./authoring-resume-material.js";
+import { prepareAuthoringResumeMaterial } from "./authoring-resume-material-access.js";
 import { appendBoundaryPlanningResult, assertBoundaryPlanningHistoryAdvance, parseBoundaryPlanningResult, assertBoundaryPlanningResultNative, type BoundaryPlanningResult } from "./authoring-planning-result.js";
 import { readStoredReadWorkloadAnalysis } from "./read-workloads.js";
 import { OLDER_AUTHORING_SETUP_MESSAGE, assertCurrentAuthoringEnvelope, STRUCTURED_AUTHORING_PROTOCOL_VERSION, STRUCTURED_AUTHORING_RESUME_VERSION, parseStructuredAuthoringProtocol, assertAuthoringProtocolUnchanged, type StructuredAuthoringProtocol } from "./authoring-protocol.js";
@@ -473,8 +476,9 @@ export async function writeBoundaryAuthoringResumeState(
   state: BoundaryAuthoringResumeState,
   options?: { expectedRevisionDigest: BoundaryAuthoringResumeState["revision_digest"] | null; permit?: ProjectAuthorityMutationPermit },
 ): Promise<string> {
-  assertBoundaryAuthoringResumeState(state);
-  const frozen = structuredClone(state);
+  const material = await prepareAuthoringResumeMaterial(projectRootInput, state);
+  const frozen: BoundaryAuthoringResumeState = JSON.parse(material.json);
+  assertBoundaryAuthoringResumeState(frozen);
   const expected = options?.expectedRevisionDigest;
   return withProjectAuthorityMutation(projectRootInput, async held => {
     // Legacy explicit replacement still serializes; public continuations must
@@ -507,7 +511,8 @@ export async function writeBoundaryAuthoringResumeState(
     if (previous) assertBoundaryActionEditDispositionsAdvance(previous.action_edit_dispositions ?? [], frozen.action_edit_dispositions ?? []);
     await assertReadScopeAnalysisRecord(held.projectRoot, frozen);
     const filePath = resumePath(held.projectRoot);
-    await writeAtomic(filePath, `${JSON.stringify(frozen, null, 2)}\n`);
+    const screened = await material.recheck();
+    await writeAtomic(filePath, `${screened}\n`);
     const saved = await readBoundaryAuthoringResumeStateHeld(held.projectRoot, frozen.binding, held);
     if (saved.status !== "ready" || saved.value.revision_digest !== frozen.revision_digest) {
       const code = "BOUNDARY_AUTHORING_RESUME_NOT_SAVED";
@@ -614,6 +619,7 @@ async function readResumeHeld(projectRoot: string, binding: BoundaryAuthoringRes
   try {
     parsed = JSON.parse(source);
     assertBoundaryAuthoringResumeState(parsed);
+    await prepareAuthoringResumeMaterial(projectRoot, parsed);
     await assertReadScopeAnalysisRecord(projectRoot, parsed);
   } catch (error) {
     return {
@@ -633,6 +639,27 @@ async function readResumeHeld(projectRoot: string, binding: BoundaryAuthoringRes
   return differences.length
     ? { status: "stale", reason: differences.join("; "), value: parsed }
     : { status: "ready", value: parsed };
+}
+
+/** Source history has the same exact job owner as its Resume. This bounded
+ * held operation grants neither display nor egress permission and does not
+ * reconstruct missing ownership from an attachment or caller-supplied job. */
+export async function withBoundaryAuthoringSourceMaterial<T>(projectRoot: string, sourceSessionId: string,
+  value: unknown, operation: (json: string, permit: ProjectAuthorityMutationPermit) => Promise<T>,
+  permit?: ProjectAuthorityMutationPermit): Promise<T> {
+  const captured = snapshotAuthoringMaterial(value);
+  return withProjectAuthorityMutation(projectRoot, async held => {
+    const selected: unknown = JSON.parse(await fs.readFile(resumePath(held.projectRoot), "utf8"));
+    assertBoundaryAuthoringResumeState(selected);
+    const loaded = await readResumeHeld(held.projectRoot, selected.binding);
+    if (loaded.status !== "ready" || loaded.value.policy_source_session !== sourceSessionId)
+      throw new AuthoringMaterialContextError("AUTHORING_MATERIAL_CONTEXT_UNAVAILABLE");
+    const owner = { projectRoot: held.projectRoot, jobCreatedAt: loaded.value.created_at };
+    const context = await resolveAuthoringMaterialContext(owner);
+    const json = await assertAuthoringMaterial({ value: JSON.parse(captured), owner,
+      origin: "retained_material", context });
+    return operation(json, held);
+  }, { permit });
 }
 
 /** Payload meaning and stored-envelope identity are distinct contracts. Resolve
@@ -656,6 +683,7 @@ export async function clearBoundaryAuthoringResumeState(projectRootInput: string
     try { state = JSON.parse(await fs.readFile(filePath, "utf8")); }
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return true; throw error; }
     assertBoundaryAuthoringResumeState(state);
+    await prepareAuthoringResumeMaterial(held.projectRoot, state);
     if (isAuthoringProgramResume(state) || state.authoring_protocol !== undefined
       || boundaryAuthoringActionIsUnfinished(state.action) || state.read_assistance || state.pending_job_revision || state.pending_read_revision
       || state.pending_action_addition || state.pending_action_revision || state.pending_action_removal
@@ -1492,58 +1520,11 @@ export function assertBoundaryAuthoringResumeMaterial(value: unknown): void {
     throw new AuthoringResumeMaterialError("BOUNDARY_AUTHORING_RESUME_PRIVATE_MATERIAL_BLOCKED",
       "credentials, endpoint URLs, and private keys cannot be saved in Boundary-authoring state.");
   }
-  for (const { text, category } of resumeMaterialText(value)) {
-    // Markdown presentation does not decide whether a value is an identity.
-    const plain = text.replace(/[*]/gu, "");
-    const concreteIdentity = [...plain.matchAll(
-      /\b(?:tenant|principal)(?:[_ -]?id)?["'`]?\s*(=|:|is\b)\s*["'`]?([A-Za-z0-9_-]+)/giu,
-    )].some((match) => {
-      if (/^(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed|unknown|unset|required|outside)$/iu.test(match[2]!)) return false;
-      const tail = plain.slice(match.index! + match[0].length);
-      // A descriptive quota heading has an explicit limiting operator and a
-      // quantity. Neither a literal id assignment nor a number alone qualifies.
-      if (/^(?:tenant|principal)["'`]?\s*:\s*(?:maximum|limit|at|up)\b/iu.test(match[0])
-        && /^(?:maximum(?:\s+of)?|limit(?:\s+of)?|at\s+most|up\s+to)\s+(?:\d+(?:,\d{3})*|one|two|three|four|five|six|seven|eight|nine|ten)\b/iu
-          .test(`${match[2]}${tail}`)) return false;
-      // Quantified role definitions describe cardinality, not runtime values.
-      // Keep this limited to bare roles and a natural-language copula.
-      if (/^(?:tenant|principal)\s+is\s+(?:exactly|one|a|an)$/iu.test(match[0])) {
-        if ((match[2]!.toLowerCase() === "exactly" ? /^\s+one\s+[A-Za-z]+(?=\s|[.,;!?]|$)/u
-          : /^\s+[A-Za-z]+(?=\s|[.,;!?]|$)/u).test(tail)) return false;
-      }
-      // An explicit column-choice reference names metadata, not an identity.
-      if (match[1]!.toLowerCase() === "is" && match[2]!.toLowerCase() === "bound") {
-        const field = /^\s+to\s+([A-Za-z_][A-Za-z0-9_]{0,127})(?=\s|[?.;,]|$)/u.exec(tail)?.[1];
-        const question = plain.slice(Math.max(0, match.index! - 512), match.index!);
-        const choices = [...question.matchAll(/\bwhich column\b[^?"\\]{0,160}?\b([A-Za-z_][A-Za-z0-9_]{0,127})\s+or\s+([A-Za-z_][A-Za-z0-9_]{0,127})\s*\?/giu)];
-        if (field && choices.some(choice => choice[1] === field || choice[2] === field)) return false;
-      }
-      return !(match[1]!.toLowerCase() === "is" && match[2]!.toLowerCase() === "the"
-        && /^\s+(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed)\b/iu.test(tail));
-    });
-    if (concreteIdentity) {
-      throw new AuthoringResumeMaterialError("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED",
-        `concrete tenant or principal values cannot be saved in Boundary-authoring state (field category: ${category}).`);
-    }
-  }
-}
-
-/** Categories are host constants, never rejected content or arbitrary keys. */
-function* resumeMaterialText(value: unknown, category = "material"): Generator<{ text: string; category: string }> {
-  if (typeof value === "string") yield { text: value, category };
-  else if (Array.isArray(value)) {
-    for (const item of value) yield* resumeMaterialText(item, category);
-  } else if (value && typeof value === "object") {
-    for (const [key, item] of Object.entries(value)) {
-      const next = ["conversation", "operator_messages", "operator_statements", "job_intent", "read_intent",
-        "pending_action_revision", "action", "question", "answer", "instruction"].includes(key) ? key : category;
-      yield { text: key, category: "field name" };
-      yield* resumeMaterialText(item, next);
-    }
-  }
 }
 
 function boundaryAuthoringResumeInvalidReason(error: unknown): string {
+  if (error instanceof AuthoringMaterialContextError)
+    return "Current trusted identity screening is unavailable or changed. Restore this job's trusted configuration before inspecting its material.";
   if ((error as { code?: string })?.code === "AUTHORING_SETUP_OLDER_VERSION") return OLDER_AUTHORING_SETUP_MESSAGE;
   if (!(error instanceof Error)) {
     return "The saved authoring state failed its integrity check.";

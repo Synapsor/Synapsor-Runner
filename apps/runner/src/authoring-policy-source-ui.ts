@@ -1,4 +1,4 @@
-import { assertBoundaryAuthoringResumeMaterial } from "./boundary-authoring-resume.js";
+import { withBoundaryAuthoringSourceMaterial } from "./boundary-authoring-resume.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import type { BoundaryAuthoringChat } from "./boundary-authoring-chat.js";
@@ -16,12 +16,15 @@ export async function appendPolicySourceOperatorMessage(root: string, sources: P
   options: { permit?: ProjectAuthorityMutationPermit; expectedDigest?: string | null } = {}): Promise<void> {
   if (!activePolicySource(sources)) return;
   if (answer.length > 4_000 || (sources.operator_messages?.length ?? 0) >= 64) throw new Error("Source-related history is full (64 messages, 4000 characters each). /rules can remove retained context; nothing was truncated or sent.");
-  assertBoundaryAuthoringResumeMaterial(answer);
   const expectedDigest=options.expectedDigest === undefined ? canonicalJsonDigest(sources) : options.expectedDigest;
   const next=structuredClone(sources);
-  next.operator_messages=[...(next.operator_messages ?? []),answer];
-  await savePolicySources(root,next,{expectedDigest,permit:options.permit});
-  Object.assign(sources,next);
+  // Destination approvals are host transfer metadata, not business answers.
+  // Screen the exact appended payload, then retain that returned projection.
+  await withBoundaryAuthoringSourceMaterial(root, sources.id, answer, async (json, permit) => {
+    next.operator_messages=[...(next.operator_messages ?? []),JSON.parse(json) as string];
+    await savePolicySources(root,next,{expectedDigest,permit});
+    Object.assign(sources,next);
+  }, options.permit);
 }
 
 export function installPolicySourceCommands(input: {
