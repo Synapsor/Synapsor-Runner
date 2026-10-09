@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { types } from "node:util";
 import { loadRuntimeConfigFromFile, resolveTrustedContext, type RuntimeConfig, type TrustedContext } from "@synapsor-runner/mcp-server";
 import { resolveSynapsorProject } from "./project-resolution.js";
 import { AuthoringResumeMaterialError } from "./authoring-checkpoint-save-error.js";
@@ -105,13 +106,15 @@ async function resolveCurrent(input: AuthoringMaterialContextInput): Promise<Res
 }
 
 /** Call at the actual retention/send/save boundary with the same complete material
- * and owning-schema origin. This is a current screening check, not a lease or an ACK. */
+ * and owning-schema origin. ONLY the returned immutable JSON may be retained or
+ * sent; do not subsequently serialize the caller's mutable value. This checks
+ * currentness, not a lease or an ACK. Native writers still own their CAS. */
 export async function assertAuthoringMaterial(input: {
   value: unknown; owner: AuthoringMaterialOwner; origin: AuthoringMaterialOrigin; context: AuthoringMaterialContext;
-}): Promise<void> {
+}): Promise<string> {
   const owner = { ...input.owner }, origin = input.origin, context = input.context;
   let material: unknown;
-  try { material = structuredClone(input.value); }
+  try { material = snapshotJson(input.value, new WeakSet()); }
   catch { throw new AuthoringMaterialContextError(codes.unavailable); }
   const native = contexts.get(context);
   if (!native || native.resolution.kind === "unavailable") throw new AuthoringMaterialContextError(codes.unavailable);
@@ -125,7 +128,7 @@ export async function assertAuthoringMaterial(input: {
   const current = await resolveCurrent(native.input);
   if (current.kind === "unavailable" || current.kind !== native.resolution.kind || current.proof !== native.resolution.proof)
     throw new AuthoringMaterialContextError(codes.changed);
-  assertCredentials(material);
+  const serialized = assertCredentials(material);
   for (const scalar of materialScalars(material)) {
     if (origin === "forbidden_identity" && scalar !== "") throw identityBlocked();
     if (current.values?.some(value => typeof scalar === "string" ? scalar.includes(value) : String(scalar) === value)) {
@@ -133,13 +136,14 @@ export async function assertAuthoringMaterial(input: {
       throw identityBlocked();
     }
   }
+  return serialized;
 }
 
 function identityBlocked(): AuthoringResumeMaterialError {
   return new AuthoringResumeMaterialError("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED",
     "A current configured identity cannot be retained in authoring material.");
 }
-function assertCredentials(value: unknown): void {
+function assertCredentials(value: unknown): string {
   let serialized: string | undefined;
   try { serialized = JSON.stringify(value); }
   catch { throw new AuthoringMaterialContextError(codes.unavailable); }
@@ -147,6 +151,7 @@ function assertCredentials(value: unknown): void {
   if (/(?:postgres|mysql):\/\/|https?:\/\/(?!127\.0\.0\.1(?::\d+)?(?:\/|"))|BEGIN [A-Z ]*PRIVATE KEY|api[_-]?key\s*[:=]|bearer\s+[A-Za-z0-9._-]+/iu.test(serialized))
     throw new AuthoringResumeMaterialError("BOUNDARY_AUTHORING_RESUME_PRIVATE_MATERIAL_BLOCKED",
       "credentials, endpoint URLs, and private keys cannot be saved in Boundary-authoring state.");
+  return serialized;
 }
 function* materialScalars(value: unknown): Generator<string | number | boolean> {
   if (typeof value === "string" || typeof value === "boolean") yield value;
@@ -154,10 +159,51 @@ function* materialScalars(value: unknown): Generator<string | number | boolean> 
     if (!Number.isFinite(value)) throw new AuthoringMaterialContextError(codes.unavailable);
     yield value;
   }
-  else if (Array.isArray(value)) { for (const item of value) yield* materialScalars(item); }
+  else if (Array.isArray(value)) { for (let i = 0; i < value.length; i++) yield* materialScalars(value[i]); }
   else if (value && typeof value === "object") {
     if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null)
       throw new AuthoringMaterialContextError(codes.unavailable);
     for (const [key, item] of Object.entries(value)) { yield key; yield* materialScalars(item); }
   }
+}
+
+/** Validate ORIGINAL shape before projection: cloning first erases prototypes.
+ * Descriptors avoid executing accessors; proxies are refused before reflection.
+ * The detached JSON containers have no inherited serialization hooks. */
+function snapshotJson(value: unknown, ancestors: WeakSet<object>): unknown {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "object" || types.isProxy(value) || ancestors.has(value))
+    throw new AuthoringMaterialContextError(codes.unavailable);
+  const array = Array.isArray(value), prototype = Object.getPrototypeOf(value);
+  if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null)
+    throw new AuthoringMaterialContextError(codes.unavailable);
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const keys = Reflect.ownKeys(descriptors);
+  if (keys.some(key => typeof key !== "string")) throw new AuthoringMaterialContextError(codes.unavailable);
+  ancestors.add(value);
+  try {
+    if (array) {
+      const length = descriptors.length?.value;
+      if (!Number.isSafeInteger(length) || length < 0 || keys.length !== length + 1)
+        throw new AuthoringMaterialContextError(codes.unavailable);
+      const result: unknown[] = [];
+      Object.setPrototypeOf(result, null);
+      for (let i = 0; i < length; i++) {
+        const descriptor = descriptors[String(i)];
+        if (!descriptor || !("value" in descriptor) || !descriptor.enumerable)
+          throw new AuthoringMaterialContextError(codes.unavailable);
+        result[i] = snapshotJson(descriptor.value, ancestors);
+      }
+      return Object.freeze(result);
+    }
+    const result = Object.create(null) as Record<string, unknown>;
+    for (const key of keys) {
+      const descriptor = descriptors[key as string]!;
+      if (!("value" in descriptor) || !descriptor.enumerable)
+        throw new AuthoringMaterialContextError(codes.unavailable);
+      result[key as string] = snapshotJson(descriptor.value, ancestors);
+    }
+    return Object.freeze(result);
+  } finally { ancestors.delete(value); }
 }

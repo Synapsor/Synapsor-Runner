@@ -4,10 +4,10 @@
 - Context is opaque/nonserializable, canonical root + actual job.created_at bound; native config/session resolution stays host-only.
 - Configured/unconfigured/unavailable distinct; missing local provider/env/session never becomes [] safe.
 - Exact values/keys/scalars screened; typed business collisions ambiguous; credential/private-key/endpoint checks retained.
-- Async assertion re-resolves current config/session/env and snapshots complete material/owner/origin before awaits.
-- Result: old guard 0P/2F → component34P/0F, scoped types0; invalid minimal fixture failures preserved separately.
+- Async assertion validates original JSON descriptors/prototype, snapshots before awaits, and returns ONLY screened immutable JSON for retention.
+- Result: R2 toJSON/output before0P2F →39P0F/types0; old known-value before and fixture failures preserved.
 - Evidence material-* under existing owned /var/tmp evidence; no snapshots, provider/DB calls, or active process.
-- Main hooks open: awaited checks before ready/display/retention/save/egress, builder/compare/ACK and Source append; no native privacy closure claim.
+- Main hooks open: all boundaries must use returned JSON, never original input; builder/compare/ACK and Source append still unwired.
 - R2 deliverable review required; HTTP positive is host-port coverage only, not real authentication.
 - Small fixes use before/after tests in product commit plus one-line result; no extra per-step seals.
 - Paid closed; clocks unchanged; keep all storage/evidence; private backup only.

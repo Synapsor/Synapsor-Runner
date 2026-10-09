@@ -37,8 +37,8 @@ describe("configured identity retention", () => {
     });
   it("keeps exact bytes and ordinary business explanations without English exemptions", async () => {
     const f = await fixture();
-    await expect(f.check("Each tenant is exactly one organization. ACME-CORP is a distinct business string.")).resolves.toBeUndefined();
-    await expect(f.check({ status: "ready", count: 2 })).resolves.toBeUndefined();
+    await expect(f.check("Each tenant is exactly one organization. ACME-CORP is a distinct business string.")).resolves.toBe(JSON.stringify("Each tenant is exactly one organization. ACME-CORP is a distinct business string."));
+    await expect(f.check({ status: "ready", count: 2 })).resolves.toBe('{"status":"ready","count":2}');
   });
   it.each(["api_key=private", "https://private.example/path", "mysql://private", "postgres://private", "BEGIN PRIVATE KEY", "Bearer private-token"])
     ("retains credential/endpoint guard: %s", async value => {
@@ -58,7 +58,7 @@ describe("configured identity retention", () => {
       base_url_env: "CLOUD_URL", runner_token_env: "CLOUD_TOKEN", adapter_id: "adapter", source_id: "app",
     } });
     expect(f.context.kind).toBe("unconfigured");
-    await expect(f.check("Ordinary business material")).resolves.toBeUndefined();
+    await expect(f.check("Ordinary business material")).resolves.toBe('"Ordinary business material"');
     await fs.writeFile(f.file, JSON.stringify({ version: 1, mode: "read_only", capabilities: [], sources, trusted_context: identity, contexts: { actual: identity } }));
     await expect(f.check("Ordinary business material")).rejects.toThrow("CONTEXT_CHANGED");
     const named = await resolveAuthoringMaterialContext({ ...f.owner, env: f.env });
@@ -144,6 +144,45 @@ describe("configured identity retention", () => {
       process.env = { ...process.env, PRIVATE_PRINCIPAL: "changed-principal" };
       await expect(assertAuthoringMaterial({ value: "business", owner: f.owner, context, origin: "retained_material" })).rejects.toThrow("CONTEXT_CHANGED");
     } finally { process.env = original; }
+  });
+  it("refuses original custom serialization before clone can erase its prototype", async () => {
+    const f = await fixture();
+    class PrivateSerialization { toJSON() { return "person-123"; } }
+    const value = new PrivateSerialization();
+    expect(JSON.stringify(value)).toBe('"person-123"');
+    await expect(f.check(value)).rejects.toThrow("CONTEXT_UNAVAILABLE");
+  });
+  it("returns only the immutable JSON actually screened across an asynchronous input change", async () => {
+    const f = await fixture(); const value = { answer: "business" };
+    const pending = f.check(value); value.answer = "person-123";
+    expect(await pending).toBe('{"answer":"business"}');
+  });
+  it("refuses accessors and proxies without invoking them", async () => {
+    const f = await fixture(); let invoked = 0;
+    const accessor = Object.defineProperty({}, "answer", { enumerable: true, get() { invoked++; return "person-123"; } });
+    const proxy = new Proxy({}, { ownKeys() { invoked++; return []; } });
+    await expect(f.check(accessor)).rejects.toThrow("CONTEXT_UNAVAILABLE");
+    await expect(f.check(proxy)).rejects.toThrow("CONTEXT_UNAVAILABLE");
+    expect(invoked).toBe(0);
+  });
+  it("refuses own toJSON, custom array prototypes, sparse arrays, symbols and cycles", async () => {
+    const f = await fixture(); let calls = 0;
+    const customArray = Object.setPrototypeOf(["business"], { toJSON() { calls++; return "person-123"; } });
+    const cyclic: Record<string, unknown> = {}; cyclic.self = cyclic;
+    const symbol = { [Symbol("private")]: "person-123" };
+    for (const value of [{ toJSON() { calls++; return "person-123"; } }, customArray, new Array(2), symbol, cyclic])
+      await expect(f.check(value)).rejects.toThrow("CONTEXT_UNAVAILABLE");
+    expect(calls).toBe(0);
+  });
+  it("returns exact nested JSON unaffected by later mutation or serialization hooks", async () => {
+    const f = await fixture(); const value = { list: [{ answer: "business" }], empty: null, flag: true };
+    const pending = f.check(value);
+    value.list[0]!.answer = "person-123";
+    Object.defineProperty(value, "toJSON", { value: () => "person-123" });
+    const retained = await pending;
+    expect(retained).toBe('{"list":[{"answer":"business"}],"empty":null,"flag":true}');
+    expect(JSON.stringify(value)).toBe('"person-123"');
+    expect(retained).not.toContain("person-123");
   });
   it("screens a snapshot captured before asynchronous currentness checks", async () => {
     const f = await fixture(); const value = { answer: "person-123" };
