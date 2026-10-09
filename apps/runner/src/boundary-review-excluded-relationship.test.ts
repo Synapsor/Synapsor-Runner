@@ -14,7 +14,7 @@ import {
 
 const actor = "declared relationship reviewer";
 const reason = "Review only the declared relationship; preserve all field and subject restrictions.";
-type Variant = "source-private" | "target-private" | "scope-pair" | "unproven" | "missing-target";
+type Variant = "source-private" | "target-private" | "both-private" | "scope-pair" | "unproven" | "missing-target";
 async function fixture(variant: Variant) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "excluded-relationship-"));
   await fs.chmod(root, 0o700); await fs.mkdir(path.join(root, ".git"));
@@ -34,8 +34,8 @@ async function fixture(variant: Variant) {
     storePath: guided.store_path, actor });
   for (const table of inspection.tables) {
     const fields = ["label", ...(table === source
-      ? (variant === "source-private" ? [] : ["join_key"])
-      : (variant === "target-private" ? [] : ["parcel_id"]))];
+      ? (["source-private", "both-private"].includes(variant) ? [] : ["join_key"])
+      : (["target-private", "both-private"].includes(variant) ? [] : ["parcel_id"]))];
     const preview = await prepareBoundaryResourceReviewMutation(root, { resource_id: `studio.${table.name}`, include: true,
       tenant_key: "tenant_id", principal_key: "principal_id", selectable_fields: fields, allow_reviewed_fields: fields,
       actor, reason }, async () => inspection);
@@ -56,21 +56,27 @@ async function refusal(variant: Variant, ids: string[], resource?: string) {
   expect(await currentBoundaryReviewMutationBindings(f.root)).toEqual(before);
   expect(await loadBoundaryResourceReviewCatalog(f.root)).toEqual(catalog);
   expect(f.inspection).toEqual(inspection);
-  return error as Error & { code?: string };
+  return error as Error & { code?: string; relationships?: Array<{ id: string; reason: string; kept_out_fields?: Array<{ resource: string; field: string }> }> };
 }
 
 describe("inspected relationships excluded from the Read pack", () => {
-  it.each(["source-private", "target-private"] as const)("explains an exact inspected FK excluded by a %s join key without changing authority", async variant => {
+  it.each(["source-private", "target-private", "both-private"] as const)("explains an exact inspected FK excluded by a %s join key without changing authority", async variant => {
     const error = await refusal(variant, ["rel_k9"]);
     expect(error.code).toBe("READ_RELATIONSHIP_UNAVAILABLE");
     expect(error.message).toContain('Relationship "rel_k9" is excluded because a join key is kept out');
     expect(error.message).not.toContain("Unknown");
-    expect(error.message).not.toMatch(/join_key|parcel_id|tenant_id|principal_id/);
+    const fields = variant === "source-private" ? [{ resource: "studio.q7", field: "join_key" }]
+      : variant === "target-private" ? [{ resource: "studio.r8", field: "parcel_id" }]
+        : [{ resource: "studio.q7", field: "join_key" }, { resource: "studio.r8", field: "parcel_id" }];
+    expect(error.relationships).toEqual([{ id: "rel_k9", reason: "kept_out_join_key", kept_out_fields: fields }]);
+    for (const { resource, field } of fields) expect(error.message).toContain(`${resource}.${field}`);
+    expect(error.message).not.toMatch(/tenant_id|principal_id|internal_note/);
   });
   it("keeps truly absent identifiers unknown", async () => {
     const error = await refusal("source-private", ["never_inspected"]);
     expect(error.message).toContain('Unknown relationship "never_inspected"');
     expect(error.message).not.toContain("join key is kept out");
+    expect(error.relationships).toEqual([{ id: "never_inspected", reason: "unknown" }]);
   });
   it("does not borrow a matching constraint from another source resource", async () => {
     const error = await refusal("source-private", ["rel_k9"], "studio.r8");
@@ -86,6 +92,10 @@ describe("inspected relationships excluded from the Read pack", () => {
     expect(error.message).toContain('Relationship "rel_k9" is excluded because a join key is kept out');
     expect(error.message).toContain('Unknown relationship "never_inspected"');
     expect(error.message).not.toContain('Unknown relationships "rel_k9"');
+    expect(error.relationships).toEqual([
+      { id: "rel_k9", reason: "kept_out_join_key", kept_out_fields: [{ resource: "studio.q7", field: "join_key" }] },
+      { id: "never_inspected", reason: "unknown" },
+    ]);
   });
   it("preserves a private typed scope pair and permits the otherwise reviewed composite join", async () => {
     const f = await fixture("scope-pair");
