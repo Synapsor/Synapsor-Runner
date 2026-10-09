@@ -22,12 +22,15 @@ synapsor-runner contract test \
   --contract ./synapsor.contract.json \
   --tests ./synapsor.contract-tests.json \
   --config ./synapsor.runner.json \
-  --live --format junit --out ./contract-tests.xml
+  --live --disposable-source app --format junit --out ./contract-tests.xml
 ```
 
-Live mode accepts local/disposable PostgreSQL and MySQL targets. Runner refuses
-remote hosts by default; `--allow-remote` is an explicit operator override and
-does not grant implicit write permission. Use synthetic fixtures and a
+Live mode requires an explicit `--disposable-source <name>` for every configured
+Source, using its exact configuration key (replace `app` above with that key).
+Repeat the option for multiple Sources. Database names do not establish that a
+database is disposable. Runner refuses remote hosts by default; `--allow-remote`
+is a separate explicit operator override and does not replace the disposable
+Source declaration or grant write permission. Use synthetic fixtures and a
 disposable database. Unknown assertions and unresolved required tests fail
 rather than being skipped.
 

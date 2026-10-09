@@ -1290,60 +1290,19 @@ async function proposalInput(args: string[], capability: RuntimeCapabilityConfig
 
 
 export function sampleInputForCapability(capability: RuntimeCapabilityConfig): Record<string, unknown> {
-  const input: Record<string, unknown> = {};
-  for (const [name, spec] of Object.entries(capability.args)) {
-    if (spec.type === "object_array") {
-      input[name] = [Object.fromEntries(Object.entries(spec.fields).map(([fieldName, fieldSpec]) => [fieldName, sampleScalarArg(fieldName, fieldSpec)]))];
-      continue;
-    }
-    if (spec.enum?.length) input[name] = spec.enum[0];
-    else if (name === capability.lookup.id_from_arg) input[name] = sampleIdForCapability(capability, name);
-    else if (/reason/i.test(name)) input[name] = sampleReasonForCapability(capability);
-    else if (/resolution/i.test(name)) input[name] = "Resolved after reviewing policy evidence.";
-    else if (/status/i.test(name)) input[name] = "pending_review";
-    else if (/amount|cents|fee|credit|balance/i.test(name)) input[name] = typeof spec.maximum === "number" ? Math.min(spec.maximum, 1000) : 0;
-    else if (spec.type === "number") input[name] = spec.minimum ?? 1;
-    else if (spec.type === "boolean") input[name] = true;
-    else input[name] = `sample_${name}`;
-  }
-  const missing = Object.entries(capability.args)
-    .filter(([, spec]) => spec.required !== false)
-    .filter(([name]) => input[name] === undefined)
-    .map(([name]) => name);
-  if (missing.length > 0) {
-    throw new Error(`no sample exists for ${capability.name}. Required input fields: ${missing.join(", ")}`);
-  }
-  return input;
+  return Object.fromEntries(Object.entries(capability.args).map(([name, spec]) => [name,
+    spec.type === "object_array"
+      ? [Object.fromEntries(Object.entries(spec.fields).map(([fieldName, fieldSpec]) => [fieldName, sampleScalarArg(fieldSpec)]))]
+      : sampleScalarArg(spec),
+  ]));
 }
 
 
-function sampleScalarArg(name: string, spec: Exclude<RuntimeCapabilityConfig["args"][string], { type: "object_array" }>): unknown {
+function sampleScalarArg(spec: Exclude<RuntimeCapabilityConfig["args"][string], { type: "object_array" }>): unknown {
   if (spec.enum?.length) return spec.enum[0];
-  if (/reason/i.test(name)) return "Reviewed sample reason.";
-  if (/status/i.test(name)) return "pending_review";
-  if (spec.type === "number") return spec.minimum ?? (typeof spec.maximum === "number" ? Math.min(spec.maximum, 1000) : 1);
-  if (spec.type === "boolean") return true;
-  return `sample_${name}`;
-}
-
-
-function sampleIdForCapability(capability: RuntimeCapabilityConfig, argName: string): string {
-  const text = `${capability.name} ${capability.target.table} ${argName}`.toLowerCase();
-  const arg = argName.toLowerCase();
-  if (/invoice|billing/.test(text)) return "INV-3001";
-  if (/account|customer/.test(arg) || /accounts|customers/.test(text)) return "cust_acme_1";
-  if (/ticket|support/.test(text)) return "T-1042";
-  if (/order/.test(text)) return "O-1001";
-  return "sample_1";
-}
-
-
-function sampleReasonForCapability(capability: RuntimeCapabilityConfig): string {
-  const text = `${capability.name} ${capability.target.table}`.toLowerCase();
-  if (/order|status_change/.test(text)) return "payment cleared and ready for the next status";
-  if (/credit|customer|account/.test(text)) return "support goodwill credit";
-  if (/late_fee|waiver|billing|invoice/.test(text)) return "approved support waiver";
-  return "reviewed and approved by support";
+  if (spec.type === "number") return spec.minimum ?? Math.min(spec.maximum ?? 1, 1);
+  if (spec.type === "boolean") return false;
+  return "sample".slice(0, spec.max_length);
 }
 
 
@@ -2004,6 +1963,15 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
         : [];
     const names = exposures.map((item) => item.exposedName);
     const serialized = JSON.stringify(tools);
+    // Exact identifiers bind tool metadata to the actual resolved runtime owner.
+    // Descriptive names and annotations alone do not establish tool authority.
+    const declaredToolAuthority = tools.every((tool) => {
+      if (tool.annotations.raw_sql_exposed !== false || tool.annotations.approval_or_commit_tool !== false) return false;
+      if (tool.kind === "action_catalog") return tool.name === DESCRIBE_ACTIONS_TOOL;
+      if (tool.kind === "semantic_action") return tool.name === REQUEST_CHANGE_TOOL;
+      if (tool.kind !== "read" && tool.kind !== "aggregate_read" && tool.kind !== "proposal") return false;
+      return runtime!.config.capabilities?.some((capability) => capability.name === tool.name && capability.kind === tool.kind) === true;
+    });
     const checks = [
       ...(ownerSettings ? [{ name: "owner settings authenticated", ok: true,
         detail: "Current management grants checked against the configured control store; drafts require separate human activation." },
@@ -2017,10 +1985,10 @@ export async function inspectMcpToolBoundary(args: string[]): Promise<{
           ? "none; activate an exact reviewed production boundary, then rerun doctor --preflight"
           : "none"),
       },
-      { name: "execute_sql absent", ok: !names.some((name) => /execute_sql|run_query|query_database/i.test(name)), detail: "model does not receive raw SQL tools" },
-      { name: "approval tools absent", ok: !names.some((name) => /approve/i.test(name)), detail: "approval stays outside MCP" },
-      { name: "policy recommendation tools absent", ok: !names.some((name) => /policy.*recommend|recommend.*policy|activate.*policy/i.test(name)), detail: "graduated-trust evaluation, review, export, and activation stay outside MCP" },
-      { name: "commit tools absent", ok: !names.some((name) => /commit|apply_writeback/i.test(name)), detail: "commit stays outside MCP" },
+      { name: "execute_sql absent", ok: declaredToolAuthority, detail: "model does not receive raw SQL tools" },
+      { name: "approval tools absent", ok: declaredToolAuthority, detail: "approval stays outside MCP" },
+      { name: "policy recommendation tools absent", ok: declaredToolAuthority, detail: "graduated-trust evaluation, review, export, and activation stay outside MCP" },
+      { name: "commit tools absent", ok: declaredToolAuthority, detail: "commit stays outside MCP" },
       { name: "database_url absent", ok: !/postgres(?:ql)?:\/\/|mysql:\/\//i.test(serialized), detail: "MCP config uses env var names, not connection strings" },
       { name: "write credentials absent", ok: !/(password|secret|bearer|private[_-]?key|token)/i.test(serialized), detail: "MCP tools do not include write credentials" },
     ];

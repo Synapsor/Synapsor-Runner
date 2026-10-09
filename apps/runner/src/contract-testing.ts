@@ -74,6 +74,8 @@ export async function runContractTests(input: {
   configPath: string;
   live: boolean;
   allowRemote?: boolean;
+  /** Exact configured Source names explicitly declared disposable by the operator. */
+  disposableSources?: readonly string[];
   env?: NodeJS.ProcessEnv;
 }): Promise<ContractTestReport> {
   const manifest = await loadContractTestManifest(input.manifestPath);
@@ -85,7 +87,7 @@ export async function runContractTests(input: {
   if (missing.length) throw new Error(`CONTRACT_TEST_CONFIG_MISMATCH: config does not serve ${missing.join(", ")}`);
   const env = input.env ?? process.env;
   const engine = liveEngine(config);
-  if (input.live) assertDisposableSources(config, env, input.allowRemote === true);
+  if (input.live) assertDisposableSources(config, env, input.allowRemote === true, input.disposableSources ?? []);
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-contract-test-"));
   const results: ContractTestCaseResult[] = [];
   try {
@@ -400,14 +402,14 @@ function validateAssertion(raw: unknown, index: number, ids: Set<string>): Contr
   };
 }
 
-function assertDisposableSources(config: RuntimeConfig, env: NodeJS.ProcessEnv, allowRemote: boolean): void {
+function assertDisposableSources(config: RuntimeConfig, env: NodeJS.ProcessEnv, allowRemote: boolean, disposableSources: readonly string[]): void {
   for (const [name, source] of Object.entries(config.sources ?? {})) {
     const raw = env[source.read_url_env];
     if (!raw) throw new Error(`CONTRACT_TEST_DATABASE_URL_MISSING: ${source.read_url_env} is not set for ${name}`);
     const parsed = new URL(raw.trim());
-    const loopback = ["localhost", "127.0.0.1", "::1"].includes(parsed.hostname);
-    const disposableName = /(?:test|demo|fixture|synapsor)/i.test(parsed.pathname);
-    if (!allowRemote && (!loopback || !disposableName)) throw new Error(`CONTRACT_TEST_REMOTE_DATABASE_REFUSED: ${name} must use a localhost disposable database; --allow-remote is an explicit operator override`);
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+    if (!allowRemote && !loopback) throw new Error(`CONTRACT_TEST_REMOTE_DATABASE_REFUSED: ${name} must use a local database; --allow-remote is an explicit operator override`);
+    if (!disposableSources.includes(name)) throw new Error(`CONTRACT_TEST_DISPOSABLE_SOURCE_REQUIRED: declare the exact disposable Source with --disposable-source ${name}`);
   }
 }
 

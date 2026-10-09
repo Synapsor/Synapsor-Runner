@@ -535,6 +535,7 @@ async function contractTest(args: string[]): Promise<number> {
     configPath,
     live: args.includes("--live"),
     allowRemote: args.includes("--allow-remote"),
+    disposableSources: repeatedArgs(args, "--disposable-source"),
   });
   const text = formatContractTestReport(report, format);
   const output = outputArg(args);

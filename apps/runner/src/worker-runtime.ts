@@ -1258,8 +1258,6 @@ function workerErrorCode(error: unknown): string {
   const safe = safeOperationalErrorCode(error);
   if (safe.startsWith("OPERATOR_") && !identityFailureCodes.has(safe)) return "WORKER_EXECUTION_ERROR";
   if (safe !== "COMMAND_REJECTED") return safe;
-  const message = error instanceof Error ? error.message : "";
-  if (/timeout/i.test(message)) return "HANDLER_TIMEOUT";
   return "WORKER_EXECUTION_ERROR";
 }
 
