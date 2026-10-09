@@ -1,0 +1,154 @@
+{
+  "status": "COMPILER_COMPONENT_WIP_20PASS; ADAPTER_RUNTIME_NOT_IMPLEMENTED; NO_NATIVE_PUBLIC_ACCEPTANCE",
+  "base_pin": "00bdc02f",
+  "owner_source": "/home/sandesh-tiwari/.codex/attachments/8b31a779-ca23-490f-bb29-47f7db03c762/Pasted text.txt (read once)",
+  "boundary": "One PostgreSQL Source, existing reviewed scoped team/limit row, exactly two complete reviewed contribution populations, same reviewed nonnegative integer unit, only single INSERT/UPDATE; no atomic groups/delegation/delayed work/public default activation/customer DDL.",
+  "designation": {
+    "schema_version": "synapsor.experimental.shared-sum-protection.v1",
+    "kind": "experimental_shared_sum",
+    "source": "reviewed Source ref",
+    "scope": {
+      "tenant_field": "reviewed field ref",
+      "principal_field": "reviewed field ref"
+    },
+    "limit": {
+      "resource": "reviewed catalog resource ref",
+      "field": "reviewed integer field ref"
+    },
+    "populations": [
+      {
+        "resource": "reviewed catalog resource ref",
+        "field": "reviewed integer field ref"
+      },
+      {
+        "resource": "distinct reviewed catalog resource ref",
+        "field": "same-unit reviewed integer field ref"
+      }
+    ],
+    "time": "current_state",
+    "external_writers": "participating_only"
+  },
+  "authority": "Compiler-issued opaque process-local experimental plan, exact current compiled inventory, host opt-in only. Each participant must already contain the compiler-derived canonical shared-SUM precondition in its reviewed rule.require, binding Source/populations/limit meaning through existing rule and compiled digests. Experimental designation adds post-state enforcement without authorizing/changing the approved effect. No serialized V5/authority layout/default/public activation change; a future public capability path remains separately required.",
+  "compiler_checks": [
+    "Both complete_locked inverse populations from same one subject_ref team row; same DB/scope/units, no filters/private witnesses/mixed updates; parent first in existing lock order.",
+    "All current direct-SQL effects targeting either population or limit relation must be supported participants with same reviewed full context; missing complete dependency/unsupported inventory refuses.",
+    "Derive affected population or limit update from actual compiled effect AST; preserve identities/version checks and relationship membership; complete INSERT columns/dedupe exact; no trusted caller post-state formula.",
+    "Require exact compiler-derived existing SUM1+SUM2<=limit condition in each participant rule.require; no caller post-state formula, arbitrary predicate or unbound meaning. Reject app-owned/unsupported participating writers as well as partial direct-SQL inventories."
+  ],
+  "runtime": "Existing Source admission protects native namespace/relations/receipt and validates profile. Existing fact loader locks team row first, reads both complete populations fresh under READ COMMITTED. Existing verifier repeats current inventory then projects entire immutable approved effect, checks SUM(pop1)+SUM(pop2)<=current/proposed limit; overflow/missing/negative/uninspectable facts fail closed. Existing executor/transaction/receipts/uncertainty fence unchanged.",
+  "guard": "Actual existing team row FOR UPDATE is invariant-instance guard; same Source physical relation/scope/team PK regardless of agent/session/merely policy revision. No digest advisory lock/process mutex/new lock service. Different teams lock distinct rows; cooperating writers only.",
+  "identity": "Preserve trusted tenant/principal and exact subject/effect Source; projection must match exactly one complete member and parent relationship tuple. No cross-principal reads/private-row construction.",
+  "native_acceptance": "Tester01a117fd sole independent native harness/operator: credit INSERT300 vs waiver UPDATE250 under500 BOTHorders; each alone; independent teams progress; fresh small valid pass; fresh excess limit refusal; limit change; missing/hidden dependency refusal; unknown COMMIT never replay. Observe actual waits/effects/receipts, not harness mutex or two-refused result. Existing stale dependency refusal remains distinguishable from post-state hard-limit refusal.",
+  "files": [
+    "packages/action-rules/src/experimental-shared-sum.ts",
+    "packages/action-rules/src/experimental-shared-sum.test.ts",
+    "packages/action-rules/src/runtime.ts (explicit experimental strategy hook)",
+    "packages/action-rules/src/fact-loader.ts (required experimental native qualification hook)",
+    "packages/postgres/src/experimental-shared-sum.ts",
+    "packages/postgres/src/experimental-shared-sum.test.ts",
+    "packages/postgres/src/hard-limit-source.ts (factor existing bounded Source profile, same checks)",
+    "packages/postgres/src/index.ts (fact loader qualification method only)",
+    "packages/action-rules/src/index.ts (experimental named export only, no default opt-in)",
+    "packages/action-rules/src/testing/experimental-shared-sum-fixture.ts (synthetic existing compiler authority input; no public activation)"
+  ],
+  "review": "R2 sole high-risk concurrency/permission/design queue via Main; experimental source/native results separate from public PASS; MySQL unsupported.",
+  "grants": "Root will not add grants. Native Tester may reuse only reviewed owned disposable PG recipe; needed team/population/version-row-lock/receipt/namespace rights must be described as exact delta and independently reviewed first. Existing namespace MAINTAIN profile is not a new broader grant.",
+  "resources": "Focused1worker/offline initially; native1slot owned by Tester; <=4 heavy jobs/max8 workers; actual >=8GiB RAM/disk at launch.",
+  "paid": "CLOSED",
+  "tests": "20 PASS /0 FAIL /0 SKIP; first two fixture failures preserved; no native/adapter/public/types qualification",
+  "public": "NOT_RUN",
+  "component_runs": [
+    {
+      "stage": "compiler-components-1",
+      "counts": {
+        "numTotalTests": 20,
+        "numPassedTests": 0,
+        "numFailedTests": 20,
+        "numPendingTests": 0
+      },
+      "child_exit": 1,
+      "classification": "All20 canonical-json fixture failures: optional singleton fields had undefined values; experiment not reached.",
+      "raw": {
+        "RUN.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/compiler-components-1/RUN.json",
+          "sha256": "d952ddb54ccc3a758276baa5317b98b5f656ec6dd46da075014568b0164068c0"
+        },
+        "vitest.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/compiler-components-1/vitest.json",
+          "sha256": "7db5c3d83618bb1fab373e0e22b5eda02a143619c8883c9add121c78f37d237c"
+        },
+        "test.log": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/compiler-components-1/test.log",
+          "sha256": "98efe96a6905d7febcf17e08becf28eda7810287d248c3b5d508011efb726100"
+        },
+        "SOURCE-MANIFEST.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/compiler-components-1/SOURCE-MANIFEST.json",
+          "sha256": "c553b3db2e7d203c24469741524dfd216a8128eb3a5582ff4d9d7c2248199676"
+        }
+      }
+    },
+    {
+      "stage": "compiler-components-2",
+      "counts": {
+        "numTotalTests": 20,
+        "numPassedTests": 9,
+        "numFailedTests": 11,
+        "numPendingTests": 0
+      },
+      "child_exit": 1,
+      "classification": "9PASS11 fixture failures: union fixture leaked unreviewed waiver alias into credit/limit evaluation; original strict fact-binding guard correctly returned unknown.",
+      "raw": {
+        "RUN.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/compiler-components-2/RUN.json",
+          "sha256": "23fea634667d7cbf9172236e375237870c6657a352bd8b8e62aaaff9f62213b6"
+        },
+        "vitest.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/compiler-components-2/vitest.json",
+          "sha256": "6c1f6e7005e78af75c16f7843975bb770fe04caca5ff5cbda4d775bac72feed7"
+        },
+        "test.log": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/compiler-components-2/test.log",
+          "sha256": "e27b84281388029b081c86ec9ec18a9bf8d831381d956d3b4366d3085ac0feac"
+        },
+        "SOURCE-MANIFEST.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/compiler-components-2/SOURCE-MANIFEST.json",
+          "sha256": "a000c66282697843fde4ead6d5bd632065f7a2d3d311c085b877ac157fcc3a71"
+        }
+      }
+    },
+    {
+      "stage": "compiler-components-3",
+      "counts": {
+        "numTotalTests": 20,
+        "numPassedTests": 20,
+        "numFailedTests": 0,
+        "numPendingTests": 0
+      },
+      "child_exit": 0,
+      "classification": "20PASS0FAIL0SKIP after truthful per-rule fixture projection; experimental compiler/poststate components only.",
+      "raw": {
+        "RUN.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/compiler-components-3/RUN.json",
+          "sha256": "5f2a1769b11da4a55ad04d129ec531c66efd17ff90640db776e3c6f54c65473f"
+        },
+        "vitest.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/compiler-components-3/vitest.json",
+          "sha256": "146de7daeeb199512ba384800e871b0b415c09ee66374deb5ef2d732a59e9531"
+        },
+        "test.log": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/compiler-components-3/test.log",
+          "sha256": "6cb4b29f6bf820d0d7a2ea66748730e4481ae1b564c410514b258d6e2c6a4f51"
+        },
+        "SOURCE-MANIFEST.json": {
+          "path": "/var/tmp/synapsor-b65-experimental-shared-sum-owned/compiler-components-3/SOURCE-MANIFEST.json",
+          "sha256": "b0cdaa414492c6dc3872afb0eb643437b185c7fa225c2735c280462132dc213d"
+        }
+      }
+    }
+  ],
+  "source_modules": {
+    "packages/action-rules/src/experimental-shared-sum.ts": "06ec9ca0ab65b9c8b595ccded6ed2ce5fd2aae6e968546b9cf9339be1bdbc163",
+    "packages/action-rules/src/experimental-shared-sum.test.ts": "8520f00ad5d333d91412cae6afc3b69e34da49d9e3e6b2e3f75f4be625a876a8",
+    "packages/action-rules/src/testing/experimental-shared-sum-fixture.ts": "6e6aa3f32d1dfde15b4f18891f9a14f3369f3741feb6ed327c28f9ae920f00b5"
+  }
+}
