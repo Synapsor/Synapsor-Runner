@@ -1,3 +1,4 @@
+import { prepareReviewedReadScope } from "./test-fixtures/reviewed-read-scope.js";
 import { readSavedActionJobReview } from "./saved-action-job-review.js";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -25,7 +26,7 @@ import { BOUNDARY_REVIEW_SUBMISSION_VERSION, boundaryReviewDecisionRefs,
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { decodeOperatorAuthority, encodeOperatorAuthority, encodeOperatorExecutionPolicy, OPERATOR_READ_SELECTION, OPERATOR_READ_AUTHORING, OPERATOR_EXECUTION_POLICY,
   validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
-import { migrateProjectControlPolicies, openProjectControlPolicies, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
+import { migrateProjectControlPolicies, openProjectControlPolicies, openBoundProjectControlPolicies, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
 import * as policyStoreAccess from "./control-policy-store.js";
 import { OperatorAuthorityRepository } from "./control-policy-operator-repository.js";
 import { createOptionalActionRuleRuntimeServices, createOptionalReadActionRuleRuntimeServices } from "./semantic-action-runtime.js";
@@ -233,7 +234,7 @@ describe("exact stored operator authority", () => {
       const entry = authoring.entries[0]!;
       if (change === "baseline_digest") entry.progress.draft_digest = canonicalJsonDigest("changed");
       if (change === "candidate_digest") entry.progress.candidate_digest = canonicalJsonDigest("changed");
-      if (change === "confirmation") entry.progress.confirmations[0]!.input_digest = canonicalJsonDigest("changed");
+      if (change === "confirmation") entry.progress.confirmations[0]!.input_digest = "sha256:malformed";
       if (change === "duplicate_identity") authoring.entries[1]!.progress.boundary_id = entry.progress.boundary_id;
       if (change === "duplicate_name") {
         const secondId = authoring.entries[1]!.progress.boundary_id;
@@ -256,6 +257,74 @@ describe("exact stored operator authority", () => {
       expect(decodeOperatorAuthority(encodeOperatorAuthority(input))).toEqual(input);
     }
     expect(source).toEqual(before);
+  });
+
+  it("retains historical confirmation bytes while native save, applicability and activation enforce current origins", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-codec-native-history-")); roots.push(root);
+    await fs.chmod(root, 0o700);
+    vi.stubEnv("SYNAPSOR_RUNNER_CONFIG", ""); vi.stubEnv("SYNAPSOR_MCP_CONFIG", "");
+    const provider = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("PROVIDER_CLOSED"));
+    try {
+      const prepared = await prepareReviewedReadScope(root, { resources: ["work.items"], field: "label",
+        review: { allow_reviewed_fields: ["label"] } });
+      const before = await readProjectReadAuthoring(root);
+      if (!before?.selected) throw new Error("Actual native structural review is required.");
+      const originalBytes = JSON.stringify(before.authoring);
+      const changed = structuredClone(before.authoring);
+      const entry = changed.entries.find(item => item.progress.boundary_id === changed.selected_boundary_id)!;
+      const confirmation = entry.progress.confirmations[0]!;
+      expect(confirmation.origin).toBeDefined();
+      confirmation.input_digest = canonicalJsonDigest("declared changed historical decision");
+      const historicalBytes = JSON.stringify(changed);
+      expect(decodeOperatorAuthority(encodeOperatorAuthority(changed))).toEqual(changed);
+      await expect(saveProjectReadAuthoring({ projectRoot: root, expected: before.bindings, authoring: changed,
+        actor: "declared fixture operator", operation: "changed_confirmation_without_submission" }))
+        .rejects.toMatchObject({ code: "READ_REVIEW_EXPLICIT_SUBMISSION_REQUIRED" });
+      expect(await readProjectReadAuthoring(root)).toEqual(before);
+      expect(JSON.stringify(before.authoring)).toBe(originalBytes);
+      expect(JSON.stringify(changed)).toBe(historicalBytes);
+
+      // Deliberately inject historical data through the repository owner, not a
+      // review/confirmation API. This is an adversarial loader input, never a grant.
+      const binding = await openBoundProjectControlPolicies(root);
+      if (!binding) throw new Error("Actual native repository is required.");
+      try {
+        await new OperatorAuthorityRepository(binding).commitReadAuthoring({ expected_epoch: before.bindings.epoch,
+          expected_revision_id: before.bindings.revision_id, authoring: changed,
+          actor: "declared fixture operator", operation: "adversarial_historical_record" });
+      } finally { await binding.close(); }
+      const loaded = await readProjectReadAuthoring(root);
+      if (!loaded?.selected) throw new Error("Historical native record must remain readable.");
+      expect(loaded.selected.progress.confirmations.find(item => item.id === confirmation.id)).toEqual(confirmation);
+      expect(loaded.selected.progress.confirmed_decisions).not.toContain(confirmation.decision);
+      const context = await loadBoundaryReviewContext(root);
+      expect(context.bundle.outstanding_decision_ids).toContain(confirmation.id);
+      await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+      let prompts = 0;
+      await expect(boundaryActivateCommand(["--project-root", root], async () => prepared.inspection, {
+        presentationMode: "conversation", confirm: async () => { prompts++; return true; },
+        promptText: async () => undefined, chooseResource: async () => undefined, editFieldTiers: async () => undefined,
+      })).rejects.toThrow("unresolved decision");
+      expect(prompts).toBe(0);
+      await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readProjectReadAuthoring(root)).toEqual(loaded);
+      expect(JSON.stringify(changed)).toBe(historicalBytes);
+
+      const unavailable = structuredClone(loaded.authoring);
+      const unavailableConfirmation = unavailable.entries.find(item => item.progress.boundary_id === unavailable.selected_boundary_id)!
+        .progress.confirmations.find(item => item.id === confirmation.id)!;
+      if (!unavailableConfirmation.origin) throw new Error("The genuine origin must be retained.");
+      unavailableConfirmation.origin.revision_id = `policy:${"0".repeat(64)}`;
+      const next = await openBoundProjectControlPolicies(root);
+      if (!next) throw new Error("Actual native repository is required.");
+      try {
+        await new OperatorAuthorityRepository(next).commitReadAuthoring({ expected_epoch: loaded.bindings.epoch,
+          expected_revision_id: loaded.bindings.revision_id, authoring: unavailable,
+          actor: "declared fixture operator", operation: "adversarial_unavailable_origin" });
+      } finally { await next.close(); }
+      await expect(readProjectReadAuthoring(root)).rejects.toMatchObject({ code: "READ_REVIEW_ORIGIN_UNAVAILABLE" });
+      expect(provider).not.toHaveBeenCalled();
+    } finally { provider.mockRestore(); vi.unstubAllEnvs(); }
   });
 
   it("retains distinct activation receipts even when the authority digest is unchanged", () => {
