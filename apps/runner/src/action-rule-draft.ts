@@ -134,6 +134,11 @@ export function actionRuleModelDraftFromAuthority(input: {
   /** Unchanged resume must round-trip reviewed private reads, not minimize them. */
   preserveVerificationFields?: boolean;
 }): ActionRuleModelDraftV1 {
+  if (input.authority.schema_version === "synapsor.action-rule-authority.v3") {
+    throw new ActionRuleAuthoringError("ACTION_RULE_SHARED_SUM_PROTOCOL_REQUIRED",
+      "ACTION_RULE_SHARED_SUM_PROTOCOL_REQUIRED: The current Action draft cannot retain a reviewed weighted policy. Keep the current reviewed authority; weighted editing remains pending.",
+      { presentation: "terminal", path: "authority.shared_sum" });
+  }
   const storedReviewOutcome = (input.review as ActionRuleModelDraftV1["review"] & { outcome?: unknown }).outcome;
   if (storedReviewOutcome !== undefined && storedReviewOutcome !== input.outcome) {
     invalid(`The stored review belongs to another outcome, not ${input.outcome}. Reopen the matching reviewed Action.`);
