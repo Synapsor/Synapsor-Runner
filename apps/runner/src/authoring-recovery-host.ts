@@ -76,17 +76,30 @@ export function createAuthoringRecoveryHost(input: {
         const ownsAllowance = await access.hasRemainingOwner(snapshot, preview);
         await current(snapshot);
         const canContinue = preview.unresolved_operation_count === 1 && preview.remaining_attempts > 0 && ownsAllowance;
+        const continuationUnavailable = canContinue ? [] : [
+          "Continue is unavailable for this selected step:",
+          ...(preview.unresolved_operation_count !== 1
+            ? [`${preview.unresolved_operation_count} unfinished operations remain; Continue requires exactly one unfinished operation.`,
+              "Review each unfinished step separately: select it, inspect its saved work, and use Retain the interruption and review current saved work if appropriate. Reopen recovery to inspect the other steps."]
+            : []),
+          ...(!(preview.remaining_attempts > 0)
+            ? ["No same-step attempts remain. Current saved-work review is available; a separate job requires its ordinary reviews."]
+            : []),
+          ...(!ownsAllowance
+            ? ["No remaining saved provider allowance owns this exact step. Current saved-work review remains available; it grants no new episode."]
+            : []),
+          "Local review does not complete the work, replay output, or grant another allowance. It does not guarantee that Continue will become available.",
+        ];
         const binding = recoveryViewBinding({ inspection: snapshot.digest, resume: snapshot.resume, preview });
         const details = [`Saved job revision: ${snapshot.resume}`, `Current inspected state: ${snapshot.digest}`,
           `Interrupted operation: ${preview.operation_id}; attempt: ${preview.attempt_id}`,
           `Remaining attempts in this generation chain: ${preview.remaining_attempts}`,
-          ...(!ownsAllowance ? ["No remaining saved provider allowance owns this exact step. Current saved-work review remains available; it grants no new episode."] : []),
-          ...(!preview.remaining_attempts ? ["This unfinished generation has no remaining same-step attempt. Inspect or review current saved work; starting a separate job is a distinct task with its own required reviews."] : []),
+          ...continuationUnavailable,
           "The original response and local save outcome are not acknowledged by this review.", ...snapshot.retained];
         let mode: "linked_generation" | "local_review";
         while (true) {
           const view: AuthoringRecoveryView = { kind: "mode", binding,
-            title: "REVIEW INTERRUPTED BUSINESS STEP", lines: context(snapshot), details,
+            title: "REVIEW INTERRUPTED BUSINESS STEP", lines: [...context(snapshot), ...continuationUnavailable], details,
             options: [{ value: "details", label: "Inspect saved work and the interrupted step" },
               ...(canContinue ? [{ value: "continue", label: "Continue this unfinished step within its remaining limits" }] : []),
               { value: "review", label: "Retain the interruption and review current saved work" },
