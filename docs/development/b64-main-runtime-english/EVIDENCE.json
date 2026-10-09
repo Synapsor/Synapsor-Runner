@@ -1,0 +1,103 @@
+{
+  "base": "d6f0fb8b49c2137ef9c1563946067e04721e2503",
+  "controls": [
+    "7eb60cfe",
+    "db18cfe6"
+  ],
+  "product": "8bc603d8",
+  "branch": "codex/b64-main-runtime-english-retirement-20261008",
+  "review": "PENDING independent R2; no self-acceptance",
+  "slot": {
+    "number": 4,
+    "workers": 1,
+    "network": "bwrap --unshare-net",
+    "released": true
+  },
+  "counts": {
+    "main_pending_independent": 35,
+    "privacy_pending_typed": 15,
+    "privacy_pending_delete": 0,
+    "packet_source_implemented": 4,
+    "packet_source_remaining": 0,
+    "packet_main_integrated": 0,
+    "packet_independent_accepted": 0
+  },
+  "files": [
+    {
+      "path": "apps/runner/src/mcp-runtime.ts",
+      "ids": [
+        "I03547",
+        "I03548"
+      ],
+      "source_implemented": 2,
+      "source_remaining": 0,
+      "main_integrated": 0,
+      "independent_accepted": 0,
+      "blob": "3d7ae2b0270ce60deacbdaaf31302d817bc5baf8"
+    },
+    {
+      "path": "apps/runner/src/worker-runtime.ts",
+      "ids": [
+        "I03552"
+      ],
+      "source_implemented": 1,
+      "source_remaining": 0,
+      "main_integrated": 0,
+      "independent_accepted": 0,
+      "blob": "1b3e908bd4670954879f39ab4c78f212a5a2bcd5"
+    },
+    {
+      "path": "apps/runner/src/contract-testing.ts",
+      "ids": [
+        "I03568"
+      ],
+      "source_implemented": 1,
+      "source_remaining": 0,
+      "main_integrated": 0,
+      "independent_accepted": 0,
+      "blob": "7ce7dcea4bc356156e93deed32658c38fda09809"
+    }
+  ],
+  "support_hooks": [
+    "contract-commands.ts: repeated operator --disposable-source forwarding",
+    "docs/contract-testing.md: exact declaration and separate remote override"
+  ],
+  "evidence": [
+    {
+      "path": "/var/tmp/b64-privacy-evidence/main-four-before.log",
+      "sha256": "a02835203103211d463993fb5d558a2282afd562b8ecfb65e819f715a868b14c",
+      "result": "14 failed / 65 passed"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/main-cli-before.log",
+      "sha256": "6718481f5858438c1de6a3a99c1968b202859724d0085a186dea29490fc6cf3f",
+      "result": "1 failed"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/main-tool-negative-before.log",
+      "sha256": "e5abe39e9bcc7398e4b58328551c373a5e99b65bd7aa27c4fbdd714674b97df9",
+      "result": "3 failed / 4 skipped"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/main-four-after.log",
+      "sha256": "731711d685b0a256540a1c06eb2543536d2970e0e3542b49edb76fa9209c6d6e",
+      "result": "83 passed"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/main-four-types.log",
+      "sha256": "25e617a7065e691ae859f059ae97ccaf133205cb1d4d612d85d4e2b9ed354db7",
+      "result": "exit2:293 diagnostics,318 lines; zero owned"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/main-four-types-scoped.log",
+      "sha256": "f0829d4c21c12d2eb52b8d9c67138b1465419544d496f5e7e99ff55d4cba20f5",
+      "result": "exit2:16 external diagnostics,26 lines; zero owned"
+    }
+  ],
+  "limitations": [
+    "Schema samples are placeholders; real existing source subjects require explicit --input or --json.",
+    "No database or provider runtime acceptance claimed. Live-mode guard controls deliberately use static assertions.",
+    "Full build and strict closure remain blocked by untouched concurrent migration ports; diagnostics preserved without suppression.",
+    "Credential redaction regex remains a separately legitimate presentation protection, not tool authority."
+  ]
+}
