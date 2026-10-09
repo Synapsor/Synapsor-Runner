@@ -35,3 +35,26 @@ it.each(["unbound", "wrong_kind", "unsafe_annotation"])("refuses unproven runtim
   const result = await inspectMcpToolBoundary(["--config", configPath, "--store", ":memory:"]);
   expect(result.checks.find(check => check.name === "execute_sql absent")?.ok).toBe(false);
 });
+
+it.each([
+  ["action_catalog", runtimeApi.DESCRIBE_ACTIONS_TOOL],
+  ["semantic_action", runtimeApi.REQUEST_CHANGE_TOOL],
+] as const)("requires an actual resolved Action owner for fixed %s metadata", async (kind, name) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "b64-tool-owner-negative-")); roots.push(root);
+  const config = JSON.parse(await fs.readFile("examples/mcp-postgres-support/synapsor.runner.json", "utf8"));
+  config.capabilities = [{ ...config.capabilities[0], name: "example.inspect" }];
+  expect(config.action_rules).toBeUndefined();
+  const configPath = path.join(root, "runner.json"); await fs.writeFile(configPath, JSON.stringify(config));
+  const original = runtimeApi.createMcpRuntime;
+  vi.spyOn(runtimeApi, "createMcpRuntime").mockImplementation((...args) => {
+    const runtime = original(...args), list = runtime.listTools;
+    runtime.listTools = () => list().map(tool => ({ ...tool, kind, name }));
+    return runtime;
+  });
+  const result = await inspectMcpToolBoundary(["--config", configPath, "--store", ":memory:"]);
+  expect(result.surface).toBe("capabilities");
+  expect(result.names).toContain(name);
+  const checks = result.checks.filter(check => ["execute_sql absent", "approval tools absent", "commit tools absent", "policy recommendation tools absent"].includes(check.name));
+  expect(checks).toHaveLength(4);
+  expect(checks.every(check => !check.ok)).toBe(true);
+});
