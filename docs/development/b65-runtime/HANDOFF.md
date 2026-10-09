@@ -1,10 +1,10 @@
 B65 Runtime workstream4 RUNNING; Owner8b31 supersedes serial HOLD; paid CLOSED; failure/uncertainty history preserved.
 Explicit host-only experimental shared SUM; one PG17 Source/team/two complete populations; no public/default activation.
-Compiler/runtime/PG qualification implemented; original numeric state + explicit common unit validated; existing parent-first locks, executor, Source transaction and atomic receipt reused.
-Corrected runtime before2PASS7genuineFAIL; SS05 before33P5F→after209PASS0FAIL0SKIP exact7files; earlier fixture/oracle failures retained separately.
-Bounded PG core dependency closure6projects PASS; first22type diagnostics retained and fixed; no whole-repo type/build claim.
-Native requirement: precreated Source_DB receipt and existing reviewed owned recipe only; no automatic grant/DDL widening.
-R2 sole high-risk queue: complete deliverable source/concurrency review before integration/native claim; Main relays exact pins.
+Compiler/runtime/PG qualification implemented; original numeric state/unit + INSERT tenant/proposal dedup checked; existing parent-first locks, executor, Source transaction and atomic receipt reused.
+Corrected runtime before2PASS7genuineFAIL; SS05 before33P5F→209P; INSERTcontract before0P4F→affected368P/postbuild48P, no count transfer; earlier fixture/oracle failures retained separately.
+Bounded PG core dependency closure6projects build5 PASS; first22type diagnostics retained and fixed; no whole-repo type/build claim.
+Native precreated Source_DB/exact owned recipe only; Main relays permission/readback PASS; Tester alone operates, no root grants.
+R2 sole high-risk queue: INSERTcompiler successor review before credit/races/integration; Main relays exact pins/build5 custody.
 Tester01a117fd sole native operator: both order races, standalone effects, independent teams, fresh small/excess, limit change, hidden deps, unknown COMMIT.
 Current public30+25/10/30-40 and five arithmetic cases NOT_RUN; Main owns Bug2/D2/native public-route repair.
 Canonical crosswalk docs/development/b65-cross-resource/SUPPORT-MATRIX.json; original56rows unchanged; no acceptance transfer.

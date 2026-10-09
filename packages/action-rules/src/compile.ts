@@ -600,6 +600,15 @@ function assertEnvelope(
   } else {
     if (envelope.target_binding !== undefined || rule.effect.target_binding !== undefined) fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", "Derived INSERT cannot target an existing row binding.");
     if (envelope.deduplication === undefined || envelope.deduplication.components.length === 0) fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", "Derived INSERT requires source-enforced deduplication.");
+    // The existing exact semantic authority parser requires these bindings.
+    // Refuse the declaration here, before issuing compiled/activated authority.
+    if (!envelope.deduplication.components.some(component => component.source === "proposal_id")) {
+      fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", "Derived INSERT deduplication requires proposal identity.", "effect_envelope.deduplication");
+    }
+    if (envelope.tenant_key !== undefined && !envelope.deduplication.components.some(component =>
+      component.source === "trusted_tenant" && component.column === envelope.tenant_key)) {
+      fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", "Derived INSERT deduplication must bind the reviewed trusted tenant column.", "effect_envelope.deduplication");
+    }
   }
   if (!envelope.approval_classes.includes(rule.approval_class)) fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Approval class ${rule.approval_class} is outside the effect envelope.`);
   return result;

@@ -55,7 +55,7 @@ export function experimentalSharedSumFixture(options: { credit?: number; waiver?
       primary_key: target.primary_key, tenant_key: 'tenant_id', principal_scope_key: 'principal_id', max_rows: 1,
       allowed_fields: kind === 'credit' ? [{ name: 'team_id', type: id }, { name: 'amount', type: amount, minimum: 0, maximum: 1000 }, { name: 'version', type: version, minimum: 1, maximum: 1 }]
         : [{ name: kind === 'waiver' ? 'amount' : 'limit', type: amount, minimum: 0, maximum: 1000 }],
-      ...(kind === 'credit' ? { deduplication: { components: [{ column: 'credit_id', source: 'proposal_id' as const }] } }
+      ...(kind === 'credit' ? { deduplication: { components: [{ column: 'credit_id', source: 'proposal_id' as const }, { column: 'tenant_id', source: 'trusted_tenant' as const }] } }
         : { conflict_key: 'version', version_advance: { column: 'version', strategy: 'integer_increment' as const } }),
       approval_classes: ['shared.review'], writeback: { mode: 'direct_sql', supervised_worker: 'allowed' } };
     const rule: ActionRuleSpecV1 = { schema_version: 'synapsor.action-rule.v1', name: `shared.${kind}`, outcome: `shared.${kind}`, context: 'team', source,
