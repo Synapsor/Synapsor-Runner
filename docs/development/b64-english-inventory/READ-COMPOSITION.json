@@ -133,5 +133,18 @@
     "runtime_native_interval_reported": "2026-10-08T23:45:33Z to 23:45:54Z",
     "finding": "Borrowed slot2 overlap; do not claim exclusive lease or infer exact total concurrent jobs from messages. Both completed; no rerun to erase overlap.",
     "correction": "Require acknowledged owner-to-borrower grant and acknowledged return before another launch."
+  },
+  "file_codec_WIP": {
+    "source": "0c8e1b12 imported f567e81b",
+    "independent_before": "R1 538d5f53/a724 controls10PASS1FAIL; Main exact repeat29b20 same",
+    "repair": "Native cross-realm Promise detection via node:util types.isPromise; intrinsic rejection observation, no foreign thenables awaited/executed.",
+    "after": {
+      "numPassedTests": 55,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "evidence": "/var/tmp/synapsor-b64-main-owned/evidence/read-codec-main-{before,after}.json",
+    "independent_after": "PENDING R1",
+    "limits": "Pure codec only, no actual file/native/public loading qualification. Existing 330 composition type diagnostics remain; no new full typecheck claimed."
   }
 }

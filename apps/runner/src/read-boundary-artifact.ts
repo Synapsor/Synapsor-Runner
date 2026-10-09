@@ -1,4 +1,4 @@
-import { isDeepStrictEqual } from "node:util";
+import { isDeepStrictEqual, types } from "node:util";
 import type { ActivatedExplorationBoundary, ExplorationBoundaryDraft } from "./auto-boundary.js";
 
 /** These are new file envelope formats, independent of the inner policy version. */
@@ -94,7 +94,7 @@ function checkedPayload<T extends object>(
   if (result !== undefined) {
     // An async assertion cannot validate a synchronous file load. Observe only
     // a native Promise's rejection; never await it or execute foreign thenables.
-    if (result instanceof Promise) void Promise.prototype.then.call(result, undefined, () => undefined);
+    if (types.isPromise(result)) void Promise.prototype.then.call(result, undefined, () => undefined);
     throw new ReadBoundaryArtifactError("READ_BOUNDARY_ARTIFACT_VALIDATOR_INVALID");
   }
   if (!isDeepStrictEqual(detached, expected)) throw new ReadBoundaryArtifactError("READ_BOUNDARY_ARTIFACT_NORMALIZATION_REFUSED");
