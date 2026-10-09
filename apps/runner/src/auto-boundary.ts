@@ -2727,6 +2727,16 @@ async function assertRuntimeReadDiscoveryFits(projectRoot: string, boundaries: A
 export type ReadScopeActivationAssessment = (candidate: ExplorationBoundaryDraft,
   permit: ProjectAuthorityMutationPermit) => Promise<NativeReadScopeAssessment>;
 
+/** Shared activation predicate over a fresh native assessment, not labels or a
+ * caller's saved readiness flag. The writer obtains it again under its permit. */
+export function readScopeReadyForActivation(candidate: ExplorationBoundaryDraft,
+  scope: NativeReadScopeAssessment | undefined): boolean {
+  return Boolean(scope?.kind === "native" && scope.status === "confirmed"
+    && scope.candidate_digest === explorationBoundaryCandidateDigest(candidate)
+    && !scope.replacement_pending && scope.record.proposal.applicability === "read_requested"
+    && scope.analysis_assessment?.status === "compatible");
+}
+
 type ExplorationBoundaryActivationInput = {
   projectRoot: string;
   candidate: ExplorationBoundaryDraft;
@@ -2786,10 +2796,7 @@ async function activateExplorationBoundaryUnlocked(input: ExplorationBoundaryAct
     }
   }
   const readScope = await input.assessReadScope?.(structuredClone(candidate), permit);
-  if (!readScope || readScope.kind !== "native" || readScope.status !== "confirmed"
-    || readScope.candidate_digest !== explorationBoundaryCandidateDigest(candidate)
-    || readScope.replacement_pending || readScope.record.proposal.applicability !== "read_requested"
-    || readScope.analysis_assessment?.status !== "compatible") {
+  if (!readScopeReadyForActivation(candidate, readScope)) {
     throw Object.assign(new Error("The exact current analyzed Read meaning remains pending with its native review owner."), {
       code: "READ_SCOPE_REVIEW_REQUIRED" as const,
       candidate_digest: explorationBoundaryCandidateDigest(candidate),

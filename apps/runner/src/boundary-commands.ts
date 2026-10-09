@@ -106,6 +106,7 @@ import {
   MIN_AUTO_BAND_BUCKETS,
   SHARED_REFERENCE_ACKNOWLEDGEMENT,
   activateExplorationBoundary,
+  readScopeReadyForActivation,
   explorationBoundaryCandidateDigest,
   loadGenerationLockSnapshot,
   hasReviewedPrincipalScope,
@@ -160,7 +161,6 @@ import { assertOperatorPublicKeyFingerprint, resolveOperatorIdentity, verifyJwtO
 import { resolveSynapsorProject } from "./project-resolution.js";
 import {
   exploreModelFacingFieldIds,
-  exploreBoundaryVocabularyGaps,
   formatExploreVocabularyCoverage,
 } from "./explore-vocabulary.js";
 import {
@@ -762,6 +762,7 @@ type ProductionActivationReadiness = {
 };
 
 type BoundaryActivateCommandOptions = {
+  assessReadScope?: ReturnType<typeof createNativeReadScope>["assess"];
   inspectProductionReadiness?: (input: {
     args: string[];
     projectRoot: string;
@@ -3700,6 +3701,7 @@ type BoundaryAssistOutcome = {
 type ReadBoundaryReviewDisposition = "activated" | "finish" | "manual_editor";
 
 type ReadBoundaryReviewOptions = {
+  assessReadScope?: ReturnType<typeof createNativeReadScope>["assess"];
   businessSummary?: () => string[];
   deploymentReadiness?: () => Promise<{ summary: string[]; details: string[] }>;
   confirmedFieldMeanings?: (readDigest: string) => ReadonlySet<string>;
@@ -10308,15 +10310,6 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     input.authoringChat?.checkpoint(notice.title, notice.lines, "warning");
     return { ...boundaryAssistResult(notice, false, false, Boolean(input.authoringChat)), navigation: "pause" };
   };
-  if (!readBoundaryActive && reviseReadWithModel) {
-    const gaps = exploreBoundaryVocabularyGaps(context.candidate.pack.resources);
-    if (gaps.length) await reviseReadWithModel([
-      "Finish the missing reviewed vocabulary in this same disabled draft before activation.",
-      "Resolve only opaque model-facing names that currently lack a reviewed label or description in the catalog.",
-      "Use the operator's already supplied business meanings and retained answers to add concise labels/descriptions. Ask only if a meaning is genuinely missing. Do not ask the operator to navigate a manual editor.",
-      "This is a metadata-only repair: preserve all field exposure, operations, exclusions, trusted scope, Action business rules, shared approval limits and execution intent. No authority is activated by this repair.",
-    ].join("\n"), undefined, { vocabularyOnly: true });
-  }
   async function reconcilePendingPolicyRepair(): Promise<boolean> {
     // Recheck generated repair work before replay. Prefix recognition only offers
     // a legacy routing review; it never establishes provenance or owner consent.
@@ -10541,6 +10534,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if (input.authoringChat) input.authoringChat.rememberDetails("NEXT AUTHORITY REVIEW - READ BOUNDARY", nextReadReviewDetails);
     else await writeRunner("NEXT AUTHORITY REVIEW - READ BOUNDARY", nextReadReviewDetails);
     const reviewResult = await input.completeReadReview("activate", input.session, {
+      assessReadScope: readScopeReview.assess,
       businessSummary: () => [...readRevisionRecovery,
         ...semanticActionDrafts.flatMap((entry) => semanticActionBusinessReviewLines(entry.result.compiled, context.candidate))],
       deploymentReadiness: draftWriterReadiness,
@@ -14435,18 +14429,18 @@ async function confirmAndActivateFocusedBoundary(input: {
     ?? readPrivacyReview({ boundary: context.candidate, confirmedMeanings: input.reviewOptions?.confirmedFieldMeanings?.(context.bundle.candidate_digest) });
   const discoveryConcerns = readDiscoveryCompatibility(context.candidate, context.bundle.candidate_digest,
     await readOptionalExplorationDraft(input.projectRoot));
-  const vocabularyGaps = exploreBoundaryVocabularyGaps(context.candidate.pack.resources);
-  const vocabularyLines = vocabularyGaps.length ? [
-    "Some database names still need a business label before the assistant can use this access.",
-    ...vocabularyGaps.map(gap => `- ${gap.resource}: ${[...(gap.resource_gap ? ["table label or description"] : []),
-      ...gap.fields.map(field => `${field} label or description`)].join(", ")}`),
-    "Finish names with the model using the policy already supplied, or add labels in the manual editor. Permissions and saved rules stay unchanged.",
-  ] : [];
+  const scopeAssessment = await input.reviewOptions?.assessReadScope?.(context.candidate);
+  const readScopeReady = readScopeReadyForActivation(context.candidate, scopeAssessment);
+  const scopeLines = readScopeReady ? [] : [
+    "The current Read meaning still needs its saved scope review or confirmation.",
+    "Continue this saved job's Read review. Optional names and labels do not establish business meaning.",
+    "The draft can remain disabled while that decision is pending.",
+  ];
   const discoveryLines = readDiscoveryConcernLines(discoveryConcerns);
   activationContext.push(...(discoveryLines.length ? ["", ...discoveryLines] : ["Discovery compatibility: complete resource contracts fit the bounded MCP response."]));
   const conversationReviewContext = formatReadActivationDecisionSummary([
     ...impactLines,
-    ...vocabularyLines,
+    ...scopeLines,
     ...(deployment?.summary ?? []),
     ...(discoveryConcerns.length ? ["Discovery compatibility: some exact resource contracts exceed the supported size. Revise this saved draft before activation; exact details list the affected resources and sizes."] : []),
     ...(readiness?.summary ?? await input.reviewOptions?.rulesSummary?.() ?? []),
@@ -14491,7 +14485,8 @@ async function confirmAndActivateFocusedBoundary(input: {
         projectRoot: input.projectRoot,
         context,
         actor,
-        reason: "Confirmed the complete exact Read Boundary as the disabled dependency for the linked Action Boundary.",
+        submission: boundaryReviewSubmissionForDecisions(context.candidate, []),
+        reason: "Retained the disabled Read dependency; existing applicable structural confirmations are preserved.",
       });
       const reviewedLines = [
         `Read Boundary: ${context.candidate.pack.name}`,
@@ -14499,8 +14494,8 @@ async function confirmAndActivateFocusedBoundary(input: {
         "EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF",
         "Source database changed: no",
       ];
-      if (input.session.present) input.session.present("READ REVIEW COMPLETE - NOT ACTIVE", reviewedLines, "success");
-      else process.stdout.write(["READ REVIEW COMPLETE - NOT ACTIVE", ...reviewedLines, ""].join("\n"));
+      if (input.session.present) input.session.present("READ DRAFT SAVED - NOT ACTIVE", reviewedLines, "info");
+      else process.stdout.write(["READ DRAFT SAVED - NOT ACTIVE", ...reviewedLines, ""].join("\n"));
       return 0;
     }
     const pausedLines = [
@@ -14511,16 +14506,15 @@ async function confirmAndActivateFocusedBoundary(input: {
     else process.stdout.write([...pausedLines, ""].join("\n"));
     return 0;
   }
-  if (!conversation && (discoveryConcerns.length || vocabularyGaps.length)) {
+  if (!conversation && (discoveryConcerns.length || !readScopeReady)) {
     await showManualReadActivationBlocker(input.session, "READ ACCESS IS NOT READY TO ACTIVATE", [
       "Review decisions remain saved, but the client cannot receive this complete access contract yet.",
       ...discoveryLines,
-      ...vocabularyLines,
+      ...scopeLines,
       "Return to the saved draft: W opens model-assisted revision; E opens the table and column editor.",
       "Keep required business access and private verification intact. C checks the revised contract again before offering activation.",
       "No authority was activated and no source records changed.",
     ]);
-    return 0;
   }
   const activationPrompt = context.candidate.deployment_profile === "production"
     ? input.keepAccessOpen
@@ -14540,10 +14534,9 @@ async function confirmAndActivateFocusedBoundary(input: {
     let decided = false;
     while (!decided) {
       let choice = await input.session.chooseOption(
-        vocabularyGaps.length || readiness && !readiness.ready ? "FINISH BOUNDARY REVIEW" : replacingActive ? "REPLACE ACTIVE READ BOUNDARY" : "ACTIVATE READ BOUNDARY",
+        !readScopeReady || readiness && !readiness.ready ? "FINISH BOUNDARY REVIEW" : replacingActive ? "REPLACE ACTIVE READ BOUNDARY" : "ACTIVATE READ BOUNDARY",
         [
-          ...(vocabularyGaps.length ? input.reviewOptions?.reviseVocabulary ? [{ value: "resolve_names", label: "Finish names with the model",
-            detail: "Use already supplied meanings; ask only about missing labels. No permissions change." }] : []
+          ...(!readScopeReady ? []
           : discoveryConcerns.length ? [] : readiness && !readiness.ready ? [{ value: "resolve", label: readiness.privacy ? "Resolve required privacy decision with the model" : "Resolve required decisions with the model",
             detail: "Continue this saved draft; no activation is available while its requirements are unresolved." }] : [{
             value: "activate",
@@ -14597,9 +14590,9 @@ async function confirmAndActivateFocusedBoundary(input: {
           },
         ],
         {
-          initialValue: vocabularyGaps.length && input.reviewOptions?.reviseVocabulary ? "resolve_names" : readiness && !readiness.ready ? "resolve" : "finish",
-          reviewOnly: vocabularyGaps.length > 0 || readiness?.ready === false,
-          ...(!vocabularyGaps.length && (!readiness || readiness.ready) ? {
+          initialValue: readScopeReady && readiness && !readiness.ready ? "resolve" : "finish",
+          reviewOnly: !readScopeReady || readiness?.ready === false,
+          ...(readScopeReady && (!readiness || readiness.ready) ? {
             activationView: readActivationView({
               replacing: replacingActive,
               removedResources: authorityReduction.removedResources.length,
@@ -14629,10 +14622,6 @@ async function confirmAndActivateFocusedBoundary(input: {
       if (choice === "resolve" && input.reviewOptions?.resolveRequirements) {
         await input.reviewOptions.resolveRequirements();
         return confirmAndActivateFocusedBoundary(input);
-      }
-      if (choice === "resolve_names" && input.reviewOptions?.reviseVocabulary) {
-        if (await input.reviewOptions.reviseVocabulary()) return confirmAndActivateFocusedBoundary(input);
-        continue;
       }
       if (choice === "privacy_details") {
         const section = readBoundaryReviewSections({ boundary: context.candidate, digest: context.bundle.candidate_digest, privacy })[0]!;
@@ -14682,11 +14671,15 @@ async function confirmAndActivateFocusedBoundary(input: {
         continue;
       }
       accepted = choice === "activate";
-      if (accepted && (discoveryConcerns.length || vocabularyGaps.length)) continue;
+      if (accepted && (discoveryConcerns.length || !readScopeReady)) continue;
       reviewDisposition = choice === "manual_editor" ? "manual_editor" : "finish";
       saveReviewedDisabled = choice === "finish";
       decided = true;
     }
+  } else if (discoveryConcerns.length || !readScopeReady) {
+    // Pending business meaning cannot activate; the separately shown structural
+    // review can still be explicitly confirmed and retained while disabled.
+    accepted = false;
   } else {
     accepted = input.keepAccessOpen && input.session.confirmActivation
       ? await input.session.confirmActivation(activationPrompt, { context: activationContext })
@@ -14703,9 +14696,10 @@ async function confirmAndActivateFocusedBoundary(input: {
           projectRoot: input.projectRoot,
           context,
           actor,
+          submission: boundaryReviewSubmissionForDecisions(context.candidate, []),
           reason: replacingActive
-            ? "Confirmed the complete exact replacement Read Boundary while keeping the current active revision live."
-            : "Confirmed the complete exact Read Boundary while keeping read authority disabled.",
+            ? "Retained the disabled replacement and existing applicable confirmations while keeping the current active revision live."
+            : "Retained the disabled Read draft and its existing applicable confirmations.",
         });
       }
       input.reviewOptions?.onDisposition?.(reviewDisposition ?? "finish");
@@ -14750,6 +14744,7 @@ async function confirmAndActivateFocusedBoundary(input: {
         projectRoot: input.projectRoot,
         context,
         actor,
+        submission: boundaryReviewSubmissionForDecisions(context.candidate, context.bundle.decisions.map(decision => decision.id)),
         reason: "Confirmed the complete exact boundary while keeping read authority disabled.",
       });
       const reviewedLines = [
@@ -14774,16 +14769,17 @@ async function confirmAndActivateFocusedBoundary(input: {
     ].join("\n"));
     return 0;
   }
+  const submission = boundaryReviewSubmissionForDecisions(context.candidate, context.bundle.decisions.map(decision => decision.id));
   const progress = createBoundaryReviewProgress({
     draft: context.draft,
     candidate: context.candidate,
-    confirmedDecisions: context.candidate.unresolved_decisions,
+    submission, resolvedOrigins: context.resolvedOrigins,
     ...(context.progress ? { previous: context.progress } : {}),
     actor,
     reason: "Confirmed the complete exact boundary shown by the focused access editor.",
     revision: (context.progress?.revision ?? 0) + 1,
   });
-  await saveReadReviewSignoff({ projectRoot: input.projectRoot, context, progress,
+  await saveReadReviewSignoff({ projectRoot: input.projectRoot, context, progress, submission,
     onReviewSignoff: input.reviewOptions?.onReviewSignoff, assertBeforeSave: input.reviewOptions?.assertBeforeSave });
   const activationResult = await boundaryActivateCommand(
     [
@@ -14794,6 +14790,7 @@ async function confirmAndActivateFocusedBoundary(input: {
     input.schemaInspector,
     input.session,
     input.activationHandoff,
+    { assessReadScope: input.reviewOptions?.assessReadScope },
   );
   if (activationResult === 0) input.reviewOptions?.onDisposition?.("activated");
   return activationResult;
@@ -17578,17 +17575,18 @@ export async function boundaryActivateCommand(
       consumedDecision = { store, key, decisionId, expiresAt };
     }
 
+    const submission = boundaryReviewSubmissionForDecisions(context.candidate, context.bundle.decisions.map(decision => decision.id));
     const progress = createBoundaryReviewProgress({
       draft: context.draft,
       candidate: context.candidate,
-      confirmedDecisions: context.candidate.unresolved_decisions,
+      submission, resolvedOrigins: context.resolvedOrigins,
       previous: context.progress,
       actor: identity.subject,
       revision: (context.progress?.revision ?? 0) + 1,
       now: now.toISOString(),
     });
     try {
-      expectedAuthoring = await saveBoundaryReviewSignoff(projectRoot, context, progress);
+      expectedAuthoring = await saveBoundaryReviewSignoff(projectRoot, context, progress, submission);
     } catch (error) {
       consumedDecision?.store.setRunnerState(consumedDecision.key, {
         status: "consumed_review_persistence_failed",
@@ -17672,7 +17670,8 @@ export async function boundaryActivateCommand(
       actor: actor!,
       confirmation: expectedConfirmation,
       verifiedDecision: governedDecision,
-      confirmedDecisions: context.candidate.unresolved_decisions,
+      reviewSubmission: boundaryReviewSubmissionForDecisions(context.candidate, context.bundle.decisions.map(decision => decision.id)),
+      assessReadScope: options.assessReadScope,
       currentInspection: activationInspection,
       activeSetMode: "add",
     });
