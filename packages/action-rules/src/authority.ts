@@ -218,6 +218,11 @@ export function parseActionRuleAuthority(
     || typeof record.action_boundary.name !== "string") {
     throw invalidAuthority();
   }
+  // Shared protection belongs to the complete authority, never an ignored
+  // per-rule extension of a legacy source record.
+  if (record.rules.some(source => isRecord(source) && ("shared_sum" in source || "shared_sum_digest" in source))) {
+    throw invalidAuthority();
+  }
   const loaded = createActionRuleAuthority({
     name: record.name,
     action_boundary_name: record.action_boundary.name,
@@ -228,6 +233,7 @@ export function parseActionRuleAuthority(
   });
   if (record.digest !== loaded.authority.digest
     || expectedDigest !== undefined && expectedDigest !== loaded.authority.digest
+    || reviewed && canonicalJsonStringify(record) !== canonicalJsonStringify(loaded.authority)
     || canonicalJsonStringify(record.action_boundary) !== canonicalJsonStringify(loaded.authority.action_boundary)) {
     throw invalidAuthority();
   }

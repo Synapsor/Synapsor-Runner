@@ -86,6 +86,9 @@ export type { HardLimitDesignationV1, CompiledHardLimitV1 } from "./types.js";
 export { SHARED_SUM_DESIGNATION_VERSION, REVIEWED_SHARED_SUM_VERSION, parseSharedSumDesignation,
   sharedSumDesignationDigest, parseReviewedSharedSum,
   type SharedSumDesignationV1, type ReviewedSharedSumV1 } from "./shared-sum-designation.js";
+export { assertReviewedSharedSumRegistry, deriveReviewedSharedSumProtection, resolveReviewedSharedSumProtection,
+  checkReviewedSharedSumPostState, reviewedSharedSumGuardIdentity,
+  type ReviewedSharedSumProtection } from "./reviewed-shared-sum.js";
 
 /** Host-only experiment, never enabled by the ordinary activation path. */
 export { compileExperimentalSharedSumProtection, type ExperimentalSharedSumDesignationV1,

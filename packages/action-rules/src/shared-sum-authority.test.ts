@@ -17,7 +17,7 @@ function fixture() {
   const reviewed: ReviewedSharedSumV1 = { schema_version: "synapsor.reviewed-shared-sum.v1", designation,
     confirmation: { actor: "local_installation_operator", decision: "new_attributed_decision",
       recorded_at: "2026-10-09T00:00:00.000Z", question: { id: "12345678-1234-1234-1234-123456789abc", revision: 1, digest: hash },
-      proposal_digest: hash, context_digest: hash, source_digest: hash, catalog_digest: canonicalJsonDigest(f.catalog),
+      proposal_digest: hash, context_digest: hash, source_digest: hash, catalog_digest: canonicalJsonDigest(f.authority.authority.catalog),
       generation_lock_fingerprint: hash, read_dependencies: [...reads].map(([name, digest]) => ({ name, digest })),
       designation_digest: canonicalJsonDigest(designation) } };
   const input = { name: "shared_native_experiment", action_boundary_name: "shared.actions", catalog: f.catalog,
@@ -65,6 +65,18 @@ describe("persisted shared-SUM authority and registry versions", () => {
     expect(changed.registry.digest).not.toBe(loaded.registry.digest);
     expect(changed.registry.rules.map(r => r.compiled.compiled_plan_digest))
       .toEqual(loaded.registry.rules.map(r => r.compiled.compiled_plan_digest));
+  });
+
+  it("refuses unbound nested v2 authority fields instead of silently dropping them", () => {
+    const { loaded } = fixture(); const stored: any = structuredClone(loaded.authority);
+    stored.rules[0].optional_verifier = false;
+    expect(() => parseActionRuleAuthority(stored)).toThrow();
+  });
+
+  it("refuses shared-SUM data placed in legacy rule sources", () => {
+    const { f, input } = fixture(); const stored: any = structuredClone(f.authority.authority);
+    stored.rules[0].shared_sum = input.shared_sum;
+    expect(() => parseActionRuleAuthority(stored)).toThrow();
   });
 
   it.each([
