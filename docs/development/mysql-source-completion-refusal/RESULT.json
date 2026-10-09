@@ -1,0 +1,37 @@
+{
+  "deliverable": 18,
+  "status": "IMPLEMENTED_OWNER_TESTED_INDEPENDENT_REVIEW_PENDING_CAPABILITY_UNSUPPORTED",
+  "before": "29d5c146 preserved4PASS2FAIL; MR01/MR02 exact missing diagnostic only",
+  "test_fixture": "b28968c2 unchanged",
+  "after": {
+    "new_controls": {
+      "pass": 6,
+      "fail": 0,
+      "skip": 0
+    },
+    "existing_offline": {
+      "pass": 3,
+      "fail": 0
+    },
+    "existing_witness_prerequisite": {
+      "fail": 1,
+      "test": "validates every atomic effect of the accepted native Source witness without touching its saved history",
+      "reason": "SYNAPSOR_B61_READONLY_NATIVE_WITNESS absent; test stops before opening accepted witness. No witness evidence imported, no native proof claimed."
+    },
+    "whole_invocation": "9PASS1FAIL0SKIP; not whole-group PASS"
+  },
+  "change": "Exactly five added lines in inspectWritebackSourceContext. Configured MySQL source_db (including configured default) gets code and message prefix MYSQL_SOURCE_DB_RECONCILIATION_UNSUPPORTED before writer URL/connection. Missing source preserves old validation. PG branch and MySQL ledger branch byte-identical; adapters/receipts/stores/formats untouched.",
+  "reason": "Current SourceCompletionEvidence accepts Postgres only. The existing MySQL source_db refusal was misleading, suggesting ledger mode rather than stating unsupported native reconciliation.",
+  "test_level": "Real local ProposalStore proposal/approval/intent/fence, actual exported inspector; downstream URL/MySQL/PG connection functions counted through controlled stubs. Zero database/provider/native Source effects. Ordinary acknowledged apply is not called or modified.",
+  "command": "env -u USER -u LOGNAME HOME=<owned>/home TMPDIR=<owned>/tmp bwrap --unshare-net --bind / / node node_modules/vitest/vitest.mjs run apps/runner/src/mysql-source-completion-refusal.test.ts apps/runner/src/source-completion-contract.test.ts apps/runner/src/source-completion-receipt.test.ts --config vitest.r1.config.mjs --maxWorkers=1 --minWorkers=1 --reporter=json --outputFile=<owned>/evidence/mysql-refusal-after.json",
+  "custody": {
+    "writeback_setup_sha256": "7a0dfa8c2c814a771364d57803b40e78c32520d9f0c249a20899dc5167837370",
+    "test_sha256": "efb67c0031e93640a82fc1291865557d635f00266db55624f14a3e66486631bc",
+    "base_snapshot": "0b8ef630 source-only reviewed snapshot reused; only exact owned branch source/test overlaid",
+    "new_snapshot_bytes": 0,
+    "docs_copied": false
+  },
+  "independence": "R1 implemented this narrow deliverable; R2 preseal design ACK, final independent verdict still required. No self-approval.",
+  "open": "Native MySQL source_db unknown-COMMIT reconciliation backend remains UNSUPPORTED/NOT_REACHED, not capability PASS. No replay/mode switch/new grant/row adoption/source effect. Held MySQL job untouched.",
+  "physical_end": "All runtime ended; Slot3 returned; no further runtime required for already passing9 offline cases."
+}

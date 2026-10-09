@@ -246,6 +246,11 @@ export async function inspectWritebackSourceContext(
     return { operation: intent.operation, classification: completion.status === "proven" ? "completion_proven" : "outcome_unknown",
       target_identity: job.target.primary_key.value === undefined ? [] : [{ column: job.target.primary_key.column, value: job.target.primary_key.value }], expected: {}, observed: {}, observed_digest: canonicalJsonDigest(completion), source_completion: completion };
   }
+  if (source && intent.intent.engine === "mysql" && runnerReceiptConfig(source)?.authority === "source_db") {
+    throw Object.assign(new Error(
+      "MYSQL_SOURCE_DB_RECONCILIATION_UNSUPPORTED: MySQL source_db lost-acknowledgement reconciliation is unsupported in this build. Keep the original attempt fenced; do not replay it, treat receipt absence as rollback, or change receipt mode.",
+    ), { code: "MYSQL_SOURCE_DB_RECONCILIATION_UNSUPPORTED" });
+  }
   if (runnerReceiptConfig(source)?.authority !== "runner_ledger") throw new Error(`source ${intent.intent.source_id} does not use runner_ledger receipt authority`);
   const databaseUrl = await resolveSqlWriteDatabaseUrl(intent.intent, configPath, process.env);
   return await inspectMysqlWritebackSource(intent.intent, databaseUrl);
