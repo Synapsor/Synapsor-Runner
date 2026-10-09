@@ -1,0 +1,42 @@
+{
+  "finding": "R2 MR3 fixed Action kind/name can self-assert a semantic owner on capabilities-only runtime",
+  "original_product": "8bc603d8",
+  "regressions": "18ade1f4",
+  "product": "7715c478",
+  "fix": "Both fixed Action metadata kinds require the actual resolved semantic_actions surface and nonempty loaded semanticAuthority before exact protocol-name comparison. No diagnostic metadata can establish its own owner.",
+  "independent_before": {
+    "fixture": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/reviewer2-b64-main-runtime-four-variant.test.ts",
+    "sha256": "25a0842c392ab7ee2318bfbbf34638c6ab7f39bfafed63c7e7aeae688b68e17f",
+    "action_catalog": "FAIL",
+    "semantic_action": "NOT RUN: first loop assertion failed"
+  },
+  "owner_evidence": [
+    {
+      "path": "/var/tmp/b64-privacy-evidence/main-mr3-owner-before.log",
+      "sha256": "f0a07983a2c4d70ff538f4f39829e63cd958aab3af69339405978439f4392efe",
+      "result": "2 failed / 7 skipped; both kind cases independently executed"
+    },
+    {
+      "path": "/var/tmp/b64-privacy-evidence/main-mr3-owner-after.log",
+      "sha256": "afdbb1eec0a1e537920dce8802e79a1151701a46dee5a2fee452e6a7ed5739d6",
+      "result": "9 passed"
+    }
+  ],
+  "types": "No new compiler run; prior8bc diagnostics retained. Change is two boolean owner guards.",
+  "slot": {
+    "number": 4,
+    "max_workers": 1,
+    "network_isolated": true,
+    "released": true
+  },
+  "counts": {
+    "main_pending_typed": 34,
+    "main_pending_delete": 0,
+    "packet_source_implemented": 4,
+    "packet_main_integrated": 0,
+    "packet_independent_accepted": 0,
+    "privacy_pending_typed": 15,
+    "privacy_pending_delete": 0
+  },
+  "independent_after": "PENDING R2; no self-acceptance"
+}
