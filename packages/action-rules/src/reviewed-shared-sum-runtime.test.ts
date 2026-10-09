@@ -70,4 +70,15 @@ describe('persisted shared SUM is compulsory in the existing verifier', () => {
     await expect(f.verifier.admitSource({ job: f.job, factLoader: adapter })).rejects.toMatchObject({ code: 'ACTION_RULE_SCOPE_UNPROVEN' });
     expect(f.trace).toEqual([]);
   });
+  it('refuses an authority changed while Source inspection waited, before reading facts', async () => {
+    const f = await setup();
+    let current = f.registry;
+    f.adapter.assertReviewedSharedSumSource = async () => {
+      f.trace.push('protection');
+      current = reviewedSharedSumFixture({ credit: 100 }).registry;
+    };
+    const verifier = createSemanticActionVerifier({ registry: () => current, clock: () => time });
+    await expect(verifier({ job: f.job, factLoader: f.adapter })).rejects.toMatchObject({ code: 'ACTION_RULE_AUTHORITY_STALE' });
+    expect(f.trace).toEqual(['protection']);
+  });
 });

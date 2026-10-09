@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import { createActionRuleAuthority, parseActionRuleAuthority } from './authority.js';
-import { createActionRuleRegistry } from './registry.js';
 import { deriveReviewedSharedSumProtection, resolveReviewedSharedSumProtection, reviewedSharedSumGuardIdentity } from './reviewed-shared-sum.js';
 import { reviewedSharedSumFixture } from './testing/reviewed-shared-sum-fixture.js';
 
@@ -19,7 +18,7 @@ describe('reviewed shared SUM complete authoritative inventory', () => {
     expect(() => createActionRuleAuthority({ name: 'changed', action_boundary_name: 'shared.actions', catalog: f.catalog,
       rules: f.entries, shared_sum })).toThrow(expect.objectContaining({ code: 'ACTION_RULE_SCOPE_UNPROVEN' }));
   });
-  it('refuses a hidden physical alias writer whose formula omits the invariant', () => {
+  it('refuses a limit writer whose formula omits the invariant', () => {
     const f = reviewedSharedSumFixture(), entries = structuredClone(f.entries);
     entries[2]!.rule.require = { kind: 'compare', operator: 'eq',
       left: { kind: 'literal', value: true, value_type: { kind: 'boolean' } },
@@ -30,7 +29,7 @@ describe('reviewed shared SUM complete authoritative inventory', () => {
   it('refuses a copied registry missing the limit writer while retaining its bound Boundary', () => {
     const f = reviewedSharedSumFixture();
     const rules = f.registry.rules.filter(r => r.compiled.outcome !== 'shared.limit');
-    expect(() => createActionRuleRegistry({ name: f.registry.name, rules, shared_sum: f.shared_sum }))
+    expect(() => deriveReviewedSharedSumProtection({ ...f.registry, rules }))
       .toThrow(expect.objectContaining({ code: 'ACTION_RULE_SCOPE_UNPROVEN' }));
   });
   it('does not reuse a plan after any participating authority changes', () => {
