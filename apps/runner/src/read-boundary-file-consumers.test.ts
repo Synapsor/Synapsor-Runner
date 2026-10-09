@@ -42,7 +42,7 @@ describe("strict Read artifact direct consumers",()=>{
     const f=await fixture();await fs.writeFile(f.file,JSON.stringify({schema_version:"synapsor.exploration-boundary-active-file.v1",boundary:f.build.exploration_boundary}));
     const before=await fs.readFile(f.file,"utf8");let inspections=0;
     const inspect=async()=>{inspections++;return ownedProgramInspection();};
-    const action=route==="rescan"?()=>prepareBoundaryRescan({projectRoot:f.root,schemaInspector:inspect}):()=>prepareBoundaryResourceReviewMutation(f.root,{resource_id:"studio.parcels",metadata:{label:"Parcels"}},inspect);
+    const action=route==="rescan"?()=>prepareBoundaryRescan({projectRoot:f.root,schemaInspector:inspect}):()=>prepareBoundaryResourceReviewMutation(f.root,{resource_id:"studio.parcels",metadata:{label:"Parcels"},actor:"declared artifact test operator",reason:"Review the declared parcel label"},inspect);
     await expect(action()).rejects.toThrow("READ_BOUNDARY_ARTIFACT");
     expect(inspections).toBe(0);expect(await fs.readFile(f.file,"utf8")).toBe(before);
   });
