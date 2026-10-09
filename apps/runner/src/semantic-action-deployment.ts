@@ -232,6 +232,7 @@ type ActivationWriterCandidateInput = {
 async function activationWriterCandidate(input: ActivationWriterCandidateInput, permit?: ProjectAuthorityMutationPermit) {
   const projectRoot = await fs.realpath(input.projectRoot);
   const draft = parseStoredActionRuleAuthority(input.draft);
+  if (draft.state !== "disabled") throw new Error("ACTION_RULE_DRAFT_REQUIRED: review a disabled Action revision before activation.");
   const registry = parseActionRuleAuthority(draft.authority, draft.digest).registry;
   const outputConfigPath = path.resolve(input.outputConfigPath ?? path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG));
   assertContainedProjectPath(projectRoot, outputConfigPath);
