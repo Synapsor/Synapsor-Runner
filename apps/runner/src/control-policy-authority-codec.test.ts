@@ -18,7 +18,8 @@ import { createDefaultRuntimeStore, resolveRuntimeConfig, subjectReferenceScopeF
 import { ControlPolicyRepository, migrateSharedPostgresRuntimeStore, ProposalStore } from "@synapsor-runner/proposal-store";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import type { RuleVerificationBoundarySpecV1, DerivedEffectEnvelopeSpecV1, ActionRuleSpecV1 } from "@synapsor/spec";
-import { AUTO_BOUNDARY_OVERRIDES_VERSION, activateExplorationBoundary, buildAutoBoundary, deactivateExplorationBoundary,
+import { BOUNDARY_REVIEW_SUBMISSION_VERSION, boundaryReviewDecisionRefs,
+  type BoundaryReviewSubmission, type ExplorationBoundaryDraft, AUTO_BOUNDARY_OVERRIDES_VERSION, activateExplorationBoundary, buildAutoBoundary, deactivateExplorationBoundary,
   explorationBoundaryCandidateDigest, generationReviewEvidenceDigest, loadActivatedExplorationBoundary, loadActivatedExplorationBoundaries,
   loadGenerationLockForActivatedBoundary, loadGenerationLockSnapshot, writeAutoBoundaryArtifacts, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
@@ -31,7 +32,7 @@ import { createOptionalActionRuleRuntimeServices, createOptionalReadActionRuleRu
 import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 import { createScopedExploreRuntime } from "./scoped-explore.js";
 import { readOperatorExecutionConfig } from "./control-policy-execution.js";
-import { readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
+import { READ_REVIEW_PROTOCOL, readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
 import { commitBoundaryRescan, prepareBoundaryRescan, readBoundaryRescanReport } from "./boundary-rescan.js";
 import { commitBoundaryResourceReviewMutation, inspectBoundaryResourceReview, prepareBoundaryResourceReviewMutation } from "./boundary-review-mutation.js";
 import { applyManagedBoundaryReviewDecision, createBoundaryReviewProgress } from "./boundary-review-domain.js";
@@ -71,7 +72,7 @@ import { rebindActiveActionRuleAuthorityForReadRevision, rebindStoredActionRuleA
 import { recoverPolicyConfiguration } from "./control-policy-config-publication.js";
 import { reviewVerifiedActionAuthority } from "./verified-action-review.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
-import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { withHeldProjectAuthorityAccess, withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { previewSemanticReceiptSelection, saveSemanticReceiptSelection } from "./semantic-receipt-setup.js";
 
 // Prepare the reviewed receipt prerequisite before each execution test's own
@@ -82,6 +83,20 @@ async function reviewFixtureReceipts(input: { projectRoot: string; outcome: stri
     writeUrlEnv: input.writeUrlEnv ?? "SYNAPSOR_DATABASE_WRITE_URL", receipts: { authority: "runner_ledger" as const } };
   const preview = await previewSemanticReceiptSelection(selection);
   await saveSemanticReceiptSelection({ ...selection, confirmation: preview.confirmation });
+}
+
+// Typed counterparts of explicit fixture reviews; these are codec/record inputs,
+// not native Read meaning confirmation or activation evidence.
+function fixtureReviewSubmission(candidate: ExplorationBoundaryDraft): BoundaryReviewSubmission {
+  return { schema_version: BOUNDARY_REVIEW_SUBMISSION_VERSION,
+    candidate_digest: explorationBoundaryCandidateDigest(candidate), decisions: boundaryReviewDecisionRefs(candidate) };
+}
+
+function fixtureConfirmedSubmission(progress: ReturnType<typeof createBoundaryReviewProgress>): BoundaryReviewSubmission {
+  const submission = fixtureReviewSubmission(progress.candidate);
+  submission.decisions = submission.decisions.filter(reference => progress.confirmations.some(confirmation =>
+    confirmation.id === reference.id && confirmation.input_digest === reference.input_digest));
+  return submission;
 }
 
 const roots: string[] = [];
@@ -140,9 +155,9 @@ function readAuthoringFixture(profile: "staging" | "development" = "staging"): S
     source.candidate.pack.name = `${domain}_draft`;
     return { draft: source.candidate, draft_lock: source.generation_lock, candidate_lock: source.generation_lock,
       progress: createBoundaryReviewProgress({ draft: source.candidate, candidate: source.candidate,
-        confirmedDecisions: source.candidate.unresolved_decisions, actor: "reviewer", revision: 1 }) };
+        submission: fixtureReviewSubmission(source.candidate), actor: "reviewer", revision: 1 }) };
   });
-  return { type: "read_authoring", selected_boundary_id: entries[0]!.progress.boundary_id, entries };
+  return { type: "read_authoring", review_protocol: READ_REVIEW_PROTOCOL, selected_boundary_id: entries[0]!.progress.boundary_id, entries };
 }
 
 function metadataAuthoringFixture(projectRoot = "/test") {
@@ -159,9 +174,9 @@ function metadataAuthoringFixture(projectRoot = "/test") {
   const draft = build.exploration_boundary; draft.pack.name = "coded_draft";
   const candidate = recommendedBoundaryReviewCandidate(draft);
   expect(candidate.pack.resources).toHaveLength(0);
-  const progress = createBoundaryReviewProgress({ draft, candidate, confirmedDecisions: [], reviewOverrides: build.overrides,
+  const progress = createBoundaryReviewProgress({ draft, candidate, reviewOverrides: build.overrides,
     actor: "operator", revision: 1 });
-  const authoring: StoredReadAuthoring = { type: "read_authoring", selected_boundary_id: progress.boundary_id,
+  const authoring: StoredReadAuthoring = { type: "read_authoring", review_protocol: READ_REVIEW_PROTOCOL, selected_boundary_id: progress.boundary_id,
     entries: [{ stage: "metadata_only", draft, draft_lock: build.lock, candidate_lock: build.lock,
       catalog: readAuthoringCatalog(build), progress }] };
   return { inspection, build, authoring };
@@ -364,7 +379,7 @@ describe("Read writer migration coordination", () => {
     const source = fixture(); await writeAutoBoundaryArtifacts({ projectRoot, build: source.build });
     const candidate = structuredClone(source.candidate); candidate.budgets.max_rows = 2;
     const latest = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate,
-      reviewOverrides: source.build.overrides, confirmedDecisions: [], actor: "second_operator", revision: 1 });
+      reviewOverrides: source.build.overrides, actor: "second_operator", revision: 1 });
     let pending!: Promise<unknown>, wasPending = false;
     await withProjectAuthorityMutation(projectRoot, async (held) => {
       let settled = false;
@@ -392,7 +407,7 @@ describe("Read writer migration coordination", () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-library-review-metadata-")); roots.push(projectRoot);
     const source = fixture(); await writeAutoBoundaryArtifacts({ projectRoot, build: source.build });
     const progress = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate: source.candidate,
-      reviewOverrides: source.build.overrides, confirmedDecisions: source.candidate.unresolved_decisions,
+      reviewOverrides: source.build.overrides, submission: fixtureReviewSubmission(source.candidate),
       actor: "operator", revision: 1 });
     await saveBoundaryReviewProgress(projectRoot, progress);
     const context = { projectRoot, draft: source.build.exploration_boundary, currentCandidate: progress.candidate,
@@ -416,7 +431,7 @@ describe("Read writer migration coordination", () => {
     const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-library-review-race-")); roots.push(projectRoot);
     const source = fixture(); await writeAutoBoundaryArtifacts({ projectRoot, build: source.build });
     const progress = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate: source.candidate,
-      reviewOverrides: source.build.overrides, confirmedDecisions: [], actor: "operator", revision: 1 });
+      reviewOverrides: source.build.overrides, actor: "operator", revision: 1 });
     await saveBoundaryReviewProgress(projectRoot, progress);
     const context = { projectRoot, draft: source.build.exploration_boundary, currentCandidate: progress.candidate,
       currentProgress: (await readBoundaryReviewProgress(projectRoot, source.build.exploration_boundary))! };
@@ -424,7 +439,7 @@ describe("Read writer migration coordination", () => {
     const beforeLibrary = await fs.readFile(path.join(projectRoot, ".synapsor/boundary-library.json"), "utf8");
     const candidate = structuredClone(progress.candidate); candidate.budgets.max_rows = 2;
     const latest = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate,
-      previous: progress, confirmedDecisions: [], actor: "second_operator", revision: 2 });
+      previous: progress, actor: "second_operator", revision: 2 });
     let pending!: Promise<unknown>, wasPending = false;
     await withProjectAuthorityMutation(projectRoot, async (held) => {
       let settled = false;
@@ -460,7 +475,7 @@ describe("Read writer migration coordination", () => {
     await fs.mkdir(otherRoot); await fs.writeFile(path.join(otherRoot, "sentinel"), "untouched");
     const source = fixture(); await writeAutoBoundaryArtifacts({ projectRoot, build: source.build });
     const progress = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate: source.candidate,
-      confirmedDecisions: [], actor: "operator", revision: 1 });
+       actor: "operator", revision: 1 });
     await saveBoundaryReviewProgress(projectRoot, progress);
     const context = { projectRoot, draft: source.build.exploration_boundary, currentCandidate: progress.candidate, currentProgress: progress };
     await synchronizeBoundaryLibrary(context);
@@ -502,13 +517,13 @@ describe("Read writer migration coordination", () => {
     const source = fixture();
     await writeAutoBoundaryArtifacts({ projectRoot, build: source.build });
     const progress = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate: source.candidate,
-      confirmedDecisions: [], actor: "operator", revision: 1 });
+       actor: "operator", revision: 1 });
     await saveBoundaryReviewProgress(projectRoot, progress);
     const context = { projectRoot, draft: source.build.exploration_boundary, currentCandidate: progress.candidate, currentProgress: progress };
     await synchronizeBoundaryLibrary(context);
     if (writer === "switch" || writer === "delete") {
       const candidate = structuredClone(progress.candidate); candidate.pack.name = "second";
-      const second = createBoundaryReviewProgress({ draft: context.draft, candidate, confirmedDecisions: [], actor: "operator", revision: 1 });
+      const second = createBoundaryReviewProgress({ draft: context.draft, candidate, actor: "operator", revision: 1 });
       await saveBoundaryLibraryAfterReconciliation({ projectRoot, state: { selected_name: progress.candidate.pack.name,
         boundaries: { [progress.candidate.pack.name]: progress, second }, updated_at: progress.updated_at } });
     }
@@ -517,7 +532,7 @@ describe("Read writer migration coordination", () => {
     inspection.tables[0]!.columns.push({ ...inspection.tables[0]!.columns[3]!, name: "extra_quantity", ordinal_position: 5 });
     const rescan = writer === "rescan" ? await prepareBoundaryRescan({ projectRoot, inspection }) : undefined;
     if (rescan) expect(rescan.report.changed || rescan.report.authoring_baseline_refreshed).toBe(true);
-    const authoring: StoredReadAuthoring = { type: "read_authoring",
+    const authoring: StoredReadAuthoring = { type: "read_authoring", review_protocol: READ_REVIEW_PROTOCOL,
       selected_boundary_id: state.boundaries[state.selected_name]!.boundary_id,
       entries: Object.values(state.boundaries).map((saved) => ({ draft: source.build.exploration_boundary,
         draft_lock: source.generation_lock, candidate_lock: source.generation_lock, progress: saved })) };
@@ -576,7 +591,7 @@ describe("Read writer migration coordination", () => {
     const source = fixture();
     await writeAutoBoundaryArtifacts({ projectRoot, build: source.build });
     const progress = createBoundaryReviewProgress({ draft: source.build.exploration_boundary, candidate: source.candidate,
-      reviewOverrides: source.build.overrides, confirmedDecisions: [], actor: "operator", revision: 1 });
+      reviewOverrides: source.build.overrides, actor: "operator", revision: 1 });
     await saveBoundaryReviewProgress(projectRoot, progress);
     const request = { resource_id: "inventory.items", withhold_from_model_fields: ["version"], private_model_fields: ["version"],
       actor: "operator", reason: "Keep conflict detection private." };
@@ -710,7 +725,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
           reviewDraft: context.draft, generationLock: context.lock,
           expectedDigest: explorationBoundaryCandidateDigest(context.candidate), actor: "operator",
           confirmation: `ACTIVATE ${explorationBoundaryCandidateDigest(context.candidate)}`,
-          confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection,
+          reviewSubmission: fixtureReviewSubmission(context.candidate), currentInspection: inspection,
           expectedAuthoring: (await readProjectReadAuthoring(projectRoot))!.bindings })).rejects.toThrow("at least one reviewed resource");
         expect(await policies.current()).toEqual(prepared);
         const id = context.progress!.boundary_id;
@@ -819,7 +834,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
               candidate,
               boundaryId: prior.progress.boundary_id,
               reviewOverrides: prior.progress.review_overrides,
-              confirmedDecisions: prior.progress.confirmed_decisions,
+              previous: prior.progress, resolvedOrigins: saved.resolvedOrigins,
               actor: "operator",
               reason: `Preserve reviewed metadata history revision ${revision}.`,
               revision,
@@ -882,7 +897,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
               candidate,
               boundaryId: prior.progress.boundary_id,
               reviewOverrides: prior.progress.review_overrides,
-              confirmedDecisions: prior.progress.confirmed_decisions,
+              previous: prior.progress, resolvedOrigins: saved.resolvedOrigins,
               actor: "operator",
               reason: "Prepare an exact disabled Read revision for Action dependency validation.",
               revision: prior.progress.revision + 1,
@@ -1028,7 +1043,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
           if (mode === "selected_changed") source.candidate.budgets.max_top_n = 11;
           authoring.entries[0] = { draft: source.candidate, draft_lock: source.generation_lock,
             candidate_lock: source.generation_lock, progress: createBoundaryReviewProgress({ draft: source.candidate,
-              candidate: source.candidate, confirmedDecisions: [], actor: "operator", revision: 1 }) };
+              candidate: source.candidate, actor: "operator", revision: 1 }) };
           authoring.selected_boundary_id = authoring.entries[0]!.progress.boundary_id;
         }
         if (mode !== "no_authoring") {
@@ -1109,7 +1124,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
       await useRepository(async ({ policies, projectRoot }) => {
         const before = await policies.current();
         await policies.commitReadAuthoring({ expected_epoch: before.epoch, expected_revision_id: null,
-          authoring: { type: "read_authoring", selected_boundary_id: null, entries: [] },
+          authoring: { type: "read_authoring", review_protocol: READ_REVIEW_PROTOCOL, selected_boundary_id: null, entries: [] },
           actor: "operator", operation: "empty_review" });
         const initial = (await readProjectReadAuthoring(projectRoot))!;
         const source = mode.startsWith("coded") ? metadataAuthoringFixture(projectRoot) : fixture("inventory");
@@ -1198,7 +1213,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         if (selectedActive) {
           first.draft = source.candidate;
           first.progress = createBoundaryReviewProgress({ draft: source.candidate, candidate: source.candidate,
-            confirmedDecisions: [], actor: "operator", revision: 1 });
+             actor: "operator", revision: 1 });
           authoring.selected_boundary_id = first.progress.boundary_id;
         }
         await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
@@ -1265,13 +1280,13 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const changed = structuredClone(confirmed.authoring);
         changed.entries[0]!.progress = createBoundaryReviewProgress({ draft: first.draft,
           candidate: { ...saved.progress.candidate, budgets: { ...saved.progress.candidate.budgets, max_top_n: 10 } },
-          previous: saved.progress, confirmedDecisions: [], actor: "other_operator", revision: 4 });
+          previous: saved.progress, actor: "other_operator", revision: 4 });
         await saveProjectReadAuthoring({ projectRoot, expected: confirmed.bindings, authoring: changed,
           actor: "other_operator", operation: "newer_read_review" });
         const digest = saved.progress.candidate_digest;
         await expect(activateExplorationBoundary({ projectRoot, candidate: saved.progress.candidate,
           reviewDraft: first.draft, generationLock: first.candidate_lock, expectedDigest: digest,
-          actor: "operator", confirmation: `ACTIVATE ${digest}`, confirmedDecisions: saved.progress.confirmed_decisions,
+          actor: "operator", confirmation: `ACTIVATE ${digest}`, reviewSubmission: fixtureConfirmedSubmission(saved.progress),
           currentInspection: fixture().inspection, expectedAuthoring: saved.authoring }))
           .rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
         expect((await policies.current()).active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(before.active);
@@ -1283,7 +1298,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const authoring = readAuthoringFixture(mode === "staging" ? "staging" : "development"); const first = authoring.entries[0]!;
         const candidate = structuredClone(first.progress.candidate); candidate.budgets.max_top_n = 11;
         first.progress = createBoundaryReviewProgress({ draft: first.draft, candidate,
-          previous: first.progress, reviewOverrides: fixture().build.overrides, confirmedDecisions: [], actor: "operator", revision: 4 });
+          previous: first.progress, reviewOverrides: fixture().build.overrides, actor: "operator", revision: 4 });
         const before = await policies.current();
         await policies.commitReadAuthoring({ expected_epoch: before.epoch, expected_revision_id: null,
           authoring, actor: "operator", operation: "prepare_quick_start" });
@@ -1296,7 +1311,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
           const changed = structuredClone(current.authoring);
           changed.entries[0]!.progress = createBoundaryReviewProgress({ draft: first.draft,
             candidate: { ...first.progress.candidate, budgets: { ...first.progress.candidate.budgets, max_top_n: 7 } },
-            previous: first.progress, confirmedDecisions: [], actor: "other_operator", revision: 5 });
+            previous: first.progress, actor: "other_operator", revision: 5 });
           await saveProjectReadAuthoring({ projectRoot, expected: current.bindings, authoring: changed,
             actor: "other_operator", operation: "newer_read_review" });
         };
@@ -1396,7 +1411,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const edited = structuredClone(selected);
         const first = edited.entries[0]!;
         first.progress = createBoundaryReviewProgress({ draft: first.draft, candidate: drift,
-          previous: first.progress, confirmedDecisions: [], revision: first.progress.revision + 1, actor: "operator" });
+          previous: first.progress, revision: first.progress.revision + 1, actor: "operator" });
         await policies.commitReadAuthoring({ expected_epoch: changed.epoch,
           expected_revision_id: changed.active.find(({ policy }) => policy.type === "read_authoring")!.revision.revision_id,
           authoring: edited, actor: "operator", operation: "narrow_saved_draft" });
@@ -1455,7 +1470,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         expect(await readBoundaryReviewProgress(projectRoot, loaded.draft)).toEqual(loaded.progress);
         const candidate = structuredClone(loaded.candidate); candidate.budgets.max_top_n = 8;
         const progress = createBoundaryReviewProgress({ draft: loaded.draft, candidate, previous: loaded.progress,
-          confirmedDecisions: [], revision: loaded.progress!.revision + 1 });
+           revision: loaded.progress!.revision + 1 });
         await expect(saveBoundaryReviewProgress(projectRoot, progress)).rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
         await saveBoundaryReviewProgress(projectRoot, progress, loaded.bundle.mutation_bindings.authoring);
         expect((await loadBoundaryReviewContext(projectRoot)).progress).toEqual(progress);
@@ -1491,7 +1506,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const empty = await repository.currentReadState();
         expect(empty.drafts).toHaveLength(0);
         expect(empty.active.find(({ policy }) => policy.type === "read_authoring")!.policy)
-          .toEqual({ type: "read_authoring", selected_boundary_id: null, entries: [] });
+          .toEqual({ type: "read_authoring", review_protocol: READ_REVIEW_PROTOCOL, selected_boundary_id: null, entries: [] });
         await expect(loadBoundaryReviewContext(projectRoot)).rejects.toThrow("No saved Read boundary");
         expect((await repository.current()).active.filter(({ policy }) => policy.type !== "read_authoring")).toEqual(original.active);
       });
@@ -1514,8 +1529,8 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const first = readAuthoringFixture().entries[0]!;
         const second = structuredClone(first); second.progress = createBoundaryReviewProgress({ draft: second.draft,
           candidate: { ...second.progress.candidate, pack: { ...second.progress.candidate.pack, name: "stock_audit" } },
-          confirmedDecisions: [], actor: "reviewer", revision: 1 });
-        const authoring: StoredReadAuthoring = { type: "read_authoring", selected_boundary_id: first.progress.boundary_id,
+           actor: "reviewer", revision: 1 });
+        const authoring: StoredReadAuthoring = { type: "read_authoring", review_protocol: READ_REVIEW_PROTOCOL, selected_boundary_id: first.progress.boundary_id,
           entries: [first, second, readAuthoringFixture().entries[1]!] };
         await policies.commitReadAuthoring({ expected_epoch: before.epoch, expected_revision_id: null,
           authoring, actor: "reviewer", operation: "prepare" });
@@ -1679,7 +1694,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
             const selected = current.selected!;
             const candidate = structuredClone(selected.progress.candidate); candidate.budgets.max_top_n = 8;
             await saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: selected.draft, candidate,
-              previous: selected.progress, confirmedDecisions: candidate.unresolved_decisions, revision: selected.progress.revision + 1 }), current.bindings);
+              previous: selected.progress, submission: fixtureReviewSubmission(candidate), revision: selected.progress.revision + 1 }), current.bindings);
           };
           const stale = await post(body);
           expect(stale.status, JSON.stringify(await stale.json())).toBe(409);
@@ -1788,7 +1803,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
             const current = (await readProjectReadAuthoring(projectRoot))!; const selected = current.selected!;
             const candidate = structuredClone(selected.progress.candidate); candidate.budgets.max_top_n = 8;
             await saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: selected.draft, candidate,
-              previous: selected.progress, confirmedDecisions: candidate.unresolved_decisions, revision: selected.progress.revision + 1 }), current.bindings);
+              previous: selected.progress, submission: fixtureReviewSubmission(candidate), revision: selected.progress.revision + 1 }), current.bindings);
           };
           if (phase === "model") changeDuringModel = change; else changeDuringInspection = change;
           const stale = await post(phase === "apply" ? "apply" : "analyze",
@@ -1839,7 +1854,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const reviewed = autoBoundary.reviewExplorationBoundaryCandidate(draft, candidate).candidate;
         const authoring = readAuthoringFixture();
         authoring.entries[0] = { draft, draft_lock: build.lock, candidate_lock: build.lock, catalog: readAuthoringCatalog(build),
-          progress: createBoundaryReviewProgress({ draft, candidate: reviewed, confirmedDecisions: reviewed.unresolved_decisions,
+          progress: createBoundaryReviewProgress({ draft, candidate: reviewed, submission: fixtureReviewSubmission(reviewed),
             actor: "reviewer", revision: 1, reviewOverrides: build.overrides }) };
         authoring.entries[1]!.catalog = readAuthoringCatalog(fixture("university").build);
         authoring.selected_boundary_id = authoring.entries[0]!.progress.boundary_id;
@@ -1850,7 +1865,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
           const current = (await readProjectReadAuthoring(projectRoot))!; const entry = current.selected!;
           const next = structuredClone(entry.progress.candidate); next.budgets.max_top_n = limit;
           await saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: entry.draft, candidate: next,
-            previous: entry.progress, confirmedDecisions: next.unresolved_decisions, revision: entry.progress.revision + 1 }), current.bindings);
+            previous: entry.progress, submission: fixtureReviewSubmission(next), revision: entry.progress.revision + 1 }), current.bindings);
         };
         let duringInspection = false; let inspections = 0; let duringRefresh = false;
         let duringPreparation = false;
@@ -1951,7 +1966,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
           const entry = other ? current.authoring.entries[1]! : current.selected!;
           const next = structuredClone(entry.progress.candidate); next.budgets.max_top_n = 8;
           entry.progress = createBoundaryReviewProgress({ draft: entry.draft, candidate: next, previous: entry.progress,
-            confirmedDecisions: next.unresolved_decisions, revision: entry.progress.revision + 1 });
+            submission: fixtureReviewSubmission(next), revision: entry.progress.revision + 1 });
           await saveProjectReadAuthoring({ projectRoot, expected: current.bindings, authoring: current.authoring,
             actor: "operator", operation: "edit_disabled_review" });
         };
@@ -2039,7 +2054,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const candidate = autoBoundary.reviewExplorationBoundaryCandidate(candidateDraft, proposed).candidate;
         const authoring = readAuthoringFixture();
         authoring.entries[0] = { draft, draft_lock: build.lock, candidate_lock: candidateBuild.lock, catalog: readAuthoringCatalog(build),
-          progress: createBoundaryReviewProgress({ draft, candidate, confirmedDecisions: candidate.unresolved_decisions,
+          progress: createBoundaryReviewProgress({ draft, candidate, submission: fixtureReviewSubmission(candidate),
             actor: "reviewer", revision: 1, reviewOverrides: candidateBuild.overrides }) };
         authoring.entries[1]!.catalog = readAuthoringCatalog(fixture("university").build);
         authoring.selected_boundary_id = authoring.entries[0]!.progress.boundary_id;
@@ -2048,7 +2063,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const digest = explorationBoundaryCandidateDigest(candidate);
         const active = await activateExplorationBoundary({ projectRoot, candidate, reviewDraft: candidateDraft, generationLock: candidateBuild.lock,
           currentInspection: inspection, expectedDigest: digest, confirmation: `ACTIVATE ${digest}`, actor: "operator",
-          confirmedDecisions: candidate.unresolved_decisions, expectedAuthoring: (await readProjectReadAuthoring(projectRoot))!.bindings });
+          reviewSubmission: fixtureReviewSubmission(candidate), expectedAuthoring: (await readProjectReadAuthoring(projectRoot))!.bindings });
         const initial = await policies.current();
         let changeDuringLoad: (() => Promise<unknown>) | undefined;
         const loadActive = autoBoundary.loadActivatedExplorationBoundary;
@@ -2079,7 +2094,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
           const saveCandidate = async (replacement: typeof candidate) => {
             const current = (await readProjectReadAuthoring(projectRoot))!; const selected = current.selected!;
             return saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: selected.draft, candidate: replacement,
-              previous: selected.progress, confirmedDecisions: replacement.unresolved_decisions, revision: selected.progress.revision + 1 }), current.bindings);
+              previous: selected.progress, submission: fixtureReviewSubmission(replacement), revision: selected.progress.revision + 1 }), current.bindings);
           };
           const edited = structuredClone(candidate); edited.budgets.max_top_n = 8;
           changeDuringLoad = () => saveCandidate(edited);
@@ -2129,7 +2144,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
           reviewDraft: entry.draft, generationLock: entry.candidate_lock,
           expectedDigest: explorationBoundaryCandidateDigest(candidate), actor: "reviewer",
           confirmation: `ACTIVATE ${explorationBoundaryCandidateDigest(candidate)}`,
-          confirmedDecisions: candidate.unresolved_decisions, currentInspection: fixture().inspection });
+          reviewSubmission: fixtureReviewSubmission(candidate), currentInspection: fixture().inspection });
         const before = await policies.current();
         await expect(activateExplorationBoundary(activation())).rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
         const forged = structuredClone(entry.progress.candidate); forged.budgets.max_top_n = 7;
@@ -2137,7 +2152,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
           .rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
         expect(await policies.current()).toEqual(before);
         const progress = createBoundaryReviewProgress({ draft: entry.draft, candidate: forged,
-          previous: entry.progress, confirmedDecisions: forged.unresolved_decisions, revision: entry.progress.revision + 1 });
+          previous: entry.progress, submission: fixtureReviewSubmission(forged), revision: entry.progress.revision + 1 });
         const next = await saveBoundaryReviewProgress(projectRoot, progress, shown.bindings);
         await expect(activateExplorationBoundary({ ...activation(), expectedAuthoring: shown.bindings }))
           .rejects.toMatchObject({ code: "POLICY_AUTHORING_REVIEW_CHANGED" });
@@ -2165,7 +2180,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
             const shown = (await readProjectReadAuthoring(projectRoot))!; const entry = shown.selected!;
             const candidate = structuredClone(entry.progress.candidate); candidate.budgets.max_top_n = 11;
             await saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: entry.draft, candidate,
-              previous: entry.progress, confirmedDecisions: candidate.unresolved_decisions, revision: entry.progress.revision + 1 }), shown.bindings);
+              previous: entry.progress, submission: fixtureReviewSubmission(candidate), revision: entry.progress.revision + 1 }), shown.bindings);
             return true;
           } };
         await expect(boundaryActivateCommand(args, async () => fixture().inspection, session))
@@ -2299,7 +2314,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
           entry.catalog = readAuthoringCatalog(build);
           entry.progress = createBoundaryReviewProgress({ draft: entry.draft, candidate: entry.progress.candidate,
             previous: entry.progress, reviewOverrides: build.overrides,
-            confirmedDecisions: entry.progress.candidate.unresolved_decisions, actor: "operator", revision: 1 });
+            submission: fixtureReviewSubmission(entry.progress.candidate), actor: "operator", revision: 1 });
         }
         await policies.commitReadAuthoring({ expected_epoch: (await policies.current()).epoch, expected_revision_id: null,
           authoring, actor: "operator", operation: "prepare" });
@@ -2461,7 +2476,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const file = path.join(projectRoot, "review.json");
         await fs.writeFile(file, JSON.stringify(context.bundle));
         await saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: context.draft, candidate: context.candidate,
-          previous: context.progress, confirmedDecisions: context.candidate.unresolved_decisions, revision: context.progress!.revision + 1,
+          previous: context.progress, submission: fixtureReviewSubmission(context.candidate), revision: context.progress!.revision + 1,
           actor: "different_reviewer" }), context.bundle.mutation_bindings.authoring);
         const current = await loadBoundaryReviewContext(projectRoot);
         expect(current.bundle.bundle_digest).toBe(context.bundle.bundle_digest);
@@ -2520,7 +2535,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
             const selected = current.selected!;
             const candidate = structuredClone(selected.progress.candidate); candidate.budgets.max_top_n = 6;
             await saveBoundaryReviewProgress(projectRoot, createBoundaryReviewProgress({ draft: selected.draft, candidate,
-              previous: selected.progress, confirmedDecisions: candidate.unresolved_decisions, revision: selected.progress.revision + 1 }), current.bindings);
+              previous: selected.progress, submission: fixtureReviewSubmission(candidate), revision: selected.progress.revision + 1 }), current.bindings);
           };
           const stale = await post(phase, body);
           expect(stale.status, JSON.stringify(await stale.json())).toBe(409);
@@ -2552,9 +2567,9 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const candidateLock = { ...source.generation_lock, reviewed_overrides_digest: canonicalJsonDigest("separately reviewed field policy") };
         const candidate = { ...source.candidate, generation_lock_fingerprint: canonicalJsonDigest(candidateLock) };
         const progress = createBoundaryReviewProgress({ draft: source.candidate, candidate,
-          confirmedDecisions: candidate.unresolved_decisions, revision: 1 });
+          submission: fixtureReviewSubmission(candidate), revision: 1 });
         await repository.commitReadAuthoring({ expected_epoch: before.epoch, expected_revision_id: null,
-          authoring: { type: "read_authoring", selected_boundary_id: progress.boundary_id,
+          authoring: { type: "read_authoring", review_protocol: READ_REVIEW_PROTOCOL, selected_boundary_id: progress.boundary_id,
             entries: [{ draft: source.candidate, draft_lock: source.generation_lock, candidate_lock: candidateLock, progress }] },
           actor: "reviewer", operation: "prepare_policy_revision" });
         const loaded = await loadBoundaryReviewContext(projectRoot);
@@ -3153,7 +3168,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         await savePolicySources(projectRoot,sources);
         const before=await binding.repository.scopeSnapshot({deployment_id:binding.deployment_id,scope:{level:'operator'},kinds:['read','action','execution']});
         const input={projectRoot,sources,register:true,location:'draft' as const,currentDraft,authorityDigest:canonicalJsonDigest(read),clarifications:[],actor:'synthetic source owner',
-          assertCurrent:async()=>{},coordinated:async(op:any)=>{await withProjectAuthorityMutation(projectRoot,op);},
+          assertCurrent:async()=>{},assertCurrentHeld:async(permit:Parameters<typeof withHeldProjectAuthorityAccess>[1])=>{await withHeldProjectAuthorityAccess(projectRoot,permit,async()=>{expect(currentDraft().read).toEqual(read);});},coordinated:async(op:any)=>{await withProjectAuthorityMutation(projectRoot,op);},
           session:{promptText:async()=> '1',confirm:async()=>true,chooseOption:async(title:string,options:any[])=>title==='SOURCE-REQUIRED DISCLOSURE MEANING'?options[1].value:'deferred'} as any};
         expect((await localScopedDisclosureReview(input)).ready).toBe(false);
         const restored=await loadPolicySources(projectRoot,sources.id);expect(restored.scoped_disclosure_reviews).toHaveLength(2);
@@ -3582,7 +3597,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const digest = explorationBoundaryCandidateDigest(source.candidate);
         const input = { projectRoot, candidate: source.candidate, reviewDraft: source.candidate, generationLock: source.generation_lock,
           expectedDigest: digest, actor: "exact_operator", confirmation: `ACTIVATE ${digest}`,
-          confirmedDecisions: source.candidate.unresolved_decisions, currentInspection: source.inspection };
+          reviewSubmission: fixtureReviewSubmission(source.candidate), currentInspection: source.inspection };
         await expect(activateExplorationBoundary({ ...input, confirmation: "yes" })).rejects.toThrow("exact confirmation");
         expect((await policies.current()).epoch).toBe(1);
         const active = await activateExplorationBoundary(input);
@@ -3636,7 +3651,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         const active = await activateExplorationBoundary({ projectRoot, candidate: source.candidate,
           reviewDraft: source.candidate, generationLock: source.generation_lock, expectedDigest: digest,
           actor: "operator", confirmation: `ACTIVATE ${digest}`, activeSetMode: "add",
-          confirmedDecisions: source.candidate.unresolved_decisions, currentInspection: source.inspection });
+          reviewSubmission: fixtureReviewSubmission(source.candidate), currentInspection: source.inspection });
         expect((await loadActivatedExplorationBoundaries(projectRoot, binding)).map((boundary) => boundary.pack.name))
           .toEqual([fixture().boundary.pack.name, "aaa_selected"]);
         expect(await loadActivatedExplorationBoundary(projectRoot)).toEqual(active);
@@ -3681,7 +3696,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         await writeAutoBoundaryArtifacts({ projectRoot, build: source.build, force: true });
         const readDigest = explorationBoundaryCandidateDigest(source.candidate);
         await activateExplorationBoundary({ projectRoot, candidate: source.candidate, expectedDigest: readDigest,
-          actor: "operator", confirmation: `ACTIVATE ${readDigest}`, confirmedDecisions: source.candidate.unresolved_decisions,
+          actor: "operator", confirmation: `ACTIVATE ${readDigest}`, reviewSubmission: fixtureReviewSubmission(source.candidate),
           currentInspection: source.inspection });
         if (mode !== "lazy_action" && mode !== "lazy_bind") {
           await writeActionRuleAuthorityDraft(projectRoot, draft);

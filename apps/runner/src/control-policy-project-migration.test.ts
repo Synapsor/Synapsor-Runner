@@ -8,7 +8,9 @@ import { ControlPolicyRepository } from "@synapsor-runner/proposal-store";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import type { ActionRuleSpecV1, DerivedEffectEnvelopeSpecV1, RuleVerificationBoundarySpecV1 } from "@synapsor/spec";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
-import { AUTO_BOUNDARY_OVERRIDES_VERSION, buildAutoBoundary, explorationBoundaryCandidateDigest,
+import { BOUNDARY_REVIEW_SUBMISSION_VERSION, boundaryReviewDecisionRefs,
+  type BoundaryReviewSubmission, type ExplorationBoundaryDraft, ACTIVE_EXPLORATION_BOUNDARY_SET_FILE_VERSION,
+  encodeExplorationBoundaryActiveArtifact, AUTO_BOUNDARY_OVERRIDES_VERSION, buildAutoBoundary, explorationBoundaryCandidateDigest,
   writeAutoBoundaryArtifacts, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { createBoundaryReviewProgress } from "./boundary-review-domain.js";
@@ -16,6 +18,13 @@ import { saveBoundaryLibraryAfterReconciliation } from "./boundary-library.js";
 import { decodeOperatorAuthority } from "./control-policy-authority-codec.js";
 import { activateActionRuleAuthority, buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft } from "./action-rule-authority.js";
 import { migrateProjectControlPoliciesFromProject, previewProjectControlPolicyMigration } from "./control-policy-project-migration.js";
+
+// Typed counterparts of explicit fixture reviews; these are codec/record inputs,
+// not native Read meaning confirmation or activation evidence.
+function fixtureReviewSubmission(candidate: ExplorationBoundaryDraft): BoundaryReviewSubmission {
+  return { schema_version: BOUNDARY_REVIEW_SUBMISSION_VERSION,
+    candidate_digest: explorationBoundaryCandidateDigest(candidate), decisions: boundaryReviewDecisionRefs(candidate) };
+}
 
 const roots: string[] = [];
 
@@ -52,15 +61,16 @@ function buildFixture(root: string) {
   const active: ActivatedExplorationBoundary = { ...candidate, activation: { state: "active", digest: explorationBoundaryCandidateDigest(candidate),
     actor: "original_operator", activated_at: "2026-09-06T00:00:00.000Z", generation_lock_fingerprint: candidate.generation_lock_fingerprint, reviewed_decisions: [] } };
   const progress = createBoundaryReviewProgress({ draft: build.exploration_boundary, candidate,
-    confirmedDecisions: candidate.unresolved_decisions, actor: "original_operator", revision: 1 });
+    submission: fixtureReviewSubmission(candidate), actor: "original_operator", revision: 1 });
   return { build, active, progress };
 }
 
 async function legacyProject() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-project-migration-")); roots.push(root);
+  await fs.chmod(root, 0o700); await fs.mkdir(path.join(root, ".git"));
   const source = buildFixture(root);
   await writeAutoBoundaryArtifacts({ projectRoot: root, build: source.build, reviewProgress: source.progress });
-  await fs.writeFile(path.join(root, ".synapsor", "exploration-boundary.active.json"), JSON.stringify(source.active), { mode: 0o600 });
+  await fs.writeFile(path.join(root, ".synapsor", "exploration-boundary.active.json"), JSON.stringify(encodeExplorationBoundaryActiveArtifact(source.active)), { mode: 0o600 });
   const config = { storage: { sqlite_path: path.join(root, ".synapsor", "control.db") } } as RuntimeConfig;
   return { root, config, source };
 }
@@ -99,7 +109,7 @@ describe("project control-policy migration adapter", () => {
     const preview = await previewProjectControlPolicyMigration({ projectRoot: f.root, config: f.config });
     const activePath = path.join(f.root, ".synapsor", "exploration-boundary.active.json");
     const active = JSON.parse(await fs.readFile(activePath, "utf8"));
-    active.activation.actor = "changed_operator";
+    active.boundary.activation.actor = "changed_operator";
     await fs.writeFile(activePath, JSON.stringify(active), { mode: 0o600 });
 
     await expect(migrateProjectControlPoliciesFromProject({ projectRoot: f.root, config: f.config,
@@ -112,7 +122,7 @@ describe("project control-policy migration adapter", () => {
     const savedCandidate = structuredClone(f.source.progress.candidate);
     savedCandidate.pack.name = "inventory_saved_review";
     const savedProgress = createBoundaryReviewProgress({ draft: f.source.build.exploration_boundary, candidate: savedCandidate,
-      confirmedDecisions: [], actor: "saved_operator", revision: 1 });
+       actor: "saved_operator", revision: 1 });
     await saveBoundaryLibraryAfterReconciliation({ projectRoot: f.root, state: {
       selected_name: savedCandidate.pack.name,
       boundaries: { [f.source.progress.candidate.pack.name]: f.source.progress, [savedCandidate.pack.name]: savedProgress },
@@ -124,7 +134,7 @@ describe("project control-policy migration adapter", () => {
       digest: explorationBoundaryCandidateDigest(otherCandidate), actor: "original_operator", activated_at: "2026-09-06T00:00:00.000Z",
       generation_lock_fingerprint: otherCandidate.generation_lock_fingerprint, reviewed_decisions: [] } };
     await fs.writeFile(path.join(f.root, ".synapsor", "exploration-boundaries.active.json"), JSON.stringify({
-      schema_version: "synapsor.active-exploration-boundaries.v1", selected_name: f.source.active.pack.name,
+      schema_version: ACTIVE_EXPLORATION_BOUNDARY_SET_FILE_VERSION, selected_name: f.source.active.pack.name,
       boundaries: [otherActive, f.source.active], updated_at: "2026-09-06T02:00:00.000Z",
     }), { mode: 0o600 });
 
