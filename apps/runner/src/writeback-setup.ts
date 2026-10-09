@@ -575,7 +575,8 @@ export async function writebackSetup(args: string[]): Promise<number> {
     const saved = args.includes("--save-selection")
       ? await saveSemanticReceiptSelection({ ...input, confirmation: optionalArg(args, "--confirm") ?? "" }) : undefined;
     const result = { ok: true, phase: semantic.phase, saved: Boolean(saved), selection: preview.selection, digest: preview.digest,
-      requirements: preview.requirements, confirmation: preview.confirmation, source_database_changed: false, execution_enabled: false,
+      requirements: preview.requirements, receipt_readback: preview.receipt_readback,
+      confirmation: preview.confirmation, source_database_changed: false, execution_enabled: false,
       next_action: saved && disabled ? "Recheck the attached policy against this disabled intent. Provisioning, writer verification and execution remain pending; renew deployment selection after separate publication."
         : saved ? "Export writeback setup for this outcome; provision only after administrator approval, re-inspect and separately review execution."
         : "Review these saved deployment requirements and the exact receipt mode. Use --save-selection --confirm with this exact confirmation. No receipt objects, grants or execution have been verified." };

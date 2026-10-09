@@ -10,6 +10,7 @@ import { assessWorkerLaunch, workerLaunchLines } from "./worker-launch.js";
 import type { RuntimeConfig, RuntimeSupervisedWorkerOutcomePolicy } from "@synapsor-runner/mcp-server";
 import path from "node:path";
 import { reviewSemanticReceiptSetup } from "./semantic-receipt-setup.js";
+import { semanticReceiptExecutionReadback } from "./semantic-receipt-presentation.js";
 import { inspectDatabase } from "@synapsor-runner/schema-inspector";
 import { loadActivatedExplorationBoundaries, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import {
@@ -1231,6 +1232,7 @@ function localInteractiveActor(): string {
 /** Findings from this actual verifier invocation, not a saved selection or a test. */
 export function semanticExecutionVerificationLines(preview: Awaited<ReturnType<typeof previewSemanticSupervisedExecution>>): string[] {
   const writer = preview.verification.writer;
+  const receipt = semanticReceiptExecutionReadback(preview);
   return [
     `Writer verification: ${writer.ok ? "PASSED" : "FAILED"} — source ${preview.source}.`,
     `Checked reference: ${preview.write_url_env}.`,
@@ -1238,6 +1240,7 @@ export function semanticExecutionVerificationLines(preview: Awaited<ReturnType<t
     ...(!writer.ok ? [`Blockers: ${writer.reasons.join(", ")}`] : ["Remaining verification blockers: none in this check."]),
     preview.verification.receipt_probe === "passed_rolled_back" ? "Receipt probe: PASSED, rolled back; no business execution or persisted receipt."
       : "Receipt probe: NOT RUN (Runner-ledger mode); no source-atomic receipt guarantee.",
+    receipt.recommendation ?? receipt.meaning,
     `Current candidate: ${preview.outcome}.`,
     "Exact Action/config/writer bindings checked again on confirmation.",
     "Read posture rechecked. Worker liveness, business execution and independent readback: NOT RUN.",
