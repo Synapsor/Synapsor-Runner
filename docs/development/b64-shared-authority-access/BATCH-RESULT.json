@@ -387,7 +387,7 @@
   },
   "structured_export_successor": {
     "base": "df557cbe",
-    "result": "Real D01 export POLICY_MUTATION_PERMIT_REQUIRED; same native governed before0P1F\u2192export/control3PASS plus unchanged affected13+10=26PASS3files0skip. Required Held context/Read/Resume-skeleton/Source propagation, BC unchanged; actual public after pending independent review.",
+    "result": "Actual D01 export POLICY_MUTATION_PERMIT_REQUIRED before; governed native 0P1F\u21923P; unchanged deciding assertions, final26PASS3files0skip (structured16+skeleton7+native3). Required Held context/Read/Resume-skeleton/Source propagation; boundary-commands unchanged. Tester same D01 export successor exit0/oktrue, Source and authorities unchanged; activation/arithmetic still pending.",
     "fixture_port": "Moved fake context mock to owned boundary-review-context; four existing Read positive fixtures returned whole mutation bindings instead of ProjectReadAuthoring.bindings. Corrected to bindings().authoring, all assertions unchanged. Initial12P13F and next21P4F retained.",
     "types": {
       "exit": 0,
@@ -416,6 +416,11 @@
         "log_sha256": "d17582f7499fc731563481ddae219c3f70f551d05e70fa15fdf4f2f05cf92bab"
       }
     },
-    "review": "R2 independent successor pending; no native/public after/activation/arithmetic claim."
+    "review": {
+      "verdict": "R2 SCOPED SOURCE + OWNER NATIVE COMPONENT ACCEPT; no public arithmetic/full class acceptance inferred",
+      "path": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/structured-export-b668-independent-successor-disposition-v1.json",
+      "sha256": "2fae6f6dc3a7a9c9498c61eda7ce7c4a2c300c44f492d7bee1b0bcda4f76ece5"
+    },
+    "head": "b668c143"
   }
 }
