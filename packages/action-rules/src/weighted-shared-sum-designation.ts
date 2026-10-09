@@ -60,7 +60,7 @@ function field(value: unknown): Field { const f = exact(value, ["resource", "fie
 function unit(value: unknown): WeightedSharedSumUnitV2 {
   const u = value as Record<string, unknown> | undefined;
   if (u?.kind === "integer") { exact(u, ["kind", "unit"]); return { kind: "integer", unit: text(u.unit, 256) }; }
-  if (u?.kind === "money_minor") { exact(u, ["kind", "currency"]); return { kind: "money_minor", currency: text(u.currency, 128) }; }
+  if (u?.kind === "money_minor") { exact(u, ["kind", "currency"]); const currency = text(u.currency, 3); if (!/^[A-Z]{3}$/u.test(currency)) invalid(); return { kind: "money_minor", currency }; }
   invalid();
 }
 function positiveDecimal(value: unknown): string { if (typeof value !== "string" || !/^[1-9][0-9]{0,11}$/u.test(value)) invalid(); return value; }

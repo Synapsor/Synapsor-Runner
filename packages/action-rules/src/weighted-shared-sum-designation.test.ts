@@ -64,6 +64,19 @@ describe("prospective weighted shared-SUM designation DATA", () => {
     expect(() => parse({ ...d, scale: 60 })).toThrow();
     expect(() => parse({ ...d, measures: [{ ...d.measures[0], input_unit: { kind: "integer" } }, d.measures[1]] })).toThrow();
   });
+  it("uses the Source currency grammar even when every money unit agrees", () => {
+    const parse = api("parseWeightedSharedSumDesignation");
+    for (const currency of ["usd", "US", "USDD", "123"]) {
+      const d = weightedDesignationFixture();
+      d.limit.unit.currency = currency;
+      for (const measure of d.measures) {
+        measure.valuation.output_unit.currency = currency;
+        if (measure.input_unit.kind === "money_minor") Object.assign(measure.input_unit, { currency });
+        if ((measure.valuation.input_unit as { kind: string }).kind === "money_minor") Object.assign(measure.valuation.input_unit as object, { currency });
+      }
+      expect(() => parse(d), currency).toThrow();
+    }
+  });
   it("binds weighted and raw limits to the same stable guard fields", () => {
     const parse = api("parseWeightedSharedSumDesignation"), d = weightedDesignationFixture();
     expect(() => parse({ ...d, limit: { ...d.limit, resource: "other" } })).toThrow();
