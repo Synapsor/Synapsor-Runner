@@ -4007,7 +4007,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       || !modelEgressAcknowledged) return;
     const expectedRevisionDigest = savedResumeRevision;
     currentResumeBinding = boundaryAuthoringResumeBinding(
-      (await loadBoundaryReviewContext(input.projectRoot)).bundle,
+      (await loadBoundaryReviewContext(input.projectRoot, permit)).bundle,
     );
     try {
       const clientRead = stage === "client_setup"
@@ -4392,7 +4392,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const reviewedResume = activeResume;
     const inspectCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
       await assertAuthoringResumeCurrent(undefined, false, permit);
-      const current = await loadBoundaryReviewContext(input.projectRoot);
+      const current = await loadBoundaryReviewContext(input.projectRoot, permit);
       const reader = await inspectPolicyReviewSource(current.lock, input.schemaInspector);
       const actions = await readActionRuleAuthorityRevisionBaseline(input.projectRoot, permit);
       return canonicalJsonDigest({ binding: boundaryAuthoringResumeBinding(current.bundle), candidate: current.candidate,
