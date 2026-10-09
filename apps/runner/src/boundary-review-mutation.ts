@@ -8,6 +8,7 @@ import { assertGovernedReadEditDecision, type GovernedReadEditDecision } from ".
 import { Buffer } from "node:buffer";
 import { restrictPrivateFieldAnalysis } from "./read-field-privacy.js";
 import { reviewedReadEntryPaths } from "./read-relationship-access.js";
+import { isReadRelationshipScopePair } from "./read-relationship-scope.js";
 import { assertReadPrerequisiteRetained } from "./read-prerequisite-preservation.js";
 import { assertReviewedReadCurrentStatePrerequisite, type ReviewedReadCurrentStatePrerequisite } from "./read-prerequisite.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -982,6 +983,7 @@ export async function prepareBoundaryResourceReviewMutation(
   const candidate = buildReviewedCandidate({
     previous: state.candidate,
     generated: build.exploration_boundary,
+    inspectedResources: build.graph.resources,
     request,
   });
   const partialScopeResolution = request.include === true
@@ -1167,6 +1169,7 @@ export async function prepareBoundaryReviewMutationBatch(
     const next = buildReviewedCandidate({
       previous: candidate,
       generated: build.exploration_boundary,
+      inspectedResources: build.graph.resources,
       request: effectiveRequest,
     });
     assertRequestedExposureState(request, next);
@@ -1939,6 +1942,7 @@ function managedDecisionsForRequest(
 function buildReviewedCandidate(input: {
   previous: ExplorationBoundaryDraft;
   generated: ExplorationBoundaryDraft;
+  inspectedResources: AutoBoundaryResource[];
   request: BoundaryResourceReviewRequest;
 }): ExplorationBoundaryDraft {
   const candidate = structuredClone(input.generated);
@@ -2098,7 +2102,7 @@ function buildReviewedCandidate(input: {
   if (input.request.private_model_fields?.length) {
     restrictPrivateFieldAnalysis(candidate, input.request.resource_id, input.request.private_model_fields);
   }
-  assertRequestedRelationshipsRetained(input.request, input.generated, candidate);
+  assertRequestedRelationshipsRetained(input.request, input.generated, candidate, input.inspectedResources);
   return reviewExplorationBoundaryCandidate(input.generated, candidate).candidate;
 }
 
@@ -2322,6 +2326,7 @@ function assertRequestedRelationshipsRetained(
   request: BoundaryResourceReviewRequest,
   generated: ExplorationBoundaryDraft,
   candidate: ExplorationBoundaryDraft,
+  inspectedResources: AutoBoundaryResource[],
 ): void {
   if (!request.relationship_ids) return;
   const generatedResource = generated.pack.resources.find(
@@ -2335,12 +2340,48 @@ function assertRequestedRelationshipsRetained(
     relationship.id,
     relationship,
   ]));
-  const unknown = request.relationship_ids.filter((id) => !available.has(id));
-  if (unknown.length) {
-    throw new Error(
-      `Unknown relationship${unknown.length === 1 ? "" : "s"} ${unknown.map((id) => JSON.stringify(id)).join(", ")} ` +
-      `for ${request.resource_id}. Available relationships: ${[...available.keys()].sort().join(", ") || "none"}.`,
-    );
+  const unavailable = request.relationship_ids.filter((id) => !available.has(id));
+  if (unavailable.length) {
+    const source = inspectedResources.find((resource) => resource.id === request.resource_id);
+    const diagnostics = unavailable.map((id) => {
+      // Direct generated IDs are exact catalog constraint names on this source.
+      // Never parse a path ID or borrow a similarly named FK from another table.
+      const inspected = source?.relationships.find((relationship) => relationship.name === id);
+      if (!source || !inspected) return { id, reason: "unknown" as const };
+      const target = inspectedResources.find((resource) => resource.id === inspected.referenced_resource);
+      // Check the producer's pre-key eligibility gates before attributing an
+      // exclusion to privacy. Existence alone does not establish its cause.
+      if (target?.status === "draft_read" && inspected.cardinality_proven && inspected.target_uniqueness
+        && inspected.columns.length > 0 && inspected.columns.length === inspected.referenced_columns.length) {
+        const targetKeptOut = new Set([
+          ...target.fields.filter((field) => field.sensitive_suggestion || !field.raw_visible_suggestion).map((field) => field.name),
+          target.tenant_key.selected, target.principal_key.selected,
+        ]);
+        const excludedKey = inspected.columns.some((field, index) => {
+          const targetField = inspected.referenced_columns[index]!;
+          return !isReadRelationshipScopePair(
+            { tenant_key: source.tenant_key.selected, principal_key: source.principal_key.selected },
+            { tenant_key: target.tenant_key.selected, principal_key: target.principal_key.selected },
+            field, targetField,
+          ) && (generatedResource.kept_out_fields.includes(field) || targetKeptOut.has(targetField));
+        });
+        if (excludedKey) return { id, reason: "kept_out_join_key" as const };
+      }
+      return { id, reason: "inspected_unavailable" as const };
+    });
+    const messages = diagnostics.map(({ id, reason }) => reason === "kept_out_join_key"
+      ? `Relationship ${JSON.stringify(id)} is excluded because a join key is kept out of Read use. Review the field policy separately before requesting this relationship; nothing was changed.`
+      : reason === "inspected_unavailable"
+        ? `Inspected relationship ${JSON.stringify(id)} is unavailable for Read review under the current structural and scope restrictions.`
+        : `Unknown relationship ${JSON.stringify(id)} for ${request.resource_id}.`);
+    throw Object.assign(new Error(
+      `${messages.join(" ")} Available relationships: ${[...available.keys()].sort().join(", ") || "none"}.`,
+    ), {
+      code: "READ_RELATIONSHIP_UNAVAILABLE",
+      // Only requested identifiers and finite reasons, never private join fields
+      // or the full inspected/private Action catalog, enter this diagnostic.
+      relationships: diagnostics,
+    });
   }
   const included = new Set(candidate.pack.resources.map((resource) => resource.id));
   for (const id of request.relationship_ids) {
