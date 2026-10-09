@@ -1,0 +1,26 @@
+{
+  "product": "96e14201",
+  "tests": "c8088789",
+  "independent_report": "/home/sandesh-tiwari/Documents/Codex/2026-10-06/b51-independent-reviewer-2/work/reviewer2-read8/b64-c19-receipt-component-identity-independent-v1.json",
+  "independent_report_sha256": "ad457d79c15cd6ed7218dd67ac4e88a62d889a417f55d729c127d91c768a86c4",
+  "Main_result": {
+    "passed": 197,
+    "failed": 0,
+    "skipped": 0,
+    "result": "/var/tmp/synapsor-main-receipt-typed-owned.t0iafzzl/result.json",
+    "sha256": "6868129ef227e8292fe3a7994c26901789ab742cfd2842eabf387b2b7e2b8ed5"
+  },
+  "source_snapshot_bytes": 0,
+  "manifest": "/var/tmp/synapsor-main-receipt-typed-owned.t0iafzzl/SOURCE-MANIFEST.json",
+  "retired_ids": [
+    "I01968",
+    "I01969",
+    "I01970",
+    "I01971"
+  ],
+  "remaining_action": {
+    "typed": 28,
+    "delete": 5
+  },
+  "limits": "Offline source/component proof, no performed receipt/full/public/installed/type qualification; model caption never grants capability."
+}

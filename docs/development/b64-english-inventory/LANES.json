@@ -42,7 +42,7 @@
   },
   "heavy_slots": {
     "1": "B65 Tester fresh public D01 RELEASED7b13",
-    "2": "R2 receipt review finished, snapshot helper correction",
+    "2": "Main receipt197PASS END",
     "3": "free after Main21PASS; initializer focused tests available",
     "4": "Runtime UPDATE diagnosis complete; no effects"
   },
@@ -1267,10 +1267,10 @@
       ]
     },
     "action": {
-      "pin": "b14c523e",
-      "typed": 30,
+      "pin": "96e14201",
+      "typed": 26,
       "delete": 5,
-      "source": "Ten coverage IDs plus I02064 typed Source naming integrated; independentTesterb87d accepted; Main exact6files106+26=132uniquePASS,7actualcold included. Only I02064 additionally closed. Receipt4 successor pending review; units/other IDs open.",
+      "source": "Four receipt identity sites I01968/I01969/I01970/I01971 retired by typed component IDs/current independent proof. R2 c19 scoped ACCEPT; Main96e14201 actual197PASS0FAIL0SKIP. Previous ten coverage and I02064 retained.",
       "reclassified_open": {
         "typed": [
           "I01961"
@@ -1278,14 +1278,14 @@
         "delete": []
       },
       "with_reclassifications": {
-        "typed": 32,
+        "typed": 28,
         "delete": 5
       },
       "audit_reclassified_ids": [
         "I01961",
         "I01962"
       ],
-      "active_task": "Receipt c19 197ownerPASS/types0 in R2 independent review; no selfapproval",
+      "active_task": "Owner-approved typed private INSERT initializer precompile prerequisite implementation; remaining Action decisions",
       "accepted_coverage_ids": [
         "I04444",
         "I04446",
@@ -1300,6 +1300,12 @@
       ],
       "accepted_source_ids": [
         "I02064"
+      ],
+      "accepted_receipt_ids": [
+        "I01968",
+        "I01969",
+        "I01970",
+        "I01971"
       ]
     },
     "read": {
@@ -1401,7 +1407,7 @@
       "delete": 0
     },
     "action": {
-      "typed": 32,
+      "typed": 28,
       "delete": 5
     },
     "main": {
