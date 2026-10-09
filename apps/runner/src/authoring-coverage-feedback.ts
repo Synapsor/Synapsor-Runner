@@ -31,6 +31,39 @@ export class CoverageValidationError extends Error {
   }
 }
 
+const coverageValidationFindings = {
+  reference_missing: { code: 'COVERAGE_REFERENCE_MISSING', structural: true,
+    reason: 'The submitted reference is absent from the current prepared review context. Its untrusted value is withheld.',
+    repair: 'Use only an existing exact reference that proves this claim. Read exclusion is not evidence that an Action privately uses a field. Do not invent an Action binding or substitute a nearby pointer. If proof is unavailable, preserve the claim as unresolved, with no invented reference; resubmit the complete review.' },
+  deployment_component_mixed: { code: 'COVERAGE_DEPLOYMENT_COMPONENT_MIXED', structural: true,
+    reason: 'The deployment component contains references outside its exact prerequisite or has no supported classification.',
+    repair: 'Use only the exact deployment_prerequisites entry for that supported setup duty. Split receipt-mode/setup, Read/privacy and business claims into their own independently checked passages. Selection is not setup, a receipt or independent readback; keep all outstanding duties pending. Do not change the draft.' },
+  counter_reference_overbroad: { code: 'COUNTING_REFERENCE_OVERBROAD', structural: true,
+    reason: 'The comparison does not identify a valid narrow referenced history-selector component.',
+    repair: 'Name the exact history_selector/capability path already present in current evidence and include its parent in draft_paths. A broad approval context cannot prove the narrow comparison or arbitrary children. Keep the complete counting obligation.' },
+  field_evidence_unavailable: { code: 'COVERAGE_FIELD_EVIDENCE_UNAVAILABLE', structural: false,
+    reason: 'The required privacy claim has no complete applicable field evidence in this prepared context.',
+    repair: 'Preserve the privacy requirement as unresolved. Read exclusion and private Action use are distinct; do not invent or redirect evidence. Use current evidence review rather than another policy opinion.' },
+  structure_invalid: { code: 'COVERAGE_STRUCTURE_INVALID', structural: true,
+    reason: 'The response envelope or passage structure does not satisfy the supplied schema. Dependent claim checks were not evaluated.',
+    repair: 'Submit the complete passages array; prose alone cannot record a review. Use only supported schema properties, valid source ranges and exact references; do not drop requirements to repair structure.' },
+  evidence_value_mismatch: { code: 'COVERAGE_EVIDENCE_VALUE_MISMATCH', structural: true,
+    reason: 'Mechanical evidence mismatch: the typed claim does not equal the value in the existing prepared context.',
+    repair: 'Correct the typed evidence comparison against that exact current context; do not change configuration to repair a claim. Keep any actual source-policy disagreement unresolved and validate it separately.' },
+  privacy_conflict: { code: 'COVERAGE_PRIVACY_CONFLICT', structural: false,
+    reason: 'The claimed privacy disposition conflicts with validated field exposure.',
+    repair: 'Keep the privacy requirement unresolved and use the existing reviewed privacy decision path. Do not request another favorable opinion or assign the obligation away.' },
+  counter_structure_invalid: { code: 'COVERAGE_COUNTER_STRUCTURE_INVALID', structural: true,
+    reason: 'The counter comparison has an unsupported shape, responsibility or disposition.',
+    repair: 'Counter requirements need Runner responsibility and implemented or conflict disposition. Keep an actual threshold override in its own passage with its exact accepted decision, and retain every unchanged scope, window, filter and limit. Omit an inapplicable comparison property rather than null or an empty array. Use the host-nominated correction scope; complete assembled coverage must validate.' },
+  override_unestablished: { code: 'COVERAGE_OVERRIDE_UNESTABLISHED', structural: false,
+    reason: 'The purported override has no valid current operator support. Leaving work pending is not an override.',
+    repair: 'Keep the requirement unresolved. Review its existing decision through attached-rules review; do not ask another model opinion to invent an override or claim completed ownership.' },
+  obligation_structure_invalid: { code: 'COVERAGE_OBLIGATION_STRUCTURE_INVALID', structural: true,
+    reason: 'The application-obligation record does not match the supported isolated duty structure.',
+    repair: 'Use the exact named application contract, responsibility=application and a pending disposition. Keep field/privacy, counter and Runner claims separately validated; assignment remains unverified. Use the host-nominated correction scope; complete assembled coverage must validate.' },
+} satisfies Record<CoverageValidationFailureReason, {code: string; structural: boolean; reason: string; repair: string}>;
+
 /** Only host-authored text and fixed response coordinates leave this boundary. */
 export class CoverageComponentError extends Error {
   constructor(readonly component: string, readonly cause: unknown) {
@@ -184,6 +217,10 @@ export function coverageFinding(error: unknown, component: string, identityBasis
           ?'Keep BUSINESS review pending. Inspect the complete current effect group and receipt contract; an interpretation cannot make an unsupported transaction possible.'
           :'Keep BUSINESS review pending and use the local source-transaction scope review for this exact Action and source excerpt. Do not ask another model opinion to decide owner meaning.'};
   }
+  if (cause instanceof CoverageValidationError) return {
+    ...coverageValidationFindings[cause.reason], component, component_identity: canonicalJsonDigest(identityBasis),
+    identity: canonicalJsonDigest({component: identityBasis, code: coverageValidationFindings[cause.reason].code}),
+  };
   if (cause instanceof CoverageReceiptConfigurationError) return {
     ...receiptConfigurationFindings[cause.reason], component,typed_reason:`receipt_configuration.${cause.reason}`, component_identity: canonicalJsonDigest(identityBasis),
     identity: canonicalJsonDigest({ component: identityBasis, code: cause.code, reason: cause.reason }),
@@ -251,10 +288,6 @@ export function coverageFinding(error: unknown, component: string, identityBasis
     code = 'COUNTING_SUPPORT_MISMATCH'; structural = true;
     reason = 'The counter-specific citation has no applicable exact support association; a paragraph citation is separate.';
     repair = 'Correct only this counter citation using its current scoped support. Cite an accepted operator message only when it actually supports this exact comparison. If the prepared source or typed host-recorded counting review independently establishes required meaning without a linked message, omit the OPTIONAL counter operator_message_id while retaining the comparison and that authentic positive basis. Omission or current/required equality alone supplies no proof. Keep paragraph support separate, preserve every source requirement and other claim, and do not change selectors or invent or repeat an owner decision. Use only the exact host-nominated replacement region; every part of the assembled report is revalidated.';
-  } else if (message.startsWith('Draft pointer(s) not present:') || message.startsWith('Draft pointer not present:')) {
-    code = 'COVERAGE_REFERENCE_MISSING'; structural = true;
-    reason = 'The submitted reference is absent from the current prepared review context. Its untrusted value is withheld.';
-    repair = 'Use only an existing exact reference that proves this claim. Read exclusion is not evidence that an Action privately uses a field. Do not invent an Action binding or substitute a nearby pointer. If proof is unavailable, preserve the claim as unresolved, with no invented reference; resubmit the complete review.';
   } else if (message.startsWith('SOURCE_COUNTER_COMPONENT_MIXED:') || message.startsWith('SOURCE_COUNTER_CLASSIFICATION_REQUIRED:')) {
     code = message.startsWith('SOURCE_COUNTER_CLASSIFICATION_REQUIRED:') ? 'SOURCE_COUNTER_CLASSIFICATION_REQUIRED' : 'SOURCE_COUNTER_COMPONENT_MIXED'; structural = true;
     reason = 'A source-counter maintenance component mixes responsibilities or uses an unclassified source requirement.';
@@ -263,28 +296,12 @@ export function coverageFinding(error: unknown, component: string, identityBasis
     code = 'SOURCE_COUNTER_ATTESTATION_REQUIRED';
     reason = 'The required source-owner maintenance confirmation is absent or not current for this effect.';
     repair = 'Keep the duty unresolved. Use the existing reviewed-counter operation to review the exact current source, metadata and target; external assurance remains unverified. Another model opinion cannot establish confirmation.';
-  } else if (message.includes('draft_paths must contain only') || message.includes('Classify the deployment prerequisite against its exact')) {
-    code = 'COVERAGE_DEPLOYMENT_COMPONENT_MIXED'; structural = true;
-    reason = 'The deployment component contains references outside its exact prerequisite or has no supported classification.';
-    repair = 'Use only the exact deployment_prerequisites entry for that supported setup duty. Split receipt-mode/setup, Read/privacy and business claims into their own independently checked passages. Selection is not setup, a receipt or independent readback; keep all outstanding duties pending. Do not change the draft.';
-  } else if (message.startsWith('Counter requirements must name an exact referenced')) {
-    code = 'COUNTING_REFERENCE_OVERBROAD'; structural = true;
-    reason = 'The comparison does not identify a valid narrow referenced history-selector component.';
-    repair = 'Name the exact history_selector/capability path already present in current evidence and include its parent in draft_paths. A broad approval context cannot prove the narrow comparison or arbitrary children. Keep the complete counting obligation.';
-  } else if (message.startsWith('Field privacy evidence is not present:') || message.startsWith('Incomplete field privacy evidence')) {
-    code = 'COVERAGE_FIELD_EVIDENCE_UNAVAILABLE';
-    reason = 'The required privacy claim has no complete applicable field evidence in this prepared context.';
-    repair = 'Preserve the privacy requirement as unresolved. Read exclusion and private Action use are distinct; do not invent or redirect evidence. Use current evidence review rather than another policy opinion.';
   } else if (message.startsWith('COUNTING_')) {
     const known = ['COUNTING_REQUIREMENT_UNESTABLISHED','COUNTING_REQUIREMENT_AMBIGUOUS','COUNTING_REQUIREMENT_MISMATCH','COUNTING_CONFIGURATION_INCOMPLETE','COUNTING_DOMAIN_STALE','COUNTING_SUPPORT_STALE','COUNTING_BEHAVIOR_DIFFERENT','COUNTING_INTERPRETATION_AMBIGUOUS','COUNTING_COMPARISON_INVALID','COUNTING_REFERENCE_OVERBROAD'];
     code = known.find(c => message.startsWith(c + ':')) ?? 'COVERAGE_EVIDENCE_UNAVAILABLE';
     reason = 'The counting requirement, comparison or its current evidence is not established. This is not an invitation for another policy opinion.';
     structural = ['COUNTING_COMPARISON_INVALID','COUNTING_REFERENCE_OVERBROAD'].includes(code);
     repair = structural ? 'Use one valid narrow typed comparison per counter; broad context cannot prove child properties. Preserve every unrelated claim.' : 'Retain the unresolved requirement and use its existing decision or current-evidence review. No selector change or ownership completion is inferred.';
-  } else if (message.includes('Each passage must be an object') || message.includes('Invalid passage range') || message.startsWith('Coverage tool accepts only passages') || message.startsWith('Coverage passages must be an array') || message.startsWith('Coverage contains ') || message.startsWith('Use exact JSON pointers')) {
-    code = 'COVERAGE_STRUCTURE_INVALID'; structural = true;
-    reason = 'The response envelope or passage structure does not satisfy the supplied schema. Dependent claim checks were not evaluated.';
-    repair = 'Submit the complete passages array; prose alone cannot record a review. Use only supported schema properties, valid source ranges and exact references; do not drop requirements to repair structure.';
   } else if (message.startsWith('Unaccounted source lines:')) {
     code = 'COVERAGE_SOURCE_LINES_MISSING'; structural = true;
     reason = 'One or more nonblank source lines have no submitted disposition.';
@@ -297,26 +314,6 @@ export function coverageFinding(error: unknown, component: string, identityBasis
     code = 'COVERAGE_DUPLICATE_COMPONENT'; structural = true;
     reason = 'The complete response repeats an identical validated component. Distinct claims may share a source range; identical records are not distinct claims.';
     repair = 'Return one copy of this component within the host-nominated region, preserving all distinct claims, unresolved concerns and full source coverage. Do not combine contrary dispositions or replace the source.';
-  } else if (message.startsWith('Mechanical evidence mismatch at')) {
-    code = 'COVERAGE_EVIDENCE_VALUE_MISMATCH'; structural = true;
-    reason = 'Mechanical evidence mismatch: the typed claim does not equal the value in the existing prepared context.';
-    repair = 'Correct the typed evidence comparison against that exact current context; do not change configuration to repair a claim. Keep any actual source-policy disagreement unresolved and validate it separately.';
-  } else if (message.startsWith('Field coverage mismatch:')) {
-    code = 'COVERAGE_PRIVACY_CONFLICT';
-    reason = 'The claimed privacy disposition conflicts with validated field exposure.';
-    repair = 'Keep the privacy requirement unresolved and use the existing reviewed privacy decision path. Do not request another favorable opinion or assign the obligation away.';
-  } else if (message.includes('Invalid counter requirements record')) {
-    code = 'COVERAGE_COUNTER_STRUCTURE_INVALID'; structural = true;
-    reason = 'The counter comparison has an unsupported shape, responsibility or disposition.';
-    repair = 'Counter requirements need Runner responsibility and implemented or conflict disposition. Keep an actual threshold override in its own passage with its exact accepted decision, and retain every unchanged scope, window, filter and limit. Omit an inapplicable comparison property rather than null or an empty array. Use the host-nominated correction scope; complete assembled coverage must validate.';
-  } else if (message.includes('An override must reference an actual operator message.')) {
-    code = 'COVERAGE_OVERRIDE_UNESTABLISHED';
-    reason = 'The purported override has no valid current operator support. Leaving work pending is not an override.';
-    repair = 'Keep the requirement unresolved. Review its existing decision through attached-rules review; do not ask another model opinion to invent an override or claim completed ownership.';
-  } else if (message.includes('Invalid application obligation record')) {
-    code = 'COVERAGE_OBLIGATION_STRUCTURE_INVALID'; structural = true;
-    reason = 'The application-obligation record does not match the supported isolated duty structure.';
-    repair = 'Use the exact named application contract, responsibility=application and a pending disposition. Keep field/privacy, counter and Runner claims separately validated; assignment remains unverified. Use the host-nominated correction scope; complete assembled coverage must validate.';
   }
   if(cause instanceof CoverageCounterSupportError) {
     code='COUNTING_SUPPORT_MISMATCH'; structural=true;
