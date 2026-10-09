@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { createActionRuleAuthority, ActionRuleError } from '@synapsor-runner/action-rules';
 import type { HardLimitDesignationV1 } from '@synapsor-runner/action-rules';
@@ -7,7 +10,12 @@ const native = vi.hoisted(() => ({ maintain: true, global: false, qualifier: vi.
 vi.mock('@synapsor-runner/postgres', () => ({ createPostgresPool: native.pool, assertPostgresHardLimitSource: native.qualifier }));
 vi.mock('@synapsor-runner/schema-inspector', () => ({ inspectDatabase: native.inspect, inspectDatabaseWithConnection: native.inspectWithConnection, rolePostureFingerprint: () => `sha256:${'a'.repeat(64)}`, schemaFingerprintForInspection: () => `sha256:${native.schemaFingerprint.repeat(64)}` }));
 vi.mock('../../../apps/runner/src/worker-policy.js', () => ({ assessSemanticSupervisedWriterPosture: native.posture }));
-vi.mock('../../../apps/runner/src/semantic-receipt-setup.js', () => ({ inspectSemanticReceiptSetup: native.selection, selectedSemanticReceipts: (setup: any, writer: string) => { if (!setup.selection_current || setup.selection.write_url_env !== writer) throw new Error('stale selection'); return setup.selection.receipts; } }));
+vi.mock('../../../apps/runner/src/semantic-receipt-setup.js', async () => {
+  const { withHeldProjectAuthorityAccess } = await import('../../../apps/runner/src/project-authority-mutation.js');
+  return { inspectSemanticReceiptSetupHeld: (input: { projectRoot: string }, permit: Parameters<typeof withHeldProjectAuthorityAccess>[1]) =>
+    withHeldProjectAuthorityAccess(input.projectRoot, permit, async () => native.selection(input)),
+    selectedSemanticReceipts: (setup: any, writer: string) => { if (!setup.selection_current || setup.selection.write_url_env !== writer) throw new Error('stale selection'); return setup.selection.receipts; } };
+});
 import { projectHardLimitActivationWriterSelections } from '../../../apps/runner/src/hard-limit-writer-selection.js';
 import { inspectReviewedHardLimitWriterSetup, assertReviewedHardLimitWriterSetup,
   type HardLimitWriterReviewContext, type HardLimitWriterReviewBinding } from '../../../apps/runner/src/hard-limit-writer-review-binding.js';
@@ -120,6 +128,14 @@ it('renders inspected role with SQL identifier quoting and unsupported MySQL wit
   expect(hardLimitWriterSetupLines(unsupported).join(' ')).not.toContain('GRANT MAINTAIN');
 });
 
+// Retain each isolated project's SQLite lock inode with the run artifacts.
+// Entry acquisition and explicit live Held validation use the real access API.
+async function selectionProject() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'synapsor-b65-writer-selection-'));
+  await fs.chmod(root, 0o700);
+  return root;
+}
+
 function disabledSelection(f: ReturnType<typeof fixture>) {
   const source = f.config.sources![f.source]!;
   source.read_only = true; delete source.write_url_env;
@@ -128,15 +144,17 @@ function disabledSelection(f: ReturnType<typeof fixture>) {
     selection: { write_url_env: 'CHOSEN_WRITE', receipts: { authority: 'source_db', provisioning: 'precreated', schema: 'public', table: 'receipts' } } };
 }
 it('projects the exact saved disabled writer selection into the separate Action candidate without execution authority', async () => {
+  const projectRoot = await selectionProject();
   const f = fixture(), before = JSON.stringify(f.config); const setup = disabledSelection(f); const readOnly = JSON.stringify(f.config);
   native.selection.mockResolvedValue(setup);
-  const projected = await projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' });
+  const projected = await projectHardLimitActivationWriterSelections({ ...f, projectRoot });
   expect(projected.sources![f.source]).toMatchObject({ read_only: false, write_url_env: 'CHOSEN_WRITE', read_url_env: 'READ', receipts: setup.selection.receipts });
   expect(projected.supervised_worker).toBeUndefined(); expect(JSON.stringify(f.config)).toBe(readOnly);
-  expect(native.selection).toHaveBeenCalledWith(expect.objectContaining({ disabled: true, configPath: '/derived/project/synapsor.runner.json', outcome: setup.outcome }));
+  expect(native.selection).toHaveBeenCalledWith(expect.objectContaining({ disabled: true, configPath: path.join(projectRoot, 'synapsor.runner.json'), outcome: setup.outcome }));
   expect(before).not.toBe(readOnly);
 });
 it.each(['stale', 'wrong_action', 'wrong_source', 'wrong_outcome', 'source_drift', 'missing'])('cannot stage %s disabled setup as a writer', async mode => {
+  const projectRoot = await selectionProject();
   const f = fixture(), setup = disabledSelection(f);
   if (mode === 'stale') setup.selection_current = false;
   if (mode === 'wrong_action') setup.action_digest = 'sha256:' + 'b'.repeat(64);
@@ -144,30 +162,34 @@ it.each(['stale', 'wrong_action', 'wrong_source', 'wrong_outcome', 'source_drift
   if (mode === 'wrong_outcome') setup.outcome = 'other';
   if (mode === 'source_drift') setup.source.read_url_env = 'OTHER_READ';
   native.selection.mockResolvedValue(mode === 'missing' ? undefined : setup);
-  const projected = await projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' });
+  const projected = await projectHardLimitActivationWriterSelections({ ...f, projectRoot });
   expect(projected.sources![f.source]!.write_url_env).toBeUndefined();
 });
 it('keeps the current genuine writer rather than silently replacing it with a disabled setup', async () => {
-  const f = fixture(); const result = await projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' });
+  const projectRoot = await selectionProject();
+  const f = fixture(); const result = await projectHardLimitActivationWriterSelections({ ...f, projectRoot });
   expect(result).toEqual(f.config); expect(native.selection).not.toHaveBeenCalled();
 });
 it('reinspects the disabled setup rather than allowing human-wait drift to reuse selection', async () => {
+  const projectRoot = await selectionProject();
   const f = fixture(), setup = disabledSelection(f); native.selection.mockResolvedValue(setup);
-  expect((await projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' })).sources![f.source]!.write_url_env).toBe('CHOSEN_WRITE');
+  expect((await projectHardLimitActivationWriterSelections({ ...f, projectRoot })).sources![f.source]!.write_url_env).toBe('CHOSEN_WRITE');
   setup.selection_current = false;
-  expect((await projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' })).sources![f.source]!.write_url_env).toBeUndefined();
+  expect((await projectHardLimitActivationWriterSelections({ ...f, projectRoot })).sources![f.source]!.write_url_env).toBeUndefined();
   expect(native.selection).toHaveBeenCalledTimes(2);
 });
 
 it('does not borrow one outcome selection for an unselected sibling on the same Source', async () => {
+  const projectRoot = await selectionProject();
   const f = fixture(true, true), setup = disabledSelection(f);
   native.selection.mockImplementation(async input => input.outcome === setup.outcome ? setup : undefined);
-  expect((await projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' })).sources![f.source]!.write_url_env).toBeUndefined();
+  expect((await projectHardLimitActivationWriterSelections({ ...f, projectRoot })).sources![f.source]!.write_url_env).toBeUndefined();
 });
 it('refuses conflicting selected writer references on the same unselected Source', async () => {
+  const projectRoot = await selectionProject();
   const f = fixture(true, true), setup = disabledSelection(f);
   native.selection.mockImplementation(async input => ({ ...setup, outcome: input.outcome, selection: { ...setup.selection, write_url_env: input.outcome === setup.outcome ? 'ONE_WRITE' : 'OTHER_WRITE' } }));
-  await expect(projectHardLimitActivationWriterSelections({ ...f, projectRoot: '/derived/project' })).rejects.toMatchObject({ code: 'SEMANTIC_ACTION_HARD_LIMIT_WRITER_REQUIRED', readback: { checks: [expect.objectContaining({ reason_code: 'writer_selection_ambiguous' })] } });
+  await expect(projectHardLimitActivationWriterSelections({ ...f, projectRoot })).rejects.toMatchObject({ code: 'SEMANTIC_ACTION_HARD_LIMIT_WRITER_REQUIRED', readback: { checks: [expect.objectContaining({ reason_code: 'writer_selection_ambiguous' })] } });
 });
 
 // Mocked producer regressions only; actual public DP09 remains independent.
