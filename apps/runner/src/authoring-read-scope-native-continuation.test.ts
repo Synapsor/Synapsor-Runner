@@ -13,7 +13,7 @@ import { prepareBoundaryResourceReviewMutation, commitBoundaryResourceReviewMuta
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
 describe("native saved Read applicability continuation", () => {
-  it("records a stale replacement and raw answer through the real native owners/CAS without losing the old Yes", async () => {
+  it.each([false, true])("records stale replacement and raw answer through native CAS, repeat root entry=%s", async repeatRoot => {
     const f = await nativeFixture();
     try {
       const question = await f.produce();
@@ -65,11 +65,23 @@ describe("native saved Read applicability continuation", () => {
       const replacement = await native.restore(current.candidate);
       expect(replacement.state).toBe("replacement");
       if (replacement.state !== "replacement") throw new Error("Replacement owner not reached");
-      const replacementId = replacement.owner.question_id;
+      let replacementId = replacement.owner.question_id;
       expect(replacementId).not.toBe(question.id);
       expect(f.state().read?.scope_question_id).toBe(replacementId);
       expect(f.state().operator_questions![0]).toEqual(confirmed);
       expect(f.state().generation_recovery).toEqual(generation);
+      if (repeatRoot) {
+        const selected = structuredClone(f.state().operator_questions!.find(q => q.id === replacementId)!);
+        decisions.push("replace");
+        const next = await native.review(question.id);
+        expect(next.state).toBe("replace_requested");
+        expect(next.question_id).not.toBe(replacementId);
+        expect(f.state().operator_questions!.find(q => q.id === replacementId)).toEqual(selected);
+        expect(f.state().operator_questions!.find(q => q.id === next.question_id)!.read_scope?.predecessor_id).toBe(replacementId);
+        expect(f.state().read?.scope_question_id).toBe(next.question_id);
+        expect(f.state().operator_questions![0]).toEqual(confirmed);
+        replacementId = next.question_id;
+      }
       let update: ReadMeaningRecordUpdate = {};
       const raw = "Keep labels private. I want to review a count instead.";
       const meaning = createReadMeaningHost({ answerTooLarge: () => {}, access: {

@@ -1,3 +1,4 @@
+import { createReadScopeInspectionFence } from "./authoring-read-scope-error.js";
 import { projectReadScopeCheckpointSave } from "./authoring-read-scope-checkpoint.js";
 import { AuthoringResumeMaterialError, AuthoringCheckpointSaveError, rejectedCheckpointMaterial } from "./authoring-checkpoint-save-error.js";
 import { reloadReadReviewForModelRevision, reloadReadReviewForModelRevisionHeld } from "./authoring-read-review-currentness.js";
@@ -3868,6 +3869,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let jobIntent: string | undefined;
   let canonicalJobIntent: string | undefined;
   let resumePersistenceBlocked = false;
+  const readScopeInspection = createReadScopeInspectionFence();
   let resumePersistenceFailure: string | undefined;
   let resumeRejectedMaterial: AuthoringResumeMaterialError | undefined;
   // Revalidated/in-memory state is not an acknowledged disk revision.
@@ -3876,6 +3878,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   const checkpointSaveFailure = (step: string, rejectedMaterial?: AuthoringResumeMaterialError) => new AuthoringCheckpointSaveError(step, resumePersistenceFailure, rejectedMaterial);
   const assertAuthoringResumeCurrent = async (action: Parameters<typeof assertBoundaryAuthoringResumeCurrent>[2], checkpointWrite = false, permit?: ProjectAuthorityMutationPermit) => {
     if (!input.authoringChat) return;
+    readScopeInspection.assertKnown();
     assertRunning();
     if ((!checkpointWrite && resumePersistenceBlocked) || !activeResume || activeResume.revision_digest !== savedResumeRevision) {
       throw checkpointSaveFailure("The current saved job");
@@ -3953,6 +3956,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   };
   const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage, permit?: ProjectAuthorityMutationPermit,
     acknowledgeGeneration: boolean | AuthoringQuestionCompletion = true): Promise<void> => {
+    readScopeInspection.assertKnown();
     // Never attach an older refusal to a skipped/successful/different save.
     resumeRejectedMaterial = undefined;
     assertRunning();
@@ -4108,6 +4112,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const beforeTurns = authoringConversation && structuredClone(authoringConversation.turns);
     try { return await withProjectAuthorityMutation(input.projectRoot, operation,{permit:parentPermit}); }
     catch (error) {
+      readScopeInspection.observe(error);
+      resumePersistenceBlocked ||= readScopeInspection.required();
       ownerHandoffs = beforeHandoffs;
       operatorQuestions = beforeQuestions;
       planningResult = beforePlanningResult;

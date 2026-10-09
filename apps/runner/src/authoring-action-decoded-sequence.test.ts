@@ -3,7 +3,7 @@ import { canonicalJsonDigest as digest } from "@synapsor-runner/protocol";
 import { configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery,
   type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { askToolSurfaceDigest, completedAuthoringDecodedTurn, inspectActionAuthoringDecodedSequence,
-  resolveAskProviderConfiguration, runAskProviderTurn, withActionAuthoringDecodedSequence,
+  resolveAskProviderConfiguration, runAskProviderTurn, withActionAuthoringDecodedSequence, completedAuthoringQuestionSequence,
   type ActionAuthoringDecodedSequence, type AskToolDefinition } from "./model-ask.js";
 
 function fixture() {
@@ -82,6 +82,18 @@ describe("actual Action decoded producer sequence", () => {
     await f.tracked(() => withActionAuthoringDecodedSequence(async () => {
       expect(() => inspectActionAuthoringDecodedSequence(closed!)).toThrowError(expect.objectContaining({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" }));
     }));
+  });
+  it("refuses genuine outside-turn contamination of the shared completed-consumer association", async () => {
+    const f = fixture();
+    await f.tracked(async () => {
+      const outside = await f.run(10);
+      await withActionAuthoringDecodedSequence(async sequence => {
+        const inside = await f.run(20);
+        completedAuthoringQuestionSequence([outside, inside]);
+        expect(() => inspectActionAuthoringDecodedSequence(sequence.current()))
+          .toThrowError(expect.objectContaining({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" }));
+      });
+    });
   });
   it("does not turn interrupted handling into an apparently complete staged sequence", async () => {
     const f = fixture();

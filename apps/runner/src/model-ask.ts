@@ -216,6 +216,16 @@ export function inspectActionAuthoringDecodedSequence(token: ActionAuthoringDeco
   if (turns.some(turn => !turn)) throw unavailableActionSequence();
   const completion = completedAuthoringQuestionSequence(frame.results);
   if (!completion) throw unavailableActionSequence();
+  const expected = new Map<string, AuthoringDecodedTurn["operations"][number]>();
+  for (const turn of turns as AuthoringDecodedTurn[]) for (const operation of turn.operations) {
+    const prior = expected.get(operation.operation_id);
+    if (prior && canonicalJsonDigest(prior) !== canonicalJsonDigest(operation)) throw unavailableActionSequence();
+    expected.set(operation.operation_id, operation);
+  }
+  // The shared completion combiner is also used by other real producers. A
+  // genuine outside result cannot contaminate this invocation's consumption.
+  if (canonicalJsonDigest(authoringCompletedTurnReferences(completion)) !== canonicalJsonDigest([...expected.values()]))
+    throw unavailableActionSequence();
   return { turns: turns as AuthoringDecodedTurn[], completion };
 }
 

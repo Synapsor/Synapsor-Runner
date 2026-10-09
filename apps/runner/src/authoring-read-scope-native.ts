@@ -236,9 +236,11 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     save: async (question, options) => {
       const state = snapshot();
       const existing = state.questions.some(q => q.id === question.id);
-      const selected = state.read?.scope_question_id === options.expected.question_id;
+      const expectedQuestion = resolveNativeReadScope(options.expected).question;
+      const selected = state.read?.scope_question_id === options.expected.question_id
+        || state.read?.scope_question_id === expectedQuestion.id;
       if (!existing && (question.read_scope?.mode !== "review"
-        || question.read_scope.predecessor_id !== resolveNativeReadScope(options.expected).question.id || !selected))
+        || question.read_scope.predecessor_id !== expectedQuestion.id || !selected))
         return unavailable("The exact selected Read scope replacement");
       await input.ports.save({ questions: existing ? state.questions.map(q => q.id === question.id ? question : q) : [...state.questions, question],
         ...(selected && state.read!.scope_question_id !== question.id ? { read: { ...state.read!, scope_question_id: question.id } } : {}),

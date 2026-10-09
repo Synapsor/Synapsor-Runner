@@ -19,3 +19,19 @@ export class ReadScopeReviewError extends Error {
 export function nativeReadScopeFailure(error: unknown) {
   return error !== null && typeof error === "object" ? nativeFailures.get(error) : undefined;
 }
+
+/** Ephemeral native-session fence, discarded only when a new session loads and
+ * inspects the saved job. It neither rewrites durable history nor permits retry. */
+export function createReadScopeInspectionFence() {
+  let inspectionRequired = false;
+  return {
+    observe(error: unknown) {
+      if (nativeReadScopeFailure(error)?.local_outcome === "unknown") inspectionRequired = true;
+    },
+    required: () => inspectionRequired,
+    assertKnown() {
+      if (inspectionRequired) throw new ReadScopeReviewError("READ_SCOPE_REVIEW_ACK_UNKNOWN",
+        "Reopen and inspect the saved job before another decision or checkpoint. This session cannot resave unacknowledged Read state.", "unknown");
+    },
+  };
+}
