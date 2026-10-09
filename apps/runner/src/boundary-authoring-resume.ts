@@ -645,7 +645,8 @@ async function readResumeHeld(projectRoot: string, binding: BoundaryAuthoringRes
  * held operation grants neither display nor egress permission and does not
  * reconstruct missing ownership from an attachment or caller-supplied job. */
 export async function withBoundaryAuthoringSourceMaterial<T>(projectRoot: string, sourceSessionId: string,
-  value: unknown, operation: (json: string, permit: ProjectAuthorityMutationPermit) => Promise<T>,
+  value: unknown, operation: (json: string, permit: ProjectAuthorityMutationPermit,
+    recheck: (permit: ProjectAuthorityMutationPermit) => Promise<void>) => Promise<T>,
   permit?: ProjectAuthorityMutationPermit): Promise<T> {
   const captured = snapshotAuthoringMaterial(value);
   return withProjectAuthorityMutation(projectRoot, async held => {
@@ -656,9 +657,13 @@ export async function withBoundaryAuthoringSourceMaterial<T>(projectRoot: string
       throw new AuthoringMaterialContextError("AUTHORING_MATERIAL_CONTEXT_UNAVAILABLE");
     const owner = { projectRoot: held.projectRoot, jobCreatedAt: loaded.value.created_at };
     const context = await resolveAuthoringMaterialContext(owner);
+    const recheck = async (currentPermit: ProjectAuthorityMutationPermit) => {
+      await assertBoundaryAuthoringResumeCurrentHeld(held.projectRoot, loaded.value, currentPermit);
+      await assertAuthoringMaterial({ value: JSON.parse(captured), owner, origin: "retained_material", context });
+    };
     const json = await assertAuthoringMaterial({ value: JSON.parse(captured), owner,
       origin: "retained_material", context });
-    return operation(json, held);
+    return operation(json, held, recheck);
   }, { permit });
 }
 

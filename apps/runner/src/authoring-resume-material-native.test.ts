@@ -1,12 +1,14 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState,
   readBoundaryAuthoringResumeStateHeld, writeBoundaryAuthoringResumeState,
   type BoundaryAuthoringResumeBinding } from "./boundary-authoring-resume.js";
+import { newPolicySourceSession, policyTextSnapshot, savePolicySources, loadPolicySources } from "./authoring-policy-source.js";
+import { appendPolicySourceOperatorMessage } from "./authoring-policy-source-ui.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
 // bcd48c8d native before: 2P/7F (actual writes/refusals preserved); snapshot export: 42P/types0; Main hooks pending.
@@ -46,6 +48,37 @@ async function fixture() {
 async function rejected(operation: () => Promise<unknown>): Promise<unknown> {
   try { await operation(); return undefined; } catch (error) { return error; }
 }
+
+describe("native Source identity screening at the protected write", () => {
+  it.each(["source_read", "temporary_write"] as const)("refuses identity drift during %s without retaining the answer", async point => {
+    const f = await fixture(), sources = newPolicySourceSession();
+    sources.snapshots.push(policyTextSnapshot(Buffer.from("Declared ordinary business policy."), "policy.txt"));
+    sources.active = 1;
+    await savePolicySources(f.root, sources, { expectedDigest: null });
+    const state = buildBoundaryAuthoringResumeState({ ...f.base, policySourceSession: sources.id });
+    await writeBoundaryAuthoringResumeState(f.root, state, { expectedRevisionDigest: null });
+    const before = await loadPolicySources(f.root, sources.id), answer = "ordinary-now-private";
+    let drift = 0;
+    const read = fs.readFile.bind(fs), write = fs.writeFile.bind(fs);
+    const change = () => { drift++; setEnv("D4_NATIVE_PRINCIPAL", answer); };
+    const spy = point === "source_read" ? vi.spyOn(fs, "readFile").mockImplementation(async (...args) => {
+      const result = await read(...args);
+      if (String(args[0]).includes(sources.id) && drift === 0) change();
+      return result;
+    }) : vi.spyOn(fs, "writeFile").mockImplementation(async (...args) => {
+      const result = await write(...args);
+      if (String(args[0]).includes(sources.id) && String(args[0]).endsWith(".tmp") && drift === 0) change();
+      return result;
+    });
+    let error: unknown;
+    try { error = await rejected(() => appendPolicySourceOperatorMessage(f.root, sources, answer)); }
+    finally { spy.mockRestore(); }
+    expect(drift).toBe(1);
+    expect(error).toBeInstanceOf(Error);
+    expect(await loadPolicySources(f.root, sources.id)).toEqual(before);
+    expect(sources).toEqual(before);
+  });
+});
 
 describe("native host identity screening at Resume retention", () => {
   it.each(["tenant", "principal", "native_key"] as const)("refuses configured %s before the first native write", async kind => {

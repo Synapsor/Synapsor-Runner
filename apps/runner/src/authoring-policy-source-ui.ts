@@ -20,9 +20,9 @@ export async function appendPolicySourceOperatorMessage(root: string, sources: P
   const next=structuredClone(sources);
   // Destination approvals are host transfer metadata, not business answers.
   // Screen the exact appended payload, then retain that returned projection.
-  await withBoundaryAuthoringSourceMaterial(root, sources.id, answer, async (json, permit) => {
+  await withBoundaryAuthoringSourceMaterial(root, sources.id, answer, async (json, permit, recheck) => {
     next.operator_messages=[...(next.operator_messages ?? []),JSON.parse(json) as string];
-    await savePolicySources(root,next,{expectedDigest,permit});
+    await savePolicySources(root,next,{expectedDigest,permit,assertCurrentMaterial:recheck});
     Object.assign(sources,next);
   }, options.permit);
 }

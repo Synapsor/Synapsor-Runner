@@ -449,7 +449,8 @@ async function sourceSavedDigest(root: string, id: string): Promise<string | nul
 }
 
 export async function savePolicySources(root: string, session: PolicySourceSession,
-  options?: { expectedDigest?: string | null; permit?: ProjectAuthorityMutationPermit }): Promise<void> {
+  options?: { expectedDigest?: string | null; permit?: ProjectAuthorityMutationPermit;
+    assertCurrentMaterial?: (permit: ProjectAuthorityMutationPermit) => Promise<void> }): Promise<void> {
   return withProjectAuthorityMutation(root, async held => {
     const file = sourcePath(held.projectRoot, session.id), temporary = `${file}.${randomUUID()}.tmp`;
     assertSourceInputReviews(session.input_policy_reviews);
@@ -508,7 +509,12 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
     }
     await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
     await fs.chmod(path.dirname(file), 0o700);
-    try { await fs.writeFile(temporary, serialized, { mode: 0o600 }); await fs.rename(temporary, file); }
+    try {
+      await options?.assertCurrentMaterial?.(held);
+      await fs.writeFile(temporary, serialized, { mode: 0o600 });
+      await options?.assertCurrentMaterial?.(held);
+      await fs.rename(temporary, file);
+    }
     finally { await fs.unlink(temporary).catch(() => undefined); }
   }, { permit: options?.permit });
 }

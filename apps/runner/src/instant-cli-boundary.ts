@@ -335,8 +335,10 @@ async function activateInstantCliBoundaryAttempt(
     actor,
     confirmation: `ACTIVATE ${digest}`,
     reviewSubmission: saved.reviewSubmission,
-    assessReadScope: createSavedReadActivationAssessment(input.projectRoot, options =>
-      input.schemaInspector({ ...options, env: options.env ?? env })),
+    assessReadScope: createSavedReadActivationAssessment(input.projectRoot, options => {
+      if (!options.engine) throw new Error("The current reader engine is required for Read activation.");
+      return input.schemaInspector({ ...options, engine: options.engine, env: options.env ?? env });
+    }),
     currentInspection: inspection,
     activationAudit: {
       mode: "instant_development",
