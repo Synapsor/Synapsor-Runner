@@ -93,7 +93,7 @@ import { synchronizeBoundaryLibrary } from "./boundary-library.js";
 type JsonRecord = Record<string, unknown>;
 
 type PreparationFailure = import("./authoring-native-failure.js").NativeAuthoringFailure<
-  "boundary_review", "READ_REVIEW_BATCH_CONFLICT" | "READ_REVIEW_CANDIDATE_INVALID"
+  "boundary_review", "READ_REVIEW_BATCH_CONFLICT" | "READ_REVIEW_CANDIDATE_INVALID" | "READ_REVIEW_RETAINED_RESOURCE_UNAVAILABLE"
 >;
 const preparationFailures = new WeakMap<Error, PreparationFailure>();
 class BoundaryReviewPreparationError extends Error {
@@ -1015,6 +1015,8 @@ async function prepareBoundaryReviewRequests(
     }
   }
   for (const request of requests) assertCurrentInspectedResource(inspection, request.resource_id);
+  assertRetainedReviewResourcesAvailable(state.candidate, requests,
+    inspection.tables.map(table => `${table.schema}.${table.name}`), "inspection");
   const project = await detectProjectContext(projectRoot);
   const evidence = await loadStructuredProjectEvidence(project);
   const mutationBuild = buildReviewMutationBoundary({
@@ -1074,6 +1076,8 @@ async function prepareBoundaryReviewRequests(
     state.candidate,
     boundaryWideSettings,
   );
+  assertRetainedReviewResourcesAvailable(state.candidate, requests,
+    build.exploration_boundary.pack.resources.map(resource => resource.id), "generated_envelope");
   const prospective = buildReviewedCandidate({
     previous: state.candidate,
     generated: build.exploration_boundary,
@@ -1103,6 +1107,8 @@ async function prepareBoundaryReviewRequests(
   const reviewed = scopeOnlyPreparation
     ? { candidate, digest: explorationBoundaryCandidateDigest(candidate) }
     : reviewCompleteBoundaryCandidate(build.exploration_boundary, candidate);
+  assertRetainedReviewResourcesAvailable(state.candidate, requests,
+    reviewed.candidate.pack.resources.map(resource => resource.id), "candidate");
   // Every request must survive later resource rebuilds and final normalization.
   // The generated baseline already includes the whole batch, so intermediate
   // candidates cannot serve as the "before" side of each resource's diff.
@@ -1145,6 +1151,26 @@ async function prepareBoundaryReviewRequests(
     ...(removalImpacts.length ? { resource_removal_impacts: removalImpacts } : {}),
     source_database_changed: false,
   } };
+}
+
+/** A fresh envelope may narrow what is available, but cannot silently remove
+ * selected authority that this declarative submission did not remove. */
+function assertRetainedReviewResourcesAvailable(
+  previous: ExplorationBoundaryDraft,
+  requests: readonly BoundaryResourceReviewRequest[],
+  availableIds: readonly string[],
+  phase: "inspection" | "generated_envelope" | "candidate",
+): void {
+  const removed = new Set(requests.filter(request => request.exclude === true).map(request => request.resource_id));
+  const available = new Set(availableIds);
+  const missing = previous.pack.resources
+    .filter(resource => !removed.has(resource.id) && !available.has(resource.id))
+    .map(resource => resource.id).sort();
+  if (missing.length) {
+    throw new BoundaryReviewPreparationError("READ_REVIEW_RETAINED_RESOURCE_UNAVAILABLE",
+      `Retained Read resource(s) ${missing.join(", ")} are unavailable in the current ${phase}. `
+      + "Review their current availability or explicitly review their removal before preparing this batch.");
+  }
 }
 
 function reviewCompleteBoundaryCandidate(envelope: ExplorationBoundaryDraft, candidate: ExplorationBoundaryDraft) {

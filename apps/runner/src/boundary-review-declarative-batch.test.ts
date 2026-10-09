@@ -217,3 +217,48 @@ it("preserves native scope-only disabled staging without allowing a removal batc
   expect((await readOwner.readProjectReadAuthoring(f.root))!.selected!.stage).toBe("metadata_only");
   await expect(loadActivatedExplorationBoundary(f.root)).rejects.toMatchObject({code:"ENOENT"});
 });
+
+it("refuses an unrequested retained resource disappearing from fresh inspection without changing the saved baseline", async () => {
+  const f = await relationshipFixture();
+  const before = await loadBoundaryReviewContext(f.root);
+  expect(before.candidate.pack.resources.map(resource => resource.id)).toEqual(["shipping.anchor", "shipping.retained"]);
+  const currentInspection = structuredClone(f.inspection);
+  currentInspection.tables = currentInspection.tables.filter(table => table.name !== "retained");
+  const requests = [
+    {resource_id:"shipping.anchor",exclude:true,actor,reason:"Replace only anchor; preserve the retained resource and all its reviewed restrictions."},
+    f.request("right_items"),
+  ];
+  const save = vi.spyOn(readOwner,"saveProjectReadProgress");
+  let failure: unknown;
+  try { await prepareBoundaryReviewMutationBatch(f.root,requests,async()=>currentInspection); }
+  catch (error) { failure = error; }
+  expect(projectBoundaryReviewPreparationFailure(failure)).toMatchObject({
+    domain:"boundary_review",code:"READ_REVIEW_RETAINED_RESOURCE_UNAVAILABLE",local_outcome:"not_attempted",
+  });
+  expect(save).not.toHaveBeenCalled();
+  expect(await loadBoundaryReviewContext(f.root)).toEqual(before);
+  await expect(loadActivatedExplorationBoundary(f.root)).rejects.toMatchObject({code:"ENOENT"});
+});
+
+it("refuses a retained resource blocked in the fresh generated envelope through the same single-request path", async () => {
+  const f = await relationshipFixture();
+  const currentInspection = structuredClone(f.inspection);
+  const retained = currentInspection.tables.find(table => table.name === "retained")!;
+  retained.primary_key = [];
+  retained.unique_constraints = [];
+  const before = await loadBoundaryReviewContext(f.root);
+  const save = vi.spyOn(readOwner,"saveProjectReadProgress");
+  let failure: unknown;
+  try {
+    await prepareBoundaryResourceReviewMutation(f.root, {
+      resource_id:"shipping.anchor",sortable_fields:[],actor,
+      reason:"Narrow only anchor sorting; do not remove the retained resource.",
+    }, async()=>currentInspection);
+  } catch (error) { failure = error; }
+  expect(projectBoundaryReviewPreparationFailure(failure)).toMatchObject({
+    domain:"boundary_review",code:"READ_REVIEW_RETAINED_RESOURCE_UNAVAILABLE",local_outcome:"not_attempted",
+  });
+  expect((failure as Error).message).toContain("generated_envelope");
+  expect(save).not.toHaveBeenCalled();
+  expect(await loadBoundaryReviewContext(f.root)).toEqual(before);
+});
