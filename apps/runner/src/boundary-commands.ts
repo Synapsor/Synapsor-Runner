@@ -6861,11 +6861,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         } } : input.session;
     const { persist: persistReadAssistance } = createReadAssistanceCheckpointHost({ access: {
       mutate: mutateOwnerHandoff, contextDigest: ownerQuestionContext, scopeDigest: ownerQuestionScope,
-      currentCandidate: async () => (await loadBoundaryReviewContext(input.projectRoot)).bundle,
+      currentCandidate: async permit => (await loadBoundaryReviewContext(input.projectRoot, permit)).bundle,
       readCheckpoint: () => readAssistanceCheckpoint, readHandoffs: () => ownerHandoffs,
       scopeInventory: async permit => {
         await assertAuthoringResumeCurrent(undefined, false, permit);
-        const current = await loadBoundaryReviewContext(input.projectRoot), scope = await typedReadContext(current.candidate, undefined, permit);
+        const current = await loadBoundaryReviewContext(input.projectRoot, permit), scope = await typedReadContext(current.candidate, undefined, permit);
         return { ...scope, questions: operatorQuestions, handoffs: ownerHandoffs, generation: generationRecovery };
       },
       readQuestions: () => operatorQuestions, readRecovery: () => generationRecovery, readPreparedRead: () => resumeRead,
@@ -8837,7 +8837,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let latestReadRevisionDiff: ReviewSection | undefined;
   const { persist: persistReadRevision } = createReadRevisionCheckpointHost({ access: {
     mutate: mutateOwnerHandoff, contextDigest: permit => ownerQuestionContext(permit, "read_revision_clarification"),
-    scopeDigest: ownerQuestionScope, currentCandidate: async () => (await loadBoundaryReviewContext(input.projectRoot)).bundle,
+    scopeDigest: ownerQuestionScope, currentCandidate: async permit => (await loadBoundaryReviewContext(input.projectRoot, permit)).bundle,
     readRevision: () => pendingReadRevisionState, readInstruction: () => pendingReadRevision,
     readHandoffs: () => ownerHandoffs, readRecovery: () => generationRecovery,
     readConversation: () => authoringConversation,
