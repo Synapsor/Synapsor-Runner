@@ -23,7 +23,7 @@ import { assertCurrentAuthoringEnvelope, STRUCTURED_AUTHORING_PROTOCOL_VERSION, 
 
 const dirs: string[] = [];
 afterEach(async () => { for (const dir of dirs.splice(0)) await fs.rm(dir, { recursive: true, force: true }); });
-async function fixture(noRead = false, program = false, correction = false) {
+async function fixture(noRead = false, program = false, correction = false, acceptNoRead = false) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "planning-native-")); dirs.push(root); await fs.chmod(root, 0o700);
   const prepared = await prepareReviewedReadScope(root, { resources: ["work.items"], field: "label", review: { allow_reviewed_fields: ["label"] } });
   const { context } = prepared, boundary = context.candidate;
@@ -59,7 +59,8 @@ async function fixture(noRead = false, program = false, correction = false) {
         stage: next.stage }), permit);
       if (fault === "after") throw new Error("INJECTED_ACK_LOST");
     },
-  }, interact: async view => ({ kind: "decision", accepted: false, binding: view.binding }) });
+  }, interact: async view => view.kind === "pending" ? ({ kind: "pending", choice: "keep", binding: view.binding })
+    : ({ kind: "decision", accepted: acceptNoRead, binding: view.binding }) });
   const currentState: BoundaryJobCurrentState = { read: { boundary_name: boundary.pack.name, authority: "disabled",
     fully_reviewed: false, resource_ids: ["work.items"], exact_reusable_revision_count: 0 }, actions: [],
     control_plane: { trusted_scope: "runner_injected", approval_history: "runner_proposal_ledger", model_may_supply_scope_values: false, model_may_supply_approval_history: false } };
@@ -131,6 +132,16 @@ describe("prospective complete planning checkpoint", () => {
     expect(f.state().operator_questions?.at(-1)?.proposal).toBeUndefined();
     expect(await f.native.review(stored.read_scope_question_id)).toMatchObject({ state: "pending" });
     expect(f.calls()).toBe(1); expect(f.state().operator_questions?.at(-1)?.confirmation).toBeUndefined();
+    await f.reload(); await f.native.restorePlanning(await prepareBoundaryJobPlanningInvocation(f.input, stored));
+    expect(await f.native.review(stored.read_scope_question_id)).toMatchObject({ state: "pending" });
+    expect(f.calls()).toBe(1);
+  });
+  it("continues after genuine no-Read Yes and native reload without another planning call", async () => {
+    const f = await fixture(true, false, false, true), { stored } = await f.produce();
+    expect(await f.native.review(stored.read_scope_question_id)).toMatchObject({ state: "confirmed" });
+    await f.reload(); const restored = await f.native.restorePlanning(await prepareBoundaryJobPlanningInvocation(f.input, stored));
+    expect(restored.read_mode).toBe("none"); expect(f.state().operator_questions?.at(-1)?.confirmation).toBeDefined();
+    expect(f.state().read).toBeUndefined(); expect(f.calls()).toBe(1);
   });
   it.each(["model", "job", "clarification", "history"])("refuses changed %s without replay", async change => {
     const f = await fixture(), { stored } = await f.produce();

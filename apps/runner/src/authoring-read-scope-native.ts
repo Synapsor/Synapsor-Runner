@@ -269,7 +269,8 @@ export function createNativeReadScope(input: { projectRoot: string; ports: Nativ
     assertReadScopeProvenance(plan.read_scope!, { expectedBinding: inventory.binding, ...inventory });
     const q = state.questions.find(q => q.id === result.read_scope_question_id)!;
     if (q.scope_digest !== input.ports.questionScope() || q.context_digest !== await input.ports.questionContext(permit)
-      || q.disposition || state.questions.some(next => next.read_scope?.predecessor_id === q.id))
+      || q.disposition && plan.read_scope!.proposal.applicability !== "no_read_requested"
+      || state.questions.some(next => next.read_scope?.predecessor_id === q.id))
       return unavailable("The current planning continuation");
     await input.ports.assertCurrent(permit);
     if (snapshot().revision !== state.revision) return unavailable("The coherent planning continuation");

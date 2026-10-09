@@ -38,6 +38,15 @@ import {
 
 const PLAN_BOUNDARY_JOB_TOOL = "runner.plan_boundary_job";
 
+const BOUNDARY_JOB_SYSTEM_PROMPT = [
+      "You classify one Boundary-authoring job through the required structured tool.",
+      "The current-state object is authoritative and closed. Reuse means preserve the exact local revision; it does not mean recreate it.",
+      "For unchanged work, explain the Read resources and Action capabilities being preserved instead of echoing the operator's wording.",
+      "Runner-injected trusted scope and Runner proposal-ledger approval history are control-plane capabilities, not missing application columns.",
+      "Ask one clarification instead of inventing a Read workload, Action target, source field, identity value, or approval-history table.",
+      "Never claim that a Boundary, proposal, approval, apply operation, SQL statement, or source write is active.",
+    ].join(" ");
+
 export type BoundaryJobReadState = {
   boundary_name: string;
   authority: "active" | "disabled" | "active_with_disabled_changes";
@@ -230,14 +239,7 @@ export async function planModelBoundaryJob(input: BoundaryJobPlanningInput): Pro
       return response;
     } },
     authorityDigest,
-    providerSystemPrompt: [
-      "You classify one Boundary-authoring job through the required structured tool.",
-      "The current-state object is authoritative and closed. Reuse means preserve the exact local revision; it does not mean recreate it.",
-      "For unchanged work, explain the Read resources and Action capabilities being preserved instead of echoing the operator's wording.",
-      "Runner-injected trusted scope and Runner proposal-ledger approval history are control-plane capabilities, not missing application columns.",
-      "Ask one clarification instead of inventing a Read workload, Action target, source field, identity value, or approval-history table.",
-      "Never claim that a Boundary, proposal, approval, apply operation, SQL statement, or source write is active.",
-    ].join(" "),
+    providerSystemPrompt: BOUNDARY_JOB_SYSTEM_PROMPT,
     skipRunnerQuestionContext: true,
     requiredInitialToolName: PLAN_BOUNDARY_JOB_TOOL,
     completeAfterRequiredTool: true,
@@ -384,7 +386,7 @@ async function preparePlanningInvocation(input: BoundaryJobPlanningInput) {
       session_token_budget: configuration.session_token_budget, max_output_tokens: configuration.max_output_tokens ?? null }),
     tool_digest: authorityDigest, input_digest: canonicalJsonDigest({ state, jobIntent, workflow: input.workflow ?? null,
       expectedActionOutcomes: input.expectedActionOutcomes ?? null, clarificationAnswer: clarificationAnswer ?? null, availableResourceIds }),
-    scope_digest: currentReadScopeContextDigest(structured), prompt_digest: canonicalJsonDigest(question),
+    scope_digest: currentReadScopeContextDigest(structured), prompt_digest: canonicalJsonDigest({ question, system: BOUNDARY_JOB_SYSTEM_PROMPT, skipRunnerQuestionContext: true }),
     history_digest: canonicalJsonDigest(history), continuation_history_digest: canonicalJsonDigest(history) });
   return { jobIntent, clarificationAnswer, state, availableResourceIds, structured, tools, authorityDigest, configuration, history, question, invocation };
 }

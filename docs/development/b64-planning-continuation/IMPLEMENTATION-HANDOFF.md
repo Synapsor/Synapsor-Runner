@@ -1,13 +1,14 @@
-# Prospective planning implementation WIP
-- Base9f8fe16f; branch codex/b64-planning-continuation-20261009; original629/cards branch preserved.
-- Owner approved bounded prospective v4 Resume/v3 protocol; old jobs refused without migration/log adoption.
-- New authoring-planning-result codec + genuine producer registration + planning consumption sidecar are WIP, NOT independently accepted.
-- Planner prepareBoundaryJobPlanningInvocation(input, completed?) uses actual normalized request/resolved endpoint/options/tool/prompt/structured evidence/history.
-- Original history and exact post-remember history distinguished; changed clarification or actual Source remains stale.
-- Native recordPlanning(plan) saves material/question/generation together; restorePlanning(binding) is read-only and pendingPlanning supports exact mapping predecessor.
-- Main hooks: ports.save planningResult→buildBoundaryAuthoringResumeState; no boundary-commands edits here.
-- Read requested remains pending/no analysis or confirmation; separate native review unchanged.
-- First source typecheck: completed with external errors; no touched product diagnostic found. Not whole-type PASS.
-- Next: finite genuine producer/native CAS controls, compatibility refusal, immutable ACK mutation and cold restore; then R1 preseal review0a1ac221.
-- No fresh MySQL job until accepted; held job untouched, paid CLOSED, no Source effects/provider calls.
-- Slot4 used only finite offline checks; no copies/new worktree; keep all storage/evidence.
+# Prospective planning continuation handoff
+- Base9f8fe16f; branch codex/b64-planning-continuation-20261009; original629/cards history preserved.
+- Product7a9243a3 +73b1a90c + final successor: v4/v3, strict plan/invocation, genuine generation checkpoint, native capture/restore, pending planning predecessor.
+- Owner approved format; this packet remains independently UNACCEPTED, not a public/paid qualification.
+- Exact API/hook contract: API.md; Main sole boundary writer/routing owner.
+- Complete plan/q/generation captured before wait in one CAS; append-only planning_results preserves old audit; current selection exact.
+- Actual dispatch and cold currentness use same request preparation; original/post-own-append history separate, Source/answers/prompt/config exact.
+- NoRead starts unproposed; real explicit Yes/No then cold reload tested; requested Read never invents analysis/confirmation.
+- Evidence: IMPLEMENTATION-RESULT.json with source hashes and all first/results retained;13 distinct native controls across bounded checkpoints.
+- Types:417 diagnostics,0owned;38 old v2 fixture literals. Not whole types PASS; capacity owner must update program envelope predicate.
+- Next: R1 independent preseal0a1ac221 review; Main public interruption/restart tests and one fresh $0 MySQL only after acceptance.
+- Held MySQL old job untouched/unsupported for new transition; no logs adopted, no counter reset, no provider or Source effects.
+- Physical END Slot4: no owned runtime; existing worktree only, no copies/snapshots; private backup, keep all storage.
+- B63e413/cards653+a4 preserved/open as previously; no new lane or frozen changes; paid CLOSED.

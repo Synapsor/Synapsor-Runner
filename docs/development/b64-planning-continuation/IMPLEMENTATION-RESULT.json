@@ -1,0 +1,75 @@
+{
+  "status": "OWNER_COMPONENT_CONTROLS_ONLY_INDEPENDENT_REVIEW_PENDING",
+  "base": "9f8fe16f",
+  "preseal": "0a1ac221",
+  "prior_actual_public_before": "7581bf0e",
+  "results": [
+    {
+      "evidence": "/var/tmp/synapsor-b64-real-readback-owned/evidence/planning-first.json",
+      "pass": 0,
+      "fail": 10,
+      "filtered": 0
+    },
+    {
+      "evidence": "/var/tmp/synapsor-b64-real-readback-owned/evidence/planning-second.json",
+      "pass": 10,
+      "fail": 0,
+      "filtered": 0
+    },
+    {
+      "evidence": "/var/tmp/synapsor-b64-real-readback-owned/evidence/planning-successor.json",
+      "pass": 11,
+      "fail": 0,
+      "filtered": 0
+    },
+    {
+      "evidence": "/var/tmp/synapsor-b64-real-readback-owned/evidence/planning-final.json",
+      "pass": 12,
+      "fail": 0,
+      "filtered": 0
+    },
+    {
+      "evidence": "/var/tmp/synapsor-b64-real-readback-owned/evidence/planning-no-read.json",
+      "pass": 2,
+      "fail": 0,
+      "filtered": 11
+    },
+    {
+      "evidence": "/var/tmp/synapsor-b64-real-readback-owned/evidence/planning-prompt-binding.json",
+      "pass": 3,
+      "fail": 0,
+      "filtered": 10
+    }
+  ],
+  "first_failure": "All10 first controls stopped at my wrong boundaryAuthoringResumeBinding fixture argument before planner; corrected actual context.bundle, same assertions. Not a product failing-before claim. Actual public before remains7581.",
+  "typecheck": {
+    "path": "/var/tmp/synapsor-b64-real-readback-owned/evidence/planning-final-types.log",
+    "exit_code": 2,
+    "diagnostics": 417,
+    "owned_diagnostics": [],
+    "protocol_v2_old_fixture_diagnostics": 38,
+    "claim": "Not whole types PASS. Last system-prompt const extraction followed this typecheck and passed three relevant runtime controls."
+  },
+  "scope": [
+    "Genuine controlled planning producer, original live consumption, ordinary native writer/CAS, same-store reload",
+    "Exact plan/multi-Action/client retention, two-turn correction/counters, noRead Yes/No separated, current job/model/clarification/history fences, honest save faults",
+    "Actual immutable old protocol module rejects genuine new document in child; not full packaged old CLI proof"
+  ],
+  "open": [
+    "Independent R1 review, Main public hooks/fresh OS public continuation",
+    "Capacity owner current envelope predicate and existing fixture protocol ports",
+    "No held job recovery, external response adoption, new provider/job or paid work performed"
+  ],
+  "source_manifest": {
+    "apps/runner/src/authoring-protocol.ts": "598d6ef23dbc2d33d23c3941b8d062cb6273648237fffb32e21ba2f1e1ae5c75",
+    "apps/runner/src/boundary-authoring-resume.ts": "dcebee0ed26ab50294141779c0ede4114e621bab6e435befc049d7ede7f0dbd4",
+    "apps/runner/src/authoring-generation-recovery.ts": "eb0cdf6d3ef9b6416628395ad9c77cbd3ef9ea7b7985c544859c969ecadd0c03",
+    "apps/runner/src/authoring-planning-result.ts": "5699c52172a2941b603b302997827421d1128aaa8950c97c04dfd2e19b133266",
+    "apps/runner/src/boundary-job-model.ts": "5312574dd30c1a6ced882994651dee8f92b1b6dc347a3863984eeb4959279863",
+    "apps/runner/src/authoring-read-scope-native.ts": "b0949a5cbb7499a95ae7d39e761aac77ca194dec9ee4b328dd838bfff3950818",
+    "apps/runner/src/authoring-read-assistance-checkpoint-host.ts": "585cc7ee5c34f7d730b746ada5ab12efda1cb43011f0ef2f6e56806c3dc04011",
+    "apps/runner/src/authoring-planning-result.test.ts": "485da13ac0a2bfccf587e033f469643bf323d59bd6a3da70d1d9262ee1face18"
+  },
+  "storage": "Existing fixed worktree; no test/review source snapshots or docs copies",
+  "physical_end": "2026-10-09T05:09:25Z"
+}
