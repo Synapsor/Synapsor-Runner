@@ -75,6 +75,12 @@ type InstantBoundaryBaselineInput = {
   expectedLegacyProgress?: BoundaryReviewProgress;
 };
 
+type InstantBoundaryBaselineResult = {
+  progress: BoundaryReviewProgress;
+  authoring: ReadAuthoringBindings | undefined;
+  reviewSubmission?: BoundaryReviewSubmission;
+};
+
 export async function saveInstantBoundaryReviewBaseline(input: InstantBoundaryBaselineInput) {
   return saveInstantBoundaryBaseline(input, true);
 }
@@ -83,9 +89,7 @@ export async function saveInstantBoundaryEditBaseline(input: InstantBoundaryBase
   return saveInstantBoundaryBaseline(input, false);
 }
 
-async function saveInstantBoundaryBaseline(input: InstantBoundaryBaselineInput, accepted: boolean): Promise<{
-  progress: BoundaryReviewProgress; authoring: ReadAuthoringBindings | undefined;
-}> {
+async function saveInstantBoundaryBaseline(input: InstantBoundaryBaselineInput, accepted: boolean): Promise<InstantBoundaryBaselineResult> {
   const frozen = structuredClone(input);
   return withProjectAuthorityMutation(frozen.projectRoot, (held) => saveInstantBoundaryBaselineUnlocked({
     ...frozen, projectRoot: held.projectRoot,
@@ -93,7 +97,7 @@ async function saveInstantBoundaryBaseline(input: InstantBoundaryBaselineInput, 
 }
 
 async function saveInstantBoundaryBaselineUnlocked(input: InstantBoundaryBaselineInput, accepted: boolean,
-  permit: ProjectAuthorityMutationPermit): Promise<{ progress: BoundaryReviewProgress; authoring: ReadAuthoringBindings | undefined }> {
+  permit: ProjectAuthorityMutationPermit): Promise<InstantBoundaryBaselineResult> {
   const stored = await readProjectReadAuthoringHeld(input.projectRoot, permit);
   let previous: BoundaryReviewProgress | undefined;
   if (stored) {
@@ -133,7 +137,7 @@ async function saveInstantBoundaryBaselineUnlocked(input: InstantBoundaryBaselin
     ...(input.now ? { now: input.now } : {}),
   });
   const authoring = await saveBoundaryReviewProgress(input.projectRoot, progress, input.expectedAuthoring, permit, submission);
-  return { progress, authoring };
+  return { progress, authoring, ...(submission ? { reviewSubmission: submission } : {}) };
 }
 
 async function writePrivateJsonAtomic(filePath: string, value: unknown): Promise<void> {

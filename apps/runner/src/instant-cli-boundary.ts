@@ -25,9 +25,7 @@ import {
   formatPostActivationAskSelection,
   type PostActivationAskSelection,
 } from "./post-activation-ask.js";
-import {
-
-} from "./boundary-review-domain.js";
+import { createSavedReadActivationAssessment } from "./authoring-read-activation-route.js";
 import {
   readBoundaryReviewProgress,
   saveInstantBoundaryEditBaseline,
@@ -325,6 +323,7 @@ async function activateInstantCliBoundaryAttempt(
     expectedAuthoring: stored?.bindings,
     expectedLegacyProgress: legacyProgress,
   });
+  if (!saved.reviewSubmission) throw new Error("The exact Quick Start review submission is unavailable.");
   const active = await activateExplorationBoundary({
     projectRoot: input.projectRoot,
     candidate,
@@ -335,7 +334,9 @@ async function activateInstantCliBoundaryAttempt(
     expectedDigest: digest,
     actor,
     confirmation: `ACTIVATE ${digest}`,
-    confirmedDecisions: candidate.unresolved_decisions,
+    reviewSubmission: saved.reviewSubmission,
+    assessReadScope: createSavedReadActivationAssessment(input.projectRoot, options =>
+      input.schemaInspector({ ...options, env: options.env ?? env })),
     currentInspection: inspection,
     activationAudit: {
       mode: "instant_development",

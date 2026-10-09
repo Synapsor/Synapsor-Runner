@@ -6,6 +6,9 @@ import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { AUTO_BOUNDARY_OVERRIDES_VERSION, buildAutoBoundary, explorationBoundaryCandidateDigest, loadGenerationLockSnapshot, persistGenerationLockSnapshot } from "./auto-boundary.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { readAuthoringCatalog } from "./control-policy-read-authoring.js";
+import { saveInstantBoundaryReviewBaseline } from "./boundary-review-persistence.js";
+import { createSavedReadActivationAssessment } from "./authoring-read-activation-route.js";
+import { activateExplorationBoundary, validateBoundaryReviewSubmission } from "./auto-boundary.js";
 import { createBoundaryReviewProgress } from "./boundary-review-domain.js";
 import { readProjectReadAuthoring, saveProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { buildActionCatalogForSavedReadRevision } from "./action-rule-read-revision.js";
@@ -22,6 +25,29 @@ const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 
 describe("fresh governed authoring bootstrap", () => {
+  it("returns the exact accepted Quick Start submission without inventing Read meaning", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-quickstart-typed-submission-")); roots.push(root);
+    const build = fixture(root);
+    const guided = await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.8.0" });
+    const config = await readRuntimeConfig(guided.config_path);
+    const initial = await initializeFreshGovernedAuthoring({ projectRoot: root, config, storePath: guided.store_path,
+      build, actor: "local_operator" });
+    const selected = initial.authoring.selected!;
+    const saved = await saveInstantBoundaryReviewBaseline({ projectRoot: root, draft: selected.draft,
+      candidate: selected.progress.candidate, actor: "local_operator", expectedAuthoring: initial.authoring.bindings });
+    expect(saved.reviewSubmission).toBeDefined();
+    const submission = saved.reviewSubmission!;
+    expect(submission.candidate_digest).toBe(saved.progress.candidate_digest);
+    expect(() => validateBoundaryReviewSubmission(saved.progress.candidate, submission, "complete")).not.toThrow();
+    const current = await readProjectReadAuthoring(root);
+    await expect(activateExplorationBoundary({ projectRoot: root, candidate: saved.progress.candidate,
+      reviewDraft: selected.draft, generationLock: build.lock, expectedAuthoring: saved.authoring,
+      expectedDigest: saved.progress.candidate_digest, actor: "local_operator",
+      confirmation: `ACTIVATE ${saved.progress.candidate_digest}`, reviewSubmission: submission,
+      currentInspection: fixtureInspection(), assessReadScope: createSavedReadActivationAssessment(root, async () => fixtureInspection()),
+    })).rejects.toMatchObject({ code: "READ_SCOPE_REVIEW_REQUIRED" });
+    expect(await readProjectReadAuthoring(root)).toEqual(current);
+  });
   it("saves a current-protocol initial review without confirming or activating it", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-initial-governed-review-")); roots.push(root);
     const build = fixture(root);

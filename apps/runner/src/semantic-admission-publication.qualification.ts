@@ -13,6 +13,7 @@ import type {ActionRuleScalarTypeSpecV1, ActionRuleSpecV1, DerivedEffectEnvelope
 import type {SchemaInspection} from "@synapsor-runner/schema-inspector";
 import {buildAutoBoundary, activateExplorationBoundary, writeAutoBoundaryArtifacts, explorationBoundaryCandidateDigest,
   AUTO_BOUNDARY_OVERRIDES_VERSION, type ActivatedExplorationBoundary} from "./auto-boundary.js";
+import {boundaryReviewSubmissionForDecisions, boundaryReviewDecisions} from "./boundary-review-domain.js";
 import {recommendedBoundaryReviewCandidate} from "./boundary-candidate.js";
 import {buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, activateActionRuleAuthority, loadActiveActionRuleAuthority} from "./action-rule-authority.js";
 import {encodeOperatorAuthority, validateOperatorPolicySnapshot} from "./control-policy-authority-codec.js";
@@ -52,7 +53,7 @@ async function reviewedRead(root: string) {
   await writeAutoBoundaryArtifacts({projectRoot: root, build});
   const read = await activateExplorationBoundary({projectRoot: root, candidate,
     expectedDigest: explorationBoundaryCandidateDigest(candidate), actor: "fixture_operator",
-    confirmation: `ACTIVATE ${explorationBoundaryCandidateDigest(candidate)}`, confirmedDecisions: candidate.unresolved_decisions,
+    confirmation: `ACTIVATE ${explorationBoundaryCandidateDigest(candidate)}`, reviewSubmission: boundaryReviewSubmissionForDecisions(candidate, boundaryReviewDecisions(candidate).map(item => item.id)),
     currentInspection: inspection});
   generationLock = read.generation_lock_fingerprint;
   return {read, build};
