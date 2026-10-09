@@ -1,15 +1,14 @@
-ACTIVE B64 — Owner removed usage pauses; continuous work/private checkpoints. Paid CLOSED.
-Clock unchanged: T0 2026-10-08T06:32:23Z; end 2026-10-13T06:32:23Z; final24h 2026-10-12T06:32:23Z. Frozen candidate3/history/holds untouched.
-Main codex/b64-authoring-protocol-20261008 @c7b614cb (R1 signoff-owner accepted642e5c57); boundary19307 (was20204). [Contract](docs/development/adr-b51-shared-input-interaction.md).
-Reviewed Read canonical/projector/RLS integrated; native entry and typedprincipal accepted scoped. R1public8PASS includes freshOS0replay; Replace separately accepted at81ff.
-Read Replace accepted scoped: R1producer8PASS, public81ff6PASS inclcancel/blank/CAS; separateprocessReplace4760requests. Exact histories/default-No/counters retained.
-Main NEXT: actual public Actionv2 adapter; [exclusive retirement lanes](docs/development/b64-english-inventory/LANES.json): Read10/privacy13/chat7/Ask8/Action17/Main6 files. Failing-before→typed replacement→independent review; no English fallback.
-Action ae90 host integrated2887: R2native25PASS, Main305PASS/1optinskip/typesPASS; publichook/proofpendingactualsupportedtarget andconstraintretirement open.
-Action accepted dispatch regressions340PASS/1 paid-testskip; full Action English constraint/focused/legacy-suggestion retirement remains OPEN. Main owns boundary hook points only.
-Read approved-value bef98b49 integrated6ebfe9b7 after R1acceptance; Main24PASS/types0. Provenance21independentPASS; remaining typed migration and English retirements OPEN.
-Helper890 five typedplanningcounterparts integrateda5e:91PASS/types0; R1accepted scoped. Zero-call typededit/publicpending persistence remain open.
-Version integrated65PASS/3files at81ad, R2f77projection+3d6fixture scopedaccepted; manual420R1twelvePASS; fullRead80862PASS88FAIL beforeports retained; nofull/installedclaim.
-B65 independent be941b72: fresh25 reaches55 FAIL; fresh10 reaches40 PASS; PG7 recorded; qualified B61 reconcilePASS. MySQL native14PASS, public writer-grant contradiction BLOCKED; independent R2 review next.
-[Storage audit](docs/development/storage-audit-20261008/REPORT.txt): KEEP EVERYTHING per Owner; revisit only below~30GB free,8GiBfloor unchanged; nothing deleted. Actionv2 Main110PASS/7files/types0; publicadapterOPEN; save guard8PASS/types0; R1 unchanged6PASS; actualpublic adapter OPEN.
-Tester CLOSED backup21c3b3dc; Luna35total, liabilities15.27063125 inclhold1.2693125, remaining19.72936875. No paid/uncertain operation open.
-Owner limits:4actual heavy jobs,max8workers/run,MemAvailable/disk>=8GiB; current slots Read/privacy/chat/Ask (B65 finished/released). One file editor; privatepush; paidCLOSED; no usagepause.
+ACTIVE B64/B65 — lanes resumed; paid CLOSED; private backup only; frozen candidate3/history untouched.
+B64 T0 2026-10-08T06:32:23Z/end2026-10-13T06:32:23Z; B65 T0Oct8 16:56:15Z/endOct12 sameUTC, unchanged.
+Main codex/b64-read-compose-20261008: latest621917b5; Read c361/3eb, activation065, library7e92, B65 e514+7e076, focusedb00 and sharedbinding621 integrated; [lanes](docs/development/b64-english-inventory/LANES.json).
+Remaining coherent Main decision sites typed/delete: Privacy21/2,Action43/5,Main35/0; Ask/Read/Chat0/0 owned-source retirement; not overall acceptance.
+Read protected assessment065 R1ind4PASS; public focusedb00 unchanged2PASS (finish noYes/explicitYes disabled); binding568 R2ind6PASS wired621. NEXT native saved-owner adapter/proof then strict wrappers; positive activation OPEN.
+Read library1fb integrated7e92 R1ind9PASS; typedsubject+permit3eb R2ind11PASS; nativevocabae/549 integrated498/871 owner20+18/R2ind2PASS; globaltypes last323external, no globalPASS.
+Privacy UI97f32 productc758 fourbeforeFAIL→fourPASS+renderer17PASS scoped, R2ind review running; inspector I02080/81 closed423 exactproduct+14PASS; Main owns auto15/commands hooks.
+Read helper b56 branch codex/b64-owner-question-binding-20261008 @568: pure18PASS/R2ind6PASS accepted; implementing/testing readonly native activation adapter; no fake scopes/hashes.
+Action RUNNING viaB66: typedcoverage e9e68 owner50PASS and241affectedPASS/1oldReadinventoryFAIL/1skip; Main strict producer4ea landed; units/source-question producers assigned; no independent count decrement yet.
+B65 accepted hard-limit/import/renderer product closure is IN MAIN e514+7e076; B66 fixedsnapshot focused/types SLOT2; [handoff](/home/sandesh-tiwari/Documents/Codex/2026-10-08/b66-mysql-writer-20261008/outputs/B65-MAIN-PRODUCT-INTEGRATION-HANDOFF.json).
+Tester exact787 publicfive sealedddbd: INSERT25/20/10 compiler ACTION_RULE_SCOPE_UNPROVEN; UPDATE10→25/35 publicapproval then worker samecode beforeverification; Source30 unchanged/receipts0. No hardlimit/publicprogressPASS.
+B65 next owner diagnoses true public initializer/admission gap; no broadergrant/guess/replay. Native arithmetic specialposture PASS and PRE01ordinary PG/MySQLPASS remain separate historical evidence.
+Slots1R1/2B66integration/3Privacy/4R2binding;4heavy,max8workers/run,0700isolatedresources,8GiBfreefloors; keepstorage/revisitbelow30GB. No usagepause.
+Commit/privatepush eachcheckpoint; Luna35total/remain19.72936875 inclholds, paid CLOSED; SC04actualwrappers/coldcontrols and fullqualification remain OPEN.
