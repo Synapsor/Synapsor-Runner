@@ -74,6 +74,11 @@ export {
   type SemanticAdapterConformanceVectorV1,
 } from "./conformance.js";
 export * from "./types.js";
+export { WEIGHTED_SHARED_SUM_DESIGNATION_VERSION, REVIEWED_WEIGHTED_SHARED_SUM_VERSION,
+  parseWeightedSharedSumDesignation, parseReviewedWeightedSharedSum, weightedSharedSumReadback,
+  type WeightedSharedSumUnitV2, type WeightedSharedSumValuationV2, type WeightedSharedSumPopulationV2,
+  type WeightedSharedSumMeasureV2, type WeightedSharedSumDesignationV2, type ReviewedWeightedSharedSumV2,
+} from "./weighted-shared-sum-designation.js";
 export { validateActionRuleInputs } from "./inputs.js";
 export { actionRuleRelationshipPairs } from "./relationships.js";
 export { actionRuleEffectEnvelopes, actionRuleEffects, MAX_ATOMIC_UPDATE_TARGETS } from "./atomic-updates.js";
