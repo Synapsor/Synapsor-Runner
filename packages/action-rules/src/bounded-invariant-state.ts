@@ -63,7 +63,21 @@ export function projectBoundedInvariantEffect(ctx: BoundedInvariantContext, comp
       || effect.version_advance?.strategy !== 'integer_increment' || effect.version_advance.column !== target.resource.version_field) refuse('effect_update');
     const matches = post.bindings[target.binding]?.rows.filter(row => row[effect.primary_key.column] === effect.primary_key.value);
     if (matches?.length !== 1) refuse('effect_member');
-    for (const b of compiled.bindings.filter(b => b.resource.name === effect.resource)) for (const row of post.bindings[b.binding]?.rows ?? []) {
+    const reference = matches[0]!, aliases = compiled.bindings.filter(b => b.resource.name === effect.resource);
+    // Every loaded alias must describe the same original Source row. Validate
+    // before any overwrite; missing/divergent facts cannot be repaired by SET.
+    for (const b of aliases) {
+      const rows = post.bindings[b.binding]?.rows;
+      if (!rows || rows.length > b.verification.max_rows || (b.verification.cardinality === 'one' && rows.length !== 1)) refuse('effect_member');
+      const members = rows.filter(row => row[effect.primary_key.column] === effect.primary_key.value);
+      if (members.length !== 1) refuse('effect_member');
+      const row = members[0]!;
+      if (!rowScope(b, row, facts)) refuse('facts_scope');
+      if (integer(row[effect.expected_version.column], refuse) !== effect.expected_version.value) refuse('effect_version');
+      if (b.verification.fields.some(field => !Object.hasOwn(row, field.name))
+        || Object.keys(reference).some(field => Object.hasOwn(row, field) && row[field] !== reference[field])) refuse('effect_alias');
+    }
+    for (const b of aliases) for (const row of post.bindings[b.binding]!.rows) {
       if (row[effect.primary_key.column] !== effect.primary_key.value) continue;
       const version = integer(row[effect.expected_version.column], refuse);
       if (version !== effect.expected_version.value || !Number.isSafeInteger(version + 1)) refuse('effect_version');

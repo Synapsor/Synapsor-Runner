@@ -60,4 +60,13 @@ describe('one shared exact effect projection over deduplicated populations (DATA
     const f = setup(); f.effect.principal_scope!.value = 'another-principal';
     expect(() => projectBoundedInvariantEffect(f.ctx, f.compiled, f.facts, f.effect, refuse)).toThrow(expect.objectContaining({ path: 'effect_identity' }));
   });
+  it.each(['missing', 'empty', 'divergent', 'foreign_scope'])('refuses%s target-alias facts before overwrite', mode => {
+    const f = setup();
+    if (mode === 'missing') delete f.facts.bindings.waiver;
+    if (mode === 'empty') f.facts.bindings.waiver!.rows = [];
+    if (mode === 'divergent') f.facts.bindings.waiver!.rows[0]!.amount = 1;
+    if (mode === 'foreign_scope') f.facts.bindings.waiver!.rows[0]!.principal_id = 'another-principal';
+    expect(() => projectBoundedInvariantEffect(f.ctx, f.compiled, f.facts, f.effect, refuse))
+      .toThrow(expect.objectContaining({ code: 'ACTION_RULE_SCOPE_UNPROVEN' }));
+  });
 });
