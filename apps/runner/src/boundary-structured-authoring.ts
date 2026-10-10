@@ -578,6 +578,10 @@ function compileStructuredActionBundle(input: {
   actionBoundaryName: string;
 }): ActionRuleAuthorityDraftV1 | undefined {
   if (!input.entries.length) return undefined;
+  if (input.entries.some(({ draft }) => draft.shared_sum_proposal !== undefined)) {
+    const code = "STRUCTURED_DRAFT_SHARED_SUM_REVIEW_REQUIRED";
+    throw Object.assign(new Error(`${code}: This draft proposes a shared total that requires a separately recorded review. Shared-total confirmation is unavailable in this draft route. The submitted file and saved authorities remain unchanged.`), { code });
+  }
   const compiled = input.entries.map(({ draft, retained }) => {
     if (retained) return { draft, source: retained };
     // Validate the original approval predicate with the normal compiler. Only
