@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import { createBusinessStatementHost, type BusinessStatementRecordUpdate } from './authoring-business-statement-host.js';
 import type { BusinessStatementInteraction, BusinessStatementResponse } from './authoring-business-statement-interaction.js';
@@ -20,6 +20,7 @@ import { coverageResponseContext } from './authoring-coverage-feedback.js';
 import { createModelAuthoringConversation } from './model-authoring-conversation.js';
 
 const roots: string[] = [];
+
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, {recursive:true,force:true}); });
 async function fixture(options:{failConfirmationProjectionOnce?:boolean;sourceText?:string;productionHost?:boolean;nominateTarget?:boolean;onRefresh?:()=>Promise<void>;currentContext?:()=>string;realConfigurationAccess?:boolean}={}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'receipt-host-')); roots.push(root);
@@ -285,4 +286,16 @@ it('production receipt save propagates real held access through configuration re
   expect(f.inspect().questions!.at(-1)?.confirmation).toBeDefined();
   expect(f.requests).toHaveLength(1);
   expect(currentReceiptRequirement(f.source,{start:1,end:1},f.prepared(),f.sources)?.mode).toBe('runner_ledger');
+});
+
+it('receipt owner returns corresponding Source ACK and removes unsubmitted optional memory',async()=>{
+  const f=await fixture({nominateTarget:true}), rename=fs.rename.bind(fs);
+  const spy=vi.spyOn(fs,'rename').mockImplementation(async(from,to)=>{
+    await rename(from,to); if(String(to).endsWith(`${f.sources.id}.json`))f.sources.coverage_context_digest=canonicalJsonDigest('Unsubmitted optional memory');
+  });
+  try{
+    const result=await f.productionInvoke(respond(clear)),saved=await loadPolicySources(f.root,f.sources.id);
+    expect(f.sources).toEqual(saved);
+    expect(result).toMatchObject({kind:'saved',disposition:'confirmed',sourceSave:{savedSession:saved,outcome:{state:'acknowledged',reference:{session_id:saved.id,revision_digest:canonicalJsonDigest(saved)}}}});
+  }finally{spy.mockRestore();}
 });

@@ -1,5 +1,5 @@
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
-import { activePolicySource, PolicySourceChangedError, savePolicySources, type PolicySourceSession } from './authoring-policy-source.js';
+import { activePolicySource, PolicySourceChangedError, savePolicySources, adoptPolicySourceAcknowledgement, type PolicySourceSaveAcknowledgement, type PolicySourceSession } from './authoring-policy-source.js';
 import { currentReceiptRequirement, makeReceiptRequirementReview, pendingReceiptRequirement, receiptRequirementDependencies,
   receiptRequirementQuestionTarget, receiptRequirementReviewTarget, receiptRequirementSourceBinding } from './authoring-receipt-requirement.js';
 import type { OperatorQuestion } from './authoring-operator-question.js';
@@ -18,7 +18,7 @@ type Digest = `sha256:${string}`;
 export type ReceiptRequirementResult =
   | { kind: 'no_target' }
   | { kind: 'pending'; question_id?: string }
-  | { kind: 'saved'; disposition: 'reused' | 'confirmed' | 'projection_recovered' }
+  | { kind: 'saved'; disposition: 'reused' | 'confirmed' | 'projection_recovered'; sourceSave?: PolicySourceSaveAcknowledgement }
   | { kind: 'blocked'; code: 'receipt_store_unavailable' | 'receipt_configuration_unestablished'; lines: readonly string[] };
 
 export type ReceiptRequirementAnswerReview = {
@@ -103,6 +103,7 @@ export function createReceiptRequirementHost(input: {
     const checkpoint = receiptRequirementCheckpoint({ projectRoot: input.projectRoot, sources, store,
       start: target.start, end: target.end, currentDraft: input.currentDraft, questions: input.readQuestions,
       assertCurrent, acknowledge: input.acknowledgeResume });
+    let sourceSave: PolicySourceSaveAcknowledgement | undefined;
     if (savedQuestion?.confirmation && savedQuestion.receipt_selection?.dependencies_digest === dependencies) {
       // Complete only a missing Source projection after the real native
       // confirmation save. Do not replay words, mapping or explicit consent.
@@ -110,15 +111,17 @@ export function createReceiptRequirementHost(input: {
         const current = await input.questionContext(permit, sources);
         if (savedQuestion.scope_digest !== input.scopeDigest() || savedQuestion.context_digest !== current)
           throw new PolicySourceChangedError();
-        await checkpoint.saved(permit);
+        sourceSave=await checkpoint.saved(permit);
       });
       return currentReceiptRequirement(source, target, input.currentDraft(), sources)
-        ? { kind: 'saved', disposition: 'projection_recovered' } : { kind: 'pending', question_id: savedQuestion.id };
+        ? { kind: 'saved', disposition: 'projection_recovered', sourceSave } : { kind: 'pending', question_id: savedQuestion.id };
     }
     input.assertGenerationAdmission();
     const answer = await input.reviewAnswer({
       question: 'What establishes that a change is complete, and how should an unapplied request be described?',
-      assertCurrent, contextDigest: permit => input.questionContext(permit, sources), afterSave: checkpoint.saved,
+      assertCurrent, contextDigest: permit => input.questionContext(permit, sources), afterSave: async permit => {
+        const acknowledged=await checkpoint.saved(permit); if (acknowledged) sourceSave=acknowledged;
+      },
       decision: receiptBusinessStatementAdapter({ session: input.modelSession, businessContext: input.businessContext,
         target: { phase: 'receipt_requirement', resource: source.digest, field: `lines:${target.start}-${target.end}`,
           outcomes: draft.actions.filter(a => a.effect?.writeback === 'supervised').map(a => a.outcome).sort() },
@@ -128,7 +131,7 @@ export function createReceiptRequirementHost(input: {
         ...(predecessor ? { predecessor } : {}) }),
     });
     return answer && currentReceiptRequirement(source, target, input.currentDraft(), sources)
-      ? { kind: 'saved', disposition: 'confirmed' } : { kind: 'pending', question_id: checkpoint.current()?.id };
+      ? { kind: 'saved', disposition: 'confirmed', sourceSave } : { kind: 'pending', question_id: checkpoint.current()?.id };
   } };
 }
 
@@ -162,9 +165,10 @@ export function receiptRequirementCheckpoint(input: {
       const review = makeReceiptRequirementReview({ source, session: input.sources, store: input.store,
         start: input.start, end: input.end, draft: input.currentDraft(), question: q });
       const staged = { ...input.sources, receipt_requirement_reviews: [...(input.sources.receipt_requirement_reviews ?? []), review] };
-      await savePolicySources(input.projectRoot, staged, { permit, expectedDigest: canonicalJsonDigest(input.sources) });
-      Object.assign(input.sources, staged);
+      const sourceSave=await savePolicySources(input.projectRoot, staged, { permit, expectedDigest: canonicalJsonDigest(input.sources) });
+      adoptPolicySourceAcknowledgement(input.sources, sourceSave);
       await input.acknowledge(permit);
+      return sourceSave;
     },
   };
 }

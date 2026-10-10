@@ -5,7 +5,7 @@ import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type Au
 import { authoringQuestionAnswerCheckpoint, authoringQuestionCheckpoint, unresolvedAuthoringTransportOperations, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { captureOperatorAnswer, createOperatorQuestion, leaveOperatorQuestionPending, presentOperatorQuestion,
   reopenOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
-import { activePolicySource, loadPolicySourcesHeld, policySourceSavedDigest, policySourceSavedDigestHeld, PolicySourceChangedError,
+import { activePolicySource, loadPolicySourcesHeld, policySourceSavedDigest, policySourceSavedDigestHeld, PolicySourceChangedError, adoptPolicySourceAcknowledgement,
   type PolicySourceSession } from "./authoring-policy-source.js";
 import { reusableSourceInputConversationReview, type SourceInputConversationPorts,
   type SourceInputConversationRecovery } from "./authoring-input-policy-conversation.js";
@@ -125,9 +125,9 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
     if (!currentRoot) throw access.checkpointFailure("The retained input-policy question");
     return { root: currentRoot, children: questions.filter(q => q.budget_owner_id === currentRoot.id) };
   };
-  const assertCurrentHeld = async (permit: ProjectAuthorityMutationPermit, recovery?: SourceInputConversationRecovery) => {
+  const assertCurrentHeld = async (permit: ProjectAuthorityMutationPermit, recovery?: SourceInputConversationRecovery, projection?: PolicySourceSession) => {
     await access.assertResumeCurrentHeld(permit);
-    let savedSources = sources;
+    let savedSources = projection ?? sources;
     if (recovery?.mode === "append_recovery") {
       if (!recovery.sourceBeforeAppend || canonicalJsonDigest(recovery.sourceBeforeAppend) !== canonicalJsonDigest(sources)) throw new PolicySourceChangedError();
       const expected = structuredClone(recovery.sourceBeforeAppend);
@@ -138,7 +138,7 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
     }
     if (await policySourceSavedDigestHeld(input.projectRoot, sources.id, permit) !== canonicalJsonDigest(savedSources)) throw new PolicySourceChangedError();
     const fresh = await access.loadContextHeld(permit);
-    if (fresh.store !== store || activePolicySource(sources)?.digest !== source.digest
+    if (fresh.store !== store || activePolicySource(savedSources)?.digest !== source.digest
       || canonicalJsonDigest(access.readOutcomes()) !== canonicalJsonDigest(outcomes)) throw new PolicySourceChangedError();
     await fresh.inspectReader();
     if (recovery?.mode === "completed_review") return;
@@ -202,9 +202,17 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
       update.questions = access.readQuestions().map(old => old.id === current.id ? captured : old);
       await commit(update, permit, "The exact raw input-policy answer");
     }, options.permit),
-    acknowledge: async (_q, review, staged, permit) => access.mutate(async held => {
-      Object.assign(sources, staged);
-      await assertCurrentHeld(held, { mode: "completed_review", review });
+    acknowledge: async (q, review, staged, permit, sourceSave) => access.mutate(async held => {
+      const projected=sourceSave ? adoptPolicySourceAcknowledgement(structuredClone(sources),sourceSave) : structuredClone(staged);
+      if (canonicalJsonDigest(projected)!==canonicalJsonDigest(staged)
+        || (readQuestions().children.at(-1) ?? readQuestions().root).digest!==q.digest
+        || reusableSourceInputConversationReview({sources:projected,questions:readQuestions(),outcomes,store,actor:input.actor})?.digest!==review.digest) throw new PolicySourceChangedError();
+      await assertCurrentHeld(held, { mode: "completed_review", review }, projected);
+      if (sourceSave) adoptPolicySourceAcknowledgement(sources,sourceSave);
+      else { // Already authenticated native recovery observation; no new write ACK.
+        for (const key of Object.keys(sources)) if (!Object.hasOwn(projected,key)) Reflect.deleteProperty(sources,key);
+        Object.assign(sources,projected);
+      }
       await commit({}, held, "The saved input-policy interpretation");
     }, permit),
     resumePending: async (q, currentRoot) => {

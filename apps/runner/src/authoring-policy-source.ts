@@ -36,6 +36,18 @@ export type PolicySourceSaveAcknowledgement = Readonly<{
   }> }>;
 }>;
 
+/** Adopt only this writer's captured acknowledgement, retaining the caller's
+ * object identity without retaining optional fields absent from the saved JSON. */
+export function adoptPolicySourceAcknowledgement(current: PolicySourceSession,
+  acknowledgement: PolicySourceSaveAcknowledgement): PolicySourceSession {
+  if (current.id !== acknowledgement.outcome.reference.session_id
+    || current.id !== acknowledgement.savedSession.id) throw new PolicySourceChangedError();
+  const saved = structuredClone(acknowledgement.savedSession);
+  for (const key of Object.keys(current)) if (!Object.hasOwn(saved, key)) Reflect.deleteProperty(current, key);
+  Object.assign(current, saved);
+  return current;
+}
+
 function freezeSavedSource<T extends object>(session: T): SourceDeepReadonly<T>;
 function freezeSavedSource(session: object): object {
   const pending: object[] = [session];
@@ -334,6 +346,17 @@ export function recordReadInterpretation(session: PolicySourceSession, input: Om
   const record = { ...material, record_digest: canonicalJsonDigest(material) };
   if (!validReadInterpretation(record, session.snapshots)) throw new Error("Read interpretation evidence is invalid; no authority changed.");
   session.read_interpretations = [...(session.read_interpretations ?? []), record].slice(-16);
+}
+
+/** The interpretation caller never mutates accepted local evidence before
+ * its exact staged Source save is acknowledged. This does not activate Read. */
+export async function saveReadInterpretation(root: string, session: PolicySourceSession,
+  input: Parameters<typeof recordReadInterpretation>[1]): Promise<PolicySourceSaveAcknowledgement> {
+  const staged = structuredClone(session);
+  recordReadInterpretation(staged, input);
+  const acknowledgement = await savePolicySources(root, staged, { expectedDigest: canonicalJsonDigest(session) });
+  adoptPolicySourceAcknowledgement(session, acknowledgement);
+  return acknowledgement;
 }
 
 function validReadInterpretation(value: ReadInterpretationRecord, snapshots: PolicyTextSnapshot[]): boolean {

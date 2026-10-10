@@ -1,3 +1,4 @@
+import * as sourceOwner from './authoring-policy-source.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -177,4 +178,14 @@ describe('source-established disclosure requirement through local review, strict
      authorityDigest:x.input.authorityDigest,clarifications:[],state:{},assertCurrent:async()=>{},assertCurrentHeld:async()=>{}})).rejects.toThrow('SCOPED_DISCLOSURE_REVIEW_PENDING');
    expect(requestJson).not.toHaveBeenCalled();
  });
+});
+
+it('scoped disclosure continues from corresponding Source ACK, not mutated staging digest',async()=>{
+ const x=await setup('main',true), nativeSave=sourceOwner.savePolicySources;
+ vi.spyOn(sourceOwner,'savePolicySources').mockImplementation((root,next,options)=>{
+  const pending=nativeSave(root,next,options);next.operator_messages=['Unsubmitted staging mutation.'];return pending;
+ });
+ const result=await x.run(),saved=await loadPolicySources(x.root,x.f.sources.id);
+ expect(x.f.sources).toEqual(saved);
+ expect(result).toMatchObject({sourceSave:{savedSession:saved,outcome:{state:'acknowledged',reference:{session_id:saved.id,revision_digest:canonicalJsonDigest(saved)}}}});
 });

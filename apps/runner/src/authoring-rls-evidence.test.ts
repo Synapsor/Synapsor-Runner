@@ -1,3 +1,5 @@
+import * as sourceOwner from './authoring-policy-source.js';
+import type { BoundaryReviewInteractiveSession } from './boundary-cli-picker.js';
 import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -452,4 +454,18 @@ describe("digest-bound inspected RLS policy evidence", () => {
     expect(Object.keys(evidence.runner_evidence.read_access)).toEqual([resource]);
     expect(JSON.stringify(evidence)).not.toContain("opaque.unreviewed");
   });
+});
+
+it('excluded-field consent returns corresponding Source ACK rather than later staging content',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'excluded-caller-ack-')),f=fixture(),unused=structuredClone(f.inspection.tables[0]!);unused.name='private_notes';
+ try{
+  f.inspection.tables.push(unused);refresh(f);f.compiled=compile(f);const current=input(f),sources=newPolicySourceSession();
+  sources.snapshots=[policyTextSnapshot(Buffer.from('Private notes stay private.'),'privacy.txt')];sources.active=1;await savePolicySources(root,sources);
+  const nativeSave=sourceOwner.savePolicySources;
+  vi.spyOn(sourceOwner,'savePolicySources').mockImplementation((project,next,options)=>{const pending=nativeSave(project,next,options);next.operator_messages=['Unsubmitted staging mutation.'];return pending;});
+  const session:BoundaryReviewInteractiveSession={promptText:async()=>'',chooseOption:async(title,options)=>options.find(o=>o.value===(title==='PRIVACY EVIDENCE FOR AN UNUSED SOURCE'?'0':'3'))?.value,confirm:async()=>true};
+  const result=await reviewExcludedFieldMetadata({projectRoot:root,sources,source:current.source,destination:authoringDestination({provider:'openai',model:'gpt-test'}),currentDraft:()=>policyCoverageDraft(current),assertCurrent:async()=>{},assertCurrentHeld:async()=>{},assertMetadataCurrent:async()=>{},coordinated:operation=>withProjectAuthorityMutation(root,operation),session});
+  const saved=await loadPolicySources(root,sources.id);expect(sources).toEqual(saved);
+  expect(result).toMatchObject({changed:true,sourceSave:{savedSession:saved,outcome:{state:'acknowledged',reference:{session_id:saved.id,revision_digest:canonicalJsonDigest(saved)}}}});
+ }finally{vi.restoreAllMocks();await fs.rm(root,{recursive:true,force:true});}
 });

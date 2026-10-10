@@ -7,7 +7,7 @@ import { assertOperatorQuestionsAdvance, confirmOperatorAnswer, leaveOperatorQue
 import { consumedOperatorInputFailure, runOperatorQuestionModel } from "./authoring-operator-question-model.js";
 import { presentOperatorClarification, type OperatorBusinessContext } from "./authoring-operator-presentation.js";
 import { activePolicySource, loadPolicySourcesHeld, policySourceSavedDigestHeld, savePolicySources,
-  PolicySourceChangedError, type PolicySourceSession } from "./authoring-policy-source.js";
+  PolicySourceChangedError, adoptPolicySourceAcknowledgement, type PolicySourceSaveAcknowledgement, type PolicySourceSession } from "./authoring-policy-source.js";
 import { AskError, type completedAuthoringQuestionSequence } from "./model-ask.js";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
@@ -35,7 +35,7 @@ export type SourceInputConversationPorts = {
   }): Promise<void>;
   /** Idempotent exact review acknowledgement, under the explicit writer permit. */
   acknowledge(question: OperatorQuestion, review: SourceInputPolicyReview, sources: PolicySourceSession,
-    permit?: ProjectAuthorityMutationPermit): Promise<void>;
+    permit?: ProjectAuthorityMutationPermit, sourceSave?: PolicySourceSaveAcknowledgement): Promise<void>;
   prompt(text: string, options: { preserveWhitespace: true }): Promise<string | null>;
   confirm(readback: string[], options: { defaultValue: false }): Promise<boolean | null>;
   /** Explicit supported Resume/replacement, not a model call. The host retains
@@ -45,7 +45,9 @@ export type SourceInputConversationPorts = {
 };
 export type SourceInputConversationResult =
   | { state: "pending"; question: OperatorQuestion; source_database_changed: false; authority_granted: false }
-  | { state: "saved" | "reused"; question: OperatorQuestion; review: SourceInputPolicyReview;
+  | { state: "saved"; sourceSave: PolicySourceSaveAcknowledgement; question: OperatorQuestion; review: SourceInputPolicyReview;
+      sources: PolicySourceSession; source_database_changed: false; authority_granted: false }
+  | { state: "reused"; question: OperatorQuestion; review: SourceInputPolicyReview;
       sources: PolicySourceSession; source_database_changed: false; authority_granted: false };
 
 function selectedInputQuestions(records: ReturnType<SourceInputConversationPorts["readQuestions"]>, outcomes: string[]) {
@@ -240,10 +242,13 @@ export async function runSourceInputConversation(input: {
       requirements: value.requirements, actor: input.actor, operatorQuestion: q, questionRoot: root });
     const next = structuredClone(sources);
     next.input_policy_reviews = [...(next.input_policy_reviews ?? []), review];
-    await savePolicySources(input.projectRoot, next, { expectedDigest: canonicalJsonDigest(sources), permit });
-    await ports.assertCurrentHeld(permit, { mode: "append_recovery", review, sourceBeforeAppend: sources });
-    await ports.acknowledge(q, review, next, permit);
-    return { state: "saved", question: q, review, sources: next, source_database_changed: false, authority_granted: false };
+    const sourceSave=await savePolicySources(input.projectRoot, next, { expectedDigest: canonicalJsonDigest(sources), permit });
+    const savedSources=adoptPolicySourceAcknowledgement(structuredClone(sources),sourceSave);
+    const savedReview=matchingReview(savedSources,q,root,source.digest,input.store,input.actor);
+    if (!savedReview) throw new PolicySourceChangedError();
+    await ports.assertCurrentHeld(permit, { mode: "append_recovery", review: savedReview, sourceBeforeAppend: sources });
+    await ports.acknowledge(q, savedReview, savedSources, permit, sourceSave);
+    return { state: "saved", sourceSave, question: q, review: savedReview, sources: savedSources, source_database_changed: false, authority_granted: false };
   }, { signal: input.signal });
 
   async function interpret(modelInput: Parameters<typeof runOperatorQuestionModel>[0]) {

@@ -1,5 +1,5 @@
 import {canonicalJsonDigest} from '@synapsor-runner/protocol';
-import {activePolicySource,loadPolicySources,policySourceSavedDigest,savePolicySources,type PolicySourceSession} from './authoring-policy-source.js';
+import {activePolicySource,loadPolicySources,policySourceSavedDigest,savePolicySources,adoptPolicySourceAcknowledgement,type PolicySourceSession} from './authoring-policy-source.js';
 import {makeSourceInputReview,assertSourceInputReviews,type SourceInputRequirement} from './authoring-input-policy.js';
 import type {BoundaryReviewInteractiveSession} from './boundary-cli-picker.js';
 import {withProjectAuthorityMutation,type ProjectAuthorityMutationPermit} from './project-authority-mutation.js';
@@ -48,10 +48,12 @@ export async function reviewSourceInputPolicy(input:{projectRoot:string;sources:
   'Unlisted source duties are still subject to complete review. This grants no authority and certifies no implementation.'];
  if(!await input.session.confirm('Save this exact attributed input-policy interpretation?',{defaultValue:false,context:detail}))throw new Error('SOURCE_INPUT_REQUIREMENT_PENDING: Interpretation not saved.');
  const staged=structuredClone(input.sources);staged.input_policy_reviews=[...(staged.input_policy_reviews??[]),record];
- await withProjectAuthorityMutation(input.projectRoot,async permit=>{
+ const sourceSave=await withProjectAuthorityMutation(input.projectRoot,async permit=>{
   await input.assertCurrent(permit);
   if(activePolicySource(input.sources)?.digest!==source.digest)throw new Error('POLICY_SOURCE_CHANGED: The policy changed while awaiting confirmation.');
-  await savePolicySources(input.projectRoot,staged,{expectedDigest:expected,permit});
+  const acknowledgement=await savePolicySources(input.projectRoot,staged,{expectedDigest:expected,permit});
+  adoptPolicySourceAcknowledgement(input.sources,acknowledgement);
+  return acknowledgement;
  });
- Object.assign(input.sources,staged);
+ return {sourceSave};
 }

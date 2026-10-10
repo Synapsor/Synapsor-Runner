@@ -1,7 +1,7 @@
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import type { BoundaryReviewInteractiveSession } from './boundary-cli-picker.js';
-import { activePolicySource, loadPolicySources, policySourceSavedDigest, policySourceSavedDigestHeld, savePolicySources,
-  type PolicySourceSession } from './authoring-policy-source.js';
+import { activePolicySource, loadPolicySources, policySourceSavedDigest, policySourceSavedDigestHeld, savePolicySources, adoptPolicySourceAcknowledgement, PolicySourceChangedError,
+  type PolicySourceSaveAcknowledgement, type PolicySourceSession } from './authoring-policy-source.js';
 import { assessReceiptCouplingCapability, receiptCouplingInterpretation, receiptCouplingPaths } from './authoring-obligation-review.js';
 import { currentSourceTransactionReview, makeSourceTransactionReview, sourceTransactionContext,
   sourceTransactionMappings,sourceTransactionPreparedContext,sourceTransactionReviewIdentity } from './authoring-source-transaction-review.js';
@@ -124,15 +124,17 @@ export async function localSourceTransactionReview(input: {
     actor:input.actor,decision,previous:latest});
   const prepared=canonicalJsonDigest(draft), staged=structuredClone(input.sources);
   staged.source_transaction_reviews=[...(staged.source_transaction_reviews??[]),record];
+  let sourceSave: PolicySourceSaveAcknowledgement | undefined;
   await input.coordinated(async permit=>{
     await assertCurrentHeld(permit);
     if (canonicalJsonDigest(input.currentDraft())!==prepared)
       throw new Error('SOURCE_TRANSACTION_REVIEW_CONTEXT_CHANGED: The selected Action, source or receipt context changed. No stale decision was saved.');
-    await savePolicySources(input.projectRoot,staged,{expectedDigest:expected,permit});
-    expected=canonicalJsonDigest(staged);
+    sourceSave=await savePolicySources(input.projectRoot,staged,{expectedDigest:expected,permit});
+    expected=sourceSave.outcome.reference.revision_digest;
+    adoptPolicySourceAcknowledgement(input.sources,sourceSave);
   });
-  Object.assign(input.sources,staged);
-  return {state:decision,changed:true,summary:`Saved new attributed ${decision} source interpretation ${record.digest}. This is not implementation or observed receipt evidence.`};
+  if (!sourceSave) throw new PolicySourceChangedError();
+  return {state:decision,changed:true,sourceSave,summary:`Saved new attributed ${decision} source interpretation ${record.digest}. This is not implementation or observed receipt evidence.`};
 }
 
 /** Resolve only a host-identified, current source-range/outcome question. A
@@ -207,13 +209,15 @@ export async function localSourceTransactionScopeReview(input: {
     decision:choice,actor:input.actor,previous:question.current});
   const staged=structuredClone(input.sources);
   staged.source_transaction_scope_reviews=[...(staged.source_transaction_scope_reviews??[]),record];
+  let sourceSave: PolicySourceSaveAcknowledgement | undefined;
   await input.coordinated(async permit=>{
     await assertCurrentHeld(permit);
     if(canonicalJsonDigest(input.currentDraft())!==canonicalJsonDigest(draft))
       throw new Error('SOURCE_TRANSACTION_SCOPE_CONTEXT_CHANGED: No stale scope answer was saved.');
-    await savePolicySources(input.projectRoot,staged,{expectedDigest:expected,permit});
-    expected=canonicalJsonDigest(staged);
+    sourceSave=await savePolicySources(input.projectRoot,staged,{expectedDigest:expected,permit});
+    expected=sourceSave.outcome.reference.revision_digest;
+    adoptPolicySourceAcknowledgement(input.sources,sourceSave);
   });
-  Object.assign(input.sources,staged);
-  return {state:choice,changed:true,summary:`Saved attributed ${choice} scope decision for ${question.action.outcome}; active rules remain unchanged. Start a new bounded review only after its current capability and pending duties are checked.`};
+  if (!sourceSave) throw new PolicySourceChangedError();
+  return {state:choice,changed:true,sourceSave,summary:`Saved attributed ${choice} scope decision for ${question.action.outcome}; active rules remain unchanged. Start a new bounded review only after its current capability and pending duties are checked.`};
 }

@@ -3,7 +3,7 @@ import type { PolicySourceInspection } from "./action-rule-source-evidence.js";
 import type { policyCoverageDraft } from "./authoring-policy-evidence.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { excludedFieldReview, excludedFieldReviewBinding } from "./authoring-excluded-field-records.js";
-import { activePolicySource, policySourceSavedDigest, policySourceSavedDigestHeld, savePolicySources, type PolicySourceSession } from "./authoring-policy-source.js";
+import { activePolicySource, policySourceSavedDigest, policySourceSavedDigestHeld, savePolicySources, adoptPolicySourceAcknowledgement, PolicySourceChangedError, type PolicySourceSaveAcknowledgement, type PolicySourceSession } from "./authoring-policy-source.js";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { safeTerminalText } from "./terminal-syntax.js";
 
@@ -17,7 +17,7 @@ export async function reviewExcludedFieldMetadata(input: {
   assertCurrentHeld(permit: ProjectAuthorityMutationPermit): Promise<void>;
   assertMetadataCurrent(): Promise<void>;
   coordinated(operation: (permit: ProjectAuthorityMutationPermit) => Promise<void>): Promise<void>;
-}): Promise<{ changed: boolean; summary: string }> {
+}): Promise<{ changed: boolean; summary: string; sourceSave?: PolicySourceSaveAcknowledgement }> {
   const policy = activePolicySource(input.sources);
   if (!policy) throw new Error("EXCLUDED_FIELD_SOURCE_UNAVAILABLE: Reopen the complete current Source.");
   const expectedSource = await policySourceSavedDigest(input.projectRoot, input.sources.id);
@@ -82,14 +82,14 @@ export async function reviewExcludedFieldMetadata(input: {
   });
   if (yes !== true) return { changed: false, summary: "Exact metadata transfer was not confirmed; the privacy requirement remains pending." };
   await input.assertMetadataCurrent(); await assertCurrent();
+  let sourceSave: PolicySourceSaveAcknowledgement | undefined;
   await input.coordinated(async permit => {
     await assertCurrentHeld(permit);
     const staged = structuredClone(input.sources);
     staged.excluded_field_reviews = [...(staged.excluded_field_reviews ?? []), excludedFieldReview(binding, [target])];
-    await savePolicySources(input.projectRoot, staged, { expectedDigest: expectedSource, permit });
-    if (await policySourceSavedDigestHeld(input.projectRoot, staged.id, permit) !== canonicalJsonDigest(staged))
-      throw new Error("EXCLUDED_FIELD_SAVE_UNCONFIRMED: The metadata decision was not confirmed on disk. Preserve the current review for inspection; no transfer was authorized by an in-memory result.");
-    Object.assign(input.sources, staged);
+    sourceSave=await savePolicySources(input.projectRoot, staged, { expectedDigest: expectedSource, permit });
+    adoptPolicySourceAcknowledgement(input.sources, sourceSave);
   });
-  return { changed: true, summary: "Exact unused-field metadata consent recorded. Policy applicability and complete business review still need validation; no data access or authority changed." };
+  if (!sourceSave) throw new PolicySourceChangedError();
+  return { changed: true, sourceSave, summary: "Exact unused-field metadata consent recorded. Policy applicability and complete business review still need validation; no data access or authority changed." };
 }

@@ -1,3 +1,5 @@
+import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
+import * as sourceOwner from "./authoring-policy-source.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -11,7 +13,7 @@ import { createOwnerHandoff, answerOwnerHandoff, ownerHandoffCheckpoint } from "
 import { authoringQuestionAnswerCheckpoint, authoringQuestionCheckpoint, authoringTransportCheckpoint,
   configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery } from "./authoring-generation-recovery.js";
 import { captureOperatorAnswer, confirmOperatorAnswer, createOperatorQuestion, presentOperatorQuestion,
-  reopenOperatorQuestion, leaveOperatorQuestionPending, parseOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
+  reopenOperatorQuestion, leaveOperatorQuestionPending, parseOperatorQuestion, proposeOperatorAnswer, type OperatorQuestion } from "./authoring-operator-question.js";
 import { activePolicySource, loadPolicySources, newPolicySourceSession, policySourceSavedDigest, policySourceSavedDigestHeld,
   policyTextSnapshot, savePolicySources } from "./authoring-policy-source.js";
 import { makeSourceInputReview } from "./authoring-input-policy.js";
@@ -20,7 +22,7 @@ import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } fro
 import { reusableSourceInputConversationReview, runSourceInputConversation, type SourceInputConversationPorts } from "./authoring-input-policy-conversation.js";
 
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
+afterEach(async () => { vi.restoreAllMocks(); await Promise.all(roots.splice(0).map(root => fs.rm(root, { recursive: true, force: true }))); });
 const text = "Each parcel needs a note.\nThe note length is from 1 through 64 UTF-16 units.";
 const binding = { boundary_name: "controlled_input_review", generation_lock_fingerprint: canonicalJsonDigest("lock"),
   schema_fingerprint: canonicalJsonDigest("schema"), role_posture_fingerprint: canonicalJsonDigest("role") };
@@ -34,8 +36,13 @@ const information = (q: OperatorQuestion) => ({ question_id: q.id, revision: q.r
   source_passages: [{ start: 1, end: 2, identifiers: ["note"] }] });
 type Reply = (q: OperatorQuestion) => unknown;
 
-async function fixture(replies: Reply[] = [proposal], outcomes = ["work.hold"], sourceText = text) {
+async function fixture(replies: Reply[] = [proposal], outcomes = ["work.hold"], sourceText = text, nativeConfig = false) {
   const projectRoot = await fs.mkdtemp(path.join(os.tmpdir(), "owned-source-input-conversation-")); roots.push(projectRoot);
+  if (nativeConfig) {
+    await fs.mkdir(path.join(projectRoot,".git"));
+    await fs.writeFile(path.join(projectRoot,"synapsor.runner.json"),JSON.stringify({version:1,mode:"read_only",sources:{app:{engine:"postgres",read_url_env:"UNUSED_READ_URL"}},capabilities:[],trusted_context:{provider:"static_dev",values:{tenant_id:"fixture-private-tenant",principal:"fixture-private-principal"}}}));
+    loadRuntimeConfigFromFile(path.join(projectRoot,"synapsor.runner.json"));
+  }
   const sources = newPolicySourceSession(); sources.snapshots.push(policyTextSnapshot(Buffer.from(sourceText), "rules.txt")); sources.active = 1;
   await savePolicySources(projectRoot, sources, { expectedDigest: null });
   const source = activePolicySource(sources)!, store = canonicalJsonDigest("effective store");
@@ -550,3 +557,20 @@ describe("specific assisted Source Input controller, real Source/Resume CAS and 
     expect((await loadPolicySources(f.input.projectRoot, f.input.sources.id)).input_policy_reviews).toBeUndefined();
   });
 });
+
+  it("assisted Input returns corresponding Source ACK rather than later staging content", async () => {
+    const f=await fixture([proposal],["work.hold"],text,true), nativeSave=sourceOwner.savePolicySources;
+    const q=f.selected();
+    const confirmed=confirmOperatorAnswer(proposeOperatorAnswer(q,{question_id:q.id,revision:q.revision,source_reference:canonicalJsonDigest(q.source_binding),disposition:"proposed",value:validValue(q)}));
+    await f.ports.saveQuestion(confirmed,q.digest,{});
+    vi.spyOn(sourceOwner,"savePolicySources").mockImplementation((root,next,options)=>{
+      const pending=nativeSave(root,next,options); next.operator_messages=["Unsubmitted staging mutation."]; return pending;
+    });
+    const acknowledge=vi.spyOn(f.ports,"acknowledge");
+    const result=await f.run(), saved=await loadPolicySources(f.input.projectRoot,f.input.sources.id);
+    expect(result).toMatchObject({state:"saved",sources:saved,sourceSave:{savedSession:saved,outcome:{state:"acknowledged",reference:{session_id:saved.id,revision_digest:canonicalJsonDigest(saved)}}}});
+    // This fixture keeps the pre-append basis for recovery; the native host owns memory adoption.
+    expect(acknowledge.mock.calls[0]![2]).toEqual(saved);
+    expect(acknowledge.mock.calls[0]![4]).toMatchObject({savedSession:saved,outcome:{state:"acknowledged"}});
+    expect(f.acknowledgementCount()).toBe(1);
+  });

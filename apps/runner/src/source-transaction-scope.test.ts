@@ -1,3 +1,5 @@
+import * as sourceOwner from './authoring-policy-source.js';
+import type { BoundaryReviewInteractiveSession } from './boundary-cli-picker.js';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -232,4 +234,16 @@ describe('per-outcome source transaction scope',()=>{
       expect(saved.source_transaction_scope_reviews).toBeUndefined();
     }finally{await fs.rm(root,{recursive:true,force:true});}
   });
+});
+
+it('transaction scope returns corresponding Source ACK rather than later staging content',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'transaction-caller-ack-')), {f}=fixture();
+ try{
+  await savePolicySources(root,f.sources); const nativeSave=sourceOwner.savePolicySources;
+  vi.spyOn(sourceOwner,'savePolicySources').mockImplementation((project,next,options)=>{const pending=nativeSave(project,next,options);next.operator_messages=['Unsubmitted staging mutation.'];return pending;});
+  const session:BoundaryReviewInteractiveSession={promptText:async()=> '18',chooseOption:async(_t,options)=>options.find(o=>o.value==='does_not_apply')?.value,confirm:async()=>true};
+  const result=await localSourceTransactionScopeReview({projectRoot:root,sources:f.sources,session,currentDraft:()=>f.draft,actor:'derived-test-operator',question:sourceTransactionScopeQuestions(f.source,f.draft,f.sources)[0]!,assertCurrent:async()=>{},assertCurrentHeld:async()=>{},coordinated:operation=>withProjectAuthorityMutation(root,operation)});
+  const saved=await loadPolicySources(root,f.sources.id);expect(f.sources).toEqual(saved);
+  expect(result).toMatchObject({changed:true,sourceSave:{savedSession:saved,outcome:{state:'acknowledged',reference:{session_id:saved.id,revision_digest:canonicalJsonDigest(saved)}}}});
+ }finally{vi.restoreAllMocks();await fs.rm(root,{recursive:true,force:true});}
 });
