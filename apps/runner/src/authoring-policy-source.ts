@@ -20,6 +20,33 @@ export class PolicySourceChangedError extends Error {
   constructor(){super('POLICY_SOURCE_CHANGED: The attached policy or its review changed while this check was running. Reopen the saved job; no newer decision or pending work was overwritten.');}
 }
 
+/** Replacement was attempted, but this invocation cannot acknowledge it. */
+export class PolicySourceSaveUncertainError extends Error {
+  readonly code = "POLICY_SOURCE_SAVE_UNCERTAIN";
+  constructor(readonly stage: "replace" | "readback", cause: unknown) {
+    super("POLICY_SOURCE_SAVE_UNCERTAIN: Inspect the preserved Source through its owner before continuing; this result grants no retry or replay.", { cause });
+  }
+}
+
+type SourceDeepReadonly<T> = T extends object ? { readonly [K in keyof T]: SourceDeepReadonly<T[K]> } : T;
+export type PolicySourceSaveAcknowledgement = Readonly<{
+  savedSession: SourceDeepReadonly<PolicySourceSession>;
+  outcome: Readonly<{ state: "acknowledged"; reference: Readonly<{
+    path: string; session_id: string; revision_digest: string;
+  }> }>;
+}>;
+
+function freezeSavedSource<T extends object>(session: T): SourceDeepReadonly<T>;
+function freezeSavedSource(session: object): object {
+  const pending: object[] = [session];
+  while (pending.length) {
+    const current = pending.pop()!;
+    for (const value of Object.values(current)) if (value !== null && typeof value === "object") pending.push(value);
+    Object.freeze(current);
+  }
+  return session;
+}
+
 export type ClientDuty = "customer_selection" | "status_presentation";
 export type ClientDutyInventory = {
   version: 1; origin: "PRODUCT-CLIENT-CONTRACT"; contract_digest: string;
@@ -450,7 +477,11 @@ async function sourceSavedDigest(root: string, id: string): Promise<string | nul
 
 export async function savePolicySources(root: string, session: PolicySourceSession,
   options?: { expectedDigest?: string | null; permit?: ProjectAuthorityMutationPermit;
-    assertCurrentMaterial?: (permit: ProjectAuthorityMutationPermit) => Promise<void> }): Promise<void> {
+    assertCurrentMaterial?: (permit: ProjectAuthorityMutationPermit) => Promise<void> }): Promise<PolicySourceSaveAcknowledgement> {
+  // Capture submitted data and actual capabilities before lock acquisition waits.
+  const serialized = JSON.stringify(session);
+  session = JSON.parse(serialized) as PolicySourceSession;
+  const { expectedDigest, permit, assertCurrentMaterial } = options ?? {};
   return withProjectAuthorityMutation(root, async held => {
     const file = sourcePath(held.projectRoot, session.id), temporary = `${file}.${randomUUID()}.tmp`;
     assertSourceInputReviews(session.input_policy_reviews);
@@ -502,21 +533,27 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
     if((session.coverage?.retained_duty_history!==undefined || session.coverage?.cross_source_counter_reviews!==undefined)
       && !validStoredCoverage(session.coverage,session.snapshots))
       throw new Error('POLICY_RETAINED_DUTY_PENDING: Invalid host-retained duty audit; no report was saved.');
-    const serialized = JSON.stringify(session);
     if (Buffer.byteLength(serialized) > 2 * 1024 * 1024) throw new Error("Saved policy sources exceed the supported size. The previous snapshot remains unchanged; remove older sources explicitly before adding more context.");
-    if (options?.expectedDigest !== undefined && await policySourceSavedDigestHeld(held.projectRoot, session.id, held) !== options.expectedDigest) {
+    if (expectedDigest !== undefined && await policySourceSavedDigestHeld(held.projectRoot, session.id, held) !== expectedDigest) {
       throw new PolicySourceChangedError();
     }
     await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
     await fs.chmod(path.dirname(file), 0o700);
+    let uncertainStage: "replace" | "readback" | undefined;
     try {
-      await options?.assertCurrentMaterial?.(held);
+      await assertCurrentMaterial?.(held);
       await fs.writeFile(temporary, serialized, { mode: 0o600 });
-      await options?.assertCurrentMaterial?.(held);
+      await assertCurrentMaterial?.(held);
+      uncertainStage = "replace";
       await fs.rename(temporary, file);
+      uncertainStage = "readback";
+      if (!(await fs.readFile(file)).equals(Buffer.from(serialized, "utf8"))) throw new Error("Source readback differs from this invocation's captured bytes.");
+      const reference = Object.freeze({ path: file, session_id: session.id, revision_digest: canonicalJsonDigest(session) });
+      return Object.freeze({ savedSession: freezeSavedSource(session), outcome: Object.freeze({ state: "acknowledged" as const, reference }) });
     }
+    catch (error) { if (uncertainStage !== undefined) throw new PolicySourceSaveUncertainError(uncertainStage, error); throw error; }
     finally { await fs.unlink(temporary).catch(() => undefined); }
-  }, { permit: options?.permit });
+  }, { permit });
 }
 
 export async function loadPolicySources(root: string, id: string): Promise<PolicySourceSession> {
