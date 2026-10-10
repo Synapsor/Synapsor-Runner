@@ -15,6 +15,9 @@ import { validateActionWorkUnitAssessment, assertActionWorkUnitCorrection, type 
 import { actionRuleAuthoringCheckpoint, parseActionWorkUnitCoverageProvenance, type ActionRuleSourceRepairCheckpoint, type ActionRuleAuthoringCheckpoint } from './action-rule-authoring-checkpoint.js';
 import { generateModelActionRuleDraft, generateFocusedModelActionRuleDraft } from './action-rule-model.js';
 import { assessActionWorkUnitSource, reconstructOriginalActionWorkUnitSourceAssessment } from './action-work-unit-source-assessment.js';
+import { projectActionWorkUnitMeaningTargets, selectActionWorkUnitMeaningTarget, actionWorkUnitMeaningQuestionMatches } from './action-work-unit-meaning-target.js';
+import { createOperatorQuestion, parseOperatorQuestions } from './authoring-operator-question.js';
+import { createOwnerHandoff } from './authoring-owner-handoff.js';
 
 function fixture(otherAction = false) {
   const read = boundary(), catalog = builtCatalog(), source = policyTextSnapshot(Buffer.from(
@@ -42,6 +45,16 @@ function fixture(otherAction = false) {
 }
 
 describe("current canonical partial-program Source assessment", () => {
+  it("retains the exact unresolved Source association without making it a correction or accepted meaning", () => {
+    const f=fixture(),p=structuredClone(f.passages);
+    p[1]!.responsibility="operator";p[1]!.issue_kind="business_choice";p[1]!.draft_paths=["/actions/0/effect/set/status"];
+    p[2]!.disposition="background";
+    const result=f.assess(p);
+    expect(result.assessment.state).toBe("owner_meaning_pending");
+    expect(result.assessment).toHaveProperty("source_review.passage_indexes",[1]);
+    expect(result.assessment).toHaveProperty("source_review.report.draft_digest",canonicalJsonDigest(f.prepared));
+    expect(()=>validateActionWorkUnitAssessment(f.context,f.compiled.draft,result.assessment)).toThrow("ACTION_WORK_UNIT_SOURCE_MEANING_PENDING");
+  });
   it("nominates only the exact existing Boolean AST conflict and retains unscoped future duties", () => {
     const f = fixture(), result = f.assess();
     expect(result.assessment).toMatchObject({state:"representation_mismatch",component:"predicate",editable_paths:["/require/expressions/2"]});
@@ -131,6 +144,65 @@ describe("current canonical partial-program Source assessment", () => {
     }
     expect(()=>assessActionWorkUnitSource({context:f.context,currentAction:f.compiled.draft,preparedDraft:f.prepared,report,
       expectedReportDigest,sourceAnswerHistoryDigest:f.sourceAnswerHistoryDigest})).toThrow("ACTION_WORK_UNIT_SOURCE_");
+  });
+});
+
+describe("transient current Source meaning target associations",()=>{
+  function meaningFixture() {
+    const f=fixture(),p=structuredClone(f.passages);
+    p[1]!.responsibility="operator";p[1]!.issue_kind="business_choice";p[1]!.draft_paths=["/actions/0/effect/set/status"];
+    p[2]!.disposition="background";
+    const report=f.report(p);
+    const input={context:f.context,currentAction:f.compiled.draft,preparedDraft:f.prepared,report,
+      expectedReportDigest:canonicalJsonDigest(report),sourceAnswerHistoryDigest:f.sourceAnswerHistoryDigest,
+      requestedEdit:"Clarify the existing pause status assignment.",baseline:structuredClone(f.compiled.draft)};
+    const project=()=>projectActionWorkUnitMeaningTargets(input);
+    return {...f,p,input,project};
+  }
+  it("advertises one exact existing field association and requires its current digest for selection",()=>{
+    const f=meaningFixture(),targets=f.project();
+    expect(targets).toHaveLength(1);
+    expect(targets[0]!.target).toEqual({phase:"effect",resource:"billing.accounts",field:"status",outcomes:["billing.pause_account"]});
+    expect(targets[0]!.draft_path).toBe("/actions/0/effect/set/status");
+    expect(selectActionWorkUnitMeaningTarget(targets,targets[0]!.unresolved_delta_digest)).toEqual(targets[0]);
+    expect(selectActionWorkUnitMeaningTarget(targets,canonicalJsonDigest("unadvertised target"))).toBeUndefined();
+    expect(selectActionWorkUnitMeaningTarget([...targets,...targets],targets[0]!.unresolved_delta_digest)).toBeUndefined();
+    expect(()=>validateActionWorkUnitAssessment(f.context,f.compiled.draft,f.assess(f.p).assessment)).toThrow("MEANING_PENDING");
+  });
+  it.each(["request","baseline","catalog","source_session"] as const)("does not transfer an advertised target across changed %s dependencies",kind=>{
+    const f=meaningFixture(),old=f.project()[0]!.unresolved_delta_digest;
+    if(kind==="request")f.input.requestedEdit="A different exact edit of the same field.";
+    if(kind==="baseline")f.input.baseline.discovery={title:"Current revised baseline",summary:"A separately changed native baseline."};
+    if(kind==="catalog")f.context.builtCatalog.authoring.resources[0]!.subject_reference={obtainable:true,code:"CURRENT_CHANGED_ROUTE"};
+    if(kind==="source_session")f.sources.coverage_episodes=[];
+    expect(selectActionWorkUnitMeaningTarget(f.project(),old)).toBeUndefined();
+  });
+  it.each(["component","multiple_paths","indistinguishable_clauses"] as const)("keeps %s pending instead of inferring a target from phase or words",kind=>{
+    const f=meaningFixture();
+    if(kind==="component")f.p[1]!.draft_paths=["/actions/0/effect"];
+    if(kind==="multiple_paths")f.p[1]!.draft_paths.push("/actions/0/require/expressions/2");
+    if(kind==="indistinguishable_clauses")Object.assign(f.p[0]!,{responsibility:"operator",issue_kind:"schema_meaning",disposition:"needs_decision",draft_paths:["/actions/0/effect/set/status"]});
+    const report=f.report(f.p);
+    expect(projectActionWorkUnitMeaningTargets({...f.input,report,expectedReportDigest:canonicalJsonDigest(report)})).toEqual([]);
+  });
+  it("requires exact question, handoff and producer association through the same comparison after reparse",()=>{
+    const f=meaningFixture(),current=f.project(),target=current[0]!;
+    const scope=canonicalJsonDigest(f.prepared),context=canonicalJsonDigest(f.context),producer=canonicalJsonDigest({pending_question:"Controlled existing question"});
+    const handoff=createOwnerHandoff({consumer:"policy_clarification",scope_digest:scope,context_digest:context,question:"Which business status should this exact assignment store?"});
+    const question=createOperatorQuestion({id:randomUUID(),revision:1,handoff_id:handoff.id,kind:"attributed_meaning",scope_digest:scope,context_digest:context,
+      target:target.target,material:[],continuation:"action_rule_review",evidence:[{id:"current-owner-question",digest:handoff.digest},
+        {id:"action-producer-question",digest:producer},{id:"action-unresolved-target",digest:target.unresolved_delta_digest}]});
+    const input={current,question,handoff,producerQuestionDigest:producer};
+    expect(actionWorkUnitMeaningQuestionMatches(input)).toBe(true);
+    const reparsed=parseOperatorQuestions(JSON.parse(JSON.stringify([question])),JSON.parse(JSON.stringify([handoff])))[0]!;
+    expect(actionWorkUnitMeaningQuestionMatches({...input,question:reparsed})).toBe(true);
+    expect(actionWorkUnitMeaningQuestionMatches({...input,producerQuestionDigest:canonicalJsonDigest("different producer")})).toBe(false);
+    expect(actionWorkUnitMeaningQuestionMatches({...input,question:{...question,target:{...question.target,field:"other"}}})).toBe(false);
+    expect(actionWorkUnitMeaningQuestionMatches({...input,question:{...question,evidence:question.evidence.filter(e=>e.id!=="action-unresolved-target")}})).toBe(false);
+    expect(actionWorkUnitMeaningQuestionMatches({...input,question:{...question,evidence:[...question.evidence,question.evidence[2]!]}})).toBe(false);
+    expect(actionWorkUnitMeaningQuestionMatches({...input,handoff:{...handoff,id:randomUUID()}})).toBe(false);
+    f.input.requestedEdit="Changed after the native wait.";
+    expect(actionWorkUnitMeaningQuestionMatches({...input,current:f.project()})).toBe(false);
   });
 });
 

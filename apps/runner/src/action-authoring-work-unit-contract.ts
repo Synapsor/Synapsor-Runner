@@ -45,7 +45,7 @@ export type ActionWorkUnitSourceReviewStatus = {
 };
 export type ActionWorkUnitFidelityAssessment =
   | { state: "source_interpretation_pending" }
-  | { state: "owner_meaning_pending" }
+  | { state: "owner_meaning_pending"; source_review?: ActionWorkUnitSourceReview }
   | { state: "currentness_pending" }
   | { state: "current_registered_requirements_satisfied"; source_review: ActionWorkUnitSourceReview }
   | { state: "representation_mismatch"; source_review: ActionWorkUnitSourceReview;

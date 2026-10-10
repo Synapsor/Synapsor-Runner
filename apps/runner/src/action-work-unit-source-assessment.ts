@@ -175,8 +175,9 @@ export function assessActionWorkUnitSource(input: { context: ActionWorkUnitConte
   }
   const relevant = [...new Set([...current, ...global])].filter(i => !deferred.includes(i));
   const pending = relevant.filter(i => unresolved(report.passages[i]!));
-  if (pending.some(i => report.passages[i]!.responsibility === "operator"
-    && ["business_choice", "schema_meaning"].includes(report.passages[i]!.issue_kind ?? ""))) return { assessment: { state: "owner_meaning_pending" }, scope };
+  const missingMeaning = pending.filter(i => report.passages[i]!.responsibility === "operator"
+    && ["business_choice", "schema_meaning"].includes(report.passages[i]!.issue_kind ?? ""));
+  if (missingMeaning.length) return { assessment: { state: "owner_meaning_pending", source_review: review(missingMeaning) }, scope };
   if (!current.length || pending.length || unscoped.length || referencePending.length) return { assessment: { state: "source_interpretation_pending" }, scope };
   const assessment = { state: "current_registered_requirements_satisfied" as const, source_review: review(relevant) };
   validateActionWorkUnitAssessment(context, action, assessment);
