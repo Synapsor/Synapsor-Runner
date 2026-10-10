@@ -5,6 +5,9 @@ import { readAuthoringBindingsSchema, type ReadAuthoringBindings } from "./contr
 import { loadRuntimeConfigFromFile, resolveTrustedContext, type RuntimeConfig, type TrustedContext } from "@synapsor-runner/mcp-server";
 import { resolveSynapsorProject } from "./project-resolution.js";
 import { AuthoringResumeMaterialError } from "./authoring-checkpoint-save-error.js";
+import { openBoundProjectControlPolicies } from "./control-policy-store.js";
+import { OperatorAuthorityRepository } from "./control-policy-operator-repository.js";
+import { CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION } from "./auto-boundary.js";
 
 /** Transient host ownership. The Read owner supplies its actual freshly loaded
  * native frame and reacquires it after waits; this is privacy screening, not
@@ -86,8 +89,9 @@ async function resolveCurrent(input: AuthoringMaterialContextInput): Promise<Res
     const before = await fs.readFile(configPath, "utf8");
     // Existing configuration owner validates and resolves actual referenced configuration.
     const config = loadRuntimeConfigFromFile(configPath);
+    const native = await nativeEnvironmentScreening(input.projectRoot, config, env);
     const definitions: Array<[string | null, NonNullable<RuntimeConfig["trusted_context"]>]> = [
-      ...(config.trusted_context ? [[null, config.trusted_context] as [null, NonNullable<RuntimeConfig["trusted_context"]>]] : []),
+      ...(config.trusted_context ? [[null, native?.definition ?? config.trusted_context] as [null, NonNullable<RuntimeConfig["trusted_context"]>]] : []),
       ...Object.entries(config.contexts ?? {}),
     ];
     if (!definitions.length && config.cloud?.session !== undefined) return { kind: "unavailable" };
@@ -103,7 +107,7 @@ async function resolveCurrent(input: AuthoringMaterialContextInput): Promise<Res
           contextName: name, provider: definition.provider }) : undefined;
       // Selecting an actual named definition does not invent a capability or invoke
       // the proposal actor fallback. Capability-specific checks below use real entries.
-      const selected = name === null ? config : { ...config, trusted_context: definition };
+      const selected = { ...config, trusted_context: definition };
       const context = resolveTrustedContext(selected, env, undefined, session);
       resolved.push({ name, context });
       for (const capability of config.capabilities ?? []) {
@@ -120,17 +124,61 @@ async function resolveCurrent(input: AuthoringMaterialContextInput): Promise<Res
     }
     const after = await fs.readFile(configPath, "utf8");
     const currentProject = await resolveSynapsorProject(input.projectRoot, env);
-    if (before !== after || !currentProject || await fs.realpath(currentProject.config_path) !== configPath)
+    if (before !== after || !currentProject || await fs.realpath(currentProject.config_path) !== configPath
+      || JSON.stringify(native) !== JSON.stringify(await nativeEnvironmentScreening(input.projectRoot, config, env)))
       return { kind: "unavailable" };
     // Private transient comparison only; this proof is never returned or hashed.
-    const proof = JSON.stringify({ configPath, source: before, config, resolved });
-    const values = [...new Set(resolved.flatMap(({ context }) => [context.tenant_id, context.principal]).filter(value => value !== ""))];
+    const proof = JSON.stringify({ configPath, source: before, config, native, resolved });
+    const values = [...new Set([...resolved.flatMap(({ context }) => [context.tenant_id, context.principal]),
+      ...(native?.organizations ?? [])].filter(value => value !== ""))];
     if (definitions.length && !values.length) return { kind: "unavailable" };
     return { kind: definitions.length ? "configured" : "unconfigured", proof, values };
   } catch {
     // Never leak config paths, credentials, identities, or resolver exception text.
     return { kind: "unavailable" };
   }
+}
+
+/** Disabled native Read metadata retains configured identity names even when
+ * runtime scope needs neither a tenant variable nor per-person restriction.
+ * Use the current repository owner, never generation-lock exports or a model
+ * projection. This transient selection changes privacy screening only; actual
+ * capabilities below still resolve against the unchanged runtime config. */
+async function nativeEnvironmentScreening(projectRoot: string, config: RuntimeConfig, env: NodeJS.ProcessEnv) {
+  if (config.trusted_context?.provider !== "environment") return undefined;
+  const binding = await openBoundProjectControlPolicies(projectRoot, env);
+  if (!binding) return undefined;
+  try {
+    const state = await new OperatorAuthorityRepository(binding).currentReadState();
+    const record = state.active.find(({ policy }) => policy.type === "read_authoring");
+    if (record?.policy.type !== "read_authoring" || !record.policy.entries.length) throw new Error();
+    const authorities = record.policy.entries.map(entry => {
+      const candidate = entry.progress.candidate;
+      const authority = entry.candidate_lock.trusted_context_authority;
+      if (candidate.deployment_profile === "production" || candidate.trusted_context.provider !== "environment"
+        || authority?.schema_version !== CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION || authority.provider !== "environment"
+        || config.sources?.[candidate.source]?.read_url_env !== entry.candidate_lock.source_env
+        || !authority.tenant_env?.trim() || !authority.principal_env?.trim()
+        || authority.tenant_env !== candidate.trusted_context.tenant_env
+        || authority.principal_env !== candidate.trusted_context.principal_env) throw new Error();
+      return authority;
+    });
+    const authority = authorities[0]!;
+    if (authorities.some(item => canonicalJsonDigest(item) !== canonicalJsonDigest(authority))) throw new Error();
+    const definition = config.trusted_context;
+    const values = definition.values ?? {};
+    if ((values.tenant_id_env !== undefined && values.tenant_id_env !== authority.tenant_env)
+      || (values.principal_env !== undefined && values.principal_env !== authority.principal_env)
+      || (definition.tenant_binding ?? undefined) !== authority.tenant_binding
+      || (definition.principal_binding ?? undefined) !== authority.principal_binding) throw new Error();
+    return { definition: { ...definition, values: { ...values,
+      tenant_id_env: authority.tenant_env, principal_env: authority.principal_env } },
+      organizations: record.policy.entries.flatMap(entry => entry.progress.candidate.organization_scope
+        ? [entry.progress.candidate.organization_scope.organization_id] : []),
+      owner: { repository_id: binding.repository_id, deployment_id: binding.deployment_id,
+        project_id: binding.project_id, epoch: state.epoch, revision_id: record.revision.revision_id },
+      authoring: record.policy };
+  } finally { await binding.close(); }
 }
 
 /** Synchronous capture BEFORE reading created_at or awaiting host context.
