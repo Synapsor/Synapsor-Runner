@@ -34,7 +34,7 @@ export type AuthoringMaterialContextInput = AuthoringMaterialOwner & {
   }>) => Promise<TrustedContext | undefined>;
 };
 
-type Resolution = { kind: AuthoringMaterialContext["kind"]; proof?: string; values?: readonly string[] };
+type Resolution = { kind: AuthoringMaterialContext["kind"]; proof?: string; values?: readonly string[]; recheck?: () => boolean };
 type NativeContext = { owner: AuthoringMaterialOwner; input: AuthoringMaterialContextInput; resolution: Resolution };
 const contexts = new WeakMap<object, NativeContext>();
 const codes = {
@@ -82,7 +82,8 @@ export async function resolveAuthoringMaterialContext(input: AuthoringMaterialCo
 
 async function resolveCurrent(input: AuthoringMaterialContextInput): Promise<Resolution> {
   try {
-    const env = input.env ?? process.env;
+    const currentEnv = () => input.env ?? process.env;
+    const env = currentEnv();
     const project = await resolveSynapsorProject(input.projectRoot, env);
     if (!project) return { kind: "unavailable" };
     const configPath = await fs.realpath(project.config_path);
@@ -96,6 +97,7 @@ async function resolveCurrent(input: AuthoringMaterialContextInput): Promise<Res
     ];
     if (!definitions.length && config.cloud?.session !== undefined) return { kind: "unavailable" };
     const resolved: Array<{ name: string | null; context: TrustedContext }> = [];
+    const checks: Array<() => boolean> = [];
     for (const [name, definition] of definitions) {
       if (!definition || !definition.provider) return { kind: "unavailable" };
       const session = definition.provider === "http_claims" || definition.provider === "cloud_session"
@@ -105,38 +107,53 @@ async function resolveCurrent(input: AuthoringMaterialContextInput): Promise<Res
             ? { projectRoot: input.projectRoot, sourceSessionId: input.sourceSessionId }
             : { projectRoot: input.projectRoot, jobCreatedAt: input.jobCreatedAt! }),
           contextName: name, provider: definition.provider }) : undefined;
-      // Selecting an actual named definition does not invent a capability or invoke
-      // the proposal actor fallback. Capability-specific checks below use real entries.
-      const selected = { ...config, trusted_context: definition };
-      const context = resolveTrustedContext(selected, env, undefined, session);
-      resolved.push({ name, context });
-      for (const capability of config.capabilities ?? []) {
-        if ((capability.context ?? null) === name) {
-          const actual = resolveTrustedContext(config, env, capability, session);
-          // The real capability may bind a reviewed organization. Its optional
-          // local proposal actor must not become a configured private principal.
-          resolved.push({ name, context: { ...actual, principal: context.principal } });
-        }
+      const contexts = resolveDefinition(config, name, definition, currentEnv(), session);
+      resolved.push(...contexts);
+      if (definition.provider === "environment" || definition.provider === "static_dev") {
+        const original = JSON.stringify(contexts);
+        checks.push(() => original === JSON.stringify(resolveDefinition(config, name, definition, currentEnv())));
+      } else if (session) {
+        // A later awaited owner must not mutate an earlier session object into
+        // the latest identity while leaving its original resolution approved.
+        const original = JSON.stringify(session);
+        checks.push(() => original === JSON.stringify(session));
       }
     }
     for (const capability of config.capabilities ?? []) {
       if (!definitions.some(([name]) => name === (capability.context ?? null))) return { kind: "unavailable" };
     }
     const after = await fs.readFile(configPath, "utf8");
-    const currentProject = await resolveSynapsorProject(input.projectRoot, env);
-    if (before !== after || !currentProject || await fs.realpath(currentProject.config_path) !== configPath
-      || JSON.stringify(native) !== JSON.stringify(await nativeEnvironmentScreening(input.projectRoot, config, env)))
+    const currentProject = await resolveSynapsorProject(input.projectRoot, currentEnv());
+    const currentPath = currentProject && await fs.realpath(currentProject.config_path);
+    const currentNative = await nativeEnvironmentScreening(input.projectRoot, config, currentEnv());
+    const recheck = () => {
+      try { return checks.every(check => check()); } catch { return false; }
+    };
+    // No awaited operation follows this environment check. Compare with the
+    // original resolved identities; never adopt a replacement after a wait.
+    if (before !== after || currentPath !== configPath
+      || JSON.stringify(native) !== JSON.stringify(currentNative) || !recheck())
       return { kind: "unavailable" };
     // Private transient comparison only; this proof is never returned or hashed.
     const proof = JSON.stringify({ configPath, source: before, config, native, resolved });
     const values = [...new Set([...resolved.flatMap(({ context }) => [context.tenant_id, context.principal]),
       ...(native?.organizations ?? [])].filter(value => value !== ""))];
     if (definitions.length && !values.length) return { kind: "unavailable" };
-    return { kind: definitions.length ? "configured" : "unconfigured", proof, values };
+    return { kind: definitions.length ? "configured" : "unconfigured", proof, values, recheck };
   } catch {
     // Never leak config paths, credentials, identities, or resolver exception text.
     return { kind: "unavailable" };
   }
+}
+
+function resolveDefinition(config: RuntimeConfig, name: string | null,
+  definition: NonNullable<RuntimeConfig["trusted_context"]>, env: NodeJS.ProcessEnv, session?: TrustedContext) {
+  // This generic resolution cannot use a local proposal actor. Detach verified
+  // session values because the runtime resolver may return its owner's object.
+  const context = { ...resolveTrustedContext({ ...config, trusted_context: definition }, env, undefined, session) };
+  return [{ name, context }, ...(config.capabilities ?? []).filter(capability => (capability.context ?? null) === name)
+    .map(capability => ({ name, context: { ...resolveTrustedContext(config, env, capability, session),
+      principal: context.principal } }))];
 }
 
 /** Disabled native Read metadata retains configured identity names even when
@@ -145,34 +162,44 @@ async function resolveCurrent(input: AuthoringMaterialContextInput): Promise<Res
  * projection. This transient selection changes privacy screening only; actual
  * capabilities below still resolve against the unchanged runtime config. */
 async function nativeEnvironmentScreening(projectRoot: string, config: RuntimeConfig, env: NodeJS.ProcessEnv) {
-  if (config.trusted_context?.provider !== "environment") return undefined;
   const binding = await openBoundProjectControlPolicies(projectRoot, env);
   if (!binding) return undefined;
   try {
     const state = await new OperatorAuthorityRepository(binding).currentReadState();
     const record = state.active.find(({ policy }) => policy.type === "read_authoring");
     if (record?.policy.type !== "read_authoring" || !record.policy.entries.length) throw new Error();
+    const definition = config.trusted_context;
+    if (!definition) throw new Error();
     const authorities = record.policy.entries.map(entry => {
       const candidate = entry.progress.candidate;
       const authority = entry.candidate_lock.trusted_context_authority;
-      if (candidate.deployment_profile === "production" || candidate.trusted_context.provider !== "environment"
-        || authority?.schema_version !== CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION || authority.provider !== "environment"
+      if (authority?.schema_version !== CONFIGURED_TRUSTED_CONTEXT_AUTHORITY_VERSION
+        || authority.provider !== definition.provider || authority.provider !== candidate.trusted_context.provider
         || config.sources?.[candidate.source]?.read_url_env !== entry.candidate_lock.source_env
-        || !authority.tenant_env?.trim() || !authority.principal_env?.trim()
-        || authority.tenant_env !== candidate.trusted_context.tenant_env
-        || authority.principal_env !== candidate.trusted_context.principal_env) throw new Error();
+        || config.sources[candidate.source]!.engine !== entry.candidate_lock.engine) throw new Error();
+      if (authority.provider === "environment") {
+        if (candidate.deployment_profile === "production" || !authority.tenant_env?.trim() || !authority.principal_env?.trim()
+          || authority.tenant_env !== candidate.trusted_context.tenant_env
+          || authority.principal_env !== candidate.trusted_context.principal_env) throw new Error();
+      } else if (authority.provider === "http_claims") {
+        if (candidate.trusted_context.provider !== "http_claims" || candidate.deployment_profile !== "production" || !authority.principal_claim?.trim()
+          || authority.tenant_claim !== candidate.trusted_context.tenant_claim
+          || authority.principal_claim !== candidate.trusted_context.principal_claim
+          || authority.tenant_claim !== config.session_auth?.tenant_claim
+          || authority.principal_claim !== config.session_auth?.principal_claim) throw new Error();
+      } else throw new Error();
       return authority;
     });
     const authority = authorities[0]!;
     if (authorities.some(item => canonicalJsonDigest(item) !== canonicalJsonDigest(authority))) throw new Error();
-    const definition = config.trusted_context;
     const values = definition.values ?? {};
-    if ((values.tenant_id_env !== undefined && values.tenant_id_env !== authority.tenant_env)
-      || (values.principal_env !== undefined && values.principal_env !== authority.principal_env)
+    if ((authority.provider === "environment" && (
+      values.tenant_id_env !== undefined && values.tenant_id_env !== authority.tenant_env
+      || values.principal_env !== undefined && values.principal_env !== authority.principal_env))
       || (definition.tenant_binding ?? undefined) !== authority.tenant_binding
       || (definition.principal_binding ?? undefined) !== authority.principal_binding) throw new Error();
-    return { definition: { ...definition, values: { ...values,
-      tenant_id_env: authority.tenant_env, principal_env: authority.principal_env } },
+    return { definition: authority.provider === "environment" ? { ...definition, values: { ...values,
+      tenant_id_env: authority.tenant_env, principal_env: authority.principal_env } } : definition,
       organizations: record.policy.entries.flatMap(entry => entry.progress.candidate.organization_scope
         ? [entry.progress.candidate.organization_scope.organization_id] : []),
       owner: { repository_id: binding.repository_id, deployment_id: binding.deployment_id,
@@ -219,7 +246,8 @@ export async function assertAuthoringMaterial(input: {
   if (!["retained_material", "business_value", "forbidden_identity"].includes(origin))
     throw new AuthoringMaterialContextError(codes.unavailable);
   const current = await resolveCurrent(native.input);
-  if (current.kind === "unavailable" || current.kind !== native.resolution.kind || current.proof !== native.resolution.proof)
+  if (current.kind === "unavailable" || current.kind !== native.resolution.kind || current.proof !== native.resolution.proof
+    || !current.recheck?.())
     throw new AuthoringMaterialContextError(codes.changed);
   const serialized = assertCredentials(material);
   for (const scalar of materialScalars(material)) {
