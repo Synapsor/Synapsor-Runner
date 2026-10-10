@@ -58,6 +58,43 @@ afterEach(async () => {
 });
 
 describe("guided write actions", () => {
+  it.each(["id", "member_id", "record_key"])("bounds the inspected %s lookup independently of its name", async (primaryKey) => {
+    const fixture = await activatedFitFlowFixture({ primaryKey, reviewedPending: true });
+    const result = await createGuidedActionDraft({
+      projectRoot: fixture.root, inspection: fixture.inspection, allowReviewedPending: true,
+      action: {
+        capability_name: "membership.bounded_lookup", description: "Propose one bounded loyalty adjustment.",
+        resource: "public.members", operation: "update", conflict_column: "version", version_advance: "integer_increment",
+        approval_role: "membership_reviewer", confirmed_trusted_scope: true,
+        patches: [{ column: "loyalty_balance", value_source: "argument", argument_name: "points", minimum: 0, maximum: 10 }],
+      },
+    });
+    const capability = result.contract.capabilities[0]!;
+    expect(capability.subject?.primary_key).toBe(primaryKey);
+    expect(capability.args[capability.lookup!.id_from_arg]).toMatchObject({ type: "string", required: true, max_length: 128 });
+    expect(capability.args.points).toMatchObject({ type: "number", minimum: 0, maximum: 10 });
+    expect(result.draft.state).toBe("disabled");
+  });
+
+  it.each(["reference_id", "reference", "id_note"])("requires an explicit business text bound on %s", async (textColumn) => {
+    const fixture = await activatedFitFlowFixture({ textColumn, reviewedPending: true });
+    const action = {
+      capability_name: "membership.bounded_text", description: "Propose one explicitly bounded reference.",
+      resource: "public.members", operation: "update" as const, conflict_column: "version", version_advance: "integer_increment" as const,
+      approval_role: "membership_reviewer", confirmed_trusted_scope: true,
+      patches: [{ column: textColumn, value_source: "argument" as const, argument_name: "reference" }],
+    };
+    await expect(createGuidedActionDraft({
+      projectRoot: fixture.root, inspection: fixture.inspection, allowReviewedPending: true, action,
+    })).rejects.toThrow("GUIDED_ACTION_TEXT_BOUND_REQUIRED");
+    const result = await createGuidedActionDraft({
+      projectRoot: fixture.root, inspection: fixture.inspection, allowReviewedPending: true,
+      action: { ...action, patches: [{ ...action.patches[0]!, max_length: 37 }] },
+    });
+    expect(result.contract.capabilities[0]!.args.reference).toMatchObject({ type: "string", required: true, max_length: 37 });
+    expect(result.draft.state).toBe("disabled");
+  });
+
   it.each(["membership_phase", "phase", "membership_status"])("preserves reviewed transitions on inspected %s", async (transitionColumn) => {
     const fixture = await activatedFitFlowFixture({ transitionColumn, reviewedPending: true });
     const result = await createGuidedActionDraft({
@@ -2468,6 +2505,8 @@ function runtimeConfigForMockRead(configPath: string) {
 }
 
 async function activatedFitFlowFixture(options: {
+  primaryKey?: string;
+  textColumn?: string;
   transitionColumn?: string;
   reviewedPending?: boolean;
   compositePrimaryKey?: boolean;
@@ -2483,6 +2522,15 @@ async function activatedFitFlowFixture(options: {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-guided-action-"));
   temporaryRoots.push(root);
   const inspection = fitFlowInspection();
+  if (options.primaryKey) {
+    const table = inspection.tables[0]!;
+    table.columns.find((candidate) => candidate.name === "id")!.name = options.primaryKey;
+    table.primary_key = [options.primaryKey];
+    for (const constraint of table.unique_constraints) constraint.columns = constraint.columns.map((name) => name === "id" ? options.primaryKey! : name);
+    for (const index of table.indexes) index.columns = index.columns?.map((name) => name === "id" ? options.primaryKey! : name);
+    table.suggestions.default_visible_columns = table.suggestions.default_visible_columns.map((name) => name === "id" ? options.primaryKey! : name);
+  }
+  if (options.textColumn) inspection.tables[0]!.columns.push(column(options.textColumn, "text"));
   if (options.transitionColumn) {
     const table = inspection.tables[0]!;
     table.columns.find((candidate) => candidate.name === "membership_status")!.name = options.transitionColumn;
@@ -2566,10 +2614,10 @@ async function activatedFitFlowFixture(options: {
               : "Assigned trainers may access only their reviewed member rows.",
             decided_at: "2026-07-24T17:00:00.000Z",
           },
-          ...(options.transitionColumn ? {
-            fields: Object.fromEntries(["id", "version", options.transitionColumn].map((field) => [field, {
+          ...(options.transitionColumn || options.primaryKey || options.textColumn ? {
+            fields: Object.fromEntries([options.primaryKey ?? "id", "version", options.transitionColumn ?? "loyalty_balance", ...(options.textColumn ? [options.textColumn] : [])].map((field) => [field, {
               exposure: "allow_reviewed_use" as const, actor: "reviewer@example.test",
-              reason: "Review this exact inspected field for the bounded transition proposal.", decided_at: "2026-07-24T17:00:00.000Z",
+              reason: "Review this exact inspected field for the bounded proposal.", decided_at: "2026-07-24T17:00:00.000Z",
             }])),
           } : {}),
           ...(options.hiddenRequiredInsertField ? {

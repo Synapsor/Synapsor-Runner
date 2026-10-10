@@ -1973,6 +1973,7 @@ function emitGuidedActionDsl(input: {
       `  LOOKUP ${safeIdentifier(lookupArgument)} BY ${safeIdentifier(resource.primary_key)}`,
       argumentDsl(lookupArgument, requireColumn(table, resource.primary_key), {
         argument_description: `Exact ${singular(resource.table)} identifier.`,
+        max_length: 128,
       }),
     ]),
     ...action.patches
@@ -3115,7 +3116,7 @@ function argumentDsl(
     return `  ARG ${safeIdentifier(name)} BOOLEAN REQUIRED DESCRIPTION '${description}'`;
   }
   const enumClause = column.enum_values?.length ? ` ENUM(${column.enum_values.map(dslLiteral).join(", ")})` : "";
-  const maxLength = input.max_length ?? (column.name === "id" || /_id$/i.test(column.name) ? 128 : undefined);
+  const maxLength = input.max_length;
   if (!enumClause && !maxLength) throw new Error(`GUIDED_ACTION_TEXT_BOUND_REQUIRED: ${column.name} requires max_length.`);
   return `  ARG ${safeIdentifier(name)} STRING${enumClause} REQUIRED${maxLength ? ` MAX LENGTH ${maxLength}` : ""} DESCRIPTION '${description}'`;
 }
