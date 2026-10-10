@@ -24,6 +24,7 @@ import {
   type ActionRuleAuthorityDraftV1,
 } from "./action-rule-authority.js";
 import { actionRuleModelDraftJsonSchema } from "./action-rule-model.js";
+import { assertStructuredSharedSumRewriteAvailable } from "./structured-shared-sum-preservation.js";
 import { createBoundaryReviewProgress } from "./boundary-review-domain.js";
 import {
   parseBoundaryReviewDecisionFile,
@@ -413,6 +414,7 @@ async function prepareStructuredDraft(
     const active = await readActionRuleAuthorityActivation(projectRoot);
     if (active?.authority.name === `${prospectiveRead.pack.name}_rules`) existing = active;
   }
+  assertStructuredSharedSumRewriteAvailable(existing?.authority);
   if (existing && existing.authority.catalog.generation_lock_fingerprint !== prospectiveRead.generation_lock_fingerprint
     && existing.authority.rules.some((rule) => rule.read_boundary_name !== prospectiveRead.pack.name)) {
     throw new Error("ACTION_RULE_READ_REVIEW_REQUIRED: this Action bundle also depends on another Read Boundary. Review both dependencies together before changing their generation lock. The saved Read and Action drafts are unchanged.");

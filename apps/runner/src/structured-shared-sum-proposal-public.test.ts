@@ -46,6 +46,7 @@ it.each(['dry_run','save','legacy'] as const)('public structured proposal is ret
  // through a genuine native review owner, or truthfully refuse before save.
  expect(status).toBe(2);
  expect(output).toContain('STRUCTURED_DRAFT_SHARED_SUM_REVIEW_REQUIRED');
+ expect(saved).toBeUndefined();
  expect(await readActionRuleAuthorityRevisionBaseline(root)).toEqual(baseline);
  expect(await readProjectReadAuthoring(root)).toEqual(readBefore);
 });
