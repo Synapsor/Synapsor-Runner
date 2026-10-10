@@ -8,7 +8,7 @@ import { parseSharedSumQuestionBinding, type SharedSumQuestionBinding } from "./
  * native producer custody nor operator confirmation nor an authority grant. */
 export function prepareSharedSumOperatorQuestion(input: { binding: SharedSumQuestionBinding; id?: string; revision?: number }): OperatorQuestion {
   const binding = parseSharedSumQuestionBinding(input.binding);
-  const body = { version: 3 as const, id: input.id ?? randomUUID(), revision: input.revision ?? 1,
+  const body = { version: binding.version===2 ? 5 : 3, id: input.id ?? randomUUID(), revision: input.revision ?? 1,
     kind: "shared_sum" as const, shared_sum: binding,
     scope_digest: canonicalJsonDigest(binding.designation), context_digest: binding.dependencies.context_digest,
     target: { phase: "shared_sum", outcomes: binding.dependencies.participating_outcomes },

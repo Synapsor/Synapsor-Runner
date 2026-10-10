@@ -350,6 +350,8 @@ export function buildBoundaryAuthoringResumeState(input: {
   previous?: BoundaryAuthoringResumeState;
   now?: string;
 }): BoundaryAuthoringResumeState {
+  if ((input.operatorQuestions ?? input.previous?.operator_questions)?.some(q => q.version === 5))
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Operator submissions belong to the native Read entry, not model Resume state.");
   if (input.previous) assertBoundaryAuthoringResumeState(input.previous);
   const protocol = parseStructuredAuthoringProtocol(input.authoringProtocol ?? input.previous?.authoring_protocol
     ?? { version: STRUCTURED_AUTHORING_PROTOCOL_VERSION });
@@ -840,6 +842,8 @@ export function assertBoundaryAuthoringResumeState(
   }
   if (!value.authoring_protocol && (value.operator_questions as OperatorQuestion[] | undefined)?.some(q => q.version === 2))
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Typed questions require the pinned structured authoring protocol.");
+  if((value.operator_questions as OperatorQuestion[]|undefined)?.some(q=>q.version===5))
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Operator proposal reviews belong to their native governed Read entry, not a model authoring job.");
   if (value.operator_questions !== undefined) parseOperatorQuestions(value.operator_questions, parseOwnerHandoffs(value.owner_handoffs ?? []),
     value.generation_recovery as AuthoringTransportState | undefined);
   if (value.planning_result !== undefined) {

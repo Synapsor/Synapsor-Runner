@@ -5,9 +5,12 @@ import { AUTO_BOUNDARY_VERSION, EXPLORATION_BOUNDARY_VERSION, GENERATION_LOCK_VE
 import { normalizeStoredBoundaryReviewProgress, type BoundaryReviewProgress } from "./boundary-review-domain.js";
 import { BOUNDARY_REVIEW_PROGRESS_VERSION, readReviewOriginSchema } from "./boundary-review-progress-types.js";
 import { OPERATOR_READ_POLICY_RECORD_VERSION } from "./control-policy-record.js";
+import { parseOperatorQuestions, assertOperatorQuestionsAdvance, type OperatorQuestion } from "./authoring-operator-question.js";
+import type { OperatorSubmissionOrigin } from "./authoring-operator-submission-origin.js";
 
 
 export const READ_REVIEW_PROTOCOL = "synapsor.read-review.v2" as const;
+export const OPERATOR_READ_REVIEW_PROTOCOL = "synapsor.read-review.v3" as const;
 
 const identity = z.string().regex(/^bnd_[a-f0-9]{32}$/u);
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
@@ -59,10 +62,11 @@ const entrySchema = z.object({
   draft: z.record(z.unknown()), draft_lock: z.record(z.unknown()),
   candidate_lock: z.record(z.unknown()), progress: progressSchema,
   catalog: catalogSchema.optional(),
+  operator_questions:z.array(z.unknown()).max(64).optional(),
 }).strict();
 export const readAuthoringDocument = z.object({
   schema_version: z.literal(OPERATOR_READ_POLICY_RECORD_VERSION), type: z.literal("read_authoring"),
-  review_protocol: z.literal(READ_REVIEW_PROTOCOL),
+  review_protocol: z.enum([READ_REVIEW_PROTOCOL,OPERATOR_READ_REVIEW_PROTOCOL]),
   selected_boundary_id: identity.nullable(), entries: z.array(entrySchema).max(128),
   rescan_report: z.record(z.unknown()).optional(),
 }).strict();
@@ -72,9 +76,10 @@ export type PreparedReadEntry = {
   draft: ExplorationBoundaryDraft; draft_lock: GenerationLock;
   candidate_lock: GenerationLock; progress: BoundaryReviewProgress;
   catalog?: Pick<AutoBoundaryBuild, "lock" | "review" | "policy_baseline"> & { evidence_project: AutoBoundaryBuild["graph"]["project"] };
+  operator_questions?:OperatorQuestion[];
 };
 export type StoredReadAuthoring = {
-  type: "read_authoring"; review_protocol: typeof READ_REVIEW_PROTOCOL; selected_boundary_id: string | null; entries: PreparedReadEntry[];
+  type: "read_authoring"; review_protocol: typeof READ_REVIEW_PROTOCOL|typeof OPERATOR_READ_REVIEW_PROTOCOL; selected_boundary_id: string | null; entries: PreparedReadEntry[];
   rescan_report?: Record<string, unknown>;
 };
 
@@ -101,6 +106,9 @@ export function parseReadAuthoringDocument(input: unknown): StoredReadAuthoring 
   const ids = new Set<string>();
   const names = new Set<string>();
   for (const entry of parsed.entries) {
+    if(parsed.review_protocol===READ_REVIEW_PROTOCOL&&entry.operator_questions!==undefined)
+      fail("POLICY_AUTHORING_OPERATOR_REVIEW_VERSION_UNSUPPORTED");
+    if(entry.operator_questions!==undefined)parseOperatorReadEntryQuestions(entry.operator_questions,entry.progress.boundary_id);
     const draft = entry.draft as unknown as ExplorationBoundaryDraft;
     const candidate = entry.progress.candidate as unknown as ExplorationBoundaryDraft;
     if (draft.schema_version !== EXPLORATION_BOUNDARY_VERSION || candidate.schema_version !== EXPLORATION_BOUNDARY_VERSION) {
@@ -154,6 +162,36 @@ export function parseReadAuthoringDocument(input: unknown): StoredReadAuthoring 
   return { type: parsed.type, review_protocol: parsed.review_protocol, selected_boundary_id: parsed.selected_boundary_id,
     entries: structuredClone(parsed.entries) as unknown as PreparedReadEntry[],
     ...(parsed.rescan_report ? { rescan_report: structuredClone(parsed.rescan_report) } : {}) };
+}
+
+/** Closed syntax and own-entry association only. Native writer/reader still
+ * authenticate the immutable original baseline and exact acknowledged lineage. */
+export function operatorQuestionSubmissionOrigin(q:OperatorQuestion):OperatorSubmissionOrigin {
+  if(q.version===5&&q.shared_sum?.version===2)return q.shared_sum.origin;
+  if(q.version===5&&q.read_scope&&"version" in q.read_scope)return q.read_scope.origin;
+  return fail("POLICY_AUTHORING_OPERATOR_QUESTION_REQUIRED");
+}
+export function parseOperatorReadEntryQuestions(value:unknown,boundaryId:string):OperatorQuestion[] {
+  const questions=parseOperatorQuestions(value,[]);
+  for(const q of questions){
+    const origin=operatorQuestionSubmissionOrigin(q);
+    if(origin.entry_id!==boundaryId||q.handoff_id!==undefined||q.raw_answer!==undefined)
+      fail("POLICY_AUTHORING_OPERATOR_QUESTION_FOREIGN");
+  }
+  return questions;
+}
+/** Historical preservation is necessary, not sufficient for a native decision.
+ * The domain owner must validate each new/proposed/confirmed Question under
+ * the same actual CAS; a caller-supplied confirmation is never its proof. */
+export function assertOperatorReadQuestionInventoryAdvance(previous:StoredReadAuthoring,next:StoredReadAuthoring):void {
+  for(const old of previous.entries){
+    if(!old.operator_questions?.length)continue;
+    const current=next.entries.find(e=>e.progress.boundary_id===old.progress.boundary_id);
+    if(next.review_protocol!==OPERATOR_READ_REVIEW_PROTOCOL||!current?.operator_questions)
+      fail("POLICY_AUTHORING_OPERATOR_HISTORY_REMOVED");
+    assertOperatorQuestionsAdvance(parseOperatorReadEntryQuestions(old.operator_questions,old.progress.boundary_id),
+      parseOperatorReadEntryQuestions(current.operator_questions,current.progress.boundary_id));
+  }
 }
 
 /** Wire validation only. The persisted display cache does not prove applicability.

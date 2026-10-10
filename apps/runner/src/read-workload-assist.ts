@@ -986,6 +986,10 @@ function workloadDigest(workload: ReadWorkloadSet): `sha256:${string}` {
     source: workload.source,
   });
 }
+/** Same digest domain as the actual workload-analysis producer. */
+export function readWorkloadSetDigest(workload: ReadWorkloadSet): `sha256:${string}` {
+  return workloadDigest(workload);
+}
 
 function normalizeEntries(value: unknown, label: "allowed" | "forbidden"): ReadWorkloadEntry[] {
   if (!Array.isArray(value) || value.length > 40) {

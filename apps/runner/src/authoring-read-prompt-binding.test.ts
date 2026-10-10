@@ -1,3 +1,4 @@
+import { readScopeModelCompletion } from "./authoring-read-scope-binding.js";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
@@ -16,7 +17,7 @@ it("admits a native raw correction only for its exact current declined review", 
     const question = presentOperatorQuestion(createReadScopeQuestion({ id: randomUUID(), revision: 1,
       scope_digest: review.scope_digest, context_digest: review.context_digest, handoff_id: handoff.id,
       read_scope: { mode: "replacement_answer", review_question_id: review.id, record: review.read_scope!.record,
-        completion: review.read_scope!.completion } }), handoff.question);
+        completion: readScopeModelCompletion(review.read_scope!) } }), handoff.question);
     const input = { handoffs: [handoff], questions: [review, question], generation: f.state().generation_recovery };
     expect(readMeaningPromptHandoff(input)).toEqual(handoff);
     expect(readMeaningPromptHandoff({ ...input, questions: [review] })).toBeUndefined();

@@ -1,3 +1,4 @@
+import { readScopeModelCompletion } from "./authoring-read-scope-binding.js";
 import fs from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
@@ -20,7 +21,7 @@ describe("native user-initiated Read replacement answer", () => {
       const question = presentOperatorQuestion(createReadScopeQuestion({ id: randomUUID(), revision: 1,
         scope_digest: declined.scope_digest, context_digest: declined.context_digest, handoff_id: handoff.id,
         read_scope: { mode: "replacement_answer", review_question_id: declined.id, record: declined.read_scope!.record,
-          completion: declined.read_scope!.completion } }), handoff.question);
+          completion: readScopeModelCompletion(declined.read_scope!) } }), handoff.question);
       const raw = "Keep these records, but show only the label; leave the count out.";
       const captured = captureOperatorAnswer(question, raw), answered = answerOwnerHandoff(handoff, raw, declined.context_digest);
       await f.persist(buildBoundaryAuthoringResumeState({ ...f.input, previous: f.state(),
@@ -39,7 +40,7 @@ describe("native user-initiated Read replacement answer", () => {
         [answered], reopened.value.generation_recovery)).toThrow("declined Read proposal");
       expect(() => parseOperatorQuestions([declined, captured, changed({ id: randomUUID() })], [answered], reopened.value.generation_recovery)).toThrow("without branching");
       const fabricatedHandoff = createOwnerHandoff({ consumer: "read_revision_instruction", scope_digest: declined.scope_digest,
-        context_digest: declined.context_digest, question: handoff.question, completion: declined.read_scope!.completion });
+        context_digest: declined.context_digest, question: handoff.question, completion: readScopeModelCompletion(declined.read_scope!) });
       expect(() => parseOperatorQuestions([declined, changed({ handoff_id: fabricatedHandoff.id })],
         [answerOwnerHandoff(fabricatedHandoff, raw, declined.context_digest)], reopened.value.generation_recovery)).toThrow("attributable owner handoff");
     } finally { await fs.rm(f.dir, { recursive: true, force: true }); }

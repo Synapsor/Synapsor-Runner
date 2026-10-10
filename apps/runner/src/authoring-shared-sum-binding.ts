@@ -2,6 +2,9 @@ import { z } from "zod";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { parseSharedSumDesignation, type SharedSumDesignationV1 } from "@synapsor-runner/action-rules";
 import { validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { operatorSubmissionOriginSchema } from "./authoring-operator-submission-origin.js";
+import { parseStructuredActionDraft } from "./boundary-structured-authoring.js";
+import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 
 type Digest = `sha256:${string}`;
 const hash = z.string().regex(/^sha256:[a-f0-9]{64}$/u).transform(value => value as Digest);
@@ -19,21 +22,40 @@ const schema = z.object({ version: z.literal(1), designation: z.unknown(), depen
   origin: z.object({ completion, material }).strict(),
   predecessor: z.object({ question_id: z.string().uuid(), question_digest: hash }).strict().optional(),
 }).strict();
+const operatorSchema=schema.omit({origin:true}).extend({version:z.literal(2),origin:operatorSubmissionOriginSchema,
+  actions:z.array(z.record(z.unknown())).min(1).max(64),
+}).strict();
 
 /** Retained DATA in the existing Question. Main resolves authentic protected
  * producer custody and current dependencies before consuming confirmation.
  * The precompiled D2 stage has no supported origin in this version. */
-export type SharedSumQuestionBinding = Omit<z.infer<typeof schema>, "designation"> & { designation: SharedSumDesignationV1 };
+export type ModelSharedSumQuestionBindingV1 = Omit<z.infer<typeof schema>, "designation"> & { designation: SharedSumDesignationV1 };
+export type OperatorSharedSumQuestionBindingV2 = Omit<z.infer<typeof operatorSchema>,"designation"|"actions"> & {
+  designation:SharedSumDesignationV1;actions:ActionRuleModelDraftV1[];
+};
+export type SharedSumQuestionBinding=ModelSharedSumQuestionBindingV1|OperatorSharedSumQuestionBindingV2;
 function invalid(): never { throw new Error("AUTHORING_SHARED_SUM_INVALID: The exact proposal, producer material or native origin is unavailable. No authority was accepted."); }
 const equal = (a: unknown, b: unknown) => canonicalJsonDigest(a) === canonicalJsonDigest(b);
+export function parseSharedSumQuestionBinding(value: { version: 1; [key: string]: unknown }): ModelSharedSumQuestionBindingV1;
+export function parseSharedSumQuestionBinding(value: { version: 2; [key: string]: unknown }): OperatorSharedSumQuestionBindingV2;
+export function parseSharedSumQuestionBinding(value: unknown): SharedSumQuestionBinding;
 export function parseSharedSumQuestionBinding(value: unknown): SharedSumQuestionBinding {
-  const parsed = schema.safeParse(value);
+  const parsed = z.union([schema,operatorSchema]).safeParse(value);
   if (!parsed.success || !equal(parsed.data, value)) invalid();
   const raw = parsed.data, designation = parseSharedSumDesignation(raw.designation);
   if (new Set(raw.dependencies.read_dependencies.map(read => read.name)).size !== raw.dependencies.read_dependencies.length
-    || new Set(raw.dependencies.participating_outcomes).size !== raw.dependencies.participating_outcomes.length
-    || !equal(designation, raw.origin.material.components.rule.shared_sum_proposal)
-    || !raw.dependencies.participating_outcomes.includes(raw.origin.material.components.rule.outcome as string)) invalid();
+    || new Set(raw.dependencies.participating_outcomes).size !== raw.dependencies.participating_outcomes.length) invalid();
+  if(raw.version===2){
+    const actions=raw.actions.map((a,index)=>parseStructuredActionDraft(a,index));
+    if(actions.some(a=>!["synapsor.action-rule-model-draft.v1","synapsor.action-rule-model-draft.v2"].includes(a.schema_version))
+      ||!equal(actions,raw.actions)||new Set(actions.map(a=>a.outcome)).size!==actions.length
+      ||!equal([...actions.map(a=>a.outcome)].sort(),[...raw.dependencies.participating_outcomes].sort())
+      ||!actions.some(a=>a.shared_sum_proposal!==undefined)
+      ||actions.some(a=>a.shared_sum_proposal!==undefined&&!equal(a.shared_sum_proposal,designation)))invalid();
+    return structuredClone({...raw,designation,actions});
+  }
+  if(!equal(designation,raw.origin.material.components.rule.shared_sum_proposal)
+    ||!raw.dependencies.participating_outcomes.includes(raw.origin.material.components.rule.outcome as string))invalid();
   return structuredClone({ ...raw, designation });
 }
 
@@ -42,6 +64,7 @@ export function parseSharedSumQuestionBinding(value: unknown): SharedSumQuestion
  * domain; a descriptor-only digest cannot borrow a genuine completion. */
 export function assertSharedSumQuestionGeneration(input: SharedSumQuestionBinding, generation?: AuthoringTransportState): void {
   const binding = parseSharedSumQuestionBinding(input);
+  if(binding.version!==1)invalid();
   if (!generation) invalid();
   validateAuthoringTransportState(generation);
   const c = binding.origin.completion, op = generation.operations.find(op => op.id === c.operation_id);

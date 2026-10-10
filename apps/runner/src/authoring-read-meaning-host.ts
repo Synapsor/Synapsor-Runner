@@ -1,3 +1,4 @@
+import { readScopeModelCompletion } from "./authoring-read-scope-binding.js";
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { createOwnerHandoff, answerOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
@@ -198,7 +199,7 @@ export function createReadMeaningHost(input: {
         const raw = presentOperatorQuestion(createReadScopeQuestion({ id: randomUUID(), revision: 1, handoff_id: handoff.id,
           scope_digest: handoff.scope_digest, context_digest: handoff.context_digest,
           read_scope: { mode: "replacement_answer", review_question_id: reviewId,
-            record: current.review.read_scope!.record, completion: current.review.read_scope!.completion } }), handoff.question);
+            record: current.review.read_scope!.record, completion: readScopeModelCompletion(current.review.read_scope!) } }), handoff.question);
         access.install({ questions: [...access.readQuestions(), raw], handoffs: [...access.readHandoffs(), handoff] });
         await access.save(permit, "The operator-requested Read replacement question");
       });

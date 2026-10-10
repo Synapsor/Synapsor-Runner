@@ -14,7 +14,8 @@ export type ReadScopeNativeInventory = { references: readonly ReadScopeReference
 export function createReadScopeQuestion(input: { id: string; revision: number; scope_digest: Digest; context_digest: Digest;
   read_scope: ReadScopeQuestionBinding; handoff_id?: string; material?: string[] }): OperatorQuestion {
   const { material = [], ...identity } = input;
-  const body = { version: 2, ...identity, read_scope: parseReadScopeQuestionBinding(input.read_scope), kind: "read_scope",
+  const binding=parseReadScopeQuestionBinding(input.read_scope);
+  const body = { version: "version" in binding ? 5 : 2, ...identity, read_scope: binding, kind: "read_scope",
     target: { phase: "read_scope", outcomes: [] }, material, evidence: [], continuation: "read_mapping" };
   return parseOperatorQuestion({ ...body, digest: canonicalJsonDigest(body) });
 }

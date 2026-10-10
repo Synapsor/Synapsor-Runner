@@ -3,7 +3,7 @@ import { parseActionRequirementProposals, actionRequirementsPending, actionRequi
 import { parseActionRuleSourceQuestionPassageShape, type ActionRuleSourceQuestionPassageV1 } from "./action-rule-source-question-codec.js";
 import { parseActionSubjectBinding, parseActionSubjectProposal, assertActionSubjectSequence, assertActionSubjectGeneration, type ActionSubjectBinding, type ActionSubjectProposal } from "./authoring-action-subject-binding.js";
 import { parseTypedParameterBinding, parseTypedParameterRecord, assertTypedParameterSequence, assertTypedParameterGeneration, typedParameterPendingFields, type TypedParameterBinding, type TypedParameterRecord } from "./authoring-typed-parameter-binding.js";
-import { parseReadScopeQuestionBinding, readScopeConsumption, type ReadScopeQuestionBinding } from "./authoring-read-scope-binding.js";
+import { parseReadScopeQuestionBinding, readScopeConsumption, readScopeModelCompletion, type ReadScopeQuestionBinding } from "./authoring-read-scope-binding.js";
 import { assertAuthoringReadCheckpoint } from "./authoring-generation-recovery.js";
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -34,7 +34,7 @@ export type OperatorQuestionValue =
  * Source fact nor an authority revision. The consumer owns currentness/CAS and
  * validates domain values again before its ordinary reviewed save. */
 export type OperatorQuestion = {
-  version: 1 | 2 | 3 | 4;
+  version: 1 | 2 | 3 | 4 | 5;
   action_requirements?: ActionRequirementsQuestionBinding;
   shared_sum?: SharedSumQuestionBinding;
   read_scope?: ReadScopeQuestionBinding;
@@ -105,7 +105,7 @@ export function createOperatorQuestion(input: Pick<OperatorQuestion,
 export function parseOperatorQuestion(value: unknown): OperatorQuestion {
   if (!object(value) || !exact(value, ["version", "id", "revision", "handoff_id", "kind", "scope_digest", "context_digest", "target",
     "material", "evidence", "receipt_selection", "read_scope", "typed_parameters", "action_subject", "shared_sum", "action_requirements", "continuation", "source_binding", "budget_owner_id", "naming_passages", "budget", "wording_state", "presentation", "raw_answer", "proposal", "proposal_history", "confirmation", "disposition", "disposition_history", "terminal_failure", "digest"])
-    || ![1, 2, 3, 4].includes(value.version as number) || !id(value.id) || value.handoff_id !== undefined && !text(value.handoff_id, 100) || !count(value.revision, Number.MAX_SAFE_INTEGER, 1)
+    || ![1, 2, 3, 4, 5].includes(value.version as number) || !id(value.id) || value.handoff_id !== undefined && !text(value.handoff_id, 100) || !count(value.revision, Number.MAX_SAFE_INTEGER, 1)
     || !["attributed_meaning", "input_bounds", "writer_maintenance", "receipt_requirement", "read_scope", "typed_parameters", "action_subject", "shared_sum", "action_requirements"].includes(value.kind as string)
     || !digest(value.scope_digest) || !digest(value.context_digest) || !digest(value.digest)
     || !object(value.target) || !exact(value.target, ["phase", "resource", "field", "outcomes"])
@@ -120,7 +120,7 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     || Buffer.byteLength(JSON.stringify(value)) > 128 * 1024) invalid("The saved question envelope is malformed or too large.");
   const continuation = { action_requirements: "action_rule_review", shared_sum: "action_rule_review", action_subject: "action_rule_review", typed_parameters: "action_rule_review", read_scope: "read_mapping", attributed_meaning: "read_mapping", input_bounds: "input_policy_review", writer_maintenance: "version_mapping",
     receipt_requirement: "receipt_requirement_review" };
-  if (value.version === 4 ? value.kind !== "action_requirements" : Object.hasOwn(value, "action_requirements") || (value.version === 3 ? value.kind !== "shared_sum" : value.version === 2
+  if (value.version === 5 ? !["read_scope","shared_sum"].includes(value.kind as string)||value.action_requirements!==undefined : value.version === 4 ? value.kind !== "action_requirements" : Object.hasOwn(value, "action_requirements") || (value.version === 3 ? value.kind !== "shared_sum" : value.version === 2
     ? !["read_scope", "typed_parameters", "action_subject"].includes(value.kind as string) || value.shared_sum !== undefined
     : ["read_scope", "typed_parameters", "action_subject", "shared_sum", "action_requirements"].includes(value.kind as string) || value.read_scope !== undefined || value.typed_parameters !== undefined || value.action_subject !== undefined || value.shared_sum !== undefined))
     invalid("The question version does not support this typed interaction.");
@@ -136,6 +136,7 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
   } else if (value.action_requirements !== undefined) invalid("Action requirements belong to their own v4 review.");
   if (value.kind === "shared_sum") {
     const binding = parseSharedSumQuestionBinding(value.shared_sum);
+    if(value.version!==(binding.version===2?5:3))invalid("The operator shared-SUM origin requires its own Question version.");
     if (["read_scope", "typed_parameters", "action_subject", "source_binding", "handoff_id", "raw_answer", "budget", "budget_owner_id", "wording_state", "terminal_failure", "receipt_selection", "naming_passages"].some(key => value[key] !== undefined)
       || value.target.phase !== "shared_sum" || value.target.resource !== undefined || value.target.field !== undefined
       || value.scope_digest !== canonicalJsonDigest(binding.designation) || value.context_digest !== binding.dependencies.context_digest
@@ -162,6 +163,7 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
   } else if (value.typed_parameters !== undefined) invalid("Typed parameter binding belongs to its own review.");
   if (value.kind === "read_scope") {
     const binding = parseReadScopeQuestionBinding(value.read_scope);
+    if(value.version!==("version" in binding?5:2))invalid("The operator Read origin requires its own Question version.");
     if (value.target.phase !== "read_scope" || value.target.resource !== undefined || value.target.field !== undefined
       || value.target.outcomes.length || value.source_binding !== undefined || value.budget !== undefined
       || value.budget_owner_id !== undefined || value.wording_state !== undefined
@@ -432,7 +434,7 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
       continue;
     }
     if (q.shared_sum) {
-      assertSharedSumQuestionGeneration(q.shared_sum, generation);
+      if(q.shared_sum.version===1)assertSharedSumQuestionGeneration(q.shared_sum, generation);
       const ref = q.shared_sum.predecessor;
       const predecessor = ref && result.find(p => p.id === ref.question_id);
       if (ref ? !predecessor || !seen.has(predecessor.id) || predecessor.id === q.id || predecessor.digest !== ref.question_digest
@@ -561,7 +563,7 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
       continue;
     }
     if (q.read_scope) {
-      assertAuthoringReadCheckpoint(generation, q.read_scope.completion, readScopeConsumption(q.read_scope));
+      if(!("version" in q.read_scope))assertAuthoringReadCheckpoint(generation, readScopeModelCompletion(q.read_scope), readScopeConsumption(q.read_scope));
       const predecessor = q.read_scope.predecessor_id ? result.find(p => p.id === q.read_scope!.predecessor_id) : undefined;
       if (q.read_scope.predecessor_id ? !predecessor || !seen.has(predecessor.id) || predecessor.id === q.id
         || predecessor.kind !== "read_scope" || predecessor.read_scope?.mode !== q.read_scope.mode
@@ -574,6 +576,7 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
           || !review.disposition || review.confirmation || review.scope_digest !== q.scope_digest
           || review.context_digest !== q.context_digest
           || canonicalJsonDigest(review.read_scope.record) !== canonicalJsonDigest(q.read_scope.record)
+          || "version" in review.read_scope
           || canonicalJsonDigest(review.read_scope.completion) !== canonicalJsonDigest(q.read_scope.completion)
           || predecessor && predecessor.read_scope?.review_question_id !== review.id
           || !predecessor && result.some(other => other.id !== q.id && other.read_scope?.mode === "replacement_answer"

@@ -1,10 +1,19 @@
 import fs from "node:fs/promises";
 import { types } from "node:util";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { readAuthoringBindingsSchema, type ReadAuthoringBindings } from "./control-policy-record.js";
 import { loadRuntimeConfigFromFile, resolveTrustedContext, type RuntimeConfig, type TrustedContext } from "@synapsor-runner/mcp-server";
 import { resolveSynapsorProject } from "./project-resolution.js";
 import { AuthoringResumeMaterialError } from "./authoring-checkpoint-save-error.js";
 
-export type AuthoringMaterialOwner = Readonly<{ projectRoot: string; jobCreatedAt: string }>;
+/** Transient host ownership. The Read owner supplies its actual freshly loaded
+ * native frame and reacquires it after waits; this is privacy screening, not
+ * custody proof, a CAS permit or a durable origin. Each ACK needs a new context. */
+export type AuthoringMaterialOwner = Readonly<{ projectRoot: string } & (
+  { jobCreatedAt: string; sourceSessionId?: never; readEntry?: never } |
+  { sourceSessionId: string; jobCreatedAt?: never; readEntry?: never } |
+  { readEntry: Readonly<{ entry_id: string; bindings: ReadAuthoringBindings }>; jobCreatedAt?: never; sourceSessionId?: never }
+)>;
 /** These are owning-schema origins, not assertions decoded from model output.
  * Business values are NOT exempt: a collision has an ambiguous disposition. */
 export type AuthoringMaterialOrigin = "retained_material" | "business_value" | "forbidden_identity";
@@ -41,10 +50,25 @@ export class AuthoringMaterialContextError extends Error {
 export async function resolveAuthoringMaterialContext(input: AuthoringMaterialContextInput): Promise<AuthoringMaterialContext> {
   let owner: AuthoringMaterialOwner;
   try {
-    if (!input.jobCreatedAt || !Number.isFinite(Date.parse(input.jobCreatedAt))) throw new Error();
-    owner = Object.freeze({ projectRoot: await fs.realpath(input.projectRoot), jobCreatedAt: input.jobCreatedAt });
+    const root = await fs.realpath(input.projectRoot);
+    if (input.readEntry !== undefined) {
+      if (input.jobCreatedAt !== undefined || input.sourceSessionId !== undefined
+        || !/^bnd_[a-f0-9]{32}$/u.test(input.readEntry.entry_id)
+        || Object.keys(input.readEntry).sort().join(",") !== "bindings,entry_id") throw new Error();
+      const bindings = readAuthoringBindingsSchema.parse(input.readEntry.bindings);
+      if (canonicalJsonDigest(bindings) !== canonicalJsonDigest(input.readEntry.bindings)) throw new Error();
+      owner = Object.freeze({ projectRoot: root, readEntry: Object.freeze({ entry_id: input.readEntry.entry_id,
+        bindings: Object.freeze(bindings) }) });
+    } else if (input.sourceSessionId !== undefined) {
+      if (input.jobCreatedAt !== undefined || !/^[a-f0-9-]{36}$/u.test(input.sourceSessionId)) throw new Error();
+      owner = Object.freeze({ projectRoot: root, sourceSessionId: input.sourceSessionId });
+    } else {
+      if (!input.jobCreatedAt || !Number.isFinite(Date.parse(input.jobCreatedAt))) throw new Error();
+      owner = Object.freeze({ projectRoot: root, jobCreatedAt: input.jobCreatedAt });
+    }
   } catch { throw new AuthoringMaterialContextError(codes.unavailable); }
-  const captured = { ...input, ...owner };
+  const captured: AuthoringMaterialContextInput = { ...owner, env: input.env,
+    currentVerifiedSession: input.currentVerifiedSession };
   const resolution = await resolveCurrent(captured);
   const context = Object.freeze(Object.defineProperty({ kind: resolution.kind }, "toJSON", {
     value: () => { throw new AuthoringMaterialContextError(codes.unavailable); }, enumerable: false,
@@ -71,7 +95,11 @@ async function resolveCurrent(input: AuthoringMaterialContextInput): Promise<Res
     for (const [name, definition] of definitions) {
       if (!definition || !definition.provider) return { kind: "unavailable" };
       const session = definition.provider === "http_claims" || definition.provider === "cloud_session"
-        ? await input.currentVerifiedSession?.({ projectRoot: input.projectRoot, jobCreatedAt: input.jobCreatedAt,
+        ? await input.currentVerifiedSession?.({ ...(input.readEntry !== undefined
+          ? { projectRoot: input.projectRoot, readEntry: input.readEntry }
+          : input.sourceSessionId !== undefined
+            ? { projectRoot: input.projectRoot, sourceSessionId: input.sourceSessionId }
+            : { projectRoot: input.projectRoot, jobCreatedAt: input.jobCreatedAt! }),
           contextName: name, provider: definition.provider }) : undefined;
       // Selecting an actual named definition does not invent a capability or invoke
       // the proposal actor fallback. Capability-specific checks below use real entries.
@@ -124,7 +152,10 @@ export function snapshotAuthoringMaterial(value: unknown): string {
 export async function assertAuthoringMaterial(input: {
   value: unknown; owner: AuthoringMaterialOwner; origin: AuthoringMaterialOrigin; context: AuthoringMaterialContext;
 }): Promise<string> {
-  const owner = { ...input.owner }, origin = input.origin, context = input.context;
+  // Capture the nested transient frame before any filesystem/session wait.
+  const owner = { ...input.owner, ...(input.owner.readEntry ? { readEntry: {
+    entry_id: input.owner.readEntry.entry_id, bindings: { ...input.owner.readEntry.bindings },
+  } } : {}) }, origin = input.origin, context = input.context;
   let material: unknown;
   try { material = snapshotJson(input.value, new WeakSet()); }
   catch { throw new AuthoringMaterialContextError(codes.unavailable); }
@@ -133,7 +164,9 @@ export async function assertAuthoringMaterial(input: {
   let root: string;
   try { root = await fs.realpath(owner.projectRoot); }
   catch { throw new AuthoringMaterialContextError(codes.unavailable); }
-  if (root !== native.owner.projectRoot || owner.jobCreatedAt !== native.owner.jobCreatedAt)
+  if (root !== native.owner.projectRoot || owner.jobCreatedAt !== native.owner.jobCreatedAt
+    || owner.sourceSessionId !== native.owner.sourceSessionId
+    || canonicalJsonDigest(owner.readEntry ?? null) !== canonicalJsonDigest(native.owner.readEntry ?? null))
     throw new AuthoringMaterialContextError(codes.changed);
   if (!["retained_material", "business_value", "forbidden_identity"].includes(origin))
     throw new AuthoringMaterialContextError(codes.unavailable);
