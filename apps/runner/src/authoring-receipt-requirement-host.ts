@@ -143,7 +143,7 @@ export function receiptRequirementCheckpoint(input: {
   currentDraft(): unknown; questions(): readonly OperatorQuestion[];
   assertCurrent(permit?: ProjectAuthorityMutationPermit): Promise<void>;
   acknowledge(permit: ProjectAuthorityMutationPermit): Promise<void>;
-}) {
+}): {current():OperatorQuestion|undefined;saved(permit:ProjectAuthorityMutationPermit):Promise<PolicySourceSaveAcknowledgement|undefined>} {
   const source = activePolicySource(input.sources);
   if (!source) throw new PolicySourceChangedError();
   const sourceBinding = receiptRequirementSourceBinding(source, input.sources.id, input.store, input.start, input.end);

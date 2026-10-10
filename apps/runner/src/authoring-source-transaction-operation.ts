@@ -9,6 +9,9 @@ import { makeSourceTransactionScopeReview, sourceTransactionScopeQuestions,
   type SourceTransactionScopeQuestion } from './authoring-source-transaction-scope.js';
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from './project-authority-mutation.js';
 
+export type LocalSourceTransactionResult = {state:'pending'|'confirmed'|'deferred'|'conflicting'|'capability_unavailable';changed:boolean;summary:string;sourceSave?:PolicySourceSaveAcknowledgement};
+export type LocalSourceTransactionScopeResult = {state:'pending'|'applies'|'does_not_apply'|'deferred';changed:boolean;summary:string;sourceSave?:PolicySourceSaveAcknowledgement};
+
 /** The existing saved-source CAS and authority coordination make the local
  * decision attributable. No model request, coverage acceptance or Action edit. */
 export async function localSourceTransactionReview(input: {
@@ -18,7 +21,7 @@ export async function localSourceTransactionReview(input: {
   assertCurrent: () => Promise<void>;
   assertCurrentHeld: (permit: ProjectAuthorityMutationPermit) => Promise<void>;
   coordinated: (operation: (permit: ProjectAuthorityMutationPermit) => Promise<void>) => Promise<void>;
-}) {
+}): Promise<LocalSourceTransactionResult> {
   const source = activePolicySource(input.sources);
   if (!source) throw new Error('SOURCE_TRANSACTION_REVIEW_SOURCE_UNAVAILABLE: Reopen the current complete policy.');
   let expected = await policySourceSavedDigest(input.projectRoot, input.sources.id);
@@ -145,7 +148,7 @@ export async function localSourceTransactionScopeReview(input: {
   assertCurrent:()=>Promise<void>;
   assertCurrentHeld:(permit:ProjectAuthorityMutationPermit)=>Promise<void>;
   coordinated:(operation:(permit:ProjectAuthorityMutationPermit)=>Promise<void>)=>Promise<void>;
-}) {
+}): Promise<LocalSourceTransactionScopeResult> {
   const source=activePolicySource(input.sources);
   if(!source)throw new Error('SOURCE_TRANSACTION_SCOPE_SOURCE_UNAVAILABLE: Reopen the current complete policy.');
   let expected=await policySourceSavedDigest(input.projectRoot,input.sources.id);

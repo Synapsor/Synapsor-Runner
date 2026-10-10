@@ -102,6 +102,11 @@ function findQuestionText(value:unknown):string {
 const respond = (raw:string,accepted:boolean=true) => async(view:BusinessStatementInteraction):Promise<BusinessStatementResponse>=>
   view.kind==='question'?{kind:'answer',binding:view.binding,raw}:view.kind==='readback'?{kind:'decision',binding:view.binding,accepted}
     :{kind:'pending',binding:view.binding,choice:'keep'};
+async function nativeSourceAcknowledgement(f:{root:string;sources:import('./authoring-policy-source.js').PolicySourceSession}):Promise<{savedSession:import('./authoring-policy-source.js').PolicySourceSession;outcome:{state:'acknowledged';reference:{path:string;session_id:string;revision_digest:string}}}> {
+  const savedSession=await loadPolicySources(f.root,f.sources.id);
+  expect(f.sources).toEqual(savedSession);
+  return {savedSession,outcome:{state:'acknowledged',reference:{path:path.join(f.root,'.synapsor','boundary-authoring','policy-sources',`${f.sources.id}.json`),session_id:f.sources.id,revision_digest:canonicalJsonDigest(savedSession)}}};
+}
 const clear = 'Use the trusted worker completion receipt. Unapplied requests stay pending or approved.';
 
 it('saves the pending target before asking, then maps actual words and separately confirms configured applicability',async()=>{
@@ -205,7 +210,7 @@ it('the production owner distinguishes no target, pending, confirmed, reused and
   expect(await f.productionInvoke(respond(clear,false))).toMatchObject({kind:'pending'});
   expect(f.requests).toHaveLength(1);await f.restart();
   expect(await f.productionInvoke(async view=>view.kind==='pending'
-    ?{kind:'pending',binding:view.binding,choice:'review'}:respond('unused')(view))).toEqual({kind:'saved',disposition:'confirmed'});
+    ?{kind:'pending',binding:view.binding,choice:'review'}:respond('unused')(view))).toEqual({kind:'saved',disposition:'confirmed',sourceSave:await nativeSourceAcknowledgement(f)});
   expect(f.requests).toHaveLength(1);const native=f.inspect();
   expect(await f.productionInvoke(async()=>{throw new Error('Reuse must not ask');})).toEqual({kind:'saved',disposition:'reused'});
   expect(f.inspect()).toEqual(native);expect(f.requests).toHaveLength(1);
@@ -219,13 +224,13 @@ it('the production owner completes only the missing Source projection after the 
   await expect(f.productionInvoke(respond(clear))).rejects.toThrow('Declared interruption after native confirmation save');
   await f.restart();const native=f.inspect();
   expect(await f.productionInvoke(async()=>{throw new Error('Recovery must not prompt or map');}))
-    .toEqual({kind:'saved',disposition:'projection_recovered'});
+    .toEqual({kind:'saved',disposition:'projection_recovered',sourceSave:await nativeSourceAcknowledgement(f)});
   expect(f.inspect()).toEqual(native);expect(f.requests).toHaveLength(1);
 });
 it('refuses a reused receipt interpretation when Source changes during evidence refresh',async()=>{
   let onRefresh=async()=>{};
   const f=await fixture({nominateTarget:true,onRefresh:()=>onRefresh()});
-  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed'});
+  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed',sourceSave:await nativeSourceAcknowledgement(f)});
   const before=f.inspect(),calls=f.requests.length;
   let winner: Awaited<ReturnType<typeof loadPolicySources>> | undefined;
   onRefresh=async()=>{
@@ -241,7 +246,7 @@ it('refuses a reused receipt interpretation when Source changes during evidence 
 it('retains applicable receipt meaning across an unrelated change made before a new entry',async()=>{
   let context='prior checked review context';
   const f=await fixture({nominateTarget:true,currentContext:()=>context});
-  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed'});
+  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed',sourceSave:await nativeSourceAcknowledgement(f)});
   const before=f.inspect(),calls=f.requests.length;
   // The exact receipt dependencies and evidence guard remain current. Only the
   // enclosing context changed before this invocation, not during its waits.
@@ -253,7 +258,7 @@ it('retains applicable receipt meaning across an unrelated change made before a 
 it('refuses receipt reuse when the checked reader or Action context changes during refresh',async()=>{
   let context='declared current reader and Action role',onRefresh=async()=>{};
   const f=await fixture({nominateTarget:true,onRefresh:()=>onRefresh(),currentContext:()=>context});
-  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed'});
+  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed',sourceSave:await nativeSourceAcknowledgement(f)});
   const before=f.inspect(),calls=f.requests.length;
   onRefresh=async()=>{context='changed inspected role, same cached draft and Source';};
   await expect(f.productionInvoke(async()=>{throw new Error('Changed evidence cannot be reused or prompt');}))
@@ -263,7 +268,7 @@ it('refuses receipt reuse when the checked reader or Action context changes duri
 it.each([2_000,2_001,16_000])('production target nomination and mapping preserve a %i-character Source',async length=>{
   const text='R'.repeat(length-4)+' 😀';
   const f=await fixture({nominateTarget:true,sourceText:text});
-  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed'});
+  expect(await f.productionInvoke(respond(clear))).toEqual({kind:'saved',disposition:'confirmed',sourceSave:await nativeSourceAcknowledgement(f)});
   expect(f.sources.receipt_requirement_reviews!.at(-1)!.source_excerpt).toBe(text);
   const entries=f.inspect().questions!.at(-1)!.material.filter(entry=>entry.startsWith('Attached Source lines '));
   expect(entries.every(entry=>entry.length<=2_000)).toBe(true);

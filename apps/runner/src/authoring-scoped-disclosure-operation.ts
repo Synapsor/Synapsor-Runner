@@ -14,7 +14,7 @@ export async function localScopedDisclosureReview(input:{projectRoot:string;sour
   assertCurrent:()=>Promise<void>;
   assertCurrentHeld:(permit:ProjectAuthorityMutationPermit)=>Promise<void>;
   onValidated?:(sources:PolicySourceSession,permit:ProjectAuthorityMutationPermit)=>Promise<void>;
-  coordinated:(operation:(permit:ProjectAuthorityMutationPermit)=>Promise<void>)=>Promise<void>}) {
+  coordinated:(operation:(permit:ProjectAuthorityMutationPermit)=>Promise<void>)=>Promise<void>}): Promise<{cancelled:boolean;ready:boolean;privacy?:boolean;items?:ReturnType<typeof policyReviewReadiness>["items"];inventory?:ReturnType<typeof scopedDisclosureInventory>;summary:string[];sourceSave?:PolicySourceSaveAcknowledgement}> {
   const source=activePolicySource(input.sources)!;
   let expected=await policySourceSavedDigest(input.projectRoot,input.sources.id);
   if(canonicalJsonDigest(await loadPolicySources(input.projectRoot,input.sources.id))!==canonicalJsonDigest(input.sources))

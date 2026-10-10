@@ -163,7 +163,7 @@ describe('source-established disclosure requirement through local review, strict
    const x=await setup();await x.run();await x.restart();x.set({choice:'confirmed_non_sensitive'});
    const before=await policySourceSavedDigest(x.root,x.f.sources.id);
    vi.spyOn(fs,'rename').mockRejectedValueOnce(new Error('synthetic failed atomic save'));
-   await expect(x.run()).rejects.toThrow('synthetic failed atomic save');
+   await expect(x.run()).rejects.toMatchObject({code:'POLICY_SOURCE_SAVE_UNCERTAIN',stage:'replace',cause:{message:'synthetic failed atomic save'}});
    expect(await policySourceSavedDigest(x.root,x.f.sources.id)).toBe(before);vi.restoreAllMocks();
    const confirm=x.input.session.confirm;x.input.session={...x.input.session,confirm:async(q:string)=>{
      const result=await confirm(q);if(q==='Save this exact classification decision?')x.f.draft.read.pack.resources[0].table='changed';return result;

@@ -1,5 +1,5 @@
 import {canonicalJsonDigest} from '@synapsor-runner/protocol';
-import {activePolicySource,loadPolicySources,policySourceSavedDigest,savePolicySources,adoptPolicySourceAcknowledgement,type PolicySourceSession} from './authoring-policy-source.js';
+import {activePolicySource,loadPolicySources,policySourceSavedDigest,savePolicySources,adoptPolicySourceAcknowledgement,type PolicySourceSaveAcknowledgement,type PolicySourceSession} from './authoring-policy-source.js';
 import {makeSourceInputReview,assertSourceInputReviews,type SourceInputRequirement} from './authoring-input-policy.js';
 import type {BoundaryReviewInteractiveSession} from './boundary-cli-picker.js';
 import {withProjectAuthorityMutation,type ProjectAuthorityMutationPermit} from './project-authority-mutation.js';
@@ -7,7 +7,7 @@ import {withProjectAuthorityMutation,type ProjectAuthorityMutationPermit} from '
 /** Local meaning review, stored with the existing source session and CAS. Never
  * derives English meaning, modifies a draft, or treats a model as the operator. */
 export async function reviewSourceInputPolicy(input:{projectRoot:string;sources:PolicySourceSession;session:BoundaryReviewInteractiveSession;
-  outcomes:string[];store:string;actor:string;assertCurrent:(permit?:ProjectAuthorityMutationPermit)=>Promise<void>}) {
+  outcomes:string[];store:string;actor:string;assertCurrent:(permit?:ProjectAuthorityMutationPermit)=>Promise<void>}): Promise<{sourceSave:PolicySourceSaveAcknowledgement}|undefined> {
  const source=activePolicySource(input.sources);if(!source)return;
  assertSourceInputReviews(input.sources.input_policy_reviews);
  const expected=await policySourceSavedDigest(input.projectRoot,input.sources.id);

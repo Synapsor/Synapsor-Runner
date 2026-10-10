@@ -333,7 +333,7 @@ it('transaction returns corresponding Source ACK rather than later staging conte
  try{
   await savePolicySources(root,f.sources); const nativeSave=sourceOwner.savePolicySources;
   vi.spyOn(sourceOwner,'savePolicySources').mockImplementation((project,next,options)=>{const pending=nativeSave(project,next,options);next.operator_messages=['Unsubmitted staging mutation.'];return pending;});
-  const session:BoundaryReviewInteractiveSession={promptText:async()=> '18',chooseOption:async(_t,options)=>options.find(o=>o.value==='confirmed')?.value,confirm:async()=>true};
+  const session:BoundaryReviewInteractiveSession={chooseResource:async()=>{throw new Error("Resource picker is outside this Source save control");},editFieldTiers:async()=>{throw new Error("Field editor is outside this Source save control");},promptText:async()=> '18',chooseOption:async(_t,options)=>options.find(o=>o.value==='confirmed')?.value,confirm:async()=>true};
   const result=await localSourceTransactionReview({projectRoot:root,sources:f.sources,session,currentDraft:()=>prepared(f),actor:'local-fixture-operator',assertCurrent:async()=>{},assertCurrentHeld:async()=>{},coordinated:operation=>withProjectAuthorityMutation(root,operation)});
   const saved=await loadPolicySources(root,f.sources.id);expect(f.sources).toEqual(saved);
   expect(result).toMatchObject({changed:true,sourceSave:{savedSession:saved,outcome:{state:'acknowledged',reference:{session_id:saved.id,revision_digest:canonicalJsonDigest(saved)}}}});

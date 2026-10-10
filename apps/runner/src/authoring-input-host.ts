@@ -1,3 +1,4 @@
+import path from "node:path";
 import { parseActionRuleSourceQuestionPassages } from "./action-rule-source-question-codec.js";
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -204,10 +205,13 @@ export async function createSourceInputHost(input: SourceInputHostInput): Promis
     }, options.permit),
     acknowledge: async (q, review, staged, permit, sourceSave) => access.mutate(async held => {
       const projected=sourceSave ? adoptPolicySourceAcknowledgement(structuredClone(sources),sourceSave) : structuredClone(staged);
+      const matchesQuestion=()=> (readQuestions().children.at(-1) ?? readQuestions().root).digest===q.digest
+        && reusableSourceInputConversationReview({sources:projected,questions:readQuestions(),outcomes,store,actor:input.actor})?.digest===review.digest;
       if (canonicalJsonDigest(projected)!==canonicalJsonDigest(staged)
-        || (readQuestions().children.at(-1) ?? readQuestions().root).digest!==q.digest
-        || reusableSourceInputConversationReview({sources:projected,questions:readQuestions(),outcomes,store,actor:input.actor})?.digest!==review.digest) throw new PolicySourceChangedError();
+        || sourceSave && sourceSave.outcome.reference.path!==path.join(held.projectRoot,".synapsor","boundary-authoring","policy-sources",`${sources.id}.json`)
+        || !matchesQuestion()) throw new PolicySourceChangedError();
       await assertCurrentHeld(held, { mode: "completed_review", review }, projected);
+      if (!matchesQuestion()) throw new PolicySourceChangedError();
       if (sourceSave) adoptPolicySourceAcknowledgement(sources,sourceSave);
       else { // Already authenticated native recovery observation; no new write ACK.
         for (const key of Object.keys(sources)) if (!Object.hasOwn(projected,key)) Reflect.deleteProperty(sources,key);
